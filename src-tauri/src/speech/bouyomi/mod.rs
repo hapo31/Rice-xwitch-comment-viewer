@@ -1,5 +1,6 @@
 #[cfg(feature = "app")]
 use crate::settings::AppState;
+use crate::speech::{SpeechAdapter, SpeechHealth, SpeechRequest, SpeechResult};
 use std::{net::SocketAddr, time::Duration};
 use tokio::{
     io::AsyncWriteExt,
@@ -36,10 +37,10 @@ impl Default for BouyomiTalkConfig {
 }
 
 impl BouyomiAdapter {
-    pub fn new(addr: SocketAddr) -> Self {
+    pub fn new(addr: SocketAddr, defaults: BouyomiTalkConfig) -> Self {
         Self {
             addr,
-            defaults: BouyomiTalkConfig::default(),
+            defaults,
             timeout: Duration::from_secs(2),
         }
     }
@@ -64,6 +65,34 @@ impl BouyomiAdapter {
         let mut stream = timeout(self.timeout, TcpStream::connect(self.addr)).await??;
         timeout(self.timeout, stream.write_all(packet)).await??;
         Ok(())
+    }
+}
+
+impl SpeechAdapter for BouyomiAdapter {
+    async fn health_check(&self) -> anyhow::Result<SpeechHealth> {
+        BouyomiAdapter::health_check(self).await?;
+        Ok(SpeechHealth::Connected)
+    }
+
+    async fn speak(&self, request: SpeechRequest) -> anyhow::Result<SpeechResult> {
+        BouyomiAdapter::speak(self, &request.text).await?;
+        Ok(SpeechResult::Accepted)
+    }
+
+    async fn pause(&self) -> anyhow::Result<()> {
+        self.control(BouyomiControlCommand::Pause).await
+    }
+
+    async fn resume(&self) -> anyhow::Result<()> {
+        self.control(BouyomiControlCommand::Resume).await
+    }
+
+    async fn skip(&self) -> anyhow::Result<()> {
+        self.control(BouyomiControlCommand::Skip).await
+    }
+
+    async fn clear(&self) -> anyhow::Result<()> {
+        self.control(BouyomiControlCommand::Clear).await
     }
 }
 
@@ -109,7 +138,12 @@ pub async fn speech_health_check(state: tauri::State<'_, AppState>) -> Result<St
     adapter
         .health_check()
         .await
-        .map(|elapsed| format!("棒読みちゃんに接続できました。応答時間 {}ms", elapsed.as_millis()))
+        .map(|elapsed| {
+            format!(
+                "棒読みちゃんに接続できました。応答時間 {}ms",
+                elapsed.as_millis()
+            )
+        })
         .map_err(to_user_message)
 }
 
@@ -146,7 +180,10 @@ pub async fn speech_clear(state: tauri::State<'_, AppState>) -> Result<(), Strin
 }
 
 #[cfg(feature = "app")]
-async fn control_from_settings(state: &tauri::State<'_, AppState>, command: BouyomiControlCommand) -> Result<(), String> {
+async fn control_from_settings(
+    state: &tauri::State<'_, AppState>,
+    command: BouyomiControlCommand,
+) -> Result<(), String> {
     let adapter = adapter_from_settings(state)?;
     adapter.control(command).await.map_err(to_user_message)
 }
@@ -154,11 +191,24 @@ async fn control_from_settings(state: &tauri::State<'_, AppState>, command: Bouy
 #[cfg(feature = "app")]
 fn adapter_from_settings(state: &tauri::State<'_, AppState>) -> Result<BouyomiAdapter, String> {
     let settings = state.settings.lock().map_err(|error| error.to_string())?;
-    let addr = format!("{}:{}", settings.speech.bouyomi_host, settings.speech.bouyomi_port)
-        .parse::<SocketAddr>()
-        .map_err(|_| "棒読みちゃんの接続先が無効です。設定のホストとポートを確認してください。".to_string())?;
+    let addr = format!(
+        "{}:{}",
+        settings.speech.bouyomi_host, settings.speech.bouyomi_port
+    )
+    .parse::<SocketAddr>()
+    .map_err(|_| {
+        "棒読みちゃんの接続先が無効です。設定のホストとポートを確認してください。".to_string()
+    })?;
 
-    Ok(BouyomiAdapter::new(addr))
+    let defaults = BouyomiTalkConfig {
+        speed: settings.speech.bouyomi_speed,
+        tone: settings.speech.bouyomi_tone,
+        volume: settings.speech.bouyomi_volume,
+        voice: settings.speech.bouyomi_voice,
+        code: 0,
+    };
+
+    Ok(BouyomiAdapter::new(addr, defaults))
 }
 
 fn normalize_test_text(text: &str) -> String {
@@ -172,8 +222,12 @@ fn normalize_test_text(text: &str) -> String {
 
 fn to_user_message(error: anyhow::Error) -> String {
     let message = error.to_string();
-    if message.contains("Connection refused") || message.contains("os error 111") || message.contains("os error 10061") {
-        "棒読みちゃんに接続できません。棒読みちゃんが起動中で、アプリ連携が有効か確認してください。".to_string()
+    if message.contains("Connection refused")
+        || message.contains("os error 111")
+        || message.contains("os error 10061")
+    {
+        "棒読みちゃんに接続できません。棒読みちゃんが起動中で、アプリ連携が有効か確認してください。"
+            .to_string()
     } else if message.contains("timed out") || message.contains("elapsed") {
         "棒読みちゃんへの接続がタイムアウトしました。ポート番号とセキュリティソフトの設定を確認してください。".to_string()
     } else {
@@ -197,10 +251,38 @@ mod tests {
     }
 
     #[test]
+    fn builds_talk_packet_with_configured_voice_values() {
+        let config = BouyomiTalkConfig {
+            speed: 120,
+            tone: 110,
+            volume: 80,
+            voice: 10001,
+            code: 0,
+        };
+        let packet = build_talk_packet(&config, "あ");
+
+        assert_eq!(&packet[2..4], &120_i16.to_le_bytes());
+        assert_eq!(&packet[4..6], &110_i16.to_le_bytes());
+        assert_eq!(&packet[6..8], &80_i16.to_le_bytes());
+        assert_eq!(&packet[8..10], &10001_i16.to_le_bytes());
+        assert_eq!(&packet[11..15], &3_u32.to_le_bytes());
+        assert_eq!(&packet[15..], "あ".as_bytes());
+    }
+
+    #[test]
     fn builds_control_packets() {
-        assert_eq!(BouyomiControlCommand::Pause.packet(), 0x10_i16.to_le_bytes());
-        assert_eq!(BouyomiControlCommand::Resume.packet(), 0x20_i16.to_le_bytes());
+        assert_eq!(
+            BouyomiControlCommand::Pause.packet(),
+            0x10_i16.to_le_bytes()
+        );
+        assert_eq!(
+            BouyomiControlCommand::Resume.packet(),
+            0x20_i16.to_le_bytes()
+        );
         assert_eq!(BouyomiControlCommand::Skip.packet(), 0x30_i16.to_le_bytes());
-        assert_eq!(BouyomiControlCommand::Clear.packet(), 0x40_i16.to_le_bytes());
+        assert_eq!(
+            BouyomiControlCommand::Clear.packet(),
+            0x40_i16.to_le_bytes()
+        );
     }
 }

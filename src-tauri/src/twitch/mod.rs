@@ -21,6 +21,9 @@ pub enum Platform {
 
 #[allow(dead_code)]
 pub trait TwitchChatSource {
-    fn connect(&self, channel: &str) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
+    fn connect(
+        &self,
+        channel: &str,
+    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
     fn disconnect(&self) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
 }

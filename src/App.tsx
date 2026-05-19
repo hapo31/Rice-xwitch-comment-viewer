@@ -18,8 +18,12 @@ export function App() {
 
   async function handleSpeechTest(text = "テスト発話です。") {
     try {
+      dispatch({ type: "speech.status", status: "speaking" });
       await speechTest(text);
+      dispatch({ type: "speech.status", status: "idle" });
+      dispatch({ type: "warning.added", warning: "テスト発話を送信しました。" });
     } catch (error) {
+      dispatch({ type: "speech.status", status: "error" });
       dispatch({ type: "warning.added", warning: String(error) });
     }
   }
@@ -27,8 +31,10 @@ export function App() {
   async function handleSpeechHealthCheck() {
     try {
       const message = await speechHealthCheck();
+      dispatch({ type: "speech.status", status: "idle" });
       dispatch({ type: "warning.added", warning: message });
     } catch (error) {
+      dispatch({ type: "speech.status", status: "disconnected" });
       dispatch({ type: "warning.added", warning: String(error) });
     }
   }
@@ -49,7 +55,9 @@ export function App() {
 
     try {
       await speechControl(command);
+      dispatch({ type: "speech.status", status: command === "pause" ? "paused" : "idle" });
     } catch (error) {
+      dispatch({ type: "speech.status", status: "error" });
       dispatch({ type: "warning.added", warning: String(error) });
     }
   }

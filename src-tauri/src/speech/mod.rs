@@ -29,6 +29,15 @@ pub enum SpeechResult {
 
 #[allow(dead_code)]
 pub trait SpeechAdapter: Send + Sync {
-    fn health_check(&self) -> impl std::future::Future<Output = anyhow::Result<SpeechHealth>> + Send;
-    fn speak(&self, request: SpeechRequest) -> impl std::future::Future<Output = anyhow::Result<SpeechResult>> + Send;
+    fn health_check(
+        &self,
+    ) -> impl std::future::Future<Output = anyhow::Result<SpeechHealth>> + Send;
+    fn speak(
+        &self,
+        request: SpeechRequest,
+    ) -> impl std::future::Future<Output = anyhow::Result<SpeechResult>> + Send;
+    fn pause(&self) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
+    fn resume(&self) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
+    fn skip(&self) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
+    fn clear(&self) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
 }

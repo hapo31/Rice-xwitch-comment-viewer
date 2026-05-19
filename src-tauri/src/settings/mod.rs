@@ -25,6 +25,14 @@ pub struct SpeechSettings {
     pub adapter: SpeechAdapterKind,
     pub bouyomi_host: String,
     pub bouyomi_port: u16,
+    #[serde(default = "default_bouyomi_speed")]
+    pub bouyomi_speed: i16,
+    #[serde(default = "default_bouyomi_tone")]
+    pub bouyomi_tone: i16,
+    #[serde(default = "default_bouyomi_volume")]
+    pub bouyomi_volume: i16,
+    #[serde(default = "default_bouyomi_voice")]
+    pub bouyomi_voice: i16,
     pub read_user_name: bool,
     pub max_comment_length: u16,
     pub repeat_suppression_seconds: u16,
@@ -34,6 +42,22 @@ pub struct SpeechSettings {
 #[serde(rename_all = "camelCase")]
 pub enum SpeechAdapterKind {
     Bouyomi,
+}
+
+fn default_bouyomi_speed() -> i16 {
+    -1
+}
+
+fn default_bouyomi_tone() -> i16 {
+    -1
+}
+
+fn default_bouyomi_volume() -> i16 {
+    -1
+}
+
+fn default_bouyomi_voice() -> i16 {
+    0
 }
 
 #[derive(Debug, Default)]
@@ -52,6 +76,10 @@ impl Default for AppSettings {
                 adapter: SpeechAdapterKind::Bouyomi,
                 bouyomi_host: "127.0.0.1".to_string(),
                 bouyomi_port: 50001,
+                bouyomi_speed: -1,
+                bouyomi_tone: -1,
+                bouyomi_volume: -1,
+                bouyomi_voice: 0,
                 read_user_name: true,
                 max_comment_length: 120,
                 repeat_suppression_seconds: 2,
@@ -80,6 +108,10 @@ pub struct SpeechSettingsPatch {
     pub adapter: Option<SpeechAdapterKind>,
     pub bouyomi_host: Option<String>,
     pub bouyomi_port: Option<u16>,
+    pub bouyomi_speed: Option<i16>,
+    pub bouyomi_tone: Option<i16>,
+    pub bouyomi_volume: Option<i16>,
+    pub bouyomi_voice: Option<i16>,
     pub read_user_name: Option<bool>,
     pub max_comment_length: Option<u16>,
     pub repeat_suppression_seconds: Option<u16>,
@@ -117,7 +149,11 @@ impl SettingsStore {
 #[cfg(feature = "app")]
 #[tauri::command]
 pub fn settings_get(state: tauri::State<'_, AppState>) -> Result<AppSettings, String> {
-    Ok(state.settings.lock().map_err(|error| error.to_string())?.clone())
+    Ok(state
+        .settings
+        .lock()
+        .map_err(|error| error.to_string())?
+        .clone())
 }
 
 #[cfg(feature = "app")]
@@ -156,6 +192,18 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
             }
             settings.speech.bouyomi_port = port;
         }
+        if let Some(speed) = speech.bouyomi_speed {
+            settings.speech.bouyomi_speed = validate_range(speed, -1, 300, "速度")?;
+        }
+        if let Some(tone) = speech.bouyomi_tone {
+            settings.speech.bouyomi_tone = validate_range(tone, -1, 200, "音程")?;
+        }
+        if let Some(volume) = speech.bouyomi_volume {
+            settings.speech.bouyomi_volume = validate_range(volume, -1, 100, "音量")?;
+        }
+        if let Some(voice) = speech.bouyomi_voice {
+            settings.speech.bouyomi_voice = validate_range(voice, 0, 30000, "声質")?;
+        }
         if let Some(read_user_name) = speech.read_user_name {
             settings.speech.read_user_name = read_user_name;
         }
@@ -168,6 +216,14 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
     }
 
     Ok(())
+}
+
+fn validate_range(value: i16, min: i16, max: i16, label: &str) -> Result<i16, String> {
+    if (min..=max).contains(&value) {
+        Ok(value)
+    } else {
+        Err(format!("棒読みちゃんの{label}が無効です。"))
+    }
 }
 
 #[cfg(feature = "app")]

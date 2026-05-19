@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, CircleDashed, CircleOff, PlugZap, Volume2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AppState } from "../stores/appStore";
 import type { AppSettings, ChatDisplayState, ChatMessage } from "../types";
 
@@ -86,15 +86,42 @@ function VoicesView({
     adapter: "bouyomi" as const,
     bouyomiHost: "127.0.0.1",
     bouyomiPort: 50001,
+    bouyomiSpeed: -1,
+    bouyomiTone: -1,
+    bouyomiVolume: -1,
+    bouyomiVoice: 0,
     readUserName: true,
     maxCommentLength: 120,
     repeatSuppressionSeconds: 2,
   };
   const [host, setHost] = useState(speechSettings.bouyomiHost);
   const [port, setPort] = useState(String(speechSettings.bouyomiPort));
+  const [speed, setSpeed] = useState(speechSettings.bouyomiSpeed);
+  const [tone, setTone] = useState(speechSettings.bouyomiTone);
+  const [volume, setVolume] = useState(speechSettings.bouyomiVolume);
+  const [voice, setVoice] = useState(String(speechSettings.bouyomiVoice));
   const [testText, setTestText] = useState("テスト発話です。");
+
+  useEffect(() => {
+    setHost(speechSettings.bouyomiHost);
+    setPort(String(speechSettings.bouyomiPort));
+    setSpeed(speechSettings.bouyomiSpeed);
+    setTone(speechSettings.bouyomiTone);
+    setVolume(speechSettings.bouyomiVolume);
+    setVoice(String(speechSettings.bouyomiVoice));
+  }, [
+    speechSettings.bouyomiHost,
+    speechSettings.bouyomiPort,
+    speechSettings.bouyomiSpeed,
+    speechSettings.bouyomiTone,
+    speechSettings.bouyomiVolume,
+    speechSettings.bouyomiVoice,
+  ]);
+
   const numericPort = Number(port);
+  const numericVoice = Number(voice);
   const isPortValid = Number.isInteger(numericPort) && numericPort > 0 && numericPort <= 65535;
+  const isVoiceValid = Number.isInteger(numericVoice) && numericVoice >= 0 && numericVoice <= 30000;
   const isHostValid = host.trim().length > 0;
 
   function saveBouyomiSettings() {
@@ -108,6 +135,10 @@ function VoicesView({
         adapter: "bouyomi",
         bouyomiHost: host.trim(),
         bouyomiPort: numericPort,
+        bouyomiSpeed: speed,
+        bouyomiTone: tone,
+        bouyomiVolume: volume,
+        bouyomiVoice: numericVoice,
       },
     });
   }
@@ -161,12 +192,33 @@ function VoicesView({
             <div className="flex justify-end py-3">
               <button
                 type="button"
-                disabled={!isHostValid || !isPortValid}
+                disabled={!isHostValid || !isPortValid || !isVoiceValid}
                 onClick={saveBouyomiSettings}
                 className="border border-sky-500 bg-sky-500 px-3 py-1.5 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
               >
                 保存
               </button>
+            </div>
+          </section>
+
+          <section className="border-y border-zinc-800">
+            <RangeRow label="速度" value={speed} min={-1} max={300} onChange={setSpeed} />
+            <RangeRow label="音程" value={tone} min={-1} max={200} onChange={setTone} />
+            <RangeRow label="音量" value={volume} min={-1} max={100} onChange={setVolume} />
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-t border-zinc-800 py-3">
+              <label className="text-sm text-zinc-400" htmlFor="bouyomi-voice">
+                声質
+              </label>
+              <div>
+                <input
+                  id="bouyomi-voice"
+                  inputMode="numeric"
+                  value={voice}
+                  onChange={(event) => setVoice(event.target.value)}
+                  className="h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
+                />
+                {!isVoiceValid && <p className="mt-1 text-xs text-rose-400">0 から 30000 の範囲で入力してください。</p>}
+              </div>
             </div>
           </section>
 
@@ -200,6 +252,35 @@ function VoicesView({
         </div>
       </div>
     </main>
+  );
+}
+
+function RangeRow({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div className="grid grid-cols-[180px_minmax(0,1fr)_64px] items-center border-b border-zinc-800 py-3 last:border-b-0">
+      <label className="text-sm text-zinc-400">{label}</label>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="w-full accent-sky-400"
+      />
+      <span className="text-right font-mono text-xs text-zinc-300">{value === -1 ? "既定" : value}</span>
+    </div>
   );
 }
 

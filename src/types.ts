@@ -15,6 +15,10 @@ export interface AppSettings {
     adapter: "bouyomi";
     bouyomiHost: string;
     bouyomiPort: number;
+    bouyomiSpeed: number;
+    bouyomiTone: number;
+    bouyomiVolume: number;
+    bouyomiVoice: number;
     readUserName: boolean;
     maxCommentLength: number;
     repeatSuppressionSeconds: number;
