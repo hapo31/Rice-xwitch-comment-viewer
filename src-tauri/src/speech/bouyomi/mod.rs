@@ -1,7 +1,7 @@
 #[cfg(feature = "app")]
 use crate::settings::AppState;
 use crate::speech::{SpeechAdapter, SpeechHealth, SpeechRequest, SpeechResult};
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 use tokio::{
     io::AsyncWriteExt,
     net::TcpStream,
@@ -10,7 +10,7 @@ use tokio::{
 
 #[derive(Debug, Clone)]
 pub struct BouyomiAdapter {
-    pub addr: SocketAddr,
+    pub addr: String,
     pub defaults: BouyomiTalkConfig,
     pub timeout: Duration,
 }
@@ -37,9 +37,9 @@ impl Default for BouyomiTalkConfig {
 }
 
 impl BouyomiAdapter {
-    pub fn new(addr: SocketAddr, defaults: BouyomiTalkConfig) -> Self {
+    pub fn new(addr: impl Into<String>, defaults: BouyomiTalkConfig) -> Self {
         Self {
-            addr,
+            addr: addr.into(),
             defaults,
             timeout: Duration::from_secs(2),
         }
@@ -47,7 +47,7 @@ impl BouyomiAdapter {
 
     pub async fn health_check(&self) -> anyhow::Result<Duration> {
         let started_at = Instant::now();
-        let stream = timeout(self.timeout, TcpStream::connect(self.addr)).await??;
+        let stream = timeout(self.timeout, TcpStream::connect(self.addr.as_str())).await??;
         drop(stream);
         Ok(started_at.elapsed())
     }
@@ -62,7 +62,7 @@ impl BouyomiAdapter {
     }
 
     async fn send_packet(&self, packet: &[u8]) -> anyhow::Result<()> {
-        let mut stream = timeout(self.timeout, TcpStream::connect(self.addr)).await??;
+        let mut stream = timeout(self.timeout, TcpStream::connect(self.addr.as_str())).await??;
         timeout(self.timeout, stream.write_all(packet)).await??;
         Ok(())
     }
@@ -194,11 +194,7 @@ fn adapter_from_settings(state: &tauri::State<'_, AppState>) -> Result<BouyomiAd
     let addr = format!(
         "{}:{}",
         settings.speech.bouyomi_host, settings.speech.bouyomi_port
-    )
-    .parse::<SocketAddr>()
-    .map_err(|_| {
-        "棒読みちゃんの接続先が無効です。設定のホストとポートを確認してください。".to_string()
-    })?;
+    );
 
     let defaults = BouyomiTalkConfig {
         speed: settings.speech.bouyomi_speed,

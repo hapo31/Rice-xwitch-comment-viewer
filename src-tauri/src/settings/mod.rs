@@ -23,6 +23,7 @@ pub struct TwitchSettings {
 #[serde(rename_all = "camelCase")]
 pub struct SpeechSettings {
     pub adapter: SpeechAdapterKind,
+    #[serde(default = "default_bouyomi_host")]
     pub bouyomi_host: String,
     pub bouyomi_port: u16,
     #[serde(default = "default_bouyomi_speed")]
@@ -60,6 +61,10 @@ fn default_bouyomi_voice() -> i16 {
     0
 }
 
+fn default_bouyomi_host() -> String {
+    std::env::var("RICE_BOUYOMI_HOST").unwrap_or_else(|_| "127.0.0.1".to_string())
+}
+
 #[derive(Debug, Default)]
 pub struct AppState {
     pub settings: SharedSettings<AppSettings>,
@@ -74,7 +79,7 @@ impl Default for AppSettings {
             },
             speech: SpeechSettings {
                 adapter: SpeechAdapterKind::Bouyomi,
-                bouyomi_host: "127.0.0.1".to_string(),
+                bouyomi_host: default_bouyomi_host(),
                 bouyomi_port: 50001,
                 bouyomi_speed: -1,
                 bouyomi_tone: -1,
