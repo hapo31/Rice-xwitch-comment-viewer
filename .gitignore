@@ -1,8 +1,34 @@
+# Dependencies
 node_modules/
-dist/
 
+# Frontend build output
+dist/
+dist-ssr/
+.vite/
+
+# Rust/Tauri build output
 src-tauri/target/
 
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Editor and OS noise
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Codex local state
 .codex
 .codex/
-.DS_Store
