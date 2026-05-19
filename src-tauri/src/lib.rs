@@ -10,6 +10,8 @@ use speech::bouyomi::{
     speech_clear, speech_health_check, speech_pause, speech_resume, speech_skip, speech_test,
 };
 use std::sync::Mutex;
+#[cfg(feature = "app")]
+use tauri::Manager;
 
 #[cfg(feature = "app")]
 pub fn run() {

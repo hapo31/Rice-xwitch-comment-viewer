@@ -121,7 +121,7 @@ pub struct SettingsStore;
 
 impl SettingsStore {
     #[cfg(feature = "app")]
-    pub fn load(app: &tauri::AppHandle) -> anyhow::Result<AppSettings> {
+    pub fn load<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyhow::Result<AppSettings> {
         let path = settings_path(app)?;
         if !path.exists() {
             let settings = AppSettings::default();
@@ -134,7 +134,10 @@ impl SettingsStore {
     }
 
     #[cfg(feature = "app")]
-    pub fn save(app: &tauri::AppHandle, settings: &AppSettings) -> anyhow::Result<()> {
+    pub fn save<R: tauri::Runtime>(
+        app: &tauri::AppHandle<R>,
+        settings: &AppSettings,
+    ) -> anyhow::Result<()> {
         let path = settings_path(app)?;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
@@ -159,7 +162,7 @@ pub fn settings_get(state: tauri::State<'_, AppState>) -> Result<AppSettings, St
 #[cfg(feature = "app")]
 #[tauri::command]
 pub fn settings_update(
-    app: tauri::AppHandle,
+    app: tauri::AppHandle<tauri::Wry>,
     state: tauri::State<'_, AppState>,
     patch: SettingsPatch,
 ) -> Result<AppSettings, String> {
@@ -227,6 +230,8 @@ fn validate_range(value: i16, min: i16, max: i16, label: &str) -> Result<i16, St
 }
 
 #[cfg(feature = "app")]
-fn settings_path(app: &tauri::AppHandle) -> anyhow::Result<std::path::PathBuf> {
+fn settings_path<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> anyhow::Result<std::path::PathBuf> {
     Ok(app.path().app_data_dir()?.join("settings.json"))
 }
