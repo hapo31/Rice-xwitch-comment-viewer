@@ -1,0 +1,26 @@
+[package]
+name = "rice"
+version = "0.1.0"
+description = "Twitch comment TTS desktop app"
+authors = ["rice"]
+edition = "2021"
+
+[lib]
+name = "rice_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.0.0", default-features = false, features = [], optional = true }
+thiserror = "1.0"
+tokio = { version = "1.41", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
+
+[features]
+default = ["app"]
+app = ["dep:tauri", "custom-protocol"]
+custom-protocol = ["tauri?/custom-protocol"]
