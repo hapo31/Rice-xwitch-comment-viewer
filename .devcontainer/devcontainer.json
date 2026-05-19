@@ -1,0 +1,65 @@
+{
+  "name": "rice",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "postCreateCommand": ".devcontainer/setup.sh",
+  "mounts": [
+    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached"
+  ],
+  "init": true,
+  "features": {
+    "ghcr.io/devcontainers/features/desktop-lite:1": {
+      "version": "latest",
+      "noVncVersion": "1.2.0",
+      "password": "vscode",
+      "webPort": "6080",
+      "vncPort": "5901"
+    },
+    "ghcr.io/devcontainers/features/node:2.0.0": {
+      "version": "20",
+      "pnpmVersion": "8.11.0"
+    },
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "latest",
+      "profile": "minimal"
+    }
+  },
+  "forwardPorts": [1420, 6080, 5901],
+  "portsAttributes": {
+    "1420": {
+      "label": "Vite dev server",
+      "onAutoForward": "silent"
+    },
+    "6080": {
+      "label": "desktop-lite Web Port",
+      "onAutoForward": "notify"
+    },
+    "5901": {
+      "label": "desktop-lite VNC Port",
+      "onAutoForward": "silent"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "bradlc.vscode-tailwindcss",
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "usernamehw.errorlens"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "files.exclude": {
+          "**/node_modules": true,
+          "**/src-tauri/target": true
+        },
+        "search.exclude": {
+          "**/node_modules": true,
+          "**/src-tauri/target": true
+        },
+        "rust-analyzer.cargo.features": "all"
+      }
+    }
+  }
+}
