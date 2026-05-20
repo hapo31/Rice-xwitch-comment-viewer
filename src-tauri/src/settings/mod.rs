@@ -16,7 +16,7 @@ pub struct AppSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TwitchSettings {
-    #[serde(default)]
+    #[serde(default = "default_twitch_client_id")]
     pub client_id: String,
     pub channel_login: String,
     pub auto_connect: bool,
@@ -68,6 +68,13 @@ fn default_bouyomi_host() -> String {
     std::env::var("RICE_BOUYOMI_HOST").unwrap_or_else(|_| "127.0.0.1".to_string())
 }
 
+fn default_twitch_client_id() -> String {
+    option_env!("RICE_TWITCH_CLIENT_ID")
+        .unwrap_or("")
+        .trim()
+        .to_string()
+}
+
 #[derive(Debug, Default)]
 pub struct AppState {
     pub settings: SharedSettings<AppSettings>,
@@ -78,7 +85,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             twitch: TwitchSettings {
-                client_id: String::new(),
+                client_id: default_twitch_client_id(),
                 channel_login: String::new(),
                 auto_connect: false,
             },
@@ -141,7 +148,11 @@ impl SettingsStore {
         }
 
         let text = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&text)?)
+        let mut settings: AppSettings = serde_json::from_str(&text)?;
+        if apply_build_defaults(&mut settings) {
+            Self::save(app, &settings)?;
+        }
+        Ok(settings)
     }
 
     #[cfg(feature = "app")]
@@ -181,6 +192,16 @@ pub fn settings_update(
     apply_patch(&mut settings, patch)?;
     SettingsStore::save(&app, &settings).map_err(|error| error.to_string())?;
     Ok(settings.clone())
+}
+
+fn apply_build_defaults(settings: &mut AppSettings) -> bool {
+    let client_id = default_twitch_client_id();
+    if settings.twitch.client_id.trim().is_empty() && !client_id.is_empty() {
+        settings.twitch.client_id = client_id;
+        true
+    } else {
+        false
+    }
 }
 
 fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), String> {
