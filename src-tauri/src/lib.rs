@@ -7,7 +7,8 @@ mod twitch;
 use settings::{settings_get, settings_update, AppState};
 #[cfg(feature = "app")]
 use speech::bouyomi::{
-    speech_clear, speech_health_check, speech_pause, speech_resume, speech_skip, speech_test,
+    speech_clear, speech_connection_diagnostics, speech_health_check, speech_pause, speech_resume,
+    speech_skip, speech_test,
 };
 use std::sync::Mutex;
 #[cfg(feature = "app")]
@@ -21,6 +22,7 @@ pub fn run() {
             settings_get,
             settings_update,
             speech_health_check,
+            speech_connection_diagnostics,
             speech_test,
             speech_pause,
             speech_resume,

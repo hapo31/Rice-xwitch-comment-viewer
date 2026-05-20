@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings } from "../types";
+import type { AppSettings, BouyomiConnectionDiagnostics } from "../types";
 
 const fallbackSettings: AppSettings = {
   twitch: {
@@ -49,6 +49,25 @@ export async function speechHealthCheck(): Promise<string> {
   }
 
   return invoke<string>("speech_health_check");
+}
+
+export async function speechConnectionDiagnostics(): Promise<BouyomiConnectionDiagnostics> {
+  if (!isTauriRuntime) {
+    return {
+      configuredAddr: `${fallbackSettings.speech.bouyomiHost}:${fallbackSettings.speech.bouyomiPort}`,
+      attempted: [
+        {
+          addr: `${fallbackSettings.speech.bouyomiHost}:${fallbackSettings.speech.bouyomiPort}`,
+          status: "failed",
+          message: "ブラウザプレビューでは接続診断をスキップします。",
+          elapsedMs: 0,
+        },
+      ],
+      recommendation: "Tauri アプリとして起動して診断してください。",
+    };
+  }
+
+  return invoke<BouyomiConnectionDiagnostics>("speech_connection_diagnostics");
 }
 
 export async function speechTest(text: string): Promise<void> {

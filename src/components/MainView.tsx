@@ -1,12 +1,13 @@
-import { AlertCircle, CheckCircle2, CircleDashed, CircleOff, PlugZap, Volume2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, CircleDashed, CircleOff, Network, PlugZap, Volume2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AppState } from "../stores/appStore";
-import type { AppSettings, ChatDisplayState, ChatMessage } from "../types";
+import type { AppSettings, BouyomiConnectionDiagnostics, ChatDisplayState, ChatMessage } from "../types";
 
 interface MainViewProps {
   state: AppState;
   onSettingsUpdate: (patch: Partial<AppSettings>) => void;
   onSpeechHealthCheck: () => void;
+  onSpeechDiagnostics: () => Promise<BouyomiConnectionDiagnostics>;
   onSpeechTest: (text?: string) => void;
 }
 
@@ -27,13 +28,14 @@ const sampleMessages: ChatMessage[] = [
   },
 ];
 
-export function MainView({ state, onSettingsUpdate, onSpeechHealthCheck, onSpeechTest }: MainViewProps) {
+export function MainView({ state, onSettingsUpdate, onSpeechHealthCheck, onSpeechDiagnostics, onSpeechTest }: MainViewProps) {
   if (state.activeView === "voices") {
     return (
       <VoicesView
         settings={state.settings}
         onSettingsUpdate={onSettingsUpdate}
         onSpeechHealthCheck={onSpeechHealthCheck}
+        onSpeechDiagnostics={onSpeechDiagnostics}
         onSpeechTest={onSpeechTest}
       />
     );
@@ -75,11 +77,13 @@ function VoicesView({
   settings,
   onSettingsUpdate,
   onSpeechHealthCheck,
+  onSpeechDiagnostics,
   onSpeechTest,
 }: {
   settings?: AppSettings;
   onSettingsUpdate: (patch: Partial<AppSettings>) => void;
   onSpeechHealthCheck: () => void;
+  onSpeechDiagnostics: () => Promise<BouyomiConnectionDiagnostics>;
   onSpeechTest: (text?: string) => void;
 }) {
   const speechSettings = settings?.speech ?? {
@@ -101,6 +105,8 @@ function VoicesView({
   const [volume, setVolume] = useState(speechSettings.bouyomiVolume);
   const [voice, setVoice] = useState(String(speechSettings.bouyomiVoice));
   const [testText, setTestText] = useState("テスト発話です。");
+  const [diagnostics, setDiagnostics] = useState<BouyomiConnectionDiagnostics>();
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
 
   useEffect(() => {
     setHost(speechSettings.bouyomiHost);
@@ -143,6 +149,15 @@ function VoicesView({
     });
   }
 
+  async function runDiagnostics() {
+    setIsDiagnosing(true);
+    try {
+      setDiagnostics(await onSpeechDiagnostics());
+    } finally {
+      setIsDiagnosing(false);
+    }
+  }
+
   return (
     <main className="col-start-3 row-start-1 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
@@ -150,14 +165,25 @@ function VoicesView({
           <h1 className="truncate text-sm font-semibold text-zinc-100">Voices</h1>
           <p className="truncate text-xs text-zinc-500">BouyomiChan TCP</p>
         </div>
-        <button
-          type="button"
-          onClick={onSpeechHealthCheck}
-          className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-xs text-zinc-100 hover:border-sky-400"
-        >
-          <PlugZap className="h-4 w-4" />
-          接続確認
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={runDiagnostics}
+            disabled={isDiagnosing}
+            className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-xs text-zinc-100 hover:border-sky-400 disabled:cursor-wait disabled:text-zinc-500"
+          >
+            <Network className="h-4 w-4" />
+            診断
+          </button>
+          <button
+            type="button"
+            onClick={onSpeechHealthCheck}
+            className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-xs text-zinc-100 hover:border-sky-400"
+          >
+            <PlugZap className="h-4 w-4" />
+            接続確認
+          </button>
+        </div>
       </header>
 
       <div className="h-[calc(100%-3rem)] overflow-auto p-4">
@@ -200,6 +226,32 @@ function VoicesView({
               </button>
             </div>
           </section>
+
+          {diagnostics && (
+            <section className="border-y border-zinc-800">
+              <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
+                <span className="text-sm text-zinc-400">診断結果</span>
+                <div className="space-y-2">
+                  <p className="text-sm text-zinc-200">{diagnostics.recommendation}</p>
+                  <p className="font-mono text-xs text-zinc-500">configured: {diagnostics.configuredAddr}</p>
+                </div>
+              </div>
+              <div className="divide-y divide-zinc-800">
+                {diagnostics.attempted.map((attempt) => (
+                  <div key={attempt.addr} className="grid grid-cols-[180px_minmax(0,1fr)_72px] items-start py-3 text-xs">
+                    <span className={attempt.status === "connected" ? "text-emerald-400" : "text-rose-400"}>
+                      {attempt.status === "connected" ? "接続成功" : "接続失敗"}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-mono text-zinc-200">{attempt.addr}</p>
+                      <p className="mt-1 break-words text-zinc-500">{attempt.message}</p>
+                    </div>
+                    <span className="text-right font-mono text-zinc-500">{attempt.elapsedMs}ms</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="border-y border-zinc-800">
             <RangeRow label="速度" value={speed} min={-1} max={300} onChange={setSpeed} />

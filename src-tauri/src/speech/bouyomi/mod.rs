@@ -1,6 +1,7 @@
 #[cfg(feature = "app")]
 use crate::settings::AppState;
 use crate::speech::{SpeechAdapter, SpeechHealth, SpeechRequest, SpeechResult};
+use serde::Serialize;
 use std::time::Duration;
 use tokio::{
     io::AsyncWriteExt,
@@ -22,6 +23,30 @@ pub struct BouyomiTalkConfig {
     pub volume: i16,
     pub voice: i16,
     pub code: u8,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BouyomiConnectionDiagnostics {
+    pub configured_addr: String,
+    pub attempted: Vec<BouyomiConnectionAttempt>,
+    pub recommendation: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BouyomiConnectionAttempt {
+    pub addr: String,
+    pub status: BouyomiConnectionStatus,
+    pub message: String,
+    pub elapsed_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum BouyomiConnectionStatus {
+    Connected,
+    Failed,
 }
 
 impl Default for BouyomiTalkConfig {
@@ -47,7 +72,7 @@ impl BouyomiAdapter {
 
     pub async fn health_check(&self) -> anyhow::Result<Duration> {
         let started_at = Instant::now();
-        let stream = timeout(self.timeout, TcpStream::connect(self.addr.as_str())).await??;
+        let stream = self.connect().await?;
         drop(stream);
         Ok(started_at.elapsed())
     }
@@ -62,9 +87,51 @@ impl BouyomiAdapter {
     }
 
     async fn send_packet(&self, packet: &[u8]) -> anyhow::Result<()> {
-        let mut stream = timeout(self.timeout, TcpStream::connect(self.addr.as_str())).await??;
+        let mut stream = self.connect().await?;
         timeout(self.timeout, stream.write_all(packet)).await??;
         Ok(())
+    }
+
+    async fn connect(&self) -> anyhow::Result<TcpStream> {
+        self.connect_to_addr(&self.addr).await
+    }
+
+    async fn connect_to_addr(&self, addr: &str) -> anyhow::Result<TcpStream> {
+        Ok(timeout(self.timeout, TcpStream::connect(addr)).await??)
+    }
+
+    pub async fn diagnose(&self) -> BouyomiConnectionDiagnostics {
+        let mut attempted = Vec::new();
+
+        let addr = self.addr.clone();
+        let started_at = Instant::now();
+        let result = self.connect_to_addr(&addr).await;
+        let elapsed_ms = started_at.elapsed().as_millis();
+
+        match result {
+            Ok(stream) => {
+                drop(stream);
+                attempted.push(BouyomiConnectionAttempt {
+                    addr,
+                    status: BouyomiConnectionStatus::Connected,
+                    message: "接続できました。".to_string(),
+                    elapsed_ms,
+                });
+            }
+            Err(error) => attempted.push(BouyomiConnectionAttempt {
+                addr,
+                status: BouyomiConnectionStatus::Failed,
+                message: error.to_string(),
+                elapsed_ms,
+            }),
+        }
+
+        let recommendation = build_diagnostic_recommendation(&attempted);
+        BouyomiConnectionDiagnostics {
+            configured_addr: self.addr.clone(),
+            attempted,
+            recommendation,
+        }
     }
 }
 
@@ -149,6 +216,15 @@ pub async fn speech_health_check(state: tauri::State<'_, AppState>) -> Result<St
 
 #[cfg(feature = "app")]
 #[tauri::command]
+pub async fn speech_connection_diagnostics(
+    state: tauri::State<'_, AppState>,
+) -> Result<BouyomiConnectionDiagnostics, String> {
+    let adapter = adapter_from_settings(&state)?;
+    Ok(adapter.diagnose().await)
+}
+
+#[cfg(feature = "app")]
+#[tauri::command]
 pub async fn speech_test(state: tauri::State<'_, AppState>, text: String) -> Result<(), String> {
     let adapter = adapter_from_settings(&state)?;
     let text = normalize_test_text(&text);
@@ -222,13 +298,35 @@ fn to_user_message(error: anyhow::Error) -> String {
         || message.contains("os error 111")
         || message.contains("os error 10061")
     {
-        "棒読みちゃんに接続できません。棒読みちゃんが起動中で、アプリ連携が有効か確認してください。"
+        "棒読みちゃんに接続できません。棒読みちゃんが起動中で、アプリ連携/TCP受付が有効か確認してください。Voices 画面の診断で詳細を確認できます。"
             .to_string()
     } else if message.contains("timed out") || message.contains("elapsed") {
-        "棒読みちゃんへの接続がタイムアウトしました。ポート番号とセキュリティソフトの設定を確認してください。".to_string()
+        "棒読みちゃんへの接続がタイムアウトしました。ポート番号とセキュリティソフトの設定を確認してください。Voices 画面の診断で詳細を確認できます。".to_string()
     } else {
         format!("棒読みちゃん連携でエラーが発生しました: {message}")
     }
+}
+
+fn build_diagnostic_recommendation(attempted: &[BouyomiConnectionAttempt]) -> String {
+    if let Some(attempt) = attempted
+        .iter()
+        .find(|attempt| attempt.status == BouyomiConnectionStatus::Connected)
+    {
+        return format!(
+            "{} に接続できました。この宛先でテスト発話できます。",
+            attempt.addr
+        );
+    }
+
+    let tried = attempted
+        .iter()
+        .map(|attempt| attempt.addr.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    format!(
+        "接続できませんでした。試行先: {tried}。棒読みちゃんが起動しているか、アプリ連携/TCP受付が有効か、ホストとポート番号が設定と一致しているかを確認してください。Windows Defender Firewall やセキュリティソフトが通信を遮断していないかも確認してください。"
+    )
 }
 
 #[cfg(test)]
@@ -280,5 +378,31 @@ mod tests {
             BouyomiControlCommand::Clear.packet(),
             0x40_i16.to_le_bytes()
         );
+    }
+
+    #[test]
+    fn builds_diagnostic_recommendation_for_connected_attempt() {
+        let recommendation = build_diagnostic_recommendation(&[BouyomiConnectionAttempt {
+            addr: "127.0.0.1:50001".to_string(),
+            status: BouyomiConnectionStatus::Connected,
+            message: "接続できました。".to_string(),
+            elapsed_ms: 1,
+        }]);
+
+        assert!(recommendation.contains("127.0.0.1:50001"));
+        assert!(recommendation.contains("テスト発話"));
+    }
+
+    #[test]
+    fn builds_diagnostic_recommendation_for_failed_attempt() {
+        let recommendation = build_diagnostic_recommendation(&[BouyomiConnectionAttempt {
+            addr: "127.0.0.1:50001".to_string(),
+            status: BouyomiConnectionStatus::Failed,
+            message: "connection refused".to_string(),
+            elapsed_ms: 1,
+        }]);
+
+        assert!(recommendation.contains("棒読みちゃんが起動"));
+        assert!(recommendation.contains("ホストとポート番号"));
     }
 }

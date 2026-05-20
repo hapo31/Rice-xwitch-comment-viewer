@@ -17,7 +17,8 @@ export type AppAction =
   | { type: "speech.status"; status: SpeechStatus }
   | { type: "chat.message"; message: ChatMessage }
   | { type: "queue.changed"; items: QueueItem[] }
-  | { type: "warning.added"; warning: string };
+  | { type: "warning.added"; warning: string }
+  | { type: "warnings.cleared" };
 
 export const initialAppState: AppState = {
   activeView: "chat",
@@ -47,6 +48,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, queueItems: action.items };
     case "warning.added":
       return { ...state, warnings: [action.warning, ...state.warnings].slice(0, 5) };
+    case "warnings.cleared":
+      return { ...state, warnings: [] };
     default:
       return state;
   }

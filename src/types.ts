@@ -39,3 +39,16 @@ export interface QueueItem {
   text: string;
   status: ChatDisplayState;
 }
+
+export interface BouyomiConnectionDiagnostics {
+  configuredAddr: string;
+  attempted: BouyomiConnectionAttempt[];
+  recommendation: string;
+}
+
+export interface BouyomiConnectionAttempt {
+  addr: string;
+  status: "connected" | "failed";
+  message: string;
+  elapsedMs: number;
+}

@@ -4,10 +4,10 @@
     "dockerfile": "Dockerfile"
   },
   "runArgs": [
-    "--add-host=host.docker.internal:host-gateway"
+    "--network=host"
   ],
   "containerEnv": {
-    "RICE_BOUYOMI_HOST": "host.docker.internal"
+    "RICE_BOUYOMI_HOST": "127.0.0.1"
   },
   "postCreateCommand": ".devcontainer/setup.sh",
   "mounts": [
