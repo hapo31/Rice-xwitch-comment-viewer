@@ -23,7 +23,7 @@ interface ActivityBarProps {
 
 export function ActivityBar({ activeView, onChange }: ActivityBarProps) {
   return (
-    <nav className="col-start-1 row-start-1 flex flex-col items-center border-r border-zinc-800 bg-zinc-900 py-2">
+    <nav className="col-start-1 row-start-2 flex flex-col items-center border-r border-zinc-800 bg-zinc-900 py-2">
       {navItems.map((item) => {
         const Icon = item.icon;
         const isActive = item.id === activeView;

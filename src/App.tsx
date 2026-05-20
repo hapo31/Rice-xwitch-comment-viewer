@@ -3,6 +3,8 @@ import { ActivityBar } from "./components/ActivityBar";
 import { MainView } from "./components/MainView";
 import { SidePanel } from "./components/SidePanel";
 import { StatusBar } from "./components/StatusBar";
+import { ResizeHandles, TitleBar } from "./components/TitleBar";
+import { useDisplayScale } from "./hooks/useDisplayScale";
 import { appReducer, initialAppState } from "./stores/appStore";
 import {
   getSettings,
@@ -20,6 +22,7 @@ import type { AppSettings, BouyomiConnectionDiagnostics } from "./types";
 
 export function App() {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
+  const displayScale = useDisplayScale();
 
   useEffect(() => {
     getSettings()
@@ -145,7 +148,8 @@ export function App() {
   }
 
   return (
-    <div className="grid h-full grid-cols-[48px_280px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)_24px] bg-zinc-950 text-zinc-100">
+    <div className="relative grid h-full grid-cols-[48px_280px_minmax(0,1fr)] grid-rows-[2rem_minmax(0,1fr)_24px] bg-zinc-950 text-zinc-100">
+      <TitleBar scale={displayScale.scale} scaleMode={displayScale.mode} onScaleModeChange={displayScale.setMode} />
       <ActivityBar activeView={state.activeView} onChange={(view) => dispatch({ type: "view.changed", view })} />
       <SidePanel
         state={state}
@@ -165,6 +169,7 @@ export function App() {
         onTwitchDisconnect={handleTwitchDisconnect}
       />
       <StatusBar state={state} />
+      <ResizeHandles />
     </div>
   );
 }

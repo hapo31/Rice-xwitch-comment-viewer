@@ -20,7 +20,7 @@ export function SidePanel({ state, onSpeechControl, onSpeechTest, onWarningsClea
   const twitchAuthTone = state.twitchAuthStatus === "authenticated" ? "ok" : state.twitchAuthStatus === "error" ? "danger" : "muted";
 
   return (
-    <aside className="col-start-2 row-start-1 flex min-h-0 flex-col overflow-hidden border-r border-zinc-800 bg-zinc-900">
+    <aside className="col-start-2 row-start-2 flex min-h-0 flex-col overflow-hidden border-r border-zinc-800 bg-zinc-900">
       <div className="shrink-0 border-b border-zinc-800 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
         {state.activeView}
       </div>

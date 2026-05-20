@@ -15,7 +15,7 @@ export function StatusBar({ state }: StatusBarProps) {
   }[state.twitchAuthStatus];
 
   return (
-    <footer className="col-span-3 row-start-2 flex items-center justify-between border-t border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-300">
+    <footer className="col-span-3 row-start-3 flex items-center justify-between border-t border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-300">
       <div className="flex min-w-0 items-center gap-4">
         <StatusItem label="Twitch" value={twitchAuthLabel} />
         <StatusItem label="Bouyomi" value={`${state.speechStatus} ${host}:${port}`} />

@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 :root {
+  --app-ui-scale: 1;
   color-scheme: dark;
   background: #09090b;
   color: #f4f4f5;

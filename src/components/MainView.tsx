@@ -71,7 +71,7 @@ export function MainView({
   const messages = state.chatMessages.length > 0 ? state.chatMessages : sampleMessages;
 
   return (
-    <main className="col-start-3 row-start-1 min-w-0 overflow-hidden bg-zinc-950">
+    <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Chat</h1>
@@ -141,7 +141,7 @@ function SettingsView({
   }
 
   return (
-    <main className="col-start-3 row-start-1 min-w-0 overflow-hidden bg-zinc-950">
+    <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Settings</h1>
@@ -349,7 +349,7 @@ function VoicesView({
   }
 
   return (
-    <main className="col-start-3 row-start-1 min-w-0 overflow-hidden bg-zinc-950">
+    <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Voices</h1>
