@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type React from "react";
 import type { UiScaleMode } from "../hooks/useDisplayScale";
+import { appExit } from "../tauri/client";
 
 type ResizeDirection = "East" | "North" | "NorthEast" | "NorthWest" | "South" | "SouthEast" | "SouthWest" | "West";
 
@@ -67,7 +68,7 @@ export function TitleBar({ scale, scaleMode, onScaleModeChange }: TitleBarProps)
   }
 
   async function closeWindow() {
-    await getCurrentWindow().close();
+    await appExit();
   }
 
   async function startDrag(event: React.MouseEvent<HTMLElement>) {

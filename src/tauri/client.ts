@@ -140,3 +140,12 @@ export async function twitchDisconnect(): Promise<void> {
 
   return invoke<void>("twitch_disconnect");
 }
+
+export async function appExit(): Promise<void> {
+  if (!isTauriRuntime) {
+    window.close();
+    return;
+  }
+
+  return invoke<void>("app_exit");
+}

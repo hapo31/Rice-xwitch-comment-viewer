@@ -17,10 +17,17 @@ use tauri::Manager;
 use twitch::{twitch_disconnect, twitch_poll_auth, twitch_start_auth, twitch_validate_auth};
 
 #[cfg(feature = "app")]
+#[tauri::command]
+fn app_exit(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
+#[cfg(feature = "app")]
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
+            app_exit,
             settings_get,
             settings_update,
             speech_health_check,
