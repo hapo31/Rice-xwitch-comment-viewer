@@ -31,7 +31,7 @@
       "profile": "minimal"
     }
   },
-  "forwardPorts": [1420, 6080, 5901],
+  "forwardPorts": [6080, 5901],
   "portsAttributes": {
     "1420": {
       "label": "Vite dev server",
