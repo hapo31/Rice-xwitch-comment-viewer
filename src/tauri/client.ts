@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, BouyomiConnectionDiagnostics } from "../types";
+import type { AppSettings, BouyomiConnectionDiagnostics, TwitchAuthPollResult, TwitchDeviceAuthStart, TwitchUserProfile } from "../types";
 
 const fallbackSettings: AppSettings = {
   twitch: {
+    clientId: "",
     channelLogin: "",
     autoConnect: false,
   },
@@ -91,4 +92,51 @@ export async function speechControl(command: "pause" | "resume" | "skip" | "clea
   }[command];
 
   return invoke<void>(commandName);
+}
+
+export async function twitchStartAuth(): Promise<TwitchDeviceAuthStart> {
+  if (!isTauriRuntime) {
+    return {
+      userCode: "ABCDEFGH",
+      verificationUri: "https://www.twitch.tv/activate",
+      expiresIn: 1800,
+      interval: 5,
+    };
+  }
+
+  return invoke<TwitchDeviceAuthStart>("twitch_start_auth");
+}
+
+export async function twitchPollAuth(): Promise<TwitchAuthPollResult> {
+  if (!isTauriRuntime) {
+    return {
+      status: "pending",
+      message: "ブラウザプレビューでは Twitch 認証を完了できません。",
+      interval: 5,
+    };
+  }
+
+  return invoke<TwitchAuthPollResult>("twitch_poll_auth");
+}
+
+export async function twitchValidateAuth(): Promise<TwitchUserProfile> {
+  if (!isTauriRuntime) {
+    return {
+      userId: "preview",
+      login: "preview",
+      clientId: fallbackSettings.twitch.clientId,
+      scopes: ["user:read:chat"],
+      expiresIn: 3600,
+    };
+  }
+
+  return invoke<TwitchUserProfile>("twitch_validate_auth");
+}
+
+export async function twitchDisconnect(): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("twitch_disconnect");
 }

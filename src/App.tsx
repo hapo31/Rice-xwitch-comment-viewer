@@ -4,7 +4,18 @@ import { MainView } from "./components/MainView";
 import { SidePanel } from "./components/SidePanel";
 import { StatusBar } from "./components/StatusBar";
 import { appReducer, initialAppState } from "./stores/appStore";
-import { getSettings, speechConnectionDiagnostics, speechControl, speechHealthCheck, speechTest, updateSettings } from "./tauri/client";
+import {
+  getSettings,
+  speechConnectionDiagnostics,
+  speechControl,
+  speechHealthCheck,
+  speechTest,
+  twitchDisconnect,
+  twitchPollAuth,
+  twitchStartAuth,
+  twitchValidateAuth,
+  updateSettings,
+} from "./tauri/client";
 import type { AppSettings, BouyomiConnectionDiagnostics } from "./types";
 
 export function App() {
@@ -60,6 +71,65 @@ export function App() {
     }
   }
 
+  async function handleTwitchStartAuth() {
+    try {
+      const prompt = await twitchStartAuth();
+      dispatch({ type: "twitch.authPrompt", prompt });
+      dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
+      dispatch({ type: "warning.added", warning: "Twitch の認証コードを発行しました。" });
+    } catch (error) {
+      dispatch({ type: "twitch.authStatus", status: "error" });
+      dispatch({ type: "warning.added", warning: String(error) });
+    }
+  }
+
+  async function handleTwitchPollAuth() {
+    try {
+      const result = await twitchPollAuth();
+      if (result.status === "authorized") {
+        dispatch({ type: "twitch.authStatus", status: "authenticated" });
+        dispatch({ type: "twitch.authPrompt", prompt: undefined });
+        dispatch({ type: "twitch.profile", profile: result.profile });
+        dispatch({ type: "warning.added", warning: `Twitch に ${result.profile.login} としてログインしました。` });
+      } else {
+        dispatch({ type: "warning.added", warning: result.message });
+        if (result.status === "expired" || result.status === "denied") {
+          dispatch({ type: "twitch.authPrompt", prompt: undefined });
+        }
+      }
+    } catch (error) {
+      dispatch({ type: "twitch.authStatus", status: "error" });
+      dispatch({ type: "warning.added", warning: String(error) });
+    }
+  }
+
+  async function handleTwitchValidateAuth() {
+    try {
+      const profile = await twitchValidateAuth();
+      dispatch({ type: "twitch.authStatus", status: "authenticated" });
+      dispatch({ type: "twitch.profile", profile });
+      dispatch({ type: "warning.added", warning: "Twitch 認証は有効です。" });
+    } catch (error) {
+      dispatch({ type: "twitch.authStatus", status: "expired" });
+      dispatch({ type: "warning.added", warning: String(error) });
+    }
+  }
+
+  async function handleTwitchDisconnect() {
+    if (!window.confirm("Twitch 連携を解除しますか？")) {
+      return;
+    }
+
+    try {
+      await twitchDisconnect();
+      dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
+      dispatch({ type: "twitch.authPrompt", prompt: undefined });
+      dispatch({ type: "twitch.profile", profile: undefined });
+    } catch (error) {
+      dispatch({ type: "warning.added", warning: String(error) });
+    }
+  }
+
   async function handleSpeechControl(command: "pause" | "resume" | "skip" | "clear") {
     if (command === "clear" && !window.confirm("読み上げキューをクリアしますか？")) {
       return;
@@ -89,6 +159,10 @@ export function App() {
         onSpeechHealthCheck={handleSpeechHealthCheck}
         onSpeechDiagnostics={handleSpeechDiagnostics}
         onSpeechTest={handleSpeechTest}
+        onTwitchStartAuth={handleTwitchStartAuth}
+        onTwitchPollAuth={handleTwitchPollAuth}
+        onTwitchValidateAuth={handleTwitchValidateAuth}
+        onTwitchDisconnect={handleTwitchDisconnect}
       />
       <StatusBar state={state} />
     </div>

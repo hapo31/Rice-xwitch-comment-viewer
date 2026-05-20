@@ -1,3 +1,4 @@
+use crate::twitch::TwitchAuthState;
 use crate::SharedSettings;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "app")]
@@ -15,6 +16,8 @@ pub struct AppSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TwitchSettings {
+    #[serde(default)]
+    pub client_id: String,
     pub channel_login: String,
     pub auto_connect: bool,
 }
@@ -68,12 +71,14 @@ fn default_bouyomi_host() -> String {
 #[derive(Debug, Default)]
 pub struct AppState {
     pub settings: SharedSettings<AppSettings>,
+    pub twitch_auth: SharedSettings<TwitchAuthState>,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
             twitch: TwitchSettings {
+                client_id: String::new(),
                 channel_login: String::new(),
                 auto_connect: false,
             },
@@ -103,6 +108,7 @@ pub struct SettingsPatch {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TwitchSettingsPatch {
+    pub client_id: Option<String>,
     pub channel_login: Option<String>,
     pub auto_connect: Option<bool>,
 }
@@ -179,6 +185,9 @@ pub fn settings_update(
 
 fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), String> {
     if let Some(twitch) = patch.twitch {
+        if let Some(client_id) = twitch.client_id {
+            settings.twitch.client_id = client_id.trim().to_string();
+        }
         if let Some(channel_login) = twitch.channel_login {
             settings.twitch.channel_login = channel_login.trim().to_string();
         }

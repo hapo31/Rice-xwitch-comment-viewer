@@ -64,7 +64,16 @@
           "**/node_modules": true,
           "**/src-tauri/target": true
         },
-        "rust-analyzer.cargo.features": "all"
+        "files.watcherExclude": {
+          "**/.pnpm-store/**": true,
+          "**/dist/**": true,
+          "**/node_modules/**": true,
+          "**/src-tauri/target/**": true
+        },
+        "rust-analyzer.cachePriming.enable": false,
+        "rust-analyzer.cargo.allTargets": false,
+        "rust-analyzer.cargo.features": "all",
+        "rust-analyzer.checkOnSave": false
       }
     }
   }

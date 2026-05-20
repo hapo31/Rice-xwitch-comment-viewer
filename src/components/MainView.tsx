@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, CircleDashed, CircleOff, Network, PlugZap, Volume2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, CircleDashed, CircleOff, Link2, LogOut, Network, PlugZap, ShieldCheck, Volume2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AppState } from "../stores/appStore";
 import type { AppSettings, BouyomiConnectionDiagnostics, ChatDisplayState, ChatMessage } from "../types";
@@ -9,6 +9,10 @@ interface MainViewProps {
   onSpeechHealthCheck: () => void;
   onSpeechDiagnostics: () => Promise<BouyomiConnectionDiagnostics>;
   onSpeechTest: (text?: string) => void;
+  onTwitchStartAuth: () => void;
+  onTwitchPollAuth: () => void;
+  onTwitchValidateAuth: () => void;
+  onTwitchDisconnect: () => void;
 }
 
 const sampleMessages: ChatMessage[] = [
@@ -28,7 +32,17 @@ const sampleMessages: ChatMessage[] = [
   },
 ];
 
-export function MainView({ state, onSettingsUpdate, onSpeechHealthCheck, onSpeechDiagnostics, onSpeechTest }: MainViewProps) {
+export function MainView({
+  state,
+  onSettingsUpdate,
+  onSpeechHealthCheck,
+  onSpeechDiagnostics,
+  onSpeechTest,
+  onTwitchStartAuth,
+  onTwitchPollAuth,
+  onTwitchValidateAuth,
+  onTwitchDisconnect,
+}: MainViewProps) {
   if (state.activeView === "voices") {
     return (
       <VoicesView
@@ -37,6 +51,19 @@ export function MainView({ state, onSettingsUpdate, onSpeechHealthCheck, onSpeec
         onSpeechHealthCheck={onSpeechHealthCheck}
         onSpeechDiagnostics={onSpeechDiagnostics}
         onSpeechTest={onSpeechTest}
+      />
+    );
+  }
+
+  if (state.activeView === "settings") {
+    return (
+      <SettingsView
+        state={state}
+        onSettingsUpdate={onSettingsUpdate}
+        onTwitchStartAuth={onTwitchStartAuth}
+        onTwitchPollAuth={onTwitchPollAuth}
+        onTwitchValidateAuth={onTwitchValidateAuth}
+        onTwitchDisconnect={onTwitchDisconnect}
       />
     );
   }
@@ -69,6 +96,169 @@ export function MainView({ state, onSettingsUpdate, onSpeechHealthCheck, onSpeec
           ))}
         </div>
       </section>
+    </main>
+  );
+}
+
+function SettingsView({
+  state,
+  onSettingsUpdate,
+  onTwitchStartAuth,
+  onTwitchPollAuth,
+  onTwitchValidateAuth,
+  onTwitchDisconnect,
+}: {
+  state: AppState;
+  onSettingsUpdate: (patch: Partial<AppSettings>) => void;
+  onTwitchStartAuth: () => void;
+  onTwitchPollAuth: () => void;
+  onTwitchValidateAuth: () => void;
+  onTwitchDisconnect: () => void;
+}) {
+  const twitchSettings = state.settings?.twitch ?? { clientId: "", channelLogin: "", autoConnect: false };
+  const [clientId, setClientId] = useState(twitchSettings.clientId);
+  const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);
+  const isClientIdValid = clientId.trim().length >= 20 || clientId.trim().length === 0;
+  const isChannelValid = channelLogin.trim().length === 0 || /^[a-zA-Z0-9_]{3,25}$/.test(channelLogin.trim());
+
+  useEffect(() => {
+    setClientId(twitchSettings.clientId);
+    setChannelLogin(twitchSettings.channelLogin);
+  }, [twitchSettings.clientId, twitchSettings.channelLogin]);
+
+  function saveTwitchSettings() {
+    if (!isClientIdValid || !isChannelValid) {
+      return;
+    }
+
+    onSettingsUpdate({
+      twitch: {
+        ...twitchSettings,
+        clientId: clientId.trim(),
+        channelLogin: channelLogin.trim(),
+      },
+    });
+  }
+
+  return (
+    <main className="col-start-3 row-start-1 min-w-0 overflow-hidden bg-zinc-950">
+      <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
+        <div className="min-w-0">
+          <h1 className="truncate text-sm font-semibold text-zinc-100">Settings</h1>
+          <p className="truncate text-xs text-zinc-500">Twitch OAuth Device Code Flow</p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-zinc-400">
+          <span className={state.twitchAuthStatus === "authenticated" ? "h-2 w-2 rounded-full bg-emerald-400" : "h-2 w-2 rounded-full bg-zinc-600"} />
+          {state.twitchProfile?.login ?? "未ログイン"}
+        </div>
+      </header>
+
+      <div className="h-[calc(100%-3rem)] overflow-auto p-4">
+        <div className="max-w-3xl space-y-6">
+          <section className="border-y border-zinc-800">
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
+              <label className="pt-2 text-sm text-zinc-400" htmlFor="twitch-client-id">
+                Client ID
+              </label>
+              <div>
+                <input
+                  id="twitch-client-id"
+                  value={clientId}
+                  onChange={(event) => setClientId(event.target.value)}
+                  className="h-9 w-full border border-zinc-700 bg-zinc-900 px-3 font-mono text-sm text-zinc-100 outline-none focus:border-sky-400"
+                />
+                {!isClientIdValid && <p className="mt-1 text-xs text-rose-400">Twitch Developer Console の Client ID を入力してください。</p>}
+              </div>
+            </div>
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
+              <label className="pt-2 text-sm text-zinc-400" htmlFor="twitch-channel">
+                チャンネル
+              </label>
+              <div>
+                <input
+                  id="twitch-channel"
+                  value={channelLogin}
+                  onChange={(event) => setChannelLogin(event.target.value)}
+                  className="h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
+                />
+                {!isChannelValid && <p className="mt-1 text-xs text-rose-400">Twitch のログイン名を 3 から 25 文字で入力してください。</p>}
+              </div>
+            </div>
+            <div className="flex justify-end py-3">
+              <button
+                type="button"
+                disabled={!isClientIdValid || !isChannelValid}
+                onClick={saveTwitchSettings}
+                className="border border-sky-500 bg-sky-500 px-3 py-1.5 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
+              >
+                保存
+              </button>
+            </div>
+          </section>
+
+          <section className="border-y border-zinc-800">
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
+              <span className="text-sm text-zinc-400">認証状態</span>
+              <div className="space-y-2 text-sm">
+                <p className="text-zinc-200">{state.twitchProfile ? `${state.twitchProfile.login} / ${state.twitchProfile.userId}` : "未ログイン"}</p>
+                <p className="text-xs text-zinc-500">必要スコープ: user:read:chat</p>
+              </div>
+            </div>
+            {state.twitchAuthPrompt && (
+              <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
+                <span className="text-sm text-zinc-400">認証コード</span>
+                <div className="space-y-2">
+                  <p className="font-mono text-lg font-semibold text-zinc-100">{state.twitchAuthPrompt.userCode}</p>
+                  <a
+                    href={state.twitchAuthPrompt.verificationUri}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-sky-300 hover:text-sky-200"
+                  >
+                    <Link2 className="h-4 w-4" />
+                    {state.twitchAuthPrompt.verificationUri}
+                  </a>
+                  <p className="text-xs text-zinc-500">期限 {Math.floor(state.twitchAuthPrompt.expiresIn / 60)} 分 / 確認間隔 {state.twitchAuthPrompt.interval} 秒</p>
+                </div>
+              </div>
+            )}
+            <div className="flex flex-wrap justify-end gap-2 py-3">
+              <button
+                type="button"
+                onClick={onTwitchStartAuth}
+                className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400"
+              >
+                <Link2 className="h-4 w-4" />
+                認証開始
+              </button>
+              <button
+                type="button"
+                onClick={onTwitchPollAuth}
+                className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                認証確認
+              </button>
+              <button
+                type="button"
+                onClick={onTwitchValidateAuth}
+                className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                有効性確認
+              </button>
+              <button
+                type="button"
+                onClick={onTwitchDisconnect}
+                className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-rose-400"
+              >
+                <LogOut className="h-4 w-4" />
+                解除
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
     </main>
   );
 }

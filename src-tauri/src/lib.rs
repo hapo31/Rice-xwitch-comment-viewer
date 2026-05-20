@@ -13,6 +13,8 @@ use speech::bouyomi::{
 use std::sync::Mutex;
 #[cfg(feature = "app")]
 use tauri::Manager;
+#[cfg(feature = "app")]
+use twitch::{twitch_disconnect, twitch_poll_auth, twitch_start_auth, twitch_validate_auth};
 
 #[cfg(feature = "app")]
 pub fn run() {
@@ -27,7 +29,11 @@ pub fn run() {
             speech_pause,
             speech_resume,
             speech_skip,
-            speech_clear
+            speech_clear,
+            twitch_start_auth,
+            twitch_poll_auth,
+            twitch_validate_auth,
+            twitch_disconnect
         ])
         .setup(|app| {
             let state = app.state::<AppState>();

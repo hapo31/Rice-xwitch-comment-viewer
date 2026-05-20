@@ -8,6 +8,7 @@ export type ChatDisplayState = "queued" | "spoken" | "skipped" | "blocked" | "er
 
 export interface AppSettings {
   twitch: {
+    clientId: string;
     channelLogin: string;
     autoConnect: boolean;
   };
@@ -52,3 +53,25 @@ export interface BouyomiConnectionAttempt {
   message: string;
   elapsedMs: number;
 }
+
+export interface TwitchDeviceAuthStart {
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+  interval: number;
+}
+
+export interface TwitchUserProfile {
+  userId: string;
+  login: string;
+  clientId: string;
+  scopes: string[];
+  expiresIn: number;
+}
+
+export type TwitchAuthPollResult =
+  | { status: "pending"; message: string; interval: number }
+  | { status: "slowDown"; message: string; interval: number }
+  | { status: "authorized"; profile: TwitchUserProfile }
+  | { status: "denied"; message: string }
+  | { status: "expired"; message: string };

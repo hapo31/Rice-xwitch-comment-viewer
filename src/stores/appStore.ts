@@ -1,8 +1,19 @@
-import type { AppSettings, AuthStatus, ChatMessage, QueueItem, SpeechStatus, ViewId } from "../types";
+import type {
+  AppSettings,
+  AuthStatus,
+  ChatMessage,
+  QueueItem,
+  SpeechStatus,
+  TwitchDeviceAuthStart,
+  TwitchUserProfile,
+  ViewId,
+} from "../types";
 
 export interface AppState {
   activeView: ViewId;
   twitchAuthStatus: AuthStatus;
+  twitchAuthPrompt?: TwitchDeviceAuthStart;
+  twitchProfile?: TwitchUserProfile;
   speechStatus: SpeechStatus;
   settings?: AppSettings;
   chatMessages: ChatMessage[];
@@ -14,6 +25,8 @@ export type AppAction =
   | { type: "view.changed"; view: ViewId }
   | { type: "settings.loaded"; settings: AppSettings }
   | { type: "twitch.authStatus"; status: AuthStatus }
+  | { type: "twitch.authPrompt"; prompt?: TwitchDeviceAuthStart }
+  | { type: "twitch.profile"; profile?: TwitchUserProfile }
   | { type: "speech.status"; status: SpeechStatus }
   | { type: "chat.message"; message: ChatMessage }
   | { type: "queue.changed"; items: QueueItem[] }
@@ -37,6 +50,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, settings: action.settings };
     case "twitch.authStatus":
       return { ...state, twitchAuthStatus: action.status };
+    case "twitch.authPrompt":
+      return { ...state, twitchAuthPrompt: action.prompt };
+    case "twitch.profile":
+      return { ...state, twitchProfile: action.profile };
     case "speech.status":
       return { ...state, speechStatus: action.status };
     case "chat.message":
