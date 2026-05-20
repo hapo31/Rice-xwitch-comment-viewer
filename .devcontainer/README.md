@@ -1,5 +1,21 @@
 # Devcontainer notes
 
+## Codex CLI
+
+`postCreateCommand` で OpenAI Codex CLI を npm のグローバルパッケージとしてインストールします。
+
+```bash
+npm install -g @openai/codex@latest
+```
+
+devcontainer を Rebuild したあと、コンテナ内で次を実行して確認できます。
+
+```bash
+codex --version
+```
+
+特定バージョンに固定したい場合は、devcontainer 作成時の環境変数 `CODEX_NPM_PACKAGE` に `@openai/codex@<version>` を指定してください。
+
 ## Windows 側の棒読みちゃんへ接続する
 
 この devcontainer は、WSL2 の `networkingMode=mirrored` と WSL2 上の Docker を前提に、`--network=host` で起動します。
