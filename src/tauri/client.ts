@@ -165,6 +165,14 @@ export async function twitchConnect(channelLogin?: string): Promise<void> {
   return invoke<void>("twitch_connect", { channelLogin });
 }
 
+export async function twitchStopChat(): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("twitch_stop_chat");
+}
+
 export async function twitchDisconnect(): Promise<void> {
   if (!isTauriRuntime) {
     return;

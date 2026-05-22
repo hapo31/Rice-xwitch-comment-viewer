@@ -22,7 +22,7 @@ use tauri::Manager;
 #[cfg(feature = "app")]
 use twitch::{
     twitch_connect, twitch_disconnect, twitch_get_stored_auth, twitch_poll_auth, twitch_start_auth,
-    twitch_validate_auth, TwitchAuthStore,
+    twitch_stop_chat, twitch_validate_auth, TwitchAuthStore,
 };
 
 #[cfg(feature = "app")]
@@ -60,6 +60,7 @@ pub fn run() {
             twitch_poll_auth,
             twitch_validate_auth,
             twitch_connect,
+            twitch_stop_chat,
             twitch_get_stored_auth,
             twitch_disconnect
         ])

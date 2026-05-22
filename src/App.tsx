@@ -23,6 +23,7 @@ import {
   twitchGetStoredAuth,
   twitchPollAuth,
   twitchStartAuth,
+  twitchStopChat,
   twitchValidateAuth,
   updateSettings,
 } from "./tauri/client";
@@ -57,15 +58,17 @@ export function App() {
         }
       }),
       subscribeTwitchStatusEvents((event) => {
-        const status = {
-          connected: "authenticated",
-          authRequired: "expired",
-          error: "error",
-          disconnected: "unauthenticated",
-          connecting: "unauthenticated",
-          reconnecting: "unauthenticated",
-        }[event.status] as "authenticated" | "expired" | "error" | "unauthenticated";
-        dispatch({ type: "twitch.authStatus", status });
+        const message = event.message ?? "";
+        const isChatConnectionEvent =
+          message.includes("チャンネル") ||
+          message.includes("コメント受信") ||
+          message.includes("EventSub");
+        if (isChatConnectionEvent) {
+          dispatch({ type: "twitch.connectionStatus", status: event.status });
+        }
+        if (event.status === "authRequired") {
+          dispatch({ type: "twitch.authStatus", status: "expired" });
+        }
         if (event.message && (event.status === "authRequired" || event.status === "error")) {
           dispatch({ type: "warning.added", warning: event.message });
         }
@@ -150,6 +153,7 @@ export function App() {
       const prompt = await twitchStartAuth();
       dispatch({ type: "twitch.authPrompt", prompt });
       dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
+      dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       dispatch({ type: "warning.added", warning: "Twitch の認証コードを発行しました。" });
     } catch (error) {
       dispatch({ type: "twitch.authStatus", status: "error" });
@@ -177,6 +181,7 @@ export function App() {
         dispatch({ type: "twitch.authStatus", status: "authenticated" });
         dispatch({ type: "twitch.authPrompt", prompt: undefined });
         dispatch({ type: "twitch.profile", profile: result.profile });
+        dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
         dispatch({ type: "warning.added", warning: `Twitch に ${result.profile.login} としてログインしました。` });
         if (result.storageWarning) {
           dispatch({ type: "warning.added", warning: result.storageWarning });
@@ -209,6 +214,7 @@ export function App() {
       const result = await twitchValidateAuth();
       dispatch({ type: "twitch.authStatus", status: "authenticated" });
       dispatch({ type: "twitch.profile", profile: result.profile });
+      dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       dispatch({ type: "warning.added", warning: "Twitch 認証は有効です。" });
       if (result.storageWarning) {
         dispatch({ type: "warning.added", warning: result.storageWarning });
@@ -222,10 +228,25 @@ export function App() {
   async function handleTwitchConnect() {
     try {
       const channelLogin = state.settings?.twitch.channelLogin;
+      dispatch({ type: "twitch.connectionStatus", status: "connecting" });
       await twitchConnect(channelLogin);
       dispatch({ type: "warning.added", warning: "Twitch コメント接続を開始しました。" });
     } catch (error) {
-      dispatch({ type: "twitch.authStatus", status: "error" });
+      dispatch({ type: "twitch.connectionStatus", status: "error" });
+      dispatch({ type: "warning.added", warning: String(error) });
+    }
+  }
+
+  async function handleTwitchStopChat() {
+    if (!window.confirm("Twitch コメント受信を停止しますか？")) {
+      return;
+    }
+
+    try {
+      await twitchStopChat();
+      dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
+    } catch (error) {
+      dispatch({ type: "twitch.connectionStatus", status: "error" });
       dispatch({ type: "warning.added", warning: String(error) });
     }
   }
@@ -238,6 +259,7 @@ export function App() {
     try {
       await twitchDisconnect();
       dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
+      dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       dispatch({ type: "twitch.authPrompt", prompt: undefined });
       dispatch({ type: "twitch.profile", profile: undefined });
     } catch (error) {
@@ -275,6 +297,8 @@ export function App() {
         state={state}
         onSpeechControl={handleSpeechControl}
         onSpeechTest={handleSpeechTest}
+        onTwitchConnect={handleTwitchConnect}
+        onTwitchStopChat={handleTwitchStopChat}
         onWarningsClear={() => dispatch({ type: "warnings.cleared" })}
       />
       <MainView

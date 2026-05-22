@@ -1,14 +1,23 @@
-import { Pause, Play, RotateCcw, SkipForward, Trash2, Volume2 } from "lucide-react";
+import { Pause, Play, Radio, RotateCcw, SkipForward, Square, Trash2, Volume2 } from "lucide-react";
 import type { AppState } from "../stores/appStore";
 
 interface SidePanelProps {
   state: AppState;
   onSpeechControl: (command: "pause" | "resume" | "skip" | "clear") => void;
   onSpeechTest: () => void;
+  onTwitchConnect: () => void;
+  onTwitchStopChat: () => void;
   onWarningsClear: () => void;
 }
 
-export function SidePanel({ state, onSpeechControl, onSpeechTest, onWarningsClear }: SidePanelProps) {
+export function SidePanel({
+  state,
+  onSpeechControl,
+  onSpeechTest,
+  onTwitchConnect,
+  onTwitchStopChat,
+  onWarningsClear,
+}: SidePanelProps) {
   const channel = state.settings?.twitch.channelLogin || "未設定";
   const queueCount = state.queueItems.length;
   const twitchAuthLabel = {
@@ -17,7 +26,28 @@ export function SidePanel({ state, onSpeechControl, onSpeechTest, onWarningsClea
     expired: "再ログイン必要",
     error: "認証エラー",
   }[state.twitchAuthStatus];
-  const twitchAuthTone = state.twitchAuthStatus === "authenticated" ? "ok" : state.twitchAuthStatus === "error" ? "danger" : "muted";
+  const twitchAuthTone =
+    state.twitchAuthStatus === "authenticated" ? "ok" : state.twitchAuthStatus === "error" ? "danger" : "muted";
+  const twitchConnectionLabel = {
+    disconnected: "未接続",
+    connecting: "接続中",
+    connected: "受信中",
+    reconnecting: "再接続中",
+    authRequired: "再ログイン必要",
+    error: "接続エラー",
+  }[state.twitchConnectionStatus];
+  const twitchConnectionTone =
+    state.twitchConnectionStatus === "connected"
+      ? "ok"
+      : state.twitchConnectionStatus === "connecting" || state.twitchConnectionStatus === "reconnecting"
+        ? "active"
+        : state.twitchConnectionStatus === "error" || state.twitchConnectionStatus === "authRequired"
+          ? "danger"
+          : "muted";
+  const canStartChat =
+    state.twitchAuthStatus === "authenticated" &&
+    !["connecting", "connected", "reconnecting"].includes(state.twitchConnectionStatus);
+  const canStopChat = ["connecting", "connected", "reconnecting", "error"].includes(state.twitchConnectionStatus);
 
   return (
     <aside className="col-start-2 row-start-2 flex min-h-0 flex-col overflow-hidden border-r border-zinc-800 bg-zinc-900">
@@ -30,7 +60,16 @@ export function SidePanel({ state, onSpeechControl, onSpeechTest, onWarningsClea
           <div className="space-y-2">
             <PanelRow label="Twitch" value={twitchAuthLabel} tone={twitchAuthTone} />
             <PanelRow label="チャンネル" value={channel} />
+            <PanelRow label="コメント" value={twitchConnectionLabel} tone={twitchConnectionTone} />
             <PanelRow label="読み上げ" value={state.speechStatus} tone={state.speechStatus === "idle" ? "ok" : "muted"} />
+          </div>
+        </section>
+
+        <section className="shrink-0">
+          <h2 className="mb-2 text-xs font-semibold text-zinc-400">コメント受信</h2>
+          <div className="grid grid-cols-2 gap-1">
+            <CommandButton label="開始" icon={Radio} disabled={!canStartChat} onClick={onTwitchConnect} />
+            <CommandButton label="停止" icon={Square} disabled={!canStopChat} onClick={onTwitchStopChat} danger />
           </div>
         </section>
 
@@ -98,10 +137,18 @@ function PanelRow({
 }: {
   label: string;
   value: string;
-  tone?: "default" | "ok" | "muted" | "danger";
+  tone?: "default" | "ok" | "muted" | "danger" | "active";
 }) {
   const dotClass =
-    tone === "ok" ? "bg-emerald-400" : tone === "muted" ? "bg-zinc-600" : tone === "danger" ? "bg-rose-400" : "bg-sky-400";
+    tone === "ok"
+      ? "bg-emerald-400"
+      : tone === "muted"
+        ? "bg-zinc-600"
+        : tone === "danger"
+          ? "bg-rose-400"
+          : tone === "active"
+            ? "bg-sky-400"
+            : "bg-sky-400";
 
   return (
     <div className="flex items-center justify-between gap-3 border border-zinc-800 bg-zinc-850 px-3 py-2">
@@ -111,6 +158,36 @@ function PanelRow({
         <span className="truncate">{value}</span>
       </span>
     </div>
+  );
+}
+
+function CommandButton({
+  label,
+  icon: Icon,
+  disabled,
+  danger = false,
+  onClick,
+}: {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  disabled?: boolean;
+  danger?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex h-9 items-center justify-center gap-2 border bg-zinc-850 px-3 text-sm disabled:cursor-not-allowed disabled:border-zinc-800 disabled:text-zinc-700 ${
+        danger
+          ? "border-zinc-800 text-zinc-300 hover:border-rose-400 hover:text-rose-200"
+          : "border-zinc-700 text-zinc-100 hover:border-sky-400"
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+    </button>
   );
 }
 

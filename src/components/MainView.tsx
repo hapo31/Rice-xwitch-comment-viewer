@@ -22,7 +22,7 @@ const sampleMessages: ChatMessage[] = [
     id: "sample-1",
     receivedAt: new Date().toISOString(),
     userDisplayName: "viewer_01",
-    text: "コメント受信の準備中です。Twitch接続は次フェーズで実装します。",
+    text: "左ペインのコメント受信から Twitch EventSub へ接続できます。",
     status: "queued",
   },
   {
@@ -74,8 +74,24 @@ export function MainView({
   }
 
   const messages = state.chatMessages.length > 0 ? state.chatMessages : sampleMessages;
-  const canConnectChat = state.twitchAuthStatus === "authenticated";
+  const canConnectChat = state.twitchAuthStatus === "authenticated" && !["connecting", "connected", "reconnecting"].includes(state.twitchConnectionStatus);
   const chatTarget = state.settings?.twitch.channelLogin || state.twitchProfile?.login || "未設定";
+  const connectionLabel = {
+    disconnected: "未接続",
+    connecting: "接続中",
+    connected: "受信中",
+    reconnecting: "再接続中",
+    authRequired: "再ログイン必要",
+    error: "接続エラー",
+  }[state.twitchConnectionStatus];
+  const connectionDotClass =
+    state.twitchConnectionStatus === "connected"
+      ? "bg-emerald-400"
+      : state.twitchConnectionStatus === "connecting" || state.twitchConnectionStatus === "reconnecting"
+        ? "bg-sky-400"
+        : state.twitchConnectionStatus === "error" || state.twitchConnectionStatus === "authRequired"
+          ? "bg-rose-400"
+          : "bg-zinc-600";
 
   return (
     <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
@@ -86,8 +102,8 @@ export function MainView({
         </div>
         <div className="flex items-center gap-3 text-xs text-zinc-400">
           <div className="flex min-w-0 items-center gap-2">
-            <span className={canConnectChat ? "h-2 w-2 rounded-full bg-emerald-400" : "h-2 w-2 rounded-full bg-zinc-600"} />
-            <span className="max-w-40 truncate">{chatTarget}</span>
+            <span className={`h-2 w-2 rounded-full ${connectionDotClass}`} />
+            <span className="max-w-40 truncate">{chatTarget} / {connectionLabel}</span>
           </div>
           <button
             type="button"

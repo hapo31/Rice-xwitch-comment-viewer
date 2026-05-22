@@ -130,6 +130,8 @@ export interface AppLogEvent {
 
 export type TwitchConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "authRequired" | "error";
 
+export type TwitchChatConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "authRequired" | "error";
+
 export interface TwitchStatusEvent {
   status: TwitchConnectionStatus;
   message?: string;

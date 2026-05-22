@@ -951,6 +951,43 @@ pub fn twitch_disconnect(
     Ok(())
 }
 
+#[cfg(feature = "app")]
+#[tauri::command]
+pub fn twitch_stop_chat(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
+) -> Result<(), String> {
+    let stopped = state
+        .twitch_connection
+        .lock()
+        .map_err(|error| error.to_string())?
+        .take()
+        .map(|handle| {
+            handle.abort();
+        })
+        .is_some();
+
+    emit_twitch_status(
+        &app,
+        TwitchStatus::Disconnected,
+        Some(if stopped {
+            "Twitch コメント受信を停止しました。".to_string()
+        } else {
+            "Twitch コメント受信は開始されていません。".to_string()
+        }),
+    );
+    emit_app_log(
+        &app,
+        AppLogLevel::Info,
+        if stopped {
+            "Twitch コメント受信を停止しました。"
+        } else {
+            "Twitch コメント受信は開始されていません。"
+        },
+    );
+    Ok(())
+}
+
 async fn request_device_code(client_id: &str) -> anyhow::Result<DeviceCodeResponse> {
     let response = reqwest::Client::new()
         .post(TWITCH_DEVICE_URL)
