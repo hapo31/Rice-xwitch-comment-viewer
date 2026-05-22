@@ -46,9 +46,9 @@ Device Code Flowの利点:
 - `/validate` でトークン有効性を確認する。
 - 認可取り消しや401時はUIに再ログインを促す。
 - access tokenとrefresh tokenはOS keyringに保存し、設定JSONには含めない。
-- keyring保存に失敗した場合は認証完了にせず、平文JSONへフォールバックしない。
+- keyring保存に失敗した場合もログイン状態はメモリ上で継続し、UIへ「再起動後は再ログインが必要」と警告する。平文JSONへはフォールバックしない。
 - 起動時はkeyringからOAuth状態を復元する。access tokenの検証に失敗した場合はrefresh tokenで更新を試み、成功時は新しいrefresh tokenを即時保存する。
-- LinuxではSecret Service API対応ストアを前提にする。Secret Serviceが利用できない環境では認証フロー開始前に日本語エラーを出し、kernel keyutilsや暗号化なしファイルへは退避しない。
+- LinuxではSecret Service API対応ストアを前提にする。Secret Serviceが利用できない環境では認証フロー自体は許可し、保存失敗時に日本語警告を出す。kernel keyutilsや暗号化なしファイルへは退避しない。
 
 Client ID:
 

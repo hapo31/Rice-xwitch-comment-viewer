@@ -104,6 +104,9 @@ export function App() {
         dispatch({ type: "twitch.authPrompt", prompt: undefined });
         dispatch({ type: "twitch.profile", profile: result.profile });
         dispatch({ type: "warning.added", warning: `Twitch に ${result.profile.login} としてログインしました。` });
+        if (result.storageWarning) {
+          dispatch({ type: "warning.added", warning: result.storageWarning });
+        }
       } else {
         dispatch({ type: "warning.added", warning: result.message });
         if (result.status === "expired" || result.status === "denied") {
@@ -118,10 +121,13 @@ export function App() {
 
   async function handleTwitchValidateAuth() {
     try {
-      const profile = await twitchValidateAuth();
+      const result = await twitchValidateAuth();
       dispatch({ type: "twitch.authStatus", status: "authenticated" });
-      dispatch({ type: "twitch.profile", profile });
+      dispatch({ type: "twitch.profile", profile: result.profile });
       dispatch({ type: "warning.added", warning: "Twitch 認証は有効です。" });
+      if (result.storageWarning) {
+        dispatch({ type: "warning.added", warning: result.storageWarning });
+      }
     } catch (error) {
       dispatch({ type: "twitch.authStatus", status: "expired" });
       dispatch({ type: "warning.added", warning: String(error) });

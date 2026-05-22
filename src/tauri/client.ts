@@ -1,5 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, BouyomiConnectionDiagnostics, TwitchAuthPollResult, TwitchDeviceAuthStart, TwitchUserProfile } from "../types";
+import type {
+  AppSettings,
+  BouyomiConnectionDiagnostics,
+  TwitchAuthPollResult,
+  TwitchAuthValidationResult,
+  TwitchDeviceAuthStart,
+  TwitchUserProfile,
+} from "../types";
 
 const fallbackSettings: AppSettings = {
   twitch: {
@@ -119,18 +126,20 @@ export async function twitchPollAuth(): Promise<TwitchAuthPollResult> {
   return invoke<TwitchAuthPollResult>("twitch_poll_auth");
 }
 
-export async function twitchValidateAuth(): Promise<TwitchUserProfile> {
+export async function twitchValidateAuth(): Promise<TwitchAuthValidationResult> {
   if (!isTauriRuntime) {
     return {
-      userId: "preview",
-      login: "preview",
-      clientId: fallbackSettings.twitch.clientId,
-      scopes: ["user:read:chat"],
-      expiresIn: 3600,
+      profile: {
+        userId: "preview",
+        login: "preview",
+        clientId: fallbackSettings.twitch.clientId,
+        scopes: ["user:read:chat"],
+        expiresIn: 3600,
+      },
     };
   }
 
-  return invoke<TwitchUserProfile>("twitch_validate_auth");
+  return invoke<TwitchAuthValidationResult>("twitch_validate_auth");
 }
 
 export async function twitchGetStoredAuth(): Promise<TwitchUserProfile | undefined> {

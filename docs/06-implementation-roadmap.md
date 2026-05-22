@@ -28,8 +28,8 @@
 - `user:read:chat` スコープでUser Access Tokenを取得する。
 - refresh token更新と `/validate` を実装する。
 - OAuth状態をOS keyringへ保存し、起動時に復元する。
-- keyringへ保存できない場合は平文JSONへフォールバックせず、再ログインが必要な状態としてUIに出す。
-- LinuxではSecret Service API対応ストアが利用できるか認証フロー開始前に検査する。
+- keyringへ保存できない場合は平文JSONへフォールバックせず、ログインは継続しつつ再起動後に再ログインが必要な状態としてUIに出す。
+- LinuxではSecret Service API対応ストアが利用できない場合も認証フローは止めず、保存失敗時に警告する。
 - ユーザーIDとログイン名を取得し、設定画面に表示する。
 
 完了条件:

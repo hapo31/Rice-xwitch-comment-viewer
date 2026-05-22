@@ -83,11 +83,31 @@ pub struct TwitchUserProfile {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum TwitchAuthPollResult {
-    Pending { message: String, interval: u64 },
-    SlowDown { message: String, interval: u64 },
-    Authorized { profile: TwitchUserProfile },
-    Denied { message: String },
-    Expired { message: String },
+    Pending {
+        message: String,
+        interval: u64,
+    },
+    SlowDown {
+        message: String,
+        interval: u64,
+    },
+    Authorized {
+        profile: TwitchUserProfile,
+        storage_warning: Option<String>,
+    },
+    Denied {
+        message: String,
+    },
+    Expired {
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TwitchAuthValidationResult {
+    pub profile: TwitchUserProfile,
+    pub storage_warning: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -185,14 +205,6 @@ impl TwitchAuthStore {
         }
     }
 
-    fn ensure_available() -> anyhow::Result<()> {
-        let entry = keyring_entry()?;
-        match entry.get_password() {
-            Ok(_) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(error) => Err(error.into()),
-        }
-    }
-
     fn save(auth: &TwitchAuthState) -> anyhow::Result<()> {
         let stored = auth
             .stored_auth()
@@ -237,7 +249,6 @@ pub async fn twitch_start_auth(
     if client_id.is_empty() {
         return Err("Twitch Client ID を設定してから認証を開始してください。".to_string());
     }
-    TwitchAuthStore::ensure_available().map_err(to_secure_store_user_message)?;
 
     let response = request_device_code(&client_id)
         .await
@@ -298,10 +309,12 @@ pub async fn twitch_poll_auth(
                     scopes: token_scopes(token.scope, &profile),
                     expires_in: token.expires_in,
                 });
-                TwitchAuthStore::save(&auth).map_err(to_secure_store_user_message)?;
+                let storage_warning = save_or_storage_warning(&auth);
+                return Ok(TwitchAuthPollResult::Authorized {
+                    profile,
+                    storage_warning,
+                });
             }
-
-            Ok(TwitchAuthPollResult::Authorized { profile })
         }
         Err(PollAuthError::Pending) => Ok(TwitchAuthPollResult::Pending {
             message: "Twitch の認可完了を待っています。ブラウザでコードを入力してください。"
@@ -337,7 +350,7 @@ pub async fn twitch_poll_auth(
 #[tauri::command]
 pub async fn twitch_validate_auth(
     state: tauri::State<'_, AppState>,
-) -> Result<TwitchUserProfile, String> {
+) -> Result<TwitchAuthValidationResult, String> {
     let (access_token, refresh_token, client_id) = {
         let auth = state
             .twitch_auth
@@ -390,8 +403,11 @@ pub async fn twitch_validate_auth(
                 scopes: token_scopes(token.scope, &profile),
                 expires_in: token.expires_in,
             });
-            TwitchAuthStore::save(&auth).map_err(to_secure_store_user_message)?;
-            return Ok(profile);
+            let storage_warning = save_or_storage_warning(&auth);
+            return Ok(TwitchAuthValidationResult {
+                profile,
+                storage_warning,
+            });
         }
     };
 
@@ -400,8 +416,11 @@ pub async fn twitch_validate_auth(
         .lock()
         .map_err(|error| error.to_string())?;
     auth.profile = Some(profile.clone());
-    TwitchAuthStore::save(&auth).map_err(to_secure_store_user_message)?;
-    Ok(profile)
+    let storage_warning = save_or_storage_warning(&auth);
+    Ok(TwitchAuthValidationResult {
+        profile,
+        storage_warning,
+    })
 }
 
 #[cfg(feature = "app")]
@@ -543,12 +562,19 @@ fn to_secure_store_user_message(error: anyhow::Error) -> String {
     #[cfg(target_os = "linux")]
     {
         return format!(
-            "Twitch 認証情報を安全に保存できませんでした。Linux では Secret Service 対応の資格情報ストア（GNOME Keyring、KWallet、KeePassXC Secret Service など）が起動している必要があります。資格情報ストアを有効にしてから再ログインしてください: {error}"
+            "Twitch 認証情報を安全に保存できませんでした。ログインは続行しましたが、アプリ再起動後は再ログインが必要です。Linux では Secret Service 対応の資格情報ストア（GNOME Keyring、KWallet、KeePassXC Secret Service など）を有効にしてください: {error}"
         );
     }
 
     #[cfg(not(target_os = "linux"))]
-    format!("Twitch 認証情報を安全に保存できませんでした。OS の資格情報ストアを確認してから再ログインしてください: {error}")
+    format!("Twitch 認証情報を安全に保存できませんでした。ログインは続行しましたが、アプリ再起動後は再ログインが必要です。OS の資格情報ストアを確認してください: {error}")
+}
+
+#[cfg(feature = "app")]
+fn save_or_storage_warning(auth: &TwitchAuthState) -> Option<String> {
+    TwitchAuthStore::save(auth)
+        .err()
+        .map(to_secure_store_user_message)
 }
 
 fn token_scopes(scopes: Vec<String>, profile: &TwitchUserProfile) -> Vec<String> {

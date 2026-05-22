@@ -69,9 +69,14 @@ export interface TwitchUserProfile {
   expiresIn: number;
 }
 
+export interface TwitchAuthValidationResult {
+  profile: TwitchUserProfile;
+  storageWarning?: string;
+}
+
 export type TwitchAuthPollResult =
   | { status: "pending"; message: string; interval: number }
   | { status: "slowDown"; message: string; interval: number }
-  | { status: "authorized"; profile: TwitchUserProfile }
+  | { status: "authorized"; profile: TwitchUserProfile; storageWarning?: string }
   | { status: "denied"; message: string }
   | { status: "expired"; message: string };
