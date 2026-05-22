@@ -46,7 +46,8 @@ Rust backend
 | `SpeechAdapter` | 読み上げ先を抽象化するtrait |
 | `BouyomiAdapter` | 棒読みちゃんTCPプロトコル実装 |
 | `VoiceroidAdapter` | Windows専用の実験的アダプタ。C# sidecarまたはUI Automationを隠蔽する |
-| `SettingsStore` | JSON/Tauri store/keyringへの保存 |
+| `SettingsStore` | 一般設定JSONの保存。OAuthトークンは扱わない |
+| `TwitchAuthStore` | Twitch OAuth状態をOS keyringへ保存/復元/削除する |
 
 ## SpeechAdapter trait案
 
@@ -119,7 +120,8 @@ Events:
 ## 永続化
 
 - 一般設定: Tauriのapp data配下にJSON保存。
-- Twitch refresh token: OS keyringを優先。難しい場合も平文JSONには置かず、少なくとも暗号化またはユーザー明示の保存設定にする。
+- Twitch OAuth状態: access token、refresh token、スコープ、有効期限、検証済みプロフィールをOS keyringへ保存する。設定JSONへは保存しない。
+- refresh token: 更新成功時にkeyring内の値を必ず新しい値へ差し替える。keyringが利用できない環境では認証成功を失敗扱いにし、平文JSONへフォールバックしない。
 - コメントログ: 初期MVPではメモリのみ。後でSQLiteを追加できる境界を残す。
 
 ## 推奨crate
@@ -133,4 +135,3 @@ Events:
 - config path: `directories` またはTauri API
 - keyring: `keyring`
 - Windows拡張: `windows` crate
-

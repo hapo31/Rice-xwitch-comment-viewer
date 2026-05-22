@@ -27,6 +27,8 @@
 - Device Code Flowを実装する。
 - `user:read:chat` スコープでUser Access Tokenを取得する。
 - refresh token更新と `/validate` を実装する。
+- OAuth状態をOS keyringへ保存し、起動時に復元する。
+- keyringへ保存できない場合は平文JSONへフォールバックせず、再ログインが必要な状態としてUIに出す。
 - ユーザーIDとログイン名を取得し、設定画面に表示する。
 
 完了条件:
@@ -111,4 +113,3 @@ TypeScript:
 | 棒読みちゃんポート競合 | 接続診断とポート設定をUIに出す。 |
 | コメント由来の棒読みちゃんタグ悪用 | 初期設定ではタグをエスケープする。 |
 | VOICEROID2直接連携の不安定さ | MVPから外し、adapter/sidecar境界で隔離する。 |
-

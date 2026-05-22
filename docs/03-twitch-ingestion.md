@@ -45,6 +45,9 @@ Device Code Flowの利点:
 - refresh tokenは使い回し不可の前提で、更新に成功したら保存済みrefresh tokenを必ず差し替える。
 - `/validate` でトークン有効性を確認する。
 - 認可取り消しや401時はUIに再ログインを促す。
+- access tokenとrefresh tokenはOS keyringに保存し、設定JSONには含めない。
+- keyring保存に失敗した場合は認証完了にせず、平文JSONへフォールバックしない。
+- 起動時はkeyringからOAuth状態を復元する。access tokenの検証に失敗した場合はrefresh tokenで更新を試み、成功時は新しいrefresh tokenを即時保存する。
 
 Client ID:
 

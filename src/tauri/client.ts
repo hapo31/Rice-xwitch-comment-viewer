@@ -133,6 +133,15 @@ export async function twitchValidateAuth(): Promise<TwitchUserProfile> {
   return invoke<TwitchUserProfile>("twitch_validate_auth");
 }
 
+export async function twitchGetStoredAuth(): Promise<TwitchUserProfile | undefined> {
+  if (!isTauriRuntime) {
+    return undefined;
+  }
+
+  const profile = await invoke<TwitchUserProfile | null>("twitch_get_stored_auth");
+  return profile ?? undefined;
+}
+
 export async function twitchDisconnect(): Promise<void> {
   if (!isTauriRuntime) {
     return;

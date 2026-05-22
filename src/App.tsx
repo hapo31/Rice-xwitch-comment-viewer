@@ -13,6 +13,7 @@ import {
   speechHealthCheck,
   speechTest,
   twitchDisconnect,
+  twitchGetStoredAuth,
   twitchPollAuth,
   twitchStartAuth,
   twitchValidateAuth,
@@ -28,6 +29,15 @@ export function App() {
     getSettings()
       .then((settings) => dispatch({ type: "settings.loaded", settings }))
       .catch(() => dispatch({ type: "warning.added", warning: "設定の読み込みに失敗しました。" }));
+    twitchGetStoredAuth()
+      .then((profile) => {
+        if (!profile) {
+          return;
+        }
+        dispatch({ type: "twitch.profile", profile });
+        dispatch({ type: "twitch.authStatus", status: "authenticated" });
+      })
+      .catch(() => dispatch({ type: "warning.added", warning: "保存済み Twitch 認証の確認に失敗しました。" }));
   }, []);
 
   async function handleSpeechTest(text?: string) {
