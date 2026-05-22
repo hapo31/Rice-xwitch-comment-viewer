@@ -9,7 +9,7 @@
 | Phase | 状態 | メモ |
 | --- | --- | --- |
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込を確認した。 |
-| Phase 1: 棒読みちゃん連携 | 実装済み、手動確認待ち | TCP 発話、制御、接続診断、Voices 画面は実装済み。実機の棒読みちゃんでの確認が必要。 |
+| Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 発話、制御、接続診断、Voices 画面は実装済み。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Settings 画面は実装済み。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub コメント受信 | 未着手 | WebSocket 接続、購読、イベント正規化、再接続、UI 反映が未実装。 |
 | Phase 4: 読み上げキュー統合 | 未着手 | store 上のキュー枠はあるが、Rust 側の `SpeechQueue` / `SpeechFormatter` と自動読み上げは未実装。 |
@@ -128,6 +128,7 @@
 
 ## 調査メモ
 
+- 2026-05-22: Phase 1 実装確認として `cargo test` と `pnpm build` を実行し、どちらも成功。棒読みちゃん実機でのテスト発話、未起動、ポート競合、アプリ連携 OFF の手動確認は未実施。
 - Git 作業ツリーは調査開始時点で clean。
 - `src-tauri/target` と `dist` がローカルに存在するため、ビルド済み成果物はある。
 - `src/components/MainView.tsx` の Chat view は現在サンプルメッセージ表示で、EventSub 由来のコメント表示には未接続。
