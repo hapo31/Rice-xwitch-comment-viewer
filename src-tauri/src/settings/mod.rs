@@ -1,3 +1,5 @@
+#[cfg(feature = "app")]
+use crate::app_events::{emit_app_log, AppLogLevel};
 use crate::twitch::TwitchAuthState;
 use crate::SharedSettings;
 use serde::{Deserialize, Serialize};
@@ -191,6 +193,7 @@ pub fn settings_update(
     let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
     apply_patch(&mut settings, patch)?;
     SettingsStore::save(&app, &settings).map_err(|error| error.to_string())?;
+    emit_app_log(&app, AppLogLevel::Info, "設定を保存しました。");
     Ok(settings.clone())
 }
 

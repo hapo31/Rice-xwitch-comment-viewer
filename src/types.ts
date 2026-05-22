@@ -74,6 +74,34 @@ export interface TwitchAuthValidationResult {
   storageWarning?: string;
 }
 
+export type AppLogLevel = "info" | "warning" | "error";
+
+export interface AppLogEvent {
+  level: AppLogLevel;
+  message: string;
+  occurredAtMs: number;
+}
+
+export type TwitchConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "authRequired" | "error";
+
+export interface TwitchStatusEvent {
+  status: TwitchConnectionStatus;
+  message?: string;
+  occurredAtMs: number;
+}
+
+export interface SpeechStatusEvent {
+  status: SpeechStatus;
+  message?: string;
+  occurredAtMs: number;
+}
+
+export interface SpeechQueueUpdatedEvent {
+  queuedCount: number;
+  warning?: string;
+  occurredAtMs: number;
+}
+
 export type TwitchAuthPollResult =
   | { status: "pending"; message: string; interval: number }
   | { status: "slowDown"; message: string; interval: number }

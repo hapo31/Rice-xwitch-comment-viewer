@@ -9,6 +9,10 @@ import { appReducer, initialAppState } from "./stores/appStore";
 import {
   appOpenExternalUrl,
   getSettings,
+  subscribeAppLogEvents,
+  subscribeSpeechQueueUpdatedEvents,
+  subscribeSpeechStatusEvents,
+  subscribeTwitchStatusEvents,
   speechConnectionDiagnostics,
   speechControl,
   speechHealthCheck,
@@ -39,6 +43,51 @@ export function App() {
         dispatch({ type: "twitch.authStatus", status: "authenticated" });
       })
       .catch(() => dispatch({ type: "warning.added", warning: "保存済み Twitch 認証の確認に失敗しました。" }));
+  }, []);
+
+  useEffect(() => {
+    const unlisten: Array<() => void> = [];
+
+    void Promise.all([
+      subscribeAppLogEvents((event) => {
+        if (event.level !== "info") {
+          dispatch({ type: "warning.added", warning: event.message });
+        }
+      }),
+      subscribeTwitchStatusEvents((event) => {
+        const status = {
+          connected: "authenticated",
+          authRequired: "expired",
+          error: "error",
+          disconnected: "unauthenticated",
+          connecting: "unauthenticated",
+          reconnecting: "unauthenticated",
+        }[event.status] as "authenticated" | "expired" | "error" | "unauthenticated";
+        dispatch({ type: "twitch.authStatus", status });
+        if (event.message && (event.status === "authRequired" || event.status === "error")) {
+          dispatch({ type: "warning.added", warning: event.message });
+        }
+      }),
+      subscribeSpeechStatusEvents((event) => {
+        dispatch({ type: "speech.status", status: event.status });
+        if (event.message && (event.status === "disconnected" || event.status === "error")) {
+          dispatch({ type: "warning.added", warning: event.message });
+        }
+      }),
+      subscribeSpeechQueueUpdatedEvents((event) => {
+        if (event.warning) {
+          dispatch({ type: "warning.added", warning: event.warning });
+        }
+      }),
+    ]).then((listeners) => {
+      unlisten.push(...listeners);
+    });
+
+    return () => {
+      for (const dispose of unlisten) {
+        dispose();
+      }
+    };
   }, []);
 
   async function handleSpeechTest(text?: string) {

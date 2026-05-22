@@ -1,4 +1,6 @@
 #[cfg(feature = "app")]
+use crate::app_events::{emit_app_log, emit_twitch_status, AppLogLevel, TwitchStatus};
+#[cfg(feature = "app")]
 use crate::settings::AppState;
 use serde::{Deserialize, Serialize};
 #[cfg(all(feature = "app", target_os = "linux"))]
@@ -401,6 +403,7 @@ pub trait TwitchChatSource {
 #[tauri::command]
 pub async fn twitch_start_auth(
     state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<TwitchDeviceAuthStart, String> {
     let client_id = {
         let settings = state.settings.lock().map_err(|error| error.to_string())?;
@@ -432,6 +435,12 @@ pub async fn twitch_start_auth(
     });
     auth.token = None;
     auth.profile = None;
+    emit_twitch_status(
+        &app,
+        TwitchStatus::AuthRequired,
+        Some("Twitch 認証コードを発行しました。".to_string()),
+    );
+    emit_app_log(&app, AppLogLevel::Info, "Twitch 認証コードを発行しました。");
 
     Ok(auth_start)
 }
@@ -440,6 +449,7 @@ pub async fn twitch_start_auth(
 #[tauri::command]
 pub async fn twitch_poll_auth(
     state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<TwitchAuthPollResult, String> {
     let pending = {
         let auth = state
@@ -471,6 +481,19 @@ pub async fn twitch_poll_auth(
                     expires_in: token.expires_in,
                 });
                 let storage_warning = save_or_storage_warning(&auth);
+                emit_twitch_status(
+                    &app,
+                    TwitchStatus::Connected,
+                    Some(format!(
+                        "Twitch に {} としてログインしました。",
+                        profile.login
+                    )),
+                );
+                emit_app_log(
+                    &app,
+                    AppLogLevel::Info,
+                    format!("Twitch に {} としてログインしました。", profile.login),
+                );
                 return Ok(TwitchAuthPollResult::Authorized {
                     profile,
                     storage_warning,
@@ -478,8 +501,14 @@ pub async fn twitch_poll_auth(
             }
         }
         Err(PollAuthError::Pending) => Ok(TwitchAuthPollResult::Pending {
-            message: "Twitch の認可完了を待っています。ブラウザでコードを入力してください。"
-                .to_string(),
+            message: {
+                emit_twitch_status(
+                    &app,
+                    TwitchStatus::Connecting,
+                    Some("Twitch の認可完了を待っています。".to_string()),
+                );
+                "Twitch の認可完了を待っています。ブラウザでコードを入力してください。".to_string()
+            },
             interval: pending.interval,
         }),
         Err(PollAuthError::SlowDown) => {
@@ -491,19 +520,52 @@ pub async fn twitch_poll_auth(
             if let Some(stored) = &mut auth.pending {
                 stored.interval = interval;
             }
+            emit_twitch_status(
+                &app,
+                TwitchStatus::Connecting,
+                Some("Twitch 認証の確認間隔を延長しました。".to_string()),
+            );
             Ok(TwitchAuthPollResult::SlowDown {
                 message: "確認間隔が短すぎます。少し待ってから再確認してください。".to_string(),
                 interval,
             })
         }
         Err(PollAuthError::Denied) => Ok(TwitchAuthPollResult::Denied {
-            message: "Twitch 認証がキャンセルされました。必要なら再度開始してください。"
-                .to_string(),
+            message: {
+                emit_twitch_status(
+                    &app,
+                    TwitchStatus::AuthRequired,
+                    Some("Twitch 認証がキャンセルされました。".to_string()),
+                );
+                emit_app_log(
+                    &app,
+                    AppLogLevel::Warning,
+                    "Twitch 認証がキャンセルされました。必要なら再度開始してください。",
+                );
+                "Twitch 認証がキャンセルされました。必要なら再度開始してください。".to_string()
+            },
         }),
         Err(PollAuthError::Expired) => Ok(TwitchAuthPollResult::Expired {
-            message: "Twitch 認証コードの期限が切れました。再度開始してください。".to_string(),
+            message: {
+                emit_twitch_status(
+                    &app,
+                    TwitchStatus::AuthRequired,
+                    Some("Twitch 認証コードの期限が切れました。".to_string()),
+                );
+                emit_app_log(
+                    &app,
+                    AppLogLevel::Warning,
+                    "Twitch 認証コードの期限が切れました。再度開始してください。",
+                );
+                "Twitch 認証コードの期限が切れました。再度開始してください。".to_string()
+            },
         }),
-        Err(PollAuthError::Other(error)) => Err(to_twitch_user_message(error)),
+        Err(PollAuthError::Other(error)) => {
+            let message = to_twitch_user_message(error);
+            emit_twitch_status(&app, TwitchStatus::Error, Some(message.clone()));
+            emit_app_log(&app, AppLogLevel::Error, message.clone());
+            Err(message)
+        }
     }
 }
 
@@ -511,6 +573,7 @@ pub async fn twitch_poll_auth(
 #[tauri::command]
 pub async fn twitch_validate_auth(
     state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<TwitchAuthValidationResult, String> {
     let (access_token, refresh_token, client_id) = {
         let auth = state
@@ -565,6 +628,12 @@ pub async fn twitch_validate_auth(
                 expires_in: token.expires_in,
             });
             let storage_warning = save_or_storage_warning(&auth);
+            emit_twitch_status(
+                &app,
+                TwitchStatus::Connected,
+                Some("Twitch 認証を更新しました。".to_string()),
+            );
+            emit_app_log(&app, AppLogLevel::Info, "Twitch 認証を更新しました。");
             return Ok(TwitchAuthValidationResult {
                 profile,
                 storage_warning,
@@ -578,6 +647,12 @@ pub async fn twitch_validate_auth(
         .map_err(|error| error.to_string())?;
     auth.profile = Some(profile.clone());
     let storage_warning = save_or_storage_warning(&auth);
+    emit_twitch_status(
+        &app,
+        TwitchStatus::Connected,
+        Some("Twitch 認証は有効です。".to_string()),
+    );
+    emit_app_log(&app, AppLogLevel::Info, "Twitch 認証は有効です。");
     Ok(TwitchAuthValidationResult {
         profile,
         storage_warning,
@@ -598,7 +673,10 @@ pub fn twitch_get_stored_auth(
 
 #[cfg(feature = "app")]
 #[tauri::command]
-pub fn twitch_disconnect(state: tauri::State<'_, AppState>) -> Result<(), String> {
+pub fn twitch_disconnect(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
+) -> Result<(), String> {
     let mut auth = state
         .twitch_auth
         .lock()
@@ -607,6 +685,12 @@ pub fn twitch_disconnect(state: tauri::State<'_, AppState>) -> Result<(), String
     auth.token = None;
     auth.profile = None;
     TwitchAuthStore::clear().map_err(to_secure_store_user_message)?;
+    emit_twitch_status(
+        &app,
+        TwitchStatus::Disconnected,
+        Some("Twitch 連携を解除しました。".to_string()),
+    );
+    emit_app_log(&app, AppLogLevel::Info, "Twitch 連携を解除しました。");
     Ok(())
 }
 

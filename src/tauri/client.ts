@@ -1,8 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  AppLogEvent,
   AppSettings,
   BouyomiConnectionDiagnostics,
+  SpeechQueueUpdatedEvent,
+  SpeechStatusEvent,
   TwitchAuthPollResult,
+  TwitchStatusEvent,
   TwitchAuthValidationResult,
   TwitchDeviceAuthStart,
   TwitchUserProfile,
@@ -175,4 +180,44 @@ export async function appOpenExternalUrl(url: string): Promise<void> {
   }
 
   return invoke<void>("app_open_external_url", { url });
+}
+
+export async function subscribeAppLogEvents(
+  handler: (payload: AppLogEvent) => void,
+): Promise<UnlistenFn> {
+  if (!isTauriRuntime) {
+    return () => {};
+  }
+
+  return listen<AppLogEvent>("app://log", (event) => handler(event.payload));
+}
+
+export async function subscribeTwitchStatusEvents(
+  handler: (payload: TwitchStatusEvent) => void,
+): Promise<UnlistenFn> {
+  if (!isTauriRuntime) {
+    return () => {};
+  }
+
+  return listen<TwitchStatusEvent>("twitch://status", (event) => handler(event.payload));
+}
+
+export async function subscribeSpeechStatusEvents(
+  handler: (payload: SpeechStatusEvent) => void,
+): Promise<UnlistenFn> {
+  if (!isTauriRuntime) {
+    return () => {};
+  }
+
+  return listen<SpeechStatusEvent>("speech://status", (event) => handler(event.payload));
+}
+
+export async function subscribeSpeechQueueUpdatedEvents(
+  handler: (payload: SpeechQueueUpdatedEvent) => void,
+): Promise<UnlistenFn> {
+  if (!isTauriRuntime) {
+    return () => {};
+  }
+
+  return listen<SpeechQueueUpdatedEvent>("speech://queue-updated", (event) => handler(event.payload));
 }

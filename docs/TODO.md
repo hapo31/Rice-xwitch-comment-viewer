@@ -8,7 +8,7 @@
 
 | Phase | 状態 | メモ |
 | --- | --- | --- |
-| Phase 0: プロジェクト作成 | ほぼ完了 | Tauri + TypeScript + Tailwind、VSCode 風レイアウト、設定 JSON は実装済み。 |
+| Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込を確認した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、手動確認待ち | TCP 発話、制御、接続診断、Voices 画面は実装済み。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Settings 画面は実装済み。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub コメント受信 | 未着手 | WebSocket 接続、購読、イベント正規化、再接続、UI 反映が未実装。 |
@@ -24,8 +24,8 @@
 - [x] 独自 Title Bar、ウィンドウ操作、リサイズハンドルを作る。
 - [x] UI 倍率の自動/手動切替を作る。
 - [x] 一般設定を Tauri app data 配下の `settings.json` に保存する。
-- [ ] `app_events` からフロントエンドへ流すイベント設計を実装に接続する。
-- [ ] Phase 0 完了条件として、Tauri アプリ起動と設定 JSON 読み書きを手動確認する。
+- [x] `app_events` からフロントエンドへ流すイベント設計を実装に接続する。
+- [x] Phase 0 完了条件として、Tauri アプリ起動と設定 JSON 読み書きを手動確認する。
 
 ## Phase 1: 棒読みちゃん連携
 
@@ -131,6 +131,7 @@
 - Git 作業ツリーは調査開始時点で clean。
 - `src-tauri/target` と `dist` がローカルに存在するため、ビルド済み成果物はある。
 - `src/components/MainView.tsx` の Chat view は現在サンプルメッセージ表示で、EventSub 由来のコメント表示には未接続。
-- `src/stores/appStore.ts` に chat / queue state はあるが、Rust events から更新する購読処理は未実装。
-- `src-tauri/src/app_events/mod.rs` は型定義のみで、`tauri::Emitter` への接続は未実装。
+- `src/stores/appStore.ts` は `twitch://status` / `speech://status` の購読反映を実装済み。`twitch://chat-message` と実キュー連携は Phase 3/4 で実装する。
+- `src/tauri/client.ts` で `app://log`, `twitch://status`, `speech://status`, `speech://queue-updated` を購読できる。
+- `src-tauri/src/app_events/mod.rs` にイベント payload と `tauri::Emitter` helper を実装し、設定/認証/棒読みちゃん操作から発火する。
 - `src-tauri/src/twitch/mod.rs` は認証中心で、EventSub WebSocket client と Helix subscription 作成は未実装。

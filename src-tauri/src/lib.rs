@@ -4,6 +4,10 @@ mod speech;
 mod twitch;
 
 #[cfg(feature = "app")]
+use app_events::{
+    emit_app_log, emit_speech_status, emit_twitch_status, AppLogLevel, SpeechStatus, TwitchStatus,
+};
+#[cfg(feature = "app")]
 use settings::{settings_get, settings_update, AppState};
 #[cfg(feature = "app")]
 use speech::bouyomi::{
@@ -62,11 +66,40 @@ pub fn run() {
             let state = app.state::<AppState>();
             let settings = settings::SettingsStore::load(app.handle())?;
             *state.settings.lock().expect("settings mutex poisoned") = settings;
-            if let Ok(Some(auth)) = TwitchAuthStore::load() {
-                *state
-                    .twitch_auth
-                    .lock()
-                    .expect("twitch auth mutex poisoned") = auth;
+            emit_app_log(app.handle(), AppLogLevel::Info, "設定を読み込みました。");
+            emit_twitch_status(
+                app.handle(),
+                TwitchStatus::Disconnected,
+                Some("Twitch は未接続です。".to_string()),
+            );
+            emit_speech_status(
+                app.handle(),
+                SpeechStatus::Disconnected,
+                Some("棒読みちゃん接続を確認してください。".to_string()),
+            );
+            match TwitchAuthStore::load() {
+                Ok(Some(auth)) => {
+                    *state
+                        .twitch_auth
+                        .lock()
+                        .expect("twitch auth mutex poisoned") = auth;
+                    emit_twitch_status(
+                        app.handle(),
+                        TwitchStatus::Connected,
+                        Some("保存済みの Twitch 認証情報を復元しました。".to_string()),
+                    );
+                    emit_app_log(
+                        app.handle(),
+                        AppLogLevel::Info,
+                        "保存済みの Twitch 認証情報を復元しました。",
+                    );
+                }
+                Ok(None) => {}
+                Err(error) => emit_app_log(
+                    app.handle(),
+                    AppLogLevel::Warning,
+                    format!("保存済みの Twitch 認証情報を読み込めませんでした: {error}"),
+                ),
             }
             Ok(())
         })

@@ -1,4 +1,8 @@
 #[cfg(feature = "app")]
+use crate::app_events::{
+    emit_app_log, emit_speech_queue_updated, emit_speech_status, AppLogLevel, SpeechStatus,
+};
+#[cfg(feature = "app")]
 use crate::settings::AppState;
 use crate::speech::{SpeechAdapter, SpeechHealth, SpeechRequest, SpeechResult};
 use serde::Serialize;
@@ -200,9 +204,12 @@ pub fn build_talk_packet(config: &BouyomiTalkConfig, text: &str) -> Vec<u8> {
 
 #[cfg(feature = "app")]
 #[tauri::command]
-pub async fn speech_health_check(state: tauri::State<'_, AppState>) -> Result<String, String> {
+pub async fn speech_health_check(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
+) -> Result<String, String> {
     let adapter = adapter_from_settings(&state)?;
-    adapter
+    let result = adapter
         .health_check()
         .await
         .map(|elapsed| {
@@ -211,7 +218,18 @@ pub async fn speech_health_check(state: tauri::State<'_, AppState>) -> Result<St
                 elapsed.as_millis()
             )
         })
-        .map_err(to_user_message)
+        .map_err(to_user_message);
+    match &result {
+        Ok(message) => {
+            emit_speech_status(&app, SpeechStatus::Idle, Some(message.clone()));
+            emit_app_log(&app, AppLogLevel::Info, message.clone());
+        }
+        Err(message) => {
+            emit_speech_status(&app, SpeechStatus::Disconnected, Some(message.clone()));
+            emit_app_log(&app, AppLogLevel::Warning, message.clone());
+        }
+    }
+    result
 }
 
 #[cfg(feature = "app")]
@@ -225,34 +243,111 @@ pub async fn speech_connection_diagnostics(
 
 #[cfg(feature = "app")]
 #[tauri::command]
-pub async fn speech_test(state: tauri::State<'_, AppState>, text: String) -> Result<(), String> {
+pub async fn speech_test(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
+    text: String,
+) -> Result<(), String> {
     let adapter = adapter_from_settings(&state)?;
     let text = normalize_test_text(&text);
-    adapter.speak(&text).await.map_err(to_user_message)
+    emit_speech_status(
+        &app,
+        SpeechStatus::Speaking,
+        Some("テスト発話を送信しています。".to_string()),
+    );
+    let result = adapter.speak(&text).await.map_err(to_user_message);
+    match &result {
+        Ok(()) => {
+            emit_speech_status(
+                &app,
+                SpeechStatus::Idle,
+                Some("テスト発話を送信しました。".to_string()),
+            );
+            emit_app_log(&app, AppLogLevel::Info, "テスト発話を送信しました。");
+        }
+        Err(message) => {
+            emit_speech_status(&app, SpeechStatus::Error, Some(message.clone()));
+            emit_app_log(&app, AppLogLevel::Error, message.clone());
+        }
+    }
+    result
 }
 
 #[cfg(feature = "app")]
 #[tauri::command]
-pub async fn speech_pause(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    control_from_settings(&state, BouyomiControlCommand::Pause).await
+pub async fn speech_pause(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
+) -> Result<(), String> {
+    let result = control_from_settings(&state, BouyomiControlCommand::Pause).await;
+    if result.is_ok() {
+        emit_speech_status(
+            &app,
+            SpeechStatus::Paused,
+            Some("読み上げを一時停止しました。".to_string()),
+        );
+        emit_app_log(&app, AppLogLevel::Info, "読み上げを一時停止しました。");
+    }
+    result
 }
 
 #[cfg(feature = "app")]
 #[tauri::command]
-pub async fn speech_resume(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    control_from_settings(&state, BouyomiControlCommand::Resume).await
+pub async fn speech_resume(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
+) -> Result<(), String> {
+    let result = control_from_settings(&state, BouyomiControlCommand::Resume).await;
+    if result.is_ok() {
+        emit_speech_status(
+            &app,
+            SpeechStatus::Idle,
+            Some("読み上げを再開しました。".to_string()),
+        );
+        emit_app_log(&app, AppLogLevel::Info, "読み上げを再開しました。");
+    }
+    result
 }
 
 #[cfg(feature = "app")]
 #[tauri::command]
-pub async fn speech_skip(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    control_from_settings(&state, BouyomiControlCommand::Skip).await
+pub async fn speech_skip(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
+) -> Result<(), String> {
+    let result = control_from_settings(&state, BouyomiControlCommand::Skip).await;
+    if result.is_ok() {
+        emit_speech_status(
+            &app,
+            SpeechStatus::Idle,
+            Some("現在の読み上げをスキップしました。".to_string()),
+        );
+        emit_app_log(
+            &app,
+            AppLogLevel::Info,
+            "現在の読み上げをスキップしました。",
+        );
+    }
+    result
 }
 
 #[cfg(feature = "app")]
 #[tauri::command]
-pub async fn speech_clear(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    control_from_settings(&state, BouyomiControlCommand::Clear).await
+pub async fn speech_clear(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
+) -> Result<(), String> {
+    let result = control_from_settings(&state, BouyomiControlCommand::Clear).await;
+    if result.is_ok() {
+        emit_speech_status(
+            &app,
+            SpeechStatus::Idle,
+            Some("読み上げキューをクリアしました。".to_string()),
+        );
+        emit_speech_queue_updated(&app, 0, None);
+        emit_app_log(&app, AppLogLevel::Info, "読み上げキューをクリアしました。");
+    }
+    result
 }
 
 #[cfg(feature = "app")]
