@@ -1,6 +1,13 @@
 #[cfg(feature = "app")]
 use crate::settings::AppState;
 use serde::{Deserialize, Serialize};
+#[cfg(all(feature = "app", target_os = "linux"))]
+use std::{
+    fs::{self, OpenOptions},
+    io::Write,
+    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+    path::{Path, PathBuf},
+};
 
 const TWITCH_DEVICE_URL: &str = "https://id.twitch.tv/oauth2/device";
 const TWITCH_TOKEN_URL: &str = "https://id.twitch.tv/oauth2/token";
@@ -8,6 +15,10 @@ const TWITCH_VALIDATE_URL: &str = "https://id.twitch.tv/oauth2/validate";
 const CHAT_READ_SCOPE: &str = "user:read:chat";
 const KEYRING_SERVICE: &str = "rice.twitch.oauth";
 const KEYRING_ACCOUNT: &str = "default";
+#[cfg(all(feature = "app", target_os = "linux"))]
+const FALLBACK_AUTH_DIR: &str = ".rice";
+#[cfg(all(feature = "app", target_os = "linux"))]
+const FALLBACK_AUTH_FILE: &str = "twitch-auth.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -194,30 +205,60 @@ pub struct TwitchAuthStore;
 #[cfg(feature = "app")]
 impl TwitchAuthStore {
     pub fn load() -> anyhow::Result<Option<TwitchAuthState>> {
-        let entry = keyring_entry()?;
-        match entry.get_password() {
-            Ok(secret) => {
-                let stored = serde_json::from_str::<StoredTwitchAuth>(&secret)?;
-                Ok(Some(TwitchAuthState::restore(stored)))
-            }
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(error) => Err(error.into()),
+        let keyring_result = match keyring_entry() {
+            Ok(entry) => match entry.get_password() {
+                Ok(secret) => serde_json::from_str::<StoredTwitchAuth>(&secret)
+                    .map(TwitchAuthState::restore)
+                    .map(Some)
+                    .map_err(anyhow::Error::from),
+                Err(keyring::Error::NoEntry) => Ok(None),
+                Err(error) => Err(error.into()),
+            },
+            Err(error) => Err(error),
+        };
+
+        match keyring_result {
+            Ok(Some(auth)) => Ok(Some(auth)),
+            Ok(None) => load_fallback_auth(),
+            Err(error) => match load_fallback_auth() {
+                Ok(Some(auth)) => Ok(Some(auth)),
+                Ok(None) => Err(error),
+                Err(fallback_error) => Err(anyhow::anyhow!("{error}; {fallback_error}")),
+            },
         }
     }
 
-    fn save(auth: &TwitchAuthState) -> anyhow::Result<()> {
+    fn save(auth: &TwitchAuthState) -> anyhow::Result<Option<String>> {
         let stored = auth
             .stored_auth()
             .ok_or_else(|| anyhow::anyhow!("保存できる Twitch 認証状態がありません。"))?;
-        keyring_entry()?.set_password(&serde_json::to_string(&stored)?)?;
-        Ok(())
+        let secret = serde_json::to_string(&stored)?;
+
+        match keyring_entry()
+            .and_then(|entry| entry.set_password(&secret).map_err(anyhow::Error::from))
+        {
+            Ok(()) => {
+                clear_fallback_auth()?;
+                Ok(None)
+            }
+            Err(error) => save_fallback_auth(&stored, error),
+        }
     }
 
     fn clear() -> anyhow::Result<()> {
-        let entry = keyring_entry()?;
-        match entry.delete_credential() {
+        let keyring_result = keyring_entry().and_then(|entry| match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(error) => Err(error.into()),
+        });
+
+        let fallback_result = clear_fallback_auth();
+        match (keyring_result, fallback_result) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) => handle_keyring_clear_error(error),
+            (Ok(()), Err(error)) => Err(error),
+            (Err(keyring_error), Err(fallback_error)) => {
+                Err(anyhow::anyhow!("{keyring_error}; {fallback_error}"))
+            }
         }
     }
 }
@@ -225,6 +266,126 @@ impl TwitchAuthStore {
 #[cfg(feature = "app")]
 fn keyring_entry() -> anyhow::Result<keyring::Entry> {
     Ok(keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)?)
+}
+
+#[cfg(all(feature = "app", target_os = "linux"))]
+fn load_fallback_auth() -> anyhow::Result<Option<TwitchAuthState>> {
+    let path = match fallback_auth_path() {
+        Ok(path) => path,
+        Err(_) => return Ok(None),
+    };
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    ensure_fallback_permissions(&path)?;
+    let secret = fs::read_to_string(path)?;
+    let stored = serde_json::from_str::<StoredTwitchAuth>(&secret)?;
+    Ok(Some(TwitchAuthState::restore(stored)))
+}
+
+#[cfg(all(feature = "app", not(target_os = "linux")))]
+fn load_fallback_auth() -> anyhow::Result<Option<TwitchAuthState>> {
+    Ok(None)
+}
+
+#[cfg(all(feature = "app", target_os = "linux"))]
+fn save_fallback_auth(
+    stored: &StoredTwitchAuth,
+    keyring_error: anyhow::Error,
+) -> anyhow::Result<Option<String>> {
+    let path = fallback_auth_path()?;
+    ensure_fallback_parent(&path)?;
+
+    let temp_path = path.with_extension("json.tmp");
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .mode(0o600)
+        .open(&temp_path)?;
+    file.write_all(serde_json::to_string_pretty(stored)?.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
+
+    fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o600))?;
+    fs::rename(&temp_path, &path)?;
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+
+    Ok(Some(to_local_file_store_user_message(keyring_error, &path)))
+}
+
+#[cfg(all(feature = "app", not(target_os = "linux")))]
+fn save_fallback_auth(
+    _stored: &StoredTwitchAuth,
+    keyring_error: anyhow::Error,
+) -> anyhow::Result<Option<String>> {
+    Err(keyring_error)
+}
+
+#[cfg(all(feature = "app", target_os = "linux"))]
+fn clear_fallback_auth() -> anyhow::Result<()> {
+    let path = match fallback_auth_path() {
+        Ok(path) => path,
+        Err(_) => return Ok(()),
+    };
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(all(feature = "app", not(target_os = "linux")))]
+fn clear_fallback_auth() -> anyhow::Result<()> {
+    Ok(())
+}
+
+#[cfg(all(feature = "app", target_os = "linux"))]
+fn handle_keyring_clear_error(_error: anyhow::Error) -> anyhow::Result<()> {
+    Ok(())
+}
+
+#[cfg(all(feature = "app", not(target_os = "linux")))]
+fn handle_keyring_clear_error(error: anyhow::Error) -> anyhow::Result<()> {
+    Err(error)
+}
+
+#[cfg(all(feature = "app", target_os = "linux"))]
+fn fallback_auth_path() -> anyhow::Result<PathBuf> {
+    let home = std::env::var_os("HOME").ok_or_else(|| {
+        anyhow::anyhow!("HOME が設定されていないため、Twitch 認証情報を保存できません。")
+    })?;
+    Ok(PathBuf::from(home)
+        .join(FALLBACK_AUTH_DIR)
+        .join(FALLBACK_AUTH_FILE))
+}
+
+#[cfg(all(feature = "app", target_os = "linux"))]
+fn ensure_fallback_parent(path: &Path) -> anyhow::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("Twitch 認証情報の保存先ディレクトリが見つかりません。"))?;
+    if parent.exists() {
+        if !parent.is_dir() {
+            return Err(anyhow::anyhow!(
+                "Twitch 認証情報の保存先がディレクトリではありません: {}",
+                parent.display()
+            ));
+        }
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
+        return Ok(());
+    }
+
+    fs::DirBuilder::new().mode(0o700).create(parent)?;
+    Ok(())
+}
+
+#[cfg(all(feature = "app", target_os = "linux"))]
+fn ensure_fallback_permissions(path: &Path) -> anyhow::Result<()> {
+    ensure_fallback_parent(path)?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    Ok(())
 }
 
 #[allow(dead_code)]
@@ -562,7 +723,7 @@ fn to_secure_store_user_message(error: anyhow::Error) -> String {
     #[cfg(target_os = "linux")]
     {
         return format!(
-            "Twitch 認証情報を安全に保存できませんでした。ログインは続行しましたが、アプリ再起動後は再ログインが必要です。Linux では Secret Service 対応の資格情報ストア（GNOME Keyring、KWallet、KeePassXC Secret Service など）を有効にしてください: {error}"
+            "Twitch 認証情報を保存できませんでした。Linux では Secret Service 対応の資格情報ストア（GNOME Keyring、KWallet、KeePassXC Secret Service など）または ~/.rice/twitch-auth.json へのローカル保存を使います: {error}"
         );
     }
 
@@ -570,11 +731,20 @@ fn to_secure_store_user_message(error: anyhow::Error) -> String {
     format!("Twitch 認証情報を安全に保存できませんでした。ログインは続行しましたが、アプリ再起動後は再ログインが必要です。OS の資格情報ストアを確認してください: {error}")
 }
 
+#[cfg(all(feature = "app", target_os = "linux"))]
+fn to_local_file_store_user_message(error: anyhow::Error, path: &Path) -> String {
+    format!(
+        "OS の資格情報ストアに保存できなかったため、Twitch 認証情報を {} に保存しました。ディレクトリは 700、ファイルは 600 で作成していますが、暗号化はされません: {error}",
+        path.display()
+    )
+}
+
 #[cfg(feature = "app")]
 fn save_or_storage_warning(auth: &TwitchAuthState) -> Option<String> {
-    TwitchAuthStore::save(auth)
-        .err()
-        .map(to_secure_store_user_message)
+    match TwitchAuthStore::save(auth) {
+        Ok(warning) => warning,
+        Err(error) => Some(to_secure_store_user_message(error)),
+    }
 }
 
 fn token_scopes(scopes: Vec<String>, profile: &TwitchUserProfile) -> Vec<String> {
