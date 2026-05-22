@@ -167,3 +167,12 @@ export async function appExit(): Promise<void> {
 
   return invoke<void>("app_exit");
 }
+
+export async function appOpenExternalUrl(url: string): Promise<void> {
+  if (!isTauriRuntime) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  return invoke<void>("app_open_external_url", { url });
+}

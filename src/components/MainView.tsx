@@ -13,6 +13,7 @@ interface MainViewProps {
   onTwitchPollAuth: () => void;
   onTwitchValidateAuth: () => void;
   onTwitchDisconnect: () => void;
+  onOpenExternalUrl: (url: string) => void;
 }
 
 const sampleMessages: ChatMessage[] = [
@@ -42,6 +43,7 @@ export function MainView({
   onTwitchPollAuth,
   onTwitchValidateAuth,
   onTwitchDisconnect,
+  onOpenExternalUrl,
 }: MainViewProps) {
   if (state.activeView === "voices") {
     return (
@@ -64,6 +66,7 @@ export function MainView({
         onTwitchPollAuth={onTwitchPollAuth}
         onTwitchValidateAuth={onTwitchValidateAuth}
         onTwitchDisconnect={onTwitchDisconnect}
+        onOpenExternalUrl={onOpenExternalUrl}
       />
     );
   }
@@ -107,6 +110,7 @@ function SettingsView({
   onTwitchPollAuth,
   onTwitchValidateAuth,
   onTwitchDisconnect,
+  onOpenExternalUrl,
 }: {
   state: AppState;
   onSettingsUpdate: (patch: Partial<AppSettings>) => void;
@@ -114,6 +118,7 @@ function SettingsView({
   onTwitchPollAuth: () => void;
   onTwitchValidateAuth: () => void;
   onTwitchDisconnect: () => void;
+  onOpenExternalUrl: (url: string) => void;
 }) {
   const twitchSettings = state.settings?.twitch ?? { clientId: "", channelLogin: "", autoConnect: false };
   const [clientId, setClientId] = useState(twitchSettings.clientId);
@@ -209,15 +214,14 @@ function SettingsView({
                 <span className="text-sm text-zinc-400">認証コード</span>
                 <div className="space-y-2">
                   <p className="font-mono text-lg font-semibold text-zinc-100">{state.twitchAuthPrompt.userCode}</p>
-                  <a
-                    href={state.twitchAuthPrompt.verificationUri}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => onOpenExternalUrl(state.twitchAuthPrompt?.verificationUri ?? "")}
                     className="inline-flex items-center gap-2 text-sm text-sky-300 hover:text-sky-200"
                   >
                     <Link2 className="h-4 w-4" />
                     {state.twitchAuthPrompt.verificationUri}
-                  </a>
+                  </button>
                   <p className="text-xs text-zinc-500">期限 {Math.floor(state.twitchAuthPrompt.expiresIn / 60)} 分 / 自動確認間隔 {state.twitchAuthPrompt.interval} 秒</p>
                 </div>
               </div>

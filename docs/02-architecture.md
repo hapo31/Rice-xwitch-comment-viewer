@@ -108,6 +108,7 @@ Commands:
 - `speech_clear()`
 - `settings_get()`
 - `settings_update(patch: SettingsPatch)`
+- `app_open_external_url(url: String)`: Twitch認証URLなど、許可した外部URLをOS既定ブラウザで開く。
 
 Events:
 

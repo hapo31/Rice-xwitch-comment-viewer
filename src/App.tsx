@@ -7,6 +7,7 @@ import { ResizeHandles, TitleBar } from "./components/TitleBar";
 import { useDisplayScale } from "./hooks/useDisplayScale";
 import { appReducer, initialAppState } from "./stores/appStore";
 import {
+  appOpenExternalUrl,
   getSettings,
   speechConnectionDiagnostics,
   speechControl,
@@ -173,6 +174,14 @@ export function App() {
     }
   }
 
+  async function handleOpenExternalUrl(url: string) {
+    try {
+      await appOpenExternalUrl(url);
+    } catch (error) {
+      dispatch({ type: "warning.added", warning: String(error) });
+    }
+  }
+
   async function handleSpeechControl(command: "pause" | "resume" | "skip" | "clear") {
     if (command === "clear" && !window.confirm("読み上げキューをクリアしますか？")) {
       return;
@@ -207,6 +216,7 @@ export function App() {
         onTwitchPollAuth={handleTwitchPollAuth}
         onTwitchValidateAuth={handleTwitchValidateAuth}
         onTwitchDisconnect={handleTwitchDisconnect}
+        onOpenExternalUrl={handleOpenExternalUrl}
       />
       <StatusBar state={state} />
       <ResizeHandles />
