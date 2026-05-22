@@ -21,7 +21,7 @@ use std::sync::Mutex;
 use tauri::Manager;
 #[cfg(feature = "app")]
 use twitch::{
-    twitch_disconnect, twitch_get_stored_auth, twitch_poll_auth, twitch_start_auth,
+    twitch_connect, twitch_disconnect, twitch_get_stored_auth, twitch_poll_auth, twitch_start_auth,
     twitch_validate_auth, TwitchAuthStore,
 };
 
@@ -59,6 +59,7 @@ pub fn run() {
             twitch_start_auth,
             twitch_poll_auth,
             twitch_validate_auth,
+            twitch_connect,
             twitch_get_stored_auth,
             twitch_disconnect
         ])

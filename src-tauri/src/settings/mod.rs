@@ -1,6 +1,8 @@
 #[cfg(feature = "app")]
 use crate::app_events::{emit_app_log, AppLogLevel};
 use crate::twitch::TwitchAuthState;
+#[cfg(feature = "app")]
+use crate::twitch::TwitchConnectionHandle;
 use crate::SharedSettings;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "app")]
@@ -81,6 +83,8 @@ fn default_twitch_client_id() -> String {
 pub struct AppState {
     pub settings: SharedSettings<AppSettings>,
     pub twitch_auth: SharedSettings<TwitchAuthState>,
+    #[cfg(feature = "app")]
+    pub twitch_connection: SharedSettings<Option<TwitchConnectionHandle>>,
 }
 
 impl Default for AppSettings {

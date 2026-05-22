@@ -12,11 +12,13 @@ import {
   subscribeAppLogEvents,
   subscribeSpeechQueueUpdatedEvents,
   subscribeSpeechStatusEvents,
+  subscribeTwitchChatMessageEvents,
   subscribeTwitchStatusEvents,
   speechConnectionDiagnostics,
   speechControl,
   speechHealthCheck,
   speechTest,
+  twitchConnect,
   twitchDisconnect,
   twitchGetStoredAuth,
   twitchPollAuth,
@@ -67,6 +69,15 @@ export function App() {
         if (event.message && (event.status === "authRequired" || event.status === "error")) {
           dispatch({ type: "warning.added", warning: event.message });
         }
+      }),
+      subscribeTwitchChatMessageEvents((message) => {
+        dispatch({
+          type: "chat.message",
+          message: {
+            ...message,
+            status: "queued",
+          },
+        });
       }),
       subscribeSpeechStatusEvents((event) => {
         dispatch({ type: "speech.status", status: event.status });
@@ -208,6 +219,17 @@ export function App() {
     }
   }
 
+  async function handleTwitchConnect() {
+    try {
+      const channelLogin = state.settings?.twitch.channelLogin;
+      await twitchConnect(channelLogin);
+      dispatch({ type: "warning.added", warning: "Twitch コメント接続を開始しました。" });
+    } catch (error) {
+      dispatch({ type: "twitch.authStatus", status: "error" });
+      dispatch({ type: "warning.added", warning: String(error) });
+    }
+  }
+
   async function handleTwitchDisconnect() {
     if (!window.confirm("Twitch 連携を解除しますか？")) {
       return;
@@ -264,6 +286,7 @@ export function App() {
         onTwitchStartAuth={handleTwitchStartAuth}
         onTwitchPollAuth={handleTwitchPollAuth}
         onTwitchValidateAuth={handleTwitchValidateAuth}
+        onTwitchConnect={handleTwitchConnect}
         onTwitchDisconnect={handleTwitchDisconnect}
         onOpenExternalUrl={handleOpenExternalUrl}
       />

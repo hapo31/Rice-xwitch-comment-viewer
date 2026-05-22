@@ -11,7 +11,7 @@
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込を確認した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 発話、制御、接続診断、Voices 画面は実装済み。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Settings 画面は実装済み。実 Twitch 環境での確認が必要。 |
-| Phase 3: EventSub コメント受信 | 未着手 | WebSocket 接続、購読、イベント正規化、再接続、UI 反映が未実装。 |
+| Phase 3: EventSub コメント受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 未着手 | store 上のキュー枠はあるが、Rust 側の `SpeechQueue` / `SpeechFormatter` と自動読み上げは未実装。 |
 | Phase 5: 配信運用向け仕上げ | 一部のみ | ステータスバーと警告表示はあるが、Logs 画面、自動接続、自動読み上げ、詳細な運用エラー整理は未実装。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
@@ -54,23 +54,24 @@
 - [ ] 実 Twitch Client ID で Device Code Flow を手動確認する。
 - [ ] 認可取り消し、401、期限切れ時の UI 表示を手動確認する。
 - [ ] アプリ起動時の保存済み認証復元と refresh 更新を手動確認する。
-- [ ] Twitch ユーザー ID と接続チャンネルを EventSub 接続へ渡す command を実装する。
+- [x] Twitch ユーザー ID と接続チャンネルを EventSub 接続へ渡す command を実装する。
 
 ## Phase 3: EventSub コメント受信
 
-- [ ] `tokio-tungstenite` を導入する。
-- [ ] `EventSubClient` を作り、`wss://eventsub.wss.twitch.tv/ws` へ接続する。
-- [ ] `session_welcome` 受信後に `channel.chat.message` を購読する。
-- [ ] EventSub 購読に User Access Token を使う。
-- [ ] `session_keepalive` 欠落を検出して状態とログへ出す。
-- [ ] `session_reconnect` を処理する。
-- [ ] `revocation` を処理し、UI に再ログインまたは再接続が必要な状態を出す。
-- [ ] `metadata.message_id` または `event.message_id` で重複排除する。
-- [ ] `channel.chat.message` JSON fixture のパーステストを追加する。
-- [ ] `ChatMessage` に fragments / badges / received_at を含める。
-- [ ] `tauri::Emitter` events で `twitch://status` と `twitch://chat-message` を送る。
-- [ ] TypeScript client で Twitch events を購読し、store へ反映する。
-- [ ] Chat view にリアルタイムコメントを表示する。
+- [x] `tokio-tungstenite` を導入する。
+- [x] `EventSubClient` 相当の接続ループを作り、`wss://eventsub.wss.twitch.tv/ws` へ接続する。
+- [x] `session_welcome` 受信後に `channel.chat.message` を購読する。
+- [x] EventSub 購読に User Access Token を使う。
+- [x] `session_keepalive` 欠落を検出して状態とログへ出す。
+- [x] `session_reconnect` を処理する。
+- [x] `revocation` を処理し、UI に再ログインまたは再接続が必要な状態を出す。
+- [x] `metadata.message_id` または `event.message_id` で重複排除する。
+- [x] `channel.chat.message` JSON fixture のパーステストを追加する。
+- [x] `ChatMessage` に fragments / badges / received_at を含める。
+- [x] `tauri::Emitter` events で `twitch://status` と `twitch://chat-message` を送る。
+- [x] TypeScript client で Twitch events を購読し、store へ反映する。
+- [x] Chat view にリアルタイムコメントを表示する。
+- [ ] 実 Twitch 環境で `channel.chat.message` 購読と Chat view 表示を手動確認する。
 
 ## Phase 4: 読み上げキュー統合
 
@@ -115,7 +116,7 @@
 - [x] Rust: 棒読みちゃんパケット生成テストを追加する。
 - [x] Rust: 棒読みちゃん制御パケットテストを追加する。
 - [x] Rust: 外部 URL 許可リストのテストを追加する。
-- [ ] Rust: `channel.chat.message` JSON fixture のパーステストを追加する。
+- [x] Rust: `channel.chat.message` JSON fixture のパーステストを追加する。
 - [ ] Rust: `SpeechFormatter` の NG/URL/長文処理テストを追加する。
 - [ ] Rust: WebSocket 再接続状態遷移テストを追加する。
 - [ ] TypeScript: store reducer テストを追加する。
@@ -129,10 +130,11 @@
 ## 調査メモ
 
 - 2026-05-22: Phase 1 実装確認として `cargo test` と `pnpm build` を実行し、どちらも成功。棒読みちゃん実機でのテスト発話、未起動、ポート競合、アプリ連携 OFF の手動確認は未実施。
+- 2026-05-22: Phase 3 の初期実装として `tokio-tungstenite` による EventSub WebSocket 接続、Welcome 後の `channel.chat.message` 購読、keepalive 欠落/reconnect/revocation 処理、`event.message_id` fallback の重複排除、`twitch://chat-message` のフロントエンド購読を追加。`cargo test` と `pnpm build` は成功。実 Twitch チャンネルでの受信確認は未実施。
 - Git 作業ツリーは調査開始時点で clean。
 - `src-tauri/target` と `dist` がローカルに存在するため、ビルド済み成果物はある。
-- `src/components/MainView.tsx` の Chat view は現在サンプルメッセージ表示で、EventSub 由来のコメント表示には未接続。
-- `src/stores/appStore.ts` は `twitch://status` / `speech://status` の購読反映を実装済み。`twitch://chat-message` と実キュー連携は Phase 3/4 で実装する。
-- `src/tauri/client.ts` で `app://log`, `twitch://status`, `speech://status`, `speech://queue-updated` を購読できる。
+- `src/components/MainView.tsx` の Chat view は EventSub 由来のコメント表示に接続済み。未受信時のみサンプルメッセージを表示する。
+- `src/stores/appStore.ts` は `twitch://status` / `twitch://chat-message` / `speech://status` の購読反映を実装済み。実キュー連携は Phase 4 で実装する。
+- `src/tauri/client.ts` で `app://log`, `twitch://status`, `twitch://chat-message`, `speech://status`, `speech://queue-updated` を購読できる。
 - `src-tauri/src/app_events/mod.rs` にイベント payload と `tauri::Emitter` helper を実装し、設定/認証/棒読みちゃん操作から発火する。
-- `src-tauri/src/twitch/mod.rs` は認証中心で、EventSub WebSocket client と Helix subscription 作成は未実装。
+- `src-tauri/src/twitch/mod.rs` は認証、Helix ユーザー解決、EventSub WebSocket 接続、Helix subscription 作成まで実装済み。

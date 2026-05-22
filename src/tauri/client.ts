@@ -8,6 +8,7 @@ import type {
   SpeechStatusEvent,
   TwitchAuthPollResult,
   TwitchStatusEvent,
+  TwitchChatMessageEvent,
   TwitchAuthValidationResult,
   TwitchDeviceAuthStart,
   TwitchUserProfile,
@@ -156,6 +157,14 @@ export async function twitchGetStoredAuth(): Promise<TwitchUserProfile | undefin
   return profile ?? undefined;
 }
 
+export async function twitchConnect(channelLogin?: string): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("twitch_connect", { channelLogin });
+}
+
 export async function twitchDisconnect(): Promise<void> {
   if (!isTauriRuntime) {
     return;
@@ -200,6 +209,16 @@ export async function subscribeTwitchStatusEvents(
   }
 
   return listen<TwitchStatusEvent>("twitch://status", (event) => handler(event.payload));
+}
+
+export async function subscribeTwitchChatMessageEvents(
+  handler: (payload: TwitchChatMessageEvent) => void,
+): Promise<UnlistenFn> {
+  if (!isTauriRuntime) {
+    return () => {};
+  }
+
+  return listen<TwitchChatMessageEvent>("twitch://chat-message", (event) => handler(event.payload));
 }
 
 export async function subscribeSpeechStatusEvents(

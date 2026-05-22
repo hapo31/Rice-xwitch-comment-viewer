@@ -1,8 +1,16 @@
 #[cfg(feature = "app")]
-use crate::app_events::{emit_app_log, emit_twitch_status, AppLogLevel, TwitchStatus};
+use crate::app_events::{
+    emit_app_log, emit_twitch_chat_message, emit_twitch_status, AppLogLevel, TwitchStatus,
+};
 #[cfg(feature = "app")]
 use crate::settings::AppState;
+use chrono::Utc;
+#[cfg(feature = "app")]
+use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashSet, VecDeque};
+#[cfg(feature = "app")]
+use std::time::Duration;
 #[cfg(all(feature = "app", target_os = "linux"))]
 use std::{
     fs::{self, OpenOptions},
@@ -10,13 +18,24 @@ use std::{
     os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
+#[cfg(feature = "app")]
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 const TWITCH_DEVICE_URL: &str = "https://id.twitch.tv/oauth2/device";
 const TWITCH_TOKEN_URL: &str = "https://id.twitch.tv/oauth2/token";
 const TWITCH_VALIDATE_URL: &str = "https://id.twitch.tv/oauth2/validate";
+const TWITCH_USERS_URL: &str = "https://api.twitch.tv/helix/users";
+#[cfg(feature = "app")]
+const TWITCH_EVENTSUB_SUBSCRIPTIONS_URL: &str =
+    "https://api.twitch.tv/helix/eventsub/subscriptions";
+#[cfg(feature = "app")]
+const TWITCH_EVENTSUB_WS_URL: &str = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=30";
 const CHAT_READ_SCOPE: &str = "user:read:chat";
 const KEYRING_SERVICE: &str = "rice.twitch.oauth";
 const KEYRING_ACCOUNT: &str = "default";
+const CHANNEL_CHAT_MESSAGE_TYPE: &str = "channel.chat.message";
+const CHANNEL_CHAT_MESSAGE_VERSION: &str = "1";
+const DEDUPE_CACHE_LIMIT: usize = 500;
 #[cfg(all(feature = "app", target_os = "linux"))]
 const FALLBACK_AUTH_DIR: &str = ".rice";
 #[cfg(all(feature = "app", target_os = "linux"))]
@@ -33,12 +52,70 @@ pub struct ChatMessage {
     pub user_login: String,
     pub user_display_name: String,
     pub text: String,
+    pub fragments: Vec<MessageFragment>,
+    pub badges: Vec<ChatBadge>,
+    pub received_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Platform {
     Twitch,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageFragment {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub text: String,
+    pub emote: Option<ChatEmote>,
+    pub cheermote: Option<ChatCheermote>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatEmote {
+    pub id: String,
+    #[serde(alias = "emote_set_id")]
+    pub emote_set_id: String,
+    #[serde(default)]
+    #[serde(alias = "owner_id")]
+    pub owner_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatCheermote {
+    pub prefix: String,
+    pub bits: u32,
+    pub tier: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatBadge {
+    #[serde(alias = "set_id")]
+    pub set_id: String,
+    pub id: String,
+    pub info: String,
+}
+
+#[cfg(feature = "app")]
+#[derive(Debug)]
+pub struct TwitchConnectionHandle {
+    task: tokio::task::JoinHandle<()>,
+}
+
+#[cfg(feature = "app")]
+impl TwitchConnectionHandle {
+    fn new(task: tokio::task::JoinHandle<()>) -> Self {
+        Self { task }
+    }
+
+    fn abort(&self) {
+        self.task.abort();
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -152,9 +229,92 @@ struct ValidateResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct HelixUsersResponse {
+    data: Vec<HelixUser>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct HelixUser {
+    id: String,
+    login: String,
+    display_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct EventSubEnvelope {
+    metadata: EventSubMetadata,
+    #[serde(default)]
+    payload: EventSubPayload,
+}
+
+#[derive(Debug, Deserialize)]
+struct EventSubMetadata {
+    message_id: String,
+    message_type: String,
+    message_timestamp: String,
+    subscription_type: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct EventSubPayload {
+    session: Option<EventSubSession>,
+    subscription: Option<EventSubSubscription>,
+    event: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EventSubSession {
+    id: String,
+    keepalive_timeout_seconds: Option<u64>,
+    reconnect_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EventSubSubscription {
+    status: String,
+    #[serde(rename = "type")]
+    kind: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct EventSubChatMessageEvent {
+    broadcaster_user_id: String,
+    broadcaster_user_login: String,
+    chatter_user_id: String,
+    chatter_user_login: String,
+    chatter_user_name: String,
+    message_id: String,
+    message: EventSubChatMessageBody,
+    #[serde(default)]
+    badges: Vec<ChatBadge>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EventSubChatMessageBody {
+    text: String,
+    #[serde(default)]
+    fragments: Vec<MessageFragment>,
+}
+
+#[derive(Debug, Deserialize)]
 struct OAuthErrorResponse {
     message: Option<String>,
     error: Option<String>,
+}
+
+#[cfg(feature = "app")]
+#[derive(Debug, Clone)]
+struct EventSubConnectionParams {
+    client_id: String,
+    access_token: String,
+    broadcaster_user_id: String,
+    broadcaster_login: String,
+    user_id: String,
+}
+
+#[cfg(feature = "app")]
+enum EventSubSessionExit {
+    Reconnect(String),
 }
 
 impl From<ValidateResponse> for TwitchUserProfile {
@@ -673,10 +833,107 @@ pub fn twitch_get_stored_auth(
 
 #[cfg(feature = "app")]
 #[tauri::command]
+pub async fn twitch_connect(
+    channel_login: Option<String>,
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
+) -> Result<(), String> {
+    let configured_channel = {
+        let settings = state.settings.lock().map_err(|error| error.to_string())?;
+        settings.twitch.channel_login.trim().to_string()
+    };
+    let channel_login = channel_login
+        .unwrap_or(configured_channel)
+        .trim()
+        .trim_start_matches('@')
+        .to_ascii_lowercase();
+
+    let (access_token, client_id, user_id, own_login) = {
+        let auth = state
+            .twitch_auth
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let token = auth
+            .token
+            .as_ref()
+            .ok_or_else(|| "Twitch にログインしてから接続してください。".to_string())?;
+        let profile = auth.profile.as_ref().ok_or_else(|| {
+            "Twitch のユーザー情報がありません。認証を確認してください。".to_string()
+        })?;
+        (
+            token.access_token.clone(),
+            profile.client_id.clone(),
+            profile.user_id.clone(),
+            profile.login.clone(),
+        )
+    };
+
+    let channel_login = if channel_login.is_empty() {
+        own_login
+    } else {
+        channel_login
+    };
+    let broadcaster = fetch_twitch_user(&client_id, &access_token, &channel_login)
+        .await
+        .map_err(to_twitch_user_message)?;
+    let params = EventSubConnectionParams {
+        client_id,
+        access_token,
+        broadcaster_user_id: broadcaster.id.clone(),
+        broadcaster_login: broadcaster.login.clone(),
+        user_id,
+    };
+
+    {
+        let mut connection = state
+            .twitch_connection
+            .lock()
+            .map_err(|error| error.to_string())?;
+        if let Some(handle) = connection.take() {
+            handle.abort();
+        }
+
+        let app_for_task = app.clone();
+        let task = tokio::spawn(async move {
+            run_eventsub_connection(app_for_task, params).await;
+        });
+        *connection = Some(TwitchConnectionHandle::new(task));
+    }
+
+    emit_twitch_status(
+        &app,
+        TwitchStatus::Connecting,
+        Some(format!(
+            "Twitch チャンネル {} に接続しています。",
+            broadcaster.display_name
+        )),
+    );
+    emit_app_log(
+        &app,
+        AppLogLevel::Info,
+        format!(
+            "Twitch チャンネル {} への EventSub 接続を開始しました。",
+            broadcaster.login
+        ),
+    );
+    Ok(())
+}
+
+#[cfg(feature = "app")]
+#[tauri::command]
 pub fn twitch_disconnect(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<(), String> {
+    if let Some(handle) = state
+        .twitch_connection
+        .lock()
+        .map_err(|error| error.to_string())?
+        .take()
+    {
+        handle.abort();
+    }
+
     let mut auth = state
         .twitch_auth
         .lock()
@@ -775,6 +1032,293 @@ async fn validate_access_token(access_token: &str) -> anyhow::Result<ValidateRes
     parse_json_response(response).await
 }
 
+async fn fetch_twitch_user(
+    client_id: &str,
+    access_token: &str,
+    login: &str,
+) -> anyhow::Result<HelixUser> {
+    let response = reqwest::Client::new()
+        .get(TWITCH_USERS_URL)
+        .query(&[("login", login)])
+        .header("Client-Id", client_id)
+        .bearer_auth(access_token)
+        .send()
+        .await?;
+
+    let users = parse_json_response::<HelixUsersResponse>(response).await?;
+    users
+        .data
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Twitch チャンネル {login} が見つかりません。"))
+}
+
+#[cfg(feature = "app")]
+async fn run_eventsub_connection(
+    app: tauri::AppHandle<tauri::Wry>,
+    params: EventSubConnectionParams,
+) {
+    let mut url = TWITCH_EVENTSUB_WS_URL.to_string();
+    let mut subscribe_on_welcome = true;
+    let mut retry_attempt = 0u64;
+
+    loop {
+        match run_eventsub_session(&app, &params, &url, subscribe_on_welcome).await {
+            Ok(EventSubSessionExit::Reconnect(reconnect_url)) => {
+                retry_attempt = 0;
+                url = reconnect_url;
+                subscribe_on_welcome = false;
+                emit_twitch_status(
+                    &app,
+                    TwitchStatus::Reconnecting,
+                    Some("Twitch から再接続要求を受け取りました。".to_string()),
+                );
+                emit_app_log(
+                    &app,
+                    AppLogLevel::Warning,
+                    "Twitch EventSub の再接続要求を受け取りました。",
+                );
+            }
+            Err(error) => {
+                let error_message = error.to_string();
+                if error_message.contains("購読が取り消されました") {
+                    emit_app_log(&app, AppLogLevel::Error, error_message);
+                    break;
+                }
+                retry_attempt = retry_attempt.saturating_add(1);
+                let wait_seconds = retry_backoff_seconds(retry_attempt);
+                let message = format!(
+                    "Twitch EventSub が切断されました。{} 秒後に再接続します: {error}",
+                    wait_seconds
+                );
+                emit_twitch_status(&app, TwitchStatus::Reconnecting, Some(message.clone()));
+                emit_app_log(&app, AppLogLevel::Warning, message);
+                tokio::time::sleep(Duration::from_secs(wait_seconds)).await;
+                url = TWITCH_EVENTSUB_WS_URL.to_string();
+                subscribe_on_welcome = true;
+            }
+        }
+    }
+}
+
+#[cfg(feature = "app")]
+async fn run_eventsub_session(
+    app: &tauri::AppHandle<tauri::Wry>,
+    params: &EventSubConnectionParams,
+    url: &str,
+    subscribe_on_welcome: bool,
+) -> anyhow::Result<EventSubSessionExit> {
+    emit_twitch_status(
+        app,
+        TwitchStatus::Connecting,
+        Some(format!(
+            "Twitch チャンネル {} に接続しています。",
+            params.broadcaster_login
+        )),
+    );
+
+    let (mut socket, _) = connect_async(url).await?;
+    let mut keepalive_timeout = Duration::from_secs(40);
+    let mut seen_message_ids = MessageDedupe::new(DEDUPE_CACHE_LIMIT);
+
+    loop {
+        let next_message =
+            tokio::time::timeout(keepalive_timeout + Duration::from_secs(5), socket.next())
+                .await
+                .map_err(|_| {
+                    anyhow::anyhow!("Twitch から keepalive または通知が届きませんでした。")
+                })?
+                .ok_or_else(|| anyhow::anyhow!("Twitch EventSub WebSocket が閉じられました。"))??;
+
+        match next_message {
+            Message::Text(text) => {
+                let envelope = serde_json::from_str::<EventSubEnvelope>(&text)?;
+                match envelope.metadata.message_type.as_str() {
+                    "session_welcome" => {
+                        let session = envelope.payload.session.ok_or_else(|| {
+                            anyhow::anyhow!("Twitch の welcome に session がありません。")
+                        })?;
+                        if let Some(seconds) = session.keepalive_timeout_seconds {
+                            keepalive_timeout = Duration::from_secs(seconds);
+                        }
+                        if subscribe_on_welcome {
+                            create_chat_message_subscription(params, &session.id).await?;
+                        }
+                        emit_twitch_status(
+                            app,
+                            TwitchStatus::Connected,
+                            Some(format!(
+                                "Twitch チャンネル {} に接続しました。",
+                                params.broadcaster_login
+                            )),
+                        );
+                        emit_app_log(
+                            app,
+                            AppLogLevel::Info,
+                            format!("Twitch EventSub session {} を開始しました。", session.id),
+                        );
+                    }
+                    "session_keepalive" => {}
+                    "session_reconnect" => {
+                        let reconnect_url = envelope
+                            .payload
+                            .session
+                            .and_then(|session| session.reconnect_url)
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Twitch の reconnect に reconnect_url がありません。"
+                                )
+                            })?;
+                        return Ok(EventSubSessionExit::Reconnect(reconnect_url));
+                    }
+                    "notification" => {
+                        if let Some(message) = normalize_chat_message(envelope)? {
+                            let dedupe_id = message.id.clone();
+                            if seen_message_ids.insert(dedupe_id) {
+                                emit_twitch_chat_message(app, message);
+                            }
+                        }
+                    }
+                    "revocation" => {
+                        let reason = envelope
+                            .payload
+                            .subscription
+                            .map(|subscription| {
+                                format!("{} ({})", subscription.status, subscription.kind)
+                            })
+                            .unwrap_or_else(|| "理由不明".to_string());
+                        emit_twitch_status(
+                            app,
+                            TwitchStatus::AuthRequired,
+                            Some(format!(
+                                "Twitch EventSub 購読が取り消されました。再ログインしてください: {reason}"
+                            )),
+                        );
+                        return Err(anyhow::anyhow!(
+                            "Twitch EventSub 購読が取り消されました: {reason}"
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            Message::Ping(payload) => {
+                socket.send(Message::Pong(payload)).await?;
+            }
+            Message::Close(frame) => {
+                return Err(anyhow::anyhow!(
+                    "Twitch EventSub WebSocket が閉じられました: {:?}",
+                    frame
+                ));
+            }
+            _ => {}
+        }
+    }
+}
+
+#[cfg(feature = "app")]
+async fn create_chat_message_subscription(
+    params: &EventSubConnectionParams,
+    session_id: &str,
+) -> anyhow::Result<()> {
+    let body = serde_json::json!({
+        "type": CHANNEL_CHAT_MESSAGE_TYPE,
+        "version": CHANNEL_CHAT_MESSAGE_VERSION,
+        "condition": {
+            "broadcaster_user_id": params.broadcaster_user_id,
+            "user_id": params.user_id,
+        },
+        "transport": {
+            "method": "websocket",
+            "session_id": session_id,
+        },
+    });
+    let response = reqwest::Client::new()
+        .post(TWITCH_EVENTSUB_SUBSCRIPTIONS_URL)
+        .header("Client-Id", &params.client_id)
+        .bearer_auth(&params.access_token)
+        .json(&body)
+        .send()
+        .await?;
+
+    parse_json_response::<serde_json::Value>(response).await?;
+    Ok(())
+}
+
+fn normalize_chat_message(envelope: EventSubEnvelope) -> anyhow::Result<Option<ChatMessage>> {
+    if envelope.metadata.subscription_type.as_deref() != Some(CHANNEL_CHAT_MESSAGE_TYPE) {
+        return Ok(None);
+    }
+
+    let event = match envelope.payload.event {
+        Some(event) => event,
+        None => return Ok(None),
+    };
+    let event = serde_json::from_value::<EventSubChatMessageEvent>(event)?;
+    let received_at = if envelope.metadata.message_timestamp.is_empty() {
+        Utc::now().to_rfc3339()
+    } else {
+        envelope.metadata.message_timestamp
+    };
+    let id = if event.message_id.is_empty() {
+        envelope.metadata.message_id
+    } else {
+        event.message_id
+    };
+
+    Ok(Some(ChatMessage {
+        id,
+        platform: Platform::Twitch,
+        channel_id: event.broadcaster_user_id,
+        channel_login: event.broadcaster_user_login,
+        user_id: event.chatter_user_id,
+        user_login: event.chatter_user_login,
+        user_display_name: event.chatter_user_name,
+        text: event.message.text,
+        fragments: event.message.fragments,
+        badges: event.badges,
+        received_at,
+    }))
+}
+
+fn retry_backoff_seconds(attempt: u64) -> u64 {
+    match attempt {
+        0 | 1 => 2,
+        2 => 5,
+        3 => 10,
+        _ => 30,
+    }
+}
+
+struct MessageDedupe {
+    limit: usize,
+    seen: HashSet<String>,
+    order: VecDeque<String>,
+}
+
+impl MessageDedupe {
+    fn new(limit: usize) -> Self {
+        Self {
+            limit,
+            seen: HashSet::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    fn insert(&mut self, id: String) -> bool {
+        if !self.seen.insert(id.clone()) {
+            return false;
+        }
+
+        self.order.push_back(id);
+        while self.order.len() > self.limit {
+            if let Some(old_id) = self.order.pop_front() {
+                self.seen.remove(&old_id);
+            }
+        }
+        true
+    }
+}
+
 async fn parse_json_response<T>(response: reqwest::Response) -> anyhow::Result<T>
 where
     T: for<'de> Deserialize<'de>,
@@ -845,4 +1389,40 @@ enum PollAuthError {
     Denied,
     Expired,
     Other(anyhow::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_chat_message, EventSubEnvelope, MessageDedupe};
+
+    #[test]
+    fn parses_channel_chat_message_fixture() {
+        let fixture = include_str!("fixtures/channel_chat_message.json");
+        let envelope = serde_json::from_str::<EventSubEnvelope>(fixture).unwrap();
+        let message = normalize_chat_message(envelope).unwrap().unwrap();
+
+        assert_eq!(message.id, "cc106a89-1814-919d-454c-f4f2f970aae7");
+        assert_eq!(message.channel_id, "1971641");
+        assert_eq!(message.channel_login, "streamer");
+        assert_eq!(message.user_id, "4145994");
+        assert_eq!(message.user_login, "viewer32");
+        assert_eq!(message.user_display_name, "viewer32");
+        assert_eq!(message.text, "Hi chat Kappa");
+        assert_eq!(message.fragments.len(), 2);
+        assert_eq!(message.fragments[1].kind, "emote");
+        assert_eq!(message.fragments[1].emote.as_ref().unwrap().id, "25");
+        assert_eq!(message.badges[0].set_id, "broadcaster");
+        assert_eq!(message.received_at, "2023-11-06T18:11:47.492253549Z");
+    }
+
+    #[test]
+    fn message_dedupe_rejects_duplicate_ids() {
+        let mut dedupe = MessageDedupe::new(2);
+
+        assert!(dedupe.insert("a".to_string()));
+        assert!(!dedupe.insert("a".to_string()));
+        assert!(dedupe.insert("b".to_string()));
+        assert!(dedupe.insert("c".to_string()));
+        assert!(dedupe.insert("a".to_string()));
+    }
 }

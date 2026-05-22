@@ -12,6 +12,7 @@ interface MainViewProps {
   onTwitchStartAuth: () => void;
   onTwitchPollAuth: () => void;
   onTwitchValidateAuth: () => void;
+  onTwitchConnect: () => void;
   onTwitchDisconnect: () => void;
   onOpenExternalUrl: (url: string) => void;
 }
@@ -42,6 +43,7 @@ export function MainView({
   onTwitchStartAuth,
   onTwitchPollAuth,
   onTwitchValidateAuth,
+  onTwitchConnect,
   onTwitchDisconnect,
   onOpenExternalUrl,
 }: MainViewProps) {
@@ -72,6 +74,8 @@ export function MainView({
   }
 
   const messages = state.chatMessages.length > 0 ? state.chatMessages : sampleMessages;
+  const canConnectChat = state.twitchAuthStatus === "authenticated";
+  const chatTarget = state.settings?.twitch.channelLogin || state.twitchProfile?.login || "未設定";
 
   return (
     <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
@@ -80,9 +84,20 @@ export function MainView({
           <h1 className="truncate text-sm font-semibold text-zinc-100">Chat</h1>
           <p className="truncate text-xs text-zinc-500">Twitch EventSub WebSocket</p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-zinc-400">
-          <span className="h-2 w-2 rounded-full bg-zinc-600" />
-          未接続
+        <div className="flex items-center gap-3 text-xs text-zinc-400">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className={canConnectChat ? "h-2 w-2 rounded-full bg-emerald-400" : "h-2 w-2 rounded-full bg-zinc-600"} />
+            <span className="max-w-40 truncate">{chatTarget}</span>
+          </div>
+          <button
+            type="button"
+            disabled={!canConnectChat}
+            onClick={onTwitchConnect}
+            title="Twitch コメント接続"
+            className="inline-flex h-7 w-7 items-center justify-center border border-zinc-700 bg-zinc-850 text-zinc-200 hover:border-sky-400 disabled:cursor-not-allowed disabled:text-zinc-600"
+          >
+            <Network className="h-4 w-4" />
+          </button>
         </div>
       </header>
 

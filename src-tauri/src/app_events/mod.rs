@@ -1,3 +1,4 @@
+use crate::twitch::ChatMessage;
 use serde::Serialize;
 #[cfg(feature = "app")]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -99,6 +100,11 @@ pub fn emit_twitch_status<R: Runtime>(
         occurred_at_ms: current_timestamp_ms(),
     };
     let _ = app.emit(TWITCH_STATUS_EVENT, payload);
+}
+
+#[cfg(feature = "app")]
+pub fn emit_twitch_chat_message<R: Runtime>(app: &AppHandle<R>, message: ChatMessage) {
+    let _ = app.emit(TWITCH_CHAT_MESSAGE_EVENT, message);
 }
 
 #[cfg(feature = "app")]

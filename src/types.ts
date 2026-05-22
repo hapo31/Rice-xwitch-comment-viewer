@@ -32,6 +32,52 @@ export interface ChatMessage {
   userDisplayName: string;
   text: string;
   status: ChatDisplayState;
+  platform?: "twitch";
+  channelId?: string;
+  channelLogin?: string;
+  userId?: string;
+  userLogin?: string;
+  fragments?: TwitchMessageFragment[];
+  badges?: TwitchChatBadge[];
+}
+
+export interface TwitchChatMessageEvent {
+  id: string;
+  platform: "twitch";
+  channelId: string;
+  channelLogin: string;
+  userId: string;
+  userLogin: string;
+  userDisplayName: string;
+  text: string;
+  fragments: TwitchMessageFragment[];
+  badges: TwitchChatBadge[];
+  receivedAt: string;
+}
+
+export interface TwitchMessageFragment {
+  type: string;
+  text: string;
+  emote?: TwitchChatEmote | null;
+  cheermote?: TwitchChatCheermote | null;
+}
+
+export interface TwitchChatEmote {
+  id: string;
+  emoteSetId: string;
+  ownerId?: string;
+}
+
+export interface TwitchChatCheermote {
+  prefix: string;
+  bits: number;
+  tier: number;
+}
+
+export interface TwitchChatBadge {
+  setId: string;
+  id: string;
+  info: string;
 }
 
 export interface QueueItem {
