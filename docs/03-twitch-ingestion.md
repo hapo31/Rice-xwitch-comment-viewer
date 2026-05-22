@@ -48,6 +48,7 @@ Device Code Flowの利点:
 - access tokenとrefresh tokenはOS keyringに保存し、設定JSONには含めない。
 - keyring保存に失敗した場合は認証完了にせず、平文JSONへフォールバックしない。
 - 起動時はkeyringからOAuth状態を復元する。access tokenの検証に失敗した場合はrefresh tokenで更新を試み、成功時は新しいrefresh tokenを即時保存する。
+- LinuxではSecret Service API対応ストアを前提にする。Secret Serviceが利用できない環境では認証フロー開始前に日本語エラーを出し、kernel keyutilsや暗号化なしファイルへは退避しない。
 
 Client ID:
 

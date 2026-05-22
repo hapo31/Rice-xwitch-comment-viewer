@@ -122,6 +122,7 @@ Events:
 - 一般設定: Tauriのapp data配下にJSON保存。
 - Twitch OAuth状態: access token、refresh token、スコープ、有効期限、検証済みプロフィールをOS keyringへ保存する。設定JSONへは保存しない。
 - refresh token: 更新成功時にkeyring内の値を必ず新しい値へ差し替える。keyringが利用できない環境では認証成功を失敗扱いにし、平文JSONへフォールバックしない。
+- LinuxではWindows Credential ManagerやmacOS Keychainに相当する単一の標準ストアがないため、Secret Service API対応ストア（GNOME Keyring、KWallet、KeePassXC Secret Serviceなど）が利用できる場合だけ永続保存する。kernel keyutilsやmock backendは永続OAuth保存には使わない。
 - コメントログ: 初期MVPではメモリのみ。後でSQLiteを追加できる境界を残す。
 
 ## 推奨crate

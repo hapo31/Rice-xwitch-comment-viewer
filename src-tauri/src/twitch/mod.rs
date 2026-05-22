@@ -185,6 +185,14 @@ impl TwitchAuthStore {
         }
     }
 
+    fn ensure_available() -> anyhow::Result<()> {
+        let entry = keyring_entry()?;
+        match entry.get_password() {
+            Ok(_) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     fn save(auth: &TwitchAuthState) -> anyhow::Result<()> {
         let stored = auth
             .stored_auth()
@@ -229,6 +237,7 @@ pub async fn twitch_start_auth(
     if client_id.is_empty() {
         return Err("Twitch Client ID を設定してから認証を開始してください。".to_string());
     }
+    TwitchAuthStore::ensure_available().map_err(to_secure_store_user_message)?;
 
     let response = request_device_code(&client_id)
         .await
@@ -531,6 +540,14 @@ fn to_twitch_user_message(error: anyhow::Error) -> String {
 }
 
 fn to_secure_store_user_message(error: anyhow::Error) -> String {
+    #[cfg(target_os = "linux")]
+    {
+        return format!(
+            "Twitch 認証情報を安全に保存できませんでした。Linux では Secret Service 対応の資格情報ストア（GNOME Keyring、KWallet、KeePassXC Secret Service など）が起動している必要があります。資格情報ストアを有効にしてから再ログインしてください: {error}"
+        );
+    }
+
+    #[cfg(not(target_os = "linux"))]
     format!("Twitch 認証情報を安全に保存できませんでした。OS の資格情報ストアを確認してから再ログインしてください: {error}")
 }
 

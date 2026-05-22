@@ -29,6 +29,7 @@
 - refresh token更新と `/validate` を実装する。
 - OAuth状態をOS keyringへ保存し、起動時に復元する。
 - keyringへ保存できない場合は平文JSONへフォールバックせず、再ログインが必要な状態としてUIに出す。
+- LinuxではSecret Service API対応ストアが利用できるか認証フロー開始前に検査する。
 - ユーザーIDとログイン名を取得し、設定画面に表示する。
 
 完了条件:
