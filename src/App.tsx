@@ -96,7 +96,20 @@ export function App() {
     }
   }
 
-  async function handleTwitchPollAuth() {
+  useEffect(() => {
+    if (!state.twitchAuthPrompt) {
+      return;
+    }
+
+    const delay = Math.max(state.twitchAuthPrompt.interval, 1) * 1000;
+    const timer = window.setTimeout(() => {
+      void handleTwitchPollAuth({ quietWaiting: true });
+    }, delay);
+
+    return () => window.clearTimeout(timer);
+  }, [state.twitchAuthPrompt]);
+
+  async function handleTwitchPollAuth(options: { quietWaiting?: boolean } = {}) {
     try {
       const result = await twitchPollAuth();
       if (result.status === "authorized") {
@@ -108,7 +121,18 @@ export function App() {
           dispatch({ type: "warning.added", warning: result.storageWarning });
         }
       } else {
-        dispatch({ type: "warning.added", warning: result.message });
+        if (state.twitchAuthPrompt && (result.status === "pending" || result.status === "slowDown")) {
+          dispatch({
+            type: "twitch.authPrompt",
+            prompt: {
+              ...state.twitchAuthPrompt,
+              interval: result.interval,
+            },
+          });
+        }
+        if (!options.quietWaiting || (result.status !== "pending" && result.status !== "slowDown")) {
+          dispatch({ type: "warning.added", warning: result.message });
+        }
         if (result.status === "expired" || result.status === "denied") {
           dispatch({ type: "twitch.authPrompt", prompt: undefined });
         }

@@ -218,7 +218,7 @@ function SettingsView({
                     <Link2 className="h-4 w-4" />
                     {state.twitchAuthPrompt.verificationUri}
                   </a>
-                  <p className="text-xs text-zinc-500">期限 {Math.floor(state.twitchAuthPrompt.expiresIn / 60)} 分 / 確認間隔 {state.twitchAuthPrompt.interval} 秒</p>
+                  <p className="text-xs text-zinc-500">期限 {Math.floor(state.twitchAuthPrompt.expiresIn / 60)} 分 / 自動確認間隔 {state.twitchAuthPrompt.interval} 秒</p>
                 </div>
               </div>
             )}
