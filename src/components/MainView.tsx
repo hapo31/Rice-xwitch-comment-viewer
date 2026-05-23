@@ -1,6 +1,21 @@
-import { AlertCircle, CheckCircle2, CircleDashed, CircleOff, Link2, LogOut, Network, PlugZap, ShieldCheck, Volume2 } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  CircleDashed,
+  CircleOff,
+  FileText,
+  Link2,
+  ListTodo,
+  LogOut,
+  Network,
+  PlugZap,
+  ScrollText,
+  ShieldCheck,
+  Volume2,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import type { AppRoutePath } from "../routes";
 import type { AppState } from "../stores/appStore";
 import type { AppSettings, BouyomiConnectionDiagnostics, ChatDisplayState, ChatMessage } from "../types";
 
@@ -52,8 +67,30 @@ export function MainView({
     <Routes>
       <Route path="/" element={<Navigate to="/chat" replace />} />
       <Route path="/chat" element={<ChatView state={state} onTwitchConnect={onTwitchConnect} />} />
-      <Route path="/queue" element={<ChatView state={state} onTwitchConnect={onTwitchConnect} />} />
-      <Route path="/rules" element={<ChatView state={state} onTwitchConnect={onTwitchConnect} />} />
+      <Route
+        path="/queue"
+        element={
+          <PlaceholderView
+            path="/queue"
+            title="Queue"
+            subtitle="Speech queue"
+            description="読み上げキュー画面は Phase 4 で実装します。"
+            items={["FIFO キュー", "スキップ / クリア / 再読込", "キュー溢れ警告"]}
+          />
+        }
+      />
+      <Route
+        path="/rules"
+        element={
+          <PlaceholderView
+            path="/rules"
+            title="Rules"
+            subtitle="Speech formatter rules"
+            description="ルール画面は Phase 5 で実装します。"
+            items={["NG ユーザー", "NG ワード", "URL / 長文 / emote 処理"]}
+          />
+        }
+      />
       <Route
         path="/voices"
         element={
@@ -80,9 +117,80 @@ export function MainView({
           />
         }
       />
-      <Route path="/logs" element={<ChatView state={state} onTwitchConnect={onTwitchConnect} />} />
+      <Route
+        path="/logs"
+        element={
+          <PlaceholderView
+            path="/logs"
+            title="Logs"
+            subtitle="Application events"
+            description="ログ画面は Phase 5 で実装します。"
+            items={["EventSub 接続ログ", "Twitch 認証ログ", "読み上げアダプタログ"]}
+          />
+        }
+      />
       <Route path="*" element={<Navigate to="/chat" replace />} />
     </Routes>
+  );
+}
+
+function PlaceholderView({
+  path,
+  title,
+  subtitle,
+  description,
+  items,
+}: {
+  path: AppRoutePath;
+  title: string;
+  subtitle: string;
+  description: string;
+  items: string[];
+}) {
+  const Icon = {
+    "/chat": FileText,
+    "/queue": ListTodo,
+    "/rules": ShieldCheck,
+    "/voices": Volume2,
+    "/settings": FileText,
+    "/logs": ScrollText,
+  }[path];
+
+  return (
+    <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
+      <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
+        <div className="min-w-0">
+          <h1 className="truncate text-sm font-semibold text-zinc-100">{title}</h1>
+          <p className="truncate text-xs text-zinc-500">{subtitle}</p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-amber-300">
+          <span className="h-2 w-2 rounded-full bg-amber-400" />
+          未実装
+        </div>
+      </header>
+
+      <section className="h-[calc(100%-3rem)] overflow-auto p-4">
+        <div className="max-w-3xl border-y border-zinc-800">
+          <div className="flex items-start gap-3 border-b border-zinc-800 py-4">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-zinc-700 bg-zinc-850 text-zinc-300">
+              <Icon className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-zinc-100">{title} は準備中です</p>
+              <p className="mt-1 text-sm text-zinc-400">{description}</p>
+            </div>
+          </div>
+          <div className="divide-y divide-zinc-800">
+            {items.map((item) => (
+              <div key={item} className="grid grid-cols-[120px_minmax(0,1fr)] items-center py-3 text-sm">
+                <span className="text-zinc-500">予定</span>
+                <span className="text-zinc-200">{item}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </main>
   );
 }
 

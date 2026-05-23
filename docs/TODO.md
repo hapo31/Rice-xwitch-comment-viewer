@@ -22,6 +22,7 @@
 - [x] `src-tauri/src` に `twitch`, `speech`, `settings`, `app_events` の境界を作る。
 - [x] Activity Bar、Side Panel、Main View、Status Bar の基本レイアウトを作る。
 - [x] Activity Bar のビュー切り替えを `react-router-dom` ベースのルーティングへ移行する。
+- [x] 未実装 route に Chat view ではなく仮ページを表示する。
 - [x] 独自 Title Bar、ウィンドウ操作、リサイズハンドルを作る。
 - [x] UI 倍率の自動/手動切替を作る。
 - [x] 一般設定を Tauri app data 配下の `settings.json` に保存する。
@@ -136,7 +137,7 @@
 
 ## 調査メモ
 
-- 2026-05-23: `ViewId` と `AppState.activeView` による独自ビュー切り替えを廃止し、`react-router-dom` の `HashRouter` / `NavLink` / `Routes` へ移行した。Tauri の file/custom protocol 配信でも直接パス再読込に依存しないよう hash routing を採用。未実装の Queue / Rules / Logs route は従来の挙動と同じく Chat view 表示へフォールバックしている。
+- 2026-05-23: `ViewId` と `AppState.activeView` による独自ビュー切り替えを廃止し、`react-router-dom` の `HashRouter` / `NavLink` / `Routes` へ移行した。Tauri の file/custom protocol 配信でも直接パス再読込に依存しないよう hash routing を採用。未実装の Queue / Rules / Logs route は専用の仮ページを表示し、画面遷移したことが分かる状態にした。
 - 2026-05-23: GitHub Actions の Windows リリースビルドで `RICE_TWITCH_CLIENT_ID` を repository variable または secret から Docker build arg として渡すようにした。Client ID は Settings UI と `settings_get` の返却値から外し、OAuth 開始時はビルド時に埋め込まれた内部既定値だけを使う。古い `settings.json` に `clientId` が残っていても serde の未知フィールドとして無視される。
 - 2026-05-23: Windows リリース用に Linux Docker + `cargo-xwin` + NSIS の Dockerfile と、タグ `v[0-9]*` push でビルド/リリースする GitHub Actions workflow を追加。Tauri 公式では Windows 上の `tauri build` が本筋で、Linux/macOS からの Windows クロスビルドは NSIS 限定かつ caveat ありのため、workflow は `--bundles nsis` に固定した。Actions は build job と release job を分離し、build job は `contents: read` のみ、release job のみ `contents: write`。キャッシュ poisoning 回避のため `actions/cache` と Docker GHA cache は使わず、`docker build --pull --no-cache` と短期 artifact 受け渡しにした。
 - 2026-05-23: `cargo-xwin 0.22.0` の MSRV が Rust 1.89 だったため、Dockerfile の Rust image を `rust:1.89.0-bookworm` に更新した。
