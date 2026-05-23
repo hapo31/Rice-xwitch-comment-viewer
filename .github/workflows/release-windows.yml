@@ -1,0 +1,82 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    name: Build Windows NSIS bundle
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      DOCKER_BUILDKIT: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Build in Docker without shared caches
+        run: |
+          set -euo pipefail
+          rm -rf release-artifacts
+          mkdir -p release-artifacts
+          docker build \
+            --pull \
+            --no-cache \
+            --target artifacts \
+            --output type=local,dest=release-artifacts \
+            .
+
+      - name: Verify artifacts and write checksums
+        run: |
+          set -euo pipefail
+          find release-artifacts -maxdepth 1 -type f -print
+          test -n "$(find release-artifacts -maxdepth 1 -type f -name '*.exe' -print -quit)"
+          (cd release-artifacts && sha256sum * > SHA256SUMS.txt)
+
+      - name: Upload release artifact bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rice-windows-${{ github.ref_name }}
+          path: release-artifacts/*
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Create GitHub Release
+    needs: build-windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download release artifact bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rice-windows-${{ github.ref_name }}
+          path: release-artifacts
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" \
+            release-artifacts/* \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "Windows NSIS build for ${GITHUB_REF_NAME}." \
+            --verify-tag

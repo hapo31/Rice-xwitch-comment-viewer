@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-05-22
+最終調査日: 2026-05-23
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
 
@@ -13,7 +13,7 @@
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Settings 画面は実装済み。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub コメント受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 未着手 | store 上のキュー枠はあるが、Rust 側の `SpeechQueue` / `SpeechFormatter` と自動読み上げは未実装。 |
-| Phase 5: 配信運用向け仕上げ | 一部のみ | ステータスバーと警告表示はあるが、Logs 画面、自動接続、自動読み上げ、詳細な運用エラー整理は未実装。 |
+| Phase 5: 配信運用向け仕上げ | 一部のみ | ステータスバーと警告表示、タグリリース用 Windows ビルド CI はあるが、Logs 画面、自動接続、自動読み上げ、詳細な運用エラー整理は未実装。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
 ## Phase 0: プロジェクト作成
@@ -92,6 +92,9 @@
 
 ## Phase 5: 配信運用向け仕上げ
 
+- [x] `v[0-9]*` タグ push で Windows NSIS ビルドと GitHub Release 作成を行う Actions workflow を追加する。
+- [x] Windows リリースビルド用 Dockerfile と `.dockerignore` を追加する。
+- [x] リリース workflow では build/release job を分離し、release job のみ `contents: write`、build cache は未使用にする。
 - [ ] Logs view を実装する。
 - [ ] `app://log` event をフロントエンドへ接続する。
 - [ ] EventSub、認証、読み上げアダプタのログを Logs view に表示する。
@@ -131,6 +134,7 @@
 
 ## 調査メモ
 
+- 2026-05-23: Windows リリース用に Linux Docker + `cargo-xwin` + NSIS の Dockerfile と、タグ `v[0-9]*` push でビルド/リリースする GitHub Actions workflow を追加。Tauri 公式では Windows 上の `tauri build` が本筋で、Linux/macOS からの Windows クロスビルドは NSIS 限定かつ caveat ありのため、workflow は `--bundles nsis` に固定した。Actions は build job と release job を分離し、build job は `contents: read` のみ、release job のみ `contents: write`。キャッシュ poisoning 回避のため `actions/cache` と Docker GHA cache は使わず、`docker build --pull --no-cache` と短期 artifact 受け渡しにした。
 - 2026-05-22: Phase 1 実装確認として `cargo test` と `pnpm build` を実行し、どちらも成功。棒読みちゃん実機でのテスト発話、未起動、ポート競合、アプリ連携 OFF の手動確認は未実施。
 - 2026-05-22: Phase 3 の初期実装として `tokio-tungstenite` による EventSub WebSocket 接続、Welcome 後の `channel.chat.message` 購読、keepalive 欠落/reconnect/revocation 処理、`event.message_id` fallback の重複排除、`twitch://chat-message` のフロントエンド購読を追加。`cargo test` と `pnpm build` は成功。実 Twitch チャンネルでの受信確認は未実施。
 - 2026-05-22: Side Panel のキュー上へコメント受信の開始/停止ボタンを追加し、`twitch_stop_chat` で認証解除せずに EventSub 接続だけ停止できるようにした。UI store では Twitch 認証状態とコメント受信接続状態を分離。`cargo test` と `pnpm build` は成功。
