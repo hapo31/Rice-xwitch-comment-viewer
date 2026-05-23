@@ -17,6 +17,8 @@ import {
   speechConnectionDiagnostics,
   speechControl,
   speechHealthCheck,
+  speechQueueReload,
+  speechQueueRemove,
   speechTest,
   twitchConnect,
   twitchDisconnect,
@@ -89,6 +91,7 @@ export function App() {
         }
       }),
       subscribeSpeechQueueUpdatedEvents((event) => {
+        dispatch({ type: "queue.changed", items: event.items ?? [] });
         if (event.warning) {
           dispatch({ type: "warning.added", warning: event.warning });
         }
@@ -289,6 +292,22 @@ export function App() {
     }
   }
 
+  async function handleQueueReload() {
+    try {
+      await speechQueueReload();
+    } catch (error) {
+      dispatch({ type: "warning.added", warning: String(error) });
+    }
+  }
+
+  async function handleQueueRemove(itemId: string) {
+    try {
+      await speechQueueRemove(itemId);
+    } catch (error) {
+      dispatch({ type: "warning.added", warning: String(error) });
+    }
+  }
+
   return (
     <div className="relative grid h-full grid-cols-[48px_280px_minmax(0,1fr)] grid-rows-[2rem_minmax(0,1fr)_24px] bg-zinc-950 text-zinc-100">
       <TitleBar scale={displayScale.scale} scaleMode={displayScale.mode} onScaleModeChange={displayScale.setMode} />
@@ -307,6 +326,9 @@ export function App() {
         onSpeechHealthCheck={handleSpeechHealthCheck}
         onSpeechDiagnostics={handleSpeechDiagnostics}
         onSpeechTest={handleSpeechTest}
+        onSpeechControl={handleSpeechControl}
+        onQueueReload={handleQueueReload}
+        onQueueRemove={handleQueueRemove}
         onTwitchStartAuth={handleTwitchStartAuth}
         onTwitchPollAuth={handleTwitchPollAuth}
         onTwitchValidateAuth={handleTwitchValidateAuth}

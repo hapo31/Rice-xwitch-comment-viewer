@@ -1,5 +1,6 @@
 #[cfg(feature = "app")]
 use crate::app_events::{emit_app_log, AppLogLevel};
+use crate::speech::SpeechQueueState;
 use crate::twitch::TwitchAuthState;
 #[cfg(feature = "app")]
 use crate::twitch::TwitchConnectionHandle;
@@ -81,6 +82,7 @@ pub(crate) fn default_twitch_client_id() -> String {
 pub struct AppState {
     pub settings: SharedSettings<AppSettings>,
     pub twitch_auth: SharedSettings<TwitchAuthState>,
+    pub speech_queue: SharedSettings<SpeechQueueState>,
     #[cfg(feature = "app")]
     pub twitch_connection: SharedSettings<Option<TwitchConnectionHandle>>,
 }

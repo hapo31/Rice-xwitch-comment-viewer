@@ -4,6 +4,8 @@ use crate::app_events::{
 };
 #[cfg(feature = "app")]
 use crate::settings::AppState;
+#[cfg(feature = "app")]
+use crate::speech::{clear_speech_queue, pause_queue, resume_queue, skip_current_queue_item};
 use crate::speech::{SpeechAdapter, SpeechHealth, SpeechRequest, SpeechResult};
 use serde::Serialize;
 use std::time::Duration;
@@ -281,6 +283,7 @@ pub async fn speech_pause(
 ) -> Result<(), String> {
     let result = control_from_settings(&state, BouyomiControlCommand::Pause).await;
     if result.is_ok() {
+        let _ = pause_queue(&app);
         emit_speech_status(
             &app,
             SpeechStatus::Paused,
@@ -299,6 +302,7 @@ pub async fn speech_resume(
 ) -> Result<(), String> {
     let result = control_from_settings(&state, BouyomiControlCommand::Resume).await;
     if result.is_ok() {
+        let _ = resume_queue(app.clone());
         emit_speech_status(
             &app,
             SpeechStatus::Idle,
@@ -317,6 +321,7 @@ pub async fn speech_skip(
 ) -> Result<(), String> {
     let result = control_from_settings(&state, BouyomiControlCommand::Skip).await;
     if result.is_ok() {
+        let _ = skip_current_queue_item(&app);
         emit_speech_status(
             &app,
             SpeechStatus::Idle,
@@ -339,12 +344,13 @@ pub async fn speech_clear(
 ) -> Result<(), String> {
     let result = control_from_settings(&state, BouyomiControlCommand::Clear).await;
     if result.is_ok() {
+        let _ = clear_speech_queue(&app);
         emit_speech_status(
             &app,
             SpeechStatus::Idle,
             Some("読み上げキューをクリアしました。".to_string()),
         );
-        emit_speech_queue_updated(&app, 0, None);
+        emit_speech_queue_updated(&app, 0, Vec::new(), None);
         emit_app_log(&app, AppLogLevel::Info, "読み上げキューをクリアしました。");
     }
     result
@@ -360,7 +366,9 @@ async fn control_from_settings(
 }
 
 #[cfg(feature = "app")]
-fn adapter_from_settings(state: &tauri::State<'_, AppState>) -> Result<BouyomiAdapter, String> {
+pub(crate) fn adapter_from_settings(
+    state: &tauri::State<'_, AppState>,
+) -> Result<BouyomiAdapter, String> {
     let settings = state.settings.lock().map_err(|error| error.to_string())?;
     let addr = format!(
         "{}:{}",
@@ -387,7 +395,7 @@ fn normalize_test_text(text: &str) -> String {
     }
 }
 
-fn to_user_message(error: anyhow::Error) -> String {
+pub(crate) fn to_user_message(error: anyhow::Error) -> String {
     let message = error.to_string();
     if message.contains("Connection refused")
         || message.contains("os error 111")

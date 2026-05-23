@@ -4,6 +4,8 @@ use crate::app_events::{
 };
 #[cfg(feature = "app")]
 use crate::settings::{default_twitch_client_id, AppState};
+#[cfg(feature = "app")]
+use crate::speech::enqueue_chat_message_for_speech;
 use chrono::Utc;
 #[cfg(feature = "app")]
 use futures_util::{SinkExt, StreamExt};
@@ -1209,7 +1211,12 @@ async fn run_eventsub_session(
                         if let Some(message) = normalize_chat_message(envelope)? {
                             let dedupe_id = message.id.clone();
                             if seen_message_ids.insert(dedupe_id) {
-                                emit_twitch_chat_message(app, message);
+                                emit_twitch_chat_message(app, message.clone());
+                                if let Err(error) =
+                                    enqueue_chat_message_for_speech(app.clone(), message)
+                                {
+                                    emit_app_log(app, AppLogLevel::Error, error);
+                                }
                             }
                         }
                     }

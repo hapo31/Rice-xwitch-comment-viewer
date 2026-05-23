@@ -70,8 +70,30 @@ pub enum SpeechStatus {
 #[serde(rename_all = "camelCase")]
 pub struct SpeechQueueUpdatedEvent {
     pub queued_count: usize,
+    pub items: Vec<SpeechQueueItemEvent>,
     pub warning: Option<String>,
     pub occurred_at_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechQueueItemEvent {
+    pub id: String,
+    pub source_message_id: Option<String>,
+    pub user_display_name: String,
+    pub text: String,
+    pub status: SpeechQueueItemStatus,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SpeechQueueItemStatus {
+    Queued,
+    Speaking,
+    Spoken,
+    Skipped,
+    Blocked,
+    Error,
 }
 
 #[cfg(feature = "app")]
@@ -125,10 +147,12 @@ pub fn emit_speech_status<R: Runtime>(
 pub fn emit_speech_queue_updated<R: Runtime>(
     app: &AppHandle<R>,
     queued_count: usize,
+    items: Vec<SpeechQueueItemEvent>,
     warning: Option<String>,
 ) {
     let payload = SpeechQueueUpdatedEvent {
         queued_count,
+        items,
         warning,
         occurred_at_ms: current_timestamp_ms(),
     };

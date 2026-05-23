@@ -14,7 +14,7 @@
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 発話、制御、接続診断、Voices 画面は実装済み。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Settings 画面は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub コメント受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
-| Phase 4: 読み上げキュー統合 | 未着手 | store 上のキュー枠はあるが、Rust 側の `SpeechQueue` / `SpeechFormatter` と自動読み上げは未実装。 |
+| Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub コメントから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
 | Phase 5: 配信運用向け仕上げ | 一部のみ | ステータスバーと警告表示、タグリリース用 Windows ビルド CI はあるが、Logs 画面、自動接続、自動読み上げ、詳細な運用エラー整理は未実装。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
@@ -42,7 +42,7 @@
 - [x] Voices 画面から接続確認、診断、テスト発話、ホスト/ポート/声質設定を操作できるようにする。
 - [ ] 実機の棒読みちゃんでテスト発話できることを確認する。
 - [ ] 棒読みちゃん未起動、ポート競合、アプリ連携 OFF の手動確認を行う。
-- [ ] 接続失敗時に読み上げキューを破棄しない挙動を Phase 4 で統合確認する。
+- [x] 接続失敗時に読み上げキューを破棄しない挙動を Phase 4 で統合確認する。
 
 ## Phase 2: Twitch 認証
 
@@ -82,18 +82,18 @@
 
 ## Phase 4: 読み上げキュー統合
 
-- [ ] `SpeechFormatter` を実装する。
-- [ ] URL、改行、制御文字、長文、emote の扱いを `SpeechFormatter` に閉じ込める。
-- [ ] コメント由来の棒読みちゃんタグを初期設定で無効化またはエスケープする。
-- [ ] FIFO の `SpeechQueue` を実装する。
-- [ ] 最大件数 200、1 コメント最大 120 文字、ユーザー単位 2 秒の連投抑制を実装する。
-- [ ] キュー溢れ時に古い未読を落とし、UI に警告を出す。
-- [ ] 読み上げ失敗時に 1 回だけ短い遅延で再試行する。
-- [ ] コメント受信から `SpeechFormatter`、`SpeechQueue`、`BouyomiAdapter` への流れを接続する。
-- [ ] `speech://queue-updated` と `speech://status` events を実装する。
-- [ ] Queue view を実装し、スキップ、クリア、再読込、削除を操作できるようにする。
-- [ ] `SpeechFormatter` の NG/URL/長文処理テストを追加する。
-- [ ] TypeScript の store reducer テストを追加する。
+- [x] `SpeechFormatter` を実装する。
+- [x] URL、改行、制御文字、長文、emote の扱いを `SpeechFormatter` に閉じ込める。
+- [x] コメント由来の棒読みちゃんタグを初期設定で無効化またはエスケープする。
+- [x] FIFO の `SpeechQueue` を実装する。
+- [x] 最大件数 200、1 コメント最大 120 文字、ユーザー単位 2 秒の連投抑制を実装する。
+- [x] キュー溢れ時に古い未読を落とし、UI に警告を出す。
+- [x] 読み上げ失敗時に 1 回だけ短い遅延で再試行する。
+- [x] コメント受信から `SpeechFormatter`、`SpeechQueue`、`BouyomiAdapter` への流れを接続する。
+- [x] `speech://queue-updated` と `speech://status` events を実装する。
+- [x] Queue view を実装し、スキップ、クリア、再読込、削除を操作できるようにする。
+- [x] `SpeechFormatter` の NG/URL/長文処理テストを追加する。
+- [x] TypeScript の store reducer テストを追加する。
 
 ## Phase 5: 配信運用向け仕上げ
 
@@ -127,9 +127,9 @@
 - [x] Rust: 棒読みちゃん制御パケットテストを追加する。
 - [x] Rust: 外部 URL 許可リストのテストを追加する。
 - [x] Rust: `channel.chat.message` JSON fixture のパーステストを追加する。
-- [ ] Rust: `SpeechFormatter` の NG/URL/長文処理テストを追加する。
+- [x] Rust: `SpeechFormatter` の NG/URL/長文処理テストを追加する。
 - [ ] Rust: WebSocket 再接続状態遷移テストを追加する。
-- [ ] TypeScript: store reducer テストを追加する。
+- [x] TypeScript: store reducer テストを追加する。
 - [ ] TypeScript: コメント行の表示状態テストを追加する。
 - [ ] TypeScript: 設定フォームのバリデーションテストを追加する。
 - [ ] 手動: 棒読みちゃん未起動/起動中/ポート競合を確認する。

@@ -3,6 +3,7 @@ export type AuthStatus = "unauthenticated" | "authenticated" | "expired" | "erro
 export type SpeechStatus = "idle" | "speaking" | "paused" | "disconnected" | "error";
 
 export type ChatDisplayState = "queued" | "spoken" | "skipped" | "blocked" | "error";
+export type QueueDisplayState = ChatDisplayState | "speaking";
 
 export interface AppSettings {
   twitch: {
@@ -80,8 +81,9 @@ export interface TwitchChatBadge {
 export interface QueueItem {
   id: string;
   sourceMessageId?: string;
+  userDisplayName: string;
   text: string;
-  status: ChatDisplayState;
+  status: QueueDisplayState;
 }
 
 export interface BouyomiConnectionDiagnostics {
@@ -142,6 +144,7 @@ export interface SpeechStatusEvent {
 
 export interface SpeechQueueUpdatedEvent {
   queuedCount: number;
+  items: QueueItem[];
   warning?: string;
   occurredAtMs: number;
 }

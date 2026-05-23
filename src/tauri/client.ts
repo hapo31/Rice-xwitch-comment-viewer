@@ -116,6 +116,22 @@ export async function speechControl(command: "pause" | "resume" | "skip" | "clea
   return invoke<void>(commandName);
 }
 
+export async function speechQueueReload(): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("speech_queue_reload");
+}
+
+export async function speechQueueRemove(itemId: string): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("speech_queue_remove", { itemId });
+}
+
 export async function twitchStartAuth(): Promise<TwitchDeviceAuthStart> {
   if (!isTauriRuntime) {
     return {
