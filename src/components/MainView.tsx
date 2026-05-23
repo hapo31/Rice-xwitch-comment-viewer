@@ -1,5 +1,6 @@
 import { AlertCircle, CheckCircle2, CircleDashed, CircleOff, Link2, LogOut, Network, PlugZap, ShieldCheck, Volume2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
 import type { AppState } from "../stores/appStore";
 import type { AppSettings, BouyomiConnectionDiagnostics, ChatDisplayState, ChatMessage } from "../types";
 
@@ -47,32 +48,51 @@ export function MainView({
   onTwitchDisconnect,
   onOpenExternalUrl,
 }: MainViewProps) {
-  if (state.activeView === "voices") {
-    return (
-      <VoicesView
-        settings={state.settings}
-        onSettingsUpdate={onSettingsUpdate}
-        onSpeechHealthCheck={onSpeechHealthCheck}
-        onSpeechDiagnostics={onSpeechDiagnostics}
-        onSpeechTest={onSpeechTest}
+  return (
+    <Routes>
+      <Route path="/" element={<Navigate to="/chat" replace />} />
+      <Route path="/chat" element={<ChatView state={state} onTwitchConnect={onTwitchConnect} />} />
+      <Route path="/queue" element={<ChatView state={state} onTwitchConnect={onTwitchConnect} />} />
+      <Route path="/rules" element={<ChatView state={state} onTwitchConnect={onTwitchConnect} />} />
+      <Route
+        path="/voices"
+        element={
+          <VoicesView
+            settings={state.settings}
+            onSettingsUpdate={onSettingsUpdate}
+            onSpeechHealthCheck={onSpeechHealthCheck}
+            onSpeechDiagnostics={onSpeechDiagnostics}
+            onSpeechTest={onSpeechTest}
+          />
+        }
       />
-    );
-  }
-
-  if (state.activeView === "settings") {
-    return (
-      <SettingsView
-        state={state}
-        onSettingsUpdate={onSettingsUpdate}
-        onTwitchStartAuth={onTwitchStartAuth}
-        onTwitchPollAuth={onTwitchPollAuth}
-        onTwitchValidateAuth={onTwitchValidateAuth}
-        onTwitchDisconnect={onTwitchDisconnect}
-        onOpenExternalUrl={onOpenExternalUrl}
+      <Route
+        path="/settings"
+        element={
+          <SettingsView
+            state={state}
+            onSettingsUpdate={onSettingsUpdate}
+            onTwitchStartAuth={onTwitchStartAuth}
+            onTwitchPollAuth={onTwitchPollAuth}
+            onTwitchValidateAuth={onTwitchValidateAuth}
+            onTwitchDisconnect={onTwitchDisconnect}
+            onOpenExternalUrl={onOpenExternalUrl}
+          />
+        }
       />
-    );
-  }
+      <Route path="/logs" element={<ChatView state={state} onTwitchConnect={onTwitchConnect} />} />
+      <Route path="*" element={<Navigate to="/chat" replace />} />
+    </Routes>
+  );
+}
 
+function ChatView({
+  state,
+  onTwitchConnect,
+}: {
+  state: AppState;
+  onTwitchConnect: () => void;
+}) {
   const messages = state.chatMessages.length > 0 ? state.chatMessages : sampleMessages;
   const canConnectChat = state.twitchAuthStatus === "authenticated" && !["connecting", "connected", "reconnecting"].includes(state.twitchConnectionStatus);
   const chatTarget = state.settings?.twitch.channelLogin || state.twitchProfile?.login || "未設定";

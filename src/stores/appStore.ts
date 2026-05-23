@@ -7,11 +7,9 @@ import type {
   TwitchChatConnectionStatus,
   TwitchDeviceAuthStart,
   TwitchUserProfile,
-  ViewId,
 } from "../types";
 
 export interface AppState {
-  activeView: ViewId;
   twitchAuthStatus: AuthStatus;
   twitchConnectionStatus: TwitchChatConnectionStatus;
   twitchAuthPrompt?: TwitchDeviceAuthStart;
@@ -24,7 +22,6 @@ export interface AppState {
 }
 
 export type AppAction =
-  | { type: "view.changed"; view: ViewId }
   | { type: "settings.loaded"; settings: AppSettings }
   | { type: "twitch.authStatus"; status: AuthStatus }
   | { type: "twitch.connectionStatus"; status: TwitchChatConnectionStatus }
@@ -37,7 +34,6 @@ export type AppAction =
   | { type: "warnings.cleared" };
 
 export const initialAppState: AppState = {
-  activeView: "chat",
   twitchAuthStatus: "unauthenticated",
   twitchConnectionStatus: "disconnected",
   speechStatus: "disconnected",
@@ -48,8 +44,6 @@ export const initialAppState: AppState = {
 
 export function appReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
-    case "view.changed":
-      return { ...state, activeView: action.view };
     case "settings.loaded":
       return { ...state, settings: action.settings };
     case "twitch.authStatus":

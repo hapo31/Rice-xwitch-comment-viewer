@@ -1,4 +1,6 @@
 import { Pause, Play, Radio, RotateCcw, SkipForward, Square, Trash2, Volume2 } from "lucide-react";
+import { useLocation } from "react-router-dom";
+import { getRouteLabel } from "../routes";
 import type { AppState } from "../stores/appStore";
 
 interface SidePanelProps {
@@ -18,6 +20,7 @@ export function SidePanel({
   onTwitchStopChat,
   onWarningsClear,
 }: SidePanelProps) {
+  const location = useLocation();
   const channel = state.settings?.twitch.channelLogin || "未設定";
   const queueCount = state.queueItems.length;
   const twitchAuthLabel = {
@@ -52,7 +55,7 @@ export function SidePanel({
   return (
     <aside className="col-start-2 row-start-2 flex min-h-0 flex-col overflow-hidden border-r border-zinc-800 bg-zinc-900">
       <div className="shrink-0 border-b border-zinc-800 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-        {state.activeView}
+        {getRouteLabel(location.pathname)}
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-5 p-3 text-sm">
         <section className="shrink-0">

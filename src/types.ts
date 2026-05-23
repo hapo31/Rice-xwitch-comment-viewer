@@ -1,5 +1,3 @@
-export type ViewId = "chat" | "queue" | "rules" | "voices" | "settings" | "logs";
-
 export type AuthStatus = "unauthenticated" | "authenticated" | "expired" | "error";
 
 export type SpeechStatus = "idle" | "speaking" | "paused" | "disconnected" | "error";

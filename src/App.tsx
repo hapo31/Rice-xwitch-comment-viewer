@@ -292,7 +292,7 @@ export function App() {
   return (
     <div className="relative grid h-full grid-cols-[48px_280px_minmax(0,1fr)] grid-rows-[2rem_minmax(0,1fr)_24px] bg-zinc-950 text-zinc-100">
       <TitleBar scale={displayScale.scale} scaleMode={displayScale.mode} onScaleModeChange={displayScale.setMode} />
-      <ActivityBar activeView={state.activeView} onChange={(view) => dispatch({ type: "view.changed", view })} />
+      <ActivityBar />
       <SidePanel
         state={state}
         onSpeechControl={handleSpeechControl}
