@@ -15,13 +15,6 @@
   ],
   "init": true,
   "features": {
-    "ghcr.io/devcontainers/features/desktop-lite:1": {
-      "version": "latest",
-      "noVncVersion": "1.2.0",
-      "password": "vscode",
-      "webPort": "6080",
-      "vncPort": "5901"
-    },
     "ghcr.io/devcontainers/features/node:2.0.0": {
       "version": "20",
       "pnpmVersion": "8.11.0"
@@ -29,7 +22,8 @@
     "ghcr.io/devcontainers/features/rust:1": {
       "version": "latest",
       "profile": "minimal"
-    }
+    },
+     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   "forwardPorts": [6080, 5901],
   "portsAttributes": {
