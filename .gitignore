@@ -34,3 +34,4 @@ Thumbs.db
 # Codex local state
 .codex
 .codex/
+.codex-state-backup/
