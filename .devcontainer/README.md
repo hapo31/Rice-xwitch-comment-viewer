@@ -19,6 +19,12 @@ codex --version
 
 Codex の認証情報、履歴、セッション状態は named volume の `rice-codex-home` を `/home/vscode/.codex` にマウントして保持します。
 
+devcontainer を作成する前に手動で用意する場合、作成する volume 名は `rice-codex-home` です。
+
+```bash
+docker volume create rice-codex-home
+```
+
 これにより devcontainer を Rebuild しても `~/.codex/auth.json` や `~/.codex/history.jsonl` が残ります。初回だけ、既に別コンテナ内にあった未永続化の Codex 状態は自動移行されないため、必要なら再認証してください。
 
 ## Cargo target
