@@ -15,7 +15,7 @@
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Settings 画面は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub コメント受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub コメントから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
-| Phase 5: 配信運用向け仕上げ | 一部のみ | ステータスバーと警告表示、タグリリース用 Windows ビルド CI はあるが、Logs 画面、自動接続、自動読み上げ、詳細な運用エラー整理は未実装。 |
+| Phase 5: 配信運用向け仕上げ | 実装中 | Logs/Rules 画面、`app://log` 接続、ステータスバー集約、起動時自動接続、自動読み上げ ON/OFF、関連 TS テストを実装。詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
 ## Phase 0: プロジェクト作成
@@ -100,17 +100,17 @@
 - [x] `v[0-9]*` タグ push で Windows NSIS ビルドと GitHub Release 作成を行う Actions workflow を追加する。
 - [x] Windows リリースビルド用 Dockerfile と `.dockerignore` を追加する。
 - [x] リリース workflow では build/release job を分離し、release job のみ `contents: write`、build cache は未使用にする。
-- [ ] Logs view を実装する。
-- [ ] `app://log` event をフロントエンドへ接続する。
-- [ ] EventSub、認証、読み上げアダプタのログを Logs view に表示する。
-- [ ] ステータスバーに Twitch 接続状態、棒読みちゃん状態、キュー件数、警告状態を集約する。
-- [ ] 起動時自動接続を実装する。
-- [ ] 自動読み上げ ON/OFF を実装する。
-- [ ] Rules view を実装する。
-- [ ] NG ユーザー、NG ワード、URL 処理、長文処理、emote 処理の設定を実装する。
+- [x] Logs view を実装する。
+- [x] `app://log` event をフロントエンドへ接続する。
+- [x] EventSub、認証、読み上げアダプタのログを Logs view に表示する。
+- [x] ステータスバーに Twitch 接続状態、棒読みちゃん状態、キュー件数、警告状態を集約する。
+- [x] 起動時自動接続を実装する。
+- [x] 自動読み上げ ON/OFF を実装する。
+- [x] Rules view を実装する。
+- [x] NG ユーザー、NG ワード、URL 処理、長文処理、emote 処理の設定を実装する。
 - [ ] 配信中に判断しやすい日本語エラー文言を整理する。
-- [ ] コメント行の表示状態テストを追加する。
-- [ ] 設定フォームのバリデーションテストを追加する。
+- [x] コメント行の表示状態テストを追加する。
+- [x] 設定フォームのバリデーションテストを追加する。
 
 ## Phase 6: VOICEROID2 実験アダプタ
 
@@ -128,10 +128,10 @@
 - [x] Rust: 外部 URL 許可リストのテストを追加する。
 - [x] Rust: `channel.chat.message` JSON fixture のパーステストを追加する。
 - [x] Rust: `SpeechFormatter` の NG/URL/長文処理テストを追加する。
-- [ ] Rust: WebSocket 再接続状態遷移テストを追加する。
+- [x] Rust: WebSocket 再接続状態遷移テストを追加する。
 - [x] TypeScript: store reducer テストを追加する。
-- [ ] TypeScript: コメント行の表示状態テストを追加する。
-- [ ] TypeScript: 設定フォームのバリデーションテストを追加する。
+- [x] TypeScript: コメント行の表示状態テストを追加する。
+- [x] TypeScript: 設定フォームのバリデーションテストを追加する。
 - [ ] 手動: 棒読みちゃん未起動/起動中/ポート競合を確認する。
 - [ ] 手動: Twitch トークン期限切れ/認可取り消しを確認する。
 - [ ] 手動: 配信中コメント連投を確認する。

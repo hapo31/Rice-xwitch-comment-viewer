@@ -1434,7 +1434,7 @@ enum PollAuthError {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_chat_message, EventSubEnvelope, MessageDedupe};
+    use super::{normalize_chat_message, retry_backoff_seconds, EventSubEnvelope, MessageDedupe};
 
     #[test]
     fn parses_channel_chat_message_fixture() {
@@ -1465,5 +1465,15 @@ mod tests {
         assert!(dedupe.insert("b".to_string()));
         assert!(dedupe.insert("c".to_string()));
         assert!(dedupe.insert("a".to_string()));
+    }
+
+    #[test]
+    fn retry_backoff_caps_after_repeated_reconnects() {
+        assert_eq!(retry_backoff_seconds(0), 2);
+        assert_eq!(retry_backoff_seconds(1), 2);
+        assert_eq!(retry_backoff_seconds(2), 5);
+        assert_eq!(retry_backoff_seconds(3), 10);
+        assert_eq!(retry_backoff_seconds(4), 30);
+        assert_eq!(retry_backoff_seconds(10), 30);
     }
 }

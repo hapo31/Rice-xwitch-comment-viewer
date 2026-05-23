@@ -62,4 +62,21 @@ describe("appReducer", () => {
       "warning 3",
     ]);
   });
+
+  it("stores application logs for the Logs view", () => {
+    const state = appReducer(initialAppState, {
+      type: "log.added",
+      log: {
+        level: "warning",
+        message: "Twitch EventSub が切断されました。",
+        occurredAtMs: 1,
+      },
+    });
+
+    expect(state.logs).toHaveLength(1);
+    expect(state.logs[0]).toMatchObject({
+      id: "1-warning-Twitch EventSub が切断されました。",
+      level: "warning",
+    });
+  });
 });

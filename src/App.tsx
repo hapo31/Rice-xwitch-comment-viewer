@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from "react";
+import { useEffect, useReducer, useRef } from "react";
 import { ActivityBar } from "./components/ActivityBar";
 import { MainView } from "./components/MainView";
 import { SidePanel } from "./components/SidePanel";
@@ -34,6 +34,7 @@ import type { AppSettings, BouyomiConnectionDiagnostics } from "./types";
 export function App() {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   const displayScale = useDisplayScale();
+  const autoConnectAttempted = useRef(false);
 
   useEffect(() => {
     getSettings()
@@ -55,6 +56,7 @@ export function App() {
 
     void Promise.all([
       subscribeAppLogEvents((event) => {
+        dispatch({ type: "log.added", log: event });
         if (event.level !== "info") {
           dispatch({ type: "warning.added", warning: event.message });
         }
@@ -106,6 +108,20 @@ export function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      autoConnectAttempted.current ||
+      !state.settings?.twitch.autoConnect ||
+      state.twitchAuthStatus !== "authenticated" ||
+      state.twitchConnectionStatus !== "disconnected"
+    ) {
+      return;
+    }
+
+    autoConnectAttempted.current = true;
+    void handleTwitchConnect();
+  }, [state.settings?.twitch.autoConnect, state.twitchAuthStatus, state.twitchConnectionStatus]);
 
   async function handleSpeechTest(text?: string) {
     try {

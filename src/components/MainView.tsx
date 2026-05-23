@@ -1,8 +1,5 @@
 import {
-  AlertCircle,
   CheckCircle2,
-  CircleDashed,
-  CircleOff,
   FileText,
   Link2,
   ListTodo,
@@ -18,9 +15,11 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { getChatStatusPresentation, queueStatusLabel } from "../presentation/chat";
 import type { AppRoutePath } from "../routes";
 import type { AppState } from "../stores/appStore";
-import type { AppSettings, BouyomiConnectionDiagnostics, ChatDisplayState, ChatMessage } from "../types";
+import type { AppLogLevel, AppSettings, BouyomiConnectionDiagnostics, ChatDisplayState, ChatMessage } from "../types";
+import { formatRuleList, isValidBouyomiVoice, isValidPort, isValidTwitchChannelLogin, parseRuleList } from "../validation";
 
 interface MainViewProps {
   state: AppState;
@@ -69,8 +68,13 @@ const defaultSpeechSettings: AppSettings["speech"] = {
   bouyomiVolume: -1,
   bouyomiVoice: 0,
   readUserName: true,
+  autoSpeak: true,
   maxCommentLength: 120,
   repeatSuppressionSeconds: 2,
+  blockedUsers: [],
+  blockedWords: [],
+  urlHandling: "replace",
+  readEmotes: false,
 };
 
 export function MainView({
@@ -106,13 +110,7 @@ export function MainView({
       <Route
         path="/rules"
         element={
-          <PlaceholderView
-            path="/rules"
-            title="Rules"
-            subtitle="Speech formatter rules"
-            description="ルール画面は Phase 5 で実装します。"
-            items={["NG ユーザー", "NG ワード", "URL / 長文 / emote 処理"]}
-          />
+          <RulesView settings={state.settings} onSettingsUpdate={onSettingsUpdate} />
         }
       />
       <Route
@@ -143,15 +141,7 @@ export function MainView({
       />
       <Route
         path="/logs"
-        element={
-          <PlaceholderView
-            path="/logs"
-            title="Logs"
-            subtitle="Application events"
-            description="ログ画面は Phase 5 で実装します。"
-            items={["EventSub 接続ログ", "Twitch 認証ログ", "読み上げアダプタログ"]}
-          />
-        }
+        element={<LogsView state={state} />}
       />
       <Route path="*" element={<Navigate to="/chat" replace />} />
     </Routes>
@@ -363,6 +353,173 @@ function QueueView({
   );
 }
 
+function RulesView({
+  settings,
+  onSettingsUpdate,
+}: {
+  settings?: AppSettings;
+  onSettingsUpdate: (patch: Partial<AppSettings>) => void;
+}) {
+  const speechSettings = {
+    ...defaultSpeechSettings,
+    ...settings?.speech,
+  };
+  const [blockedUsers, setBlockedUsers] = useState(formatRuleList(speechSettings.blockedUsers));
+  const [blockedWords, setBlockedWords] = useState(formatRuleList(speechSettings.blockedWords));
+  const [urlHandling, setUrlHandling] = useState(speechSettings.urlHandling);
+  const [maxLength, setMaxLength] = useState(String(speechSettings.maxCommentLength));
+  const [repeatSeconds, setRepeatSeconds] = useState(String(speechSettings.repeatSuppressionSeconds));
+  const [readUserName, setReadUserName] = useState(speechSettings.readUserName);
+  const [autoSpeak, setAutoSpeak] = useState(speechSettings.autoSpeak);
+  const [readEmotes, setReadEmotes] = useState(speechSettings.readEmotes);
+
+  useEffect(() => {
+    setBlockedUsers(formatRuleList(speechSettings.blockedUsers));
+    setBlockedWords(formatRuleList(speechSettings.blockedWords));
+    setUrlHandling(speechSettings.urlHandling);
+    setMaxLength(String(speechSettings.maxCommentLength));
+    setRepeatSeconds(String(speechSettings.repeatSuppressionSeconds));
+    setReadUserName(speechSettings.readUserName);
+    setAutoSpeak(speechSettings.autoSpeak);
+    setReadEmotes(speechSettings.readEmotes);
+  }, [
+    speechSettings.blockedUsers,
+    speechSettings.blockedWords,
+    speechSettings.urlHandling,
+    speechSettings.maxCommentLength,
+    speechSettings.repeatSuppressionSeconds,
+    speechSettings.readUserName,
+    speechSettings.autoSpeak,
+    speechSettings.readEmotes,
+  ]);
+
+  const numericMaxLength = Number(maxLength);
+  const numericRepeatSeconds = Number(repeatSeconds);
+  const isMaxLengthValid = Number.isInteger(numericMaxLength) && numericMaxLength >= 1 && numericMaxLength <= 500;
+  const isRepeatSecondsValid = Number.isInteger(numericRepeatSeconds) && numericRepeatSeconds >= 0 && numericRepeatSeconds <= 30;
+
+  function saveRules() {
+    if (!isMaxLengthValid || !isRepeatSecondsValid) {
+      return;
+    }
+
+    onSettingsUpdate({
+      speech: {
+        ...speechSettings,
+        autoSpeak,
+        readUserName,
+        maxCommentLength: numericMaxLength,
+        repeatSuppressionSeconds: numericRepeatSeconds,
+        blockedUsers: parseRuleList(blockedUsers),
+        blockedWords: parseRuleList(blockedWords),
+        urlHandling,
+        readEmotes,
+      },
+    });
+  }
+
+  return (
+    <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
+      <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
+        <div className="min-w-0">
+          <h1 className="truncate text-sm font-semibold text-zinc-100">Rules</h1>
+          <p className="truncate text-xs text-zinc-500">Speech formatter rules</p>
+        </div>
+        <button
+          type="button"
+          disabled={!isMaxLengthValid || !isRepeatSecondsValid}
+          onClick={saveRules}
+          className="border border-sky-500 bg-sky-500 px-3 py-1.5 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
+        >
+          保存
+        </button>
+      </header>
+
+      <div className="h-[calc(100%-3rem)] overflow-auto p-4">
+        <div className="max-w-3xl space-y-6">
+          <section className="border-y border-zinc-800">
+            <ToggleRow label="自動読み上げ" checked={autoSpeak} onChange={setAutoSpeak} />
+            <ToggleRow label="ユーザー名を読む" checked={readUserName} onChange={setReadUserName} />
+            <ToggleRow label="emote を読む" checked={readEmotes} onChange={setReadEmotes} />
+          </section>
+
+          <section className="border-y border-zinc-800">
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-b border-zinc-800 py-3">
+              <label className="text-sm text-zinc-400" htmlFor="rule-url-handling">
+                URL
+              </label>
+              <select
+                id="rule-url-handling"
+                value={urlHandling}
+                onChange={(event) => setUrlHandling(event.target.value as AppSettings["speech"]["urlHandling"])}
+                className="h-9 w-52 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
+              >
+                <option value="replace">URL省略</option>
+                <option value="read">そのまま読む</option>
+                <option value="block">読み上げない</option>
+              </select>
+            </div>
+            <NumberRuleRow
+              id="rule-max-length"
+              label="最大文字数"
+              value={maxLength}
+              onChange={setMaxLength}
+              valid={isMaxLengthValid}
+              error="1 から 500 の範囲で入力してください。"
+            />
+            <NumberRuleRow
+              id="rule-repeat-seconds"
+              label="連投抑制秒"
+              value={repeatSeconds}
+              onChange={setRepeatSeconds}
+              valid={isRepeatSecondsValid}
+              error="0 から 30 の範囲で入力してください。"
+            />
+          </section>
+
+          <section className="border-y border-zinc-800">
+            <RuleTextArea label="NG ユーザー" value={blockedUsers} onChange={setBlockedUsers} />
+            <RuleTextArea label="NG ワード" value={blockedWords} onChange={setBlockedWords} />
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function LogsView({ state }: { state: AppState }) {
+  return (
+    <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
+      <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
+        <div className="min-w-0">
+          <h1 className="truncate text-sm font-semibold text-zinc-100">Logs</h1>
+          <p className="truncate text-xs text-zinc-500">Application events</p>
+        </div>
+        <div className="text-xs text-zinc-400">{state.logs.length} events</div>
+      </header>
+
+      <section className="h-[calc(100%-3rem)] overflow-auto">
+        <div className="grid grid-cols-[96px_88px_minmax(0,1fr)] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-500">
+          <span>時刻</span>
+          <span>種別</span>
+          <span>メッセージ</span>
+        </div>
+        {state.logs.length === 0 ? (
+          <div className="px-4 py-8 text-sm text-zinc-500">ログはまだありません。</div>
+        ) : (
+          state.logs.map((log) => (
+            <div key={log.id} className="grid min-h-10 grid-cols-[96px_88px_minmax(0,1fr)] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
+              <span className="font-mono text-xs text-zinc-500">{formatLogTime(log.occurredAtMs)}</span>
+              <span className={`text-xs ${logLevelClass(log.level)}`}>{logLevelLabel(log.level)}</span>
+              <span className="break-words text-zinc-200">{log.message}</span>
+            </div>
+          ))
+        )}
+      </section>
+    </main>
+  );
+}
+
 function SettingsView({
   state,
   onSettingsUpdate,
@@ -385,11 +542,13 @@ function SettingsView({
     ...state.settings?.twitch,
   };
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);
-  const isChannelValid = channelLogin.trim().length === 0 || /^[a-zA-Z0-9_]{3,25}$/.test(channelLogin.trim());
+  const [autoConnect, setAutoConnect] = useState(twitchSettings.autoConnect);
+  const isChannelValid = isValidTwitchChannelLogin(channelLogin);
 
   useEffect(() => {
     setChannelLogin(twitchSettings.channelLogin);
-  }, [twitchSettings.channelLogin]);
+    setAutoConnect(twitchSettings.autoConnect);
+  }, [twitchSettings.channelLogin, twitchSettings.autoConnect]);
 
   function saveTwitchSettings() {
     if (!isChannelValid) {
@@ -400,6 +559,7 @@ function SettingsView({
       twitch: {
         ...twitchSettings,
         channelLogin: channelLogin.trim(),
+        autoConnect,
       },
     });
   }
@@ -435,6 +595,15 @@ function SettingsView({
               </div>
             </div>
             <div className="flex justify-end py-3">
+              <label className="mr-auto flex items-center gap-2 text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={autoConnect}
+                  onChange={(event) => setAutoConnect(event.target.checked)}
+                  className="h-4 w-4 accent-sky-400"
+                />
+                起動時にコメント受信を開始
+              </label>
               <button
                 type="button"
                 disabled={!isChannelValid}
@@ -557,8 +726,8 @@ function VoicesView({
 
   const numericPort = Number(port);
   const numericVoice = Number(voice);
-  const isPortValid = Number.isInteger(numericPort) && numericPort > 0 && numericPort <= 65535;
-  const isVoiceValid = Number.isInteger(numericVoice) && numericVoice >= 0 && numericVoice <= 30000;
+  const isPortValid = isValidPort(port);
+  const isVoiceValid = isValidBouyomiVoice(voice);
   const isHostValid = host.trim().length > 0;
 
   function saveBouyomiSettings() {
@@ -738,6 +907,87 @@ function VoicesView({
   );
 }
 
+function ToggleRow({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-b border-zinc-800 py-3 last:border-b-0">
+      <span className="text-sm text-zinc-400">{label}</span>
+      <span className="flex items-center gap-2 text-sm text-zinc-200">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+          className="h-4 w-4 accent-sky-400"
+        />
+        {checked ? "ON" : "OFF"}
+      </span>
+    </label>
+  );
+}
+
+function NumberRuleRow({
+  id,
+  label,
+  value,
+  valid,
+  error,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  valid: boolean;
+  error: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3 last:border-b-0">
+      <label className="pt-2 text-sm text-zinc-400" htmlFor={id}>
+        {label}
+      </label>
+      <div>
+        <input
+          id={id}
+          inputMode="numeric"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
+        />
+        {!valid && <p className="mt-1 text-xs text-rose-400">{error}</p>}
+      </div>
+    </div>
+  );
+}
+
+function RuleTextArea({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3 last:border-b-0">
+      <label className="pt-2 text-sm text-zinc-400">{label}</label>
+      <textarea
+        value={value}
+        rows={5}
+        onChange={(event) => onChange(event.target.value)}
+        className="resize-y border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-400"
+      />
+    </div>
+  );
+}
+
 function RangeRow({
   label,
   value,
@@ -787,13 +1037,7 @@ function ChatRow({ message }: { message: ChatMessage }) {
 }
 
 function StatusIcon({ status }: { status: ChatDisplayState }) {
-  const props = {
-    queued: { icon: CircleDashed, label: "queued", className: "text-sky-400" },
-    spoken: { icon: CheckCircle2, label: "spoken", className: "text-emerald-400" },
-    skipped: { icon: CircleOff, label: "skipped", className: "text-zinc-500" },
-    blocked: { icon: CircleOff, label: "blocked", className: "text-amber-400" },
-    error: { icon: AlertCircle, label: "error", className: "text-rose-400" },
-  }[status];
+  const props = getChatStatusPresentation(status);
   const Icon = props.icon;
 
   return (
@@ -803,13 +1047,26 @@ function StatusIcon({ status }: { status: ChatDisplayState }) {
   );
 }
 
-function queueStatusLabel(status: string) {
+function formatLogTime(occurredAtMs: number): string {
+  return new Intl.DateTimeFormat("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(occurredAtMs));
+}
+
+function logLevelLabel(level: AppLogLevel): string {
   return {
-    queued: "待機",
-    speaking: "読み上げ中",
-    spoken: "完了",
-    skipped: "スキップ",
-    blocked: "抑制",
+    info: "情報",
+    warning: "警告",
     error: "エラー",
-  }[status] ?? status;
+  }[level];
+}
+
+function logLevelClass(level: AppLogLevel): string {
+  return {
+    info: "text-zinc-400",
+    warning: "text-amber-300",
+    error: "text-rose-300",
+  }[level];
 }

@@ -19,8 +19,13 @@ export interface AppSettings {
     bouyomiVolume: number;
     bouyomiVoice: number;
     readUserName: boolean;
+    autoSpeak: boolean;
     maxCommentLength: number;
     repeatSuppressionSeconds: number;
+    blockedUsers: string[];
+    blockedWords: string[];
+    urlHandling: "replace" | "read" | "block";
+    readEmotes: boolean;
   };
 }
 
@@ -121,6 +126,7 @@ export interface TwitchAuthValidationResult {
 export type AppLogLevel = "info" | "warning" | "error";
 
 export interface AppLogEvent {
+  id?: string;
   level: AppLogLevel;
   message: string;
   occurredAtMs: number;

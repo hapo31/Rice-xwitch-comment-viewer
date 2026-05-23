@@ -28,8 +28,13 @@ const fallbackSettings: AppSettings = {
     bouyomiVolume: -1,
     bouyomiVoice: 0,
     readUserName: true,
+    autoSpeak: true,
     maxCommentLength: 120,
     repeatSuppressionSeconds: 2,
+    blockedUsers: [],
+    blockedWords: [],
+    urlHandling: "replace",
+    readEmotes: false,
   },
 };
 

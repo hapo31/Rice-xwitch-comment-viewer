@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  AppLogEvent,
   AuthStatus,
   ChatMessage,
   QueueItem,
@@ -18,6 +19,7 @@ export interface AppState {
   settings?: AppSettings;
   chatMessages: ChatMessage[];
   queueItems: QueueItem[];
+  logs: AppLogEvent[];
   warnings: string[];
 }
 
@@ -30,7 +32,9 @@ export type AppAction =
   | { type: "speech.status"; status: SpeechStatus }
   | { type: "chat.message"; message: ChatMessage }
   | { type: "queue.changed"; items: QueueItem[] }
+  | { type: "log.added"; log: AppLogEvent }
   | { type: "warning.added"; warning: string }
+  | { type: "logs.cleared" }
   | { type: "warnings.cleared" };
 
 export const initialAppState: AppState = {
@@ -39,6 +43,7 @@ export const initialAppState: AppState = {
   speechStatus: "disconnected",
   chatMessages: [],
   queueItems: [],
+  logs: [],
   warnings: [],
 };
 
@@ -63,11 +68,19 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       };
     case "queue.changed":
       return { ...state, queueItems: action.items };
+    case "log.added":
+      return { ...state, logs: [{ ...action.log, id: action.log.id ?? logId(action.log) }, ...state.logs].slice(0, 500) };
     case "warning.added":
       return { ...state, warnings: [action.warning, ...state.warnings].slice(0, 5) };
+    case "logs.cleared":
+      return { ...state, logs: [] };
     case "warnings.cleared":
       return { ...state, warnings: [] };
     default:
       return state;
   }
+}
+
+function logId(log: AppLogEvent): string {
+  return `${log.occurredAtMs}-${log.level}-${log.message}`;
 }

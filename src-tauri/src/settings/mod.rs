@@ -41,14 +41,50 @@ pub struct SpeechSettings {
     #[serde(default = "default_bouyomi_voice")]
     pub bouyomi_voice: i16,
     pub read_user_name: bool,
+    #[serde(default = "default_auto_speak")]
+    pub auto_speak: bool,
     pub max_comment_length: u16,
     pub repeat_suppression_seconds: u16,
+    #[serde(default)]
+    pub blocked_users: Vec<String>,
+    #[serde(default)]
+    pub blocked_words: Vec<String>,
+    #[serde(default = "default_url_handling")]
+    pub url_handling: UrlHandling,
+    #[serde(default = "default_read_emotes")]
+    pub read_emotes: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SpeechAdapterKind {
     Bouyomi,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UrlHandling {
+    Replace,
+    Read,
+    Block,
+}
+
+impl Default for UrlHandling {
+    fn default() -> Self {
+        default_url_handling()
+    }
+}
+
+fn default_auto_speak() -> bool {
+    true
+}
+
+fn default_url_handling() -> UrlHandling {
+    UrlHandling::Replace
+}
+
+fn default_read_emotes() -> bool {
+    false
 }
 
 fn default_bouyomi_speed() -> i16 {
@@ -103,8 +139,13 @@ impl Default for AppSettings {
                 bouyomi_volume: -1,
                 bouyomi_voice: 0,
                 read_user_name: true,
+                auto_speak: true,
                 max_comment_length: 120,
                 repeat_suppression_seconds: 2,
+                blocked_users: Vec::new(),
+                blocked_words: Vec::new(),
+                url_handling: UrlHandling::Replace,
+                read_emotes: false,
             },
         }
     }
@@ -135,8 +176,13 @@ pub struct SpeechSettingsPatch {
     pub bouyomi_volume: Option<i16>,
     pub bouyomi_voice: Option<i16>,
     pub read_user_name: Option<bool>,
+    pub auto_speak: Option<bool>,
     pub max_comment_length: Option<u16>,
     pub repeat_suppression_seconds: Option<u16>,
+    pub blocked_users: Option<Vec<String>>,
+    pub blocked_words: Option<Vec<String>>,
+    pub url_handling: Option<UrlHandling>,
+    pub read_emotes: Option<bool>,
 }
 
 pub struct SettingsStore;
@@ -233,15 +279,42 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
         if let Some(read_user_name) = speech.read_user_name {
             settings.speech.read_user_name = read_user_name;
         }
+        if let Some(auto_speak) = speech.auto_speak {
+            settings.speech.auto_speak = auto_speak;
+        }
         if let Some(max_length) = speech.max_comment_length {
             settings.speech.max_comment_length = max_length.clamp(1, 500);
         }
         if let Some(seconds) = speech.repeat_suppression_seconds {
             settings.speech.repeat_suppression_seconds = seconds.min(30);
         }
+        if let Some(blocked_users) = speech.blocked_users {
+            settings.speech.blocked_users = normalize_rule_list(blocked_users);
+        }
+        if let Some(blocked_words) = speech.blocked_words {
+            settings.speech.blocked_words = normalize_rule_list(blocked_words);
+        }
+        if let Some(url_handling) = speech.url_handling {
+            settings.speech.url_handling = url_handling;
+        }
+        if let Some(read_emotes) = speech.read_emotes {
+            settings.speech.read_emotes = read_emotes;
+        }
     }
 
     Ok(())
+}
+
+fn normalize_rule_list(items: Vec<String>) -> Vec<String> {
+    let mut normalized = items
+        .into_iter()
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect::<Vec<_>>();
+    normalized.sort();
+    normalized.dedup();
+    normalized.truncate(200);
+    normalized
 }
 
 fn validate_range(value: i16, min: i16, max: i16, label: &str) -> Result<i16, String> {

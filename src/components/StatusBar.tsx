@@ -7,6 +7,7 @@ interface StatusBarProps {
 export function StatusBar({ state }: StatusBarProps) {
   const host = state.settings?.speech.bouyomiHost ?? "127.0.0.1";
   const port = state.settings?.speech.bouyomiPort ?? 50001;
+  const queuedCount = state.queueItems.filter((item) => ["queued", "speaking", "error"].includes(item.status)).length;
   const twitchAuthLabel = {
     unauthenticated: "未認証",
     authenticated: "ログイン済み",
@@ -27,16 +28,17 @@ export function StatusBar({ state }: StatusBarProps) {
       <div className="flex min-w-0 items-center gap-4">
         <StatusItem label="Twitch" value={`${twitchAuthLabel} / ${twitchConnectionLabel}`} />
         <StatusItem label="Bouyomi" value={`${state.speechStatus} ${host}:${port}`} />
-        <StatusItem label="Queue" value={String(state.queueItems.length)} />
+        <StatusItem label="Queue" value={String(queuedCount)} />
+        <StatusItem label="Warnings" value={String(state.warnings.length)} tone={state.warnings.length > 0 ? "warning" : "default"} />
       </div>
       <div className="text-zinc-500">Rice 0.1.0</div>
     </footer>
   );
 }
 
-function StatusItem({ label, value }: { label: string; value: string }) {
+function StatusItem({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warning" }) {
   return (
-    <span className="min-w-0 truncate">
+    <span className={`min-w-0 truncate ${tone === "warning" ? "text-amber-300" : ""}`}>
       <span className="text-zinc-500">{label}: </span>
       {value}
     </span>

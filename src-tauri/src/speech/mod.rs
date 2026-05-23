@@ -7,6 +7,8 @@ use crate::app_events::{
 };
 #[cfg(feature = "app")]
 use crate::settings::AppState;
+#[cfg(feature = "app")]
+use crate::settings::UrlHandling;
 use crate::twitch::{ChatMessage, MessageFragment};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -103,8 +105,10 @@ pub struct SpeechFormatterOptions {
     pub read_user_name: bool,
     pub max_comment_length: usize,
     pub replace_urls: bool,
+    pub block_urls: bool,
     pub escape_bouyomi_tags: bool,
     pub read_emotes: bool,
+    pub blocked_users: Vec<String>,
     pub blocked_words: Vec<String>,
 }
 
@@ -120,8 +124,10 @@ impl Default for SpeechFormatterOptions {
             read_user_name: true,
             max_comment_length: DEFAULT_MAX_COMMENT_LENGTH,
             replace_urls: true,
+            block_urls: false,
             escape_bouyomi_tags: true,
             read_emotes: false,
+            blocked_users: Vec::new(),
             blocked_words: Vec::new(),
         }
     }
@@ -136,6 +142,14 @@ impl SpeechFormatter {
         let raw_text = collect_readable_text(message, self.options.read_emotes);
         if raw_text.trim().is_empty() {
             return SpeechFormatDecision::Blocked("読み上げる本文がありません。".to_string());
+        }
+
+        if contains_blocked_user(&self.options.blocked_users, message) {
+            return SpeechFormatDecision::Blocked("NG ユーザーに一致しました。".to_string());
+        }
+
+        if self.options.block_urls && contains_url(&raw_text) {
+            return SpeechFormatDecision::Blocked("URL を含むため読み上げません。".to_string());
         }
 
         let lowered = raw_text.to_ascii_lowercase();
@@ -179,10 +193,12 @@ impl From<&crate::settings::SpeechSettings> for SpeechFormatterOptions {
         Self {
             read_user_name: settings.read_user_name,
             max_comment_length: settings.max_comment_length as usize,
-            replace_urls: true,
+            replace_urls: matches!(settings.url_handling, UrlHandling::Replace),
+            block_urls: matches!(settings.url_handling, UrlHandling::Block),
             escape_bouyomi_tags: true,
-            read_emotes: false,
-            blocked_words: Vec::new(),
+            read_emotes: settings.read_emotes,
+            blocked_users: settings.blocked_users.clone(),
+            blocked_words: settings.blocked_words.clone(),
         }
     }
 }
@@ -195,6 +211,9 @@ pub fn enqueue_chat_message_for_speech(
     let state = app.state::<AppState>();
     let (formatter, repeat_suppression_seconds) = {
         let settings = state.settings.lock().map_err(|error| error.to_string())?;
+        if !settings.speech.auto_speak {
+            return Ok(());
+        }
         (
             SpeechFormatter::new(SpeechFormatterOptions::from(&settings.speech)),
             u64::from(settings.speech.repeat_suppression_seconds)
@@ -629,6 +648,24 @@ fn replace_urls(text: &str) -> String {
         .join(" ")
 }
 
+fn contains_url(text: &str) -> bool {
+    text.split_whitespace().any(|part| {
+        let lowered = part.to_ascii_lowercase();
+        lowered.starts_with("http://")
+            || lowered.starts_with("https://")
+            || lowered.starts_with("www.")
+    })
+}
+
+fn contains_blocked_user(blocked_users: &[String], message: &ChatMessage) -> bool {
+    blocked_users.iter().any(|user| {
+        let user = user.trim().trim_start_matches('@');
+        !user.is_empty()
+            && (message.user_login.eq_ignore_ascii_case(user)
+                || message.user_display_name.eq_ignore_ascii_case(user))
+    })
+}
+
 fn escape_bouyomi_tags(text: &str) -> String {
     text.replace(')', "）").replace('(', "（")
 }
@@ -715,6 +752,32 @@ mod tests {
 
         assert!(matches!(
             formatter.format_chat_message(&chat("this has BADWORD")),
+            SpeechFormatDecision::Blocked(_)
+        ));
+    }
+
+    #[test]
+    fn formatter_blocks_ng_users() {
+        let formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            blocked_users: vec!["viewer".to_string()],
+            ..SpeechFormatterOptions::default()
+        });
+
+        assert!(matches!(
+            formatter.format_chat_message(&chat("hello")),
+            SpeechFormatDecision::Blocked(_)
+        ));
+    }
+
+    #[test]
+    fn formatter_blocks_urls_when_configured() {
+        let formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            block_urls: true,
+            ..SpeechFormatterOptions::default()
+        });
+
+        assert!(matches!(
+            formatter.format_chat_message(&chat("https://example.com")),
             SpeechFormatDecision::Blocked(_)
         ));
     }
