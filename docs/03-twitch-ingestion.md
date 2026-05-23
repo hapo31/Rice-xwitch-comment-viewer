@@ -56,7 +56,7 @@ Client ID:
 - Client IDは秘匿情報ではないため、配布ビルドに既定値として含めてもよい。
 - 既定のClient IDはビルド時に `RICE_TWITCH_CLIENT_ID` で指定する。互換用に `TWITCH_CLIENT_ID` も受け付ける。
 - リポジトリ直下の `.env` に `RICE_TWITCH_CLIENT_ID=...` を置いた場合も、ビルド時に同じ既定値として読み込む。テンプレートは `.env.example` を使う。
-- ユーザー設定のClient IDが空の場合だけ、ビルド時の既定値を設定へ反映する。ユーザーが別のClient IDを保存した場合はそちらを優先する。
+- Client IDはユーザー設定JSONやUIへは出さず、OAuth開始時にアプリ内部のビルド時既定値を使う。既存設定JSONに古い `clientId` が残っていても無視する。
 - Client Secretはデスクトップアプリへ含めない。
 
 ## WebSocket接続管理

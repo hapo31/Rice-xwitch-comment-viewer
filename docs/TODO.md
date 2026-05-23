@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込を確認した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 発話、制御、接続診断、Voices 画面は実装済み。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
-| Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Settings 画面は実装済み。実 Twitch 環境での確認が必要。 |
+| Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Settings 画面は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub コメント受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 未着手 | store 上のキュー枠はあるが、Rust 側の `SpeechQueue` / `SpeechFormatter` と自動読み上げは未実装。 |
 | Phase 5: 配信運用向け仕上げ | 一部のみ | ステータスバーと警告表示、タグリリース用 Windows ビルド CI はあるが、Logs 画面、自動接続、自動読み上げ、詳細な運用エラー整理は未実装。 |
@@ -42,7 +42,8 @@
 
 ## Phase 2: Twitch 認証
 
-- [x] Twitch Client ID を `.env` / build env から既定値として読み込む。
+- [x] Twitch Client ID を `.env` / build env から内部既定値として読み込む。
+- [x] Twitch Client ID を Settings UI と設定 JSON の公開項目から外す。
 - [x] OAuth Device Code Flow の開始とポーリングを実装する。
 - [x] `user:read:chat` スコープでトークンを取得する。
 - [x] `/validate` でトークン有効性を確認する。
@@ -134,6 +135,7 @@
 
 ## 調査メモ
 
+- 2026-05-23: GitHub Actions の Windows リリースビルドで `RICE_TWITCH_CLIENT_ID` を repository variable または secret から Docker build arg として渡すようにした。Client ID は Settings UI と `settings_get` の返却値から外し、OAuth 開始時はビルド時に埋め込まれた内部既定値だけを使う。古い `settings.json` に `clientId` が残っていても serde の未知フィールドとして無視される。
 - 2026-05-23: Windows リリース用に Linux Docker + `cargo-xwin` + NSIS の Dockerfile と、タグ `v[0-9]*` push でビルド/リリースする GitHub Actions workflow を追加。Tauri 公式では Windows 上の `tauri build` が本筋で、Linux/macOS からの Windows クロスビルドは NSIS 限定かつ caveat ありのため、workflow は `--bundles nsis` に固定した。Actions は build job と release job を分離し、build job は `contents: read` のみ、release job のみ `contents: write`。キャッシュ poisoning 回避のため `actions/cache` と Docker GHA cache は使わず、`docker build --pull --no-cache` と短期 artifact 受け渡しにした。
 - 2026-05-23: `cargo-xwin 0.22.0` の MSRV が Rust 1.89 だったため、Dockerfile の Rust image を `rust:1.89.0-bookworm` に更新した。
 - 2026-05-22: Phase 1 実装確認として `cargo test` と `pnpm build` を実行し、どちらも成功。棒読みちゃん実機でのテスト発話、未起動、ポート競合、アプリ連携 OFF の手動確認は未実施。

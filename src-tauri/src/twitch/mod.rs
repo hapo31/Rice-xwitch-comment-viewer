@@ -3,7 +3,7 @@ use crate::app_events::{
     emit_app_log, emit_twitch_chat_message, emit_twitch_status, AppLogLevel, TwitchStatus,
 };
 #[cfg(feature = "app")]
-use crate::settings::AppState;
+use crate::settings::{default_twitch_client_id, AppState};
 use chrono::Utc;
 #[cfg(feature = "app")]
 use futures_util::{SinkExt, StreamExt};
@@ -165,6 +165,7 @@ pub struct TwitchDeviceAuthStart {
 pub struct TwitchUserProfile {
     pub user_id: String,
     pub login: String,
+    #[serde(default, skip_serializing)]
     pub client_id: String,
     pub scopes: Vec<String>,
     pub expires_in: u64,
@@ -335,6 +336,10 @@ impl TwitchAuthState {
     }
 
     fn restore(stored: StoredTwitchAuth) -> Self {
+        let mut profile = stored.profile;
+        if profile.client_id.trim().is_empty() {
+            profile.client_id = stored.client_id.clone();
+        }
         Self {
             pending: None,
             token: Some(TwitchToken {
@@ -343,7 +348,7 @@ impl TwitchAuthState {
                 scopes: stored.scopes,
                 expires_in: stored.expires_in,
             }),
-            profile: Some(stored.profile),
+            profile: Some(profile),
         }
     }
 
@@ -565,13 +570,10 @@ pub async fn twitch_start_auth(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<TwitchDeviceAuthStart, String> {
-    let client_id = {
-        let settings = state.settings.lock().map_err(|error| error.to_string())?;
-        settings.twitch.client_id.trim().to_string()
-    };
+    let client_id = default_twitch_client_id();
 
     if client_id.is_empty() {
-        return Err("Twitch Client ID を設定してから認証を開始してください。".to_string());
+        return Err("Twitch Client ID がビルド設定にありません。RICE_TWITCH_CLIENT_ID を設定してビルドしてください。".to_string());
     }
 
     let response = request_device_code(&client_id)
@@ -748,13 +750,8 @@ pub async fn twitch_validate_auth(
             .profile
             .as_ref()
             .map(|profile| profile.client_id.clone())
-            .or_else(|| {
-                state
-                    .settings
-                    .lock()
-                    .ok()
-                    .map(|settings| settings.twitch.client_id.clone())
-            })
+            .filter(|client_id| !client_id.trim().is_empty())
+            .or_else(|| Some(default_twitch_client_id()))
             .unwrap_or_default();
         (
             token.access_token.clone(),

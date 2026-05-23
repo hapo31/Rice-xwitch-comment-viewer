@@ -21,6 +21,7 @@ jobs:
       contents: read
     env:
       DOCKER_BUILDKIT: "1"
+      RICE_TWITCH_CLIENT_ID: ${{ vars.RICE_TWITCH_CLIENT_ID || secrets.RICE_TWITCH_CLIENT_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -31,11 +32,13 @@ jobs:
       - name: Build in Docker without shared caches
         run: |
           set -euo pipefail
+          test -n "${RICE_TWITCH_CLIENT_ID}"
           rm -rf release-artifacts
           mkdir -p release-artifacts
           docker build \
             --pull \
             --no-cache \
+            --build-arg RICE_TWITCH_CLIENT_ID="${RICE_TWITCH_CLIENT_ID}" \
             --target artifacts \
             --output type=local,dest=release-artifacts \
             .

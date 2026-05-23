@@ -16,7 +16,6 @@ import type {
 
 const fallbackSettings: AppSettings = {
   twitch: {
-    clientId: "",
     channelLogin: "",
     autoConnect: false,
   },
@@ -138,7 +137,6 @@ export async function twitchValidateAuth(): Promise<TwitchAuthValidationResult> 
       profile: {
         userId: "preview",
         login: "preview",
-        clientId: fallbackSettings.twitch.clientId,
         scopes: ["user:read:chat"],
         expiresIn: 3600,
       },

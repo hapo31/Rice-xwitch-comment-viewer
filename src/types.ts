@@ -8,7 +8,6 @@ export type ChatDisplayState = "queued" | "spoken" | "skipped" | "blocked" | "er
 
 export interface AppSettings {
   twitch: {
-    clientId: string;
     channelLogin: string;
     autoConnect: boolean;
   };
@@ -110,7 +109,6 @@ export interface TwitchDeviceAuthStart {
 export interface TwitchUserProfile {
   userId: string;
   login: string;
-  clientId: string;
   scopes: string[];
   expiresIn: number;
 }

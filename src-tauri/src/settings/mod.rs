@@ -20,8 +20,6 @@ pub struct AppSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TwitchSettings {
-    #[serde(default = "default_twitch_client_id")]
-    pub client_id: String,
     pub channel_login: String,
     pub auto_connect: bool,
 }
@@ -72,7 +70,7 @@ fn default_bouyomi_host() -> String {
     std::env::var("RICE_BOUYOMI_HOST").unwrap_or_else(|_| "127.0.0.1".to_string())
 }
 
-fn default_twitch_client_id() -> String {
+pub(crate) fn default_twitch_client_id() -> String {
     option_env!("RICE_TWITCH_CLIENT_ID")
         .unwrap_or("")
         .trim()
@@ -91,7 +89,6 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             twitch: TwitchSettings {
-                client_id: default_twitch_client_id(),
                 channel_login: String::new(),
                 auto_connect: false,
             },
@@ -121,7 +118,6 @@ pub struct SettingsPatch {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TwitchSettingsPatch {
-    pub client_id: Option<String>,
     pub channel_login: Option<String>,
     pub auto_connect: Option<bool>,
 }
@@ -154,11 +150,7 @@ impl SettingsStore {
         }
 
         let text = fs::read_to_string(path)?;
-        let mut settings: AppSettings = serde_json::from_str(&text)?;
-        if apply_build_defaults(&mut settings) {
-            Self::save(app, &settings)?;
-        }
-        Ok(settings)
+        serde_json::from_str(&text).map_err(Into::into)
     }
 
     #[cfg(feature = "app")]
@@ -201,21 +193,8 @@ pub fn settings_update(
     Ok(settings.clone())
 }
 
-fn apply_build_defaults(settings: &mut AppSettings) -> bool {
-    let client_id = default_twitch_client_id();
-    if settings.twitch.client_id.trim().is_empty() && !client_id.is_empty() {
-        settings.twitch.client_id = client_id;
-        true
-    } else {
-        false
-    }
-}
-
 fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), String> {
     if let Some(twitch) = patch.twitch {
-        if let Some(client_id) = twitch.client_id {
-            settings.twitch.client_id = client_id.trim().to_string();
-        }
         if let Some(channel_login) = twitch.channel_login {
             settings.twitch.channel_login = channel_login.trim().to_string();
         }

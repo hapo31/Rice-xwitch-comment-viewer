@@ -151,26 +151,22 @@ function SettingsView({
   onTwitchDisconnect: () => void;
   onOpenExternalUrl: (url: string) => void;
 }) {
-  const twitchSettings = state.settings?.twitch ?? { clientId: "", channelLogin: "", autoConnect: false };
-  const [clientId, setClientId] = useState(twitchSettings.clientId);
+  const twitchSettings = state.settings?.twitch ?? { channelLogin: "", autoConnect: false };
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);
-  const isClientIdValid = clientId.trim().length >= 20 || clientId.trim().length === 0;
   const isChannelValid = channelLogin.trim().length === 0 || /^[a-zA-Z0-9_]{3,25}$/.test(channelLogin.trim());
 
   useEffect(() => {
-    setClientId(twitchSettings.clientId);
     setChannelLogin(twitchSettings.channelLogin);
-  }, [twitchSettings.clientId, twitchSettings.channelLogin]);
+  }, [twitchSettings.channelLogin]);
 
   function saveTwitchSettings() {
-    if (!isClientIdValid || !isChannelValid) {
+    if (!isChannelValid) {
       return;
     }
 
     onSettingsUpdate({
       twitch: {
         ...twitchSettings,
-        clientId: clientId.trim(),
         channelLogin: channelLogin.trim(),
       },
     });
@@ -193,20 +189,6 @@ function SettingsView({
         <div className="max-w-3xl space-y-6">
           <section className="border-y border-zinc-800">
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
-              <label className="pt-2 text-sm text-zinc-400" htmlFor="twitch-client-id">
-                Client ID
-              </label>
-              <div>
-                <input
-                  id="twitch-client-id"
-                  value={clientId}
-                  onChange={(event) => setClientId(event.target.value)}
-                  className="h-9 w-full border border-zinc-700 bg-zinc-900 px-3 font-mono text-sm text-zinc-100 outline-none focus:border-sky-400"
-                />
-                {!isClientIdValid && <p className="mt-1 text-xs text-rose-400">Twitch Developer Console の Client ID を入力してください。</p>}
-              </div>
-            </div>
-            <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
               <label className="pt-2 text-sm text-zinc-400" htmlFor="twitch-channel">
                 チャンネル
               </label>
@@ -223,7 +205,7 @@ function SettingsView({
             <div className="flex justify-end py-3">
               <button
                 type="button"
-                disabled={!isClientIdValid || !isChannelValid}
+                disabled={!isChannelValid}
                 onClick={saveTwitchSettings}
                 className="border border-sky-500 bg-sky-500 px-3 py-1.5 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
               >
