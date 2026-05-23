@@ -35,25 +35,35 @@ const fallbackSettings: AppSettings = {
 
 const isTauriRuntime = "__TAURI_INTERNALS__" in window;
 
+function normalizeSettings(settings: Partial<AppSettings> | undefined): AppSettings {
+  return {
+    ...fallbackSettings,
+    ...settings,
+    twitch: {
+      ...fallbackSettings.twitch,
+      ...settings?.twitch,
+    },
+    speech: {
+      ...fallbackSettings.speech,
+      ...settings?.speech,
+    },
+  };
+}
+
 export async function getSettings(): Promise<AppSettings> {
   if (!isTauriRuntime) {
     return fallbackSettings;
   }
 
-  return invoke<AppSettings>("settings_get");
+  return normalizeSettings(await invoke<Partial<AppSettings>>("settings_get"));
 }
 
 export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
   if (!isTauriRuntime) {
-    return {
-      ...fallbackSettings,
-      ...patch,
-      twitch: { ...fallbackSettings.twitch, ...patch.twitch },
-      speech: { ...fallbackSettings.speech, ...patch.speech },
-    };
+    return normalizeSettings(patch);
   }
 
-  return invoke<AppSettings>("settings_update", { patch });
+  return normalizeSettings(await invoke<Partial<AppSettings>>("settings_update", { patch }));
 }
 
 export async function speechHealthCheck(): Promise<string> {

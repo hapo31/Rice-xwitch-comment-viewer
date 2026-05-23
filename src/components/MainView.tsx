@@ -49,6 +49,24 @@ const sampleMessages: ChatMessage[] = [
   },
 ];
 
+const defaultTwitchSettings: AppSettings["twitch"] = {
+  channelLogin: "",
+  autoConnect: false,
+};
+
+const defaultSpeechSettings: AppSettings["speech"] = {
+  adapter: "bouyomi",
+  bouyomiHost: "127.0.0.1",
+  bouyomiPort: 50001,
+  bouyomiSpeed: -1,
+  bouyomiTone: -1,
+  bouyomiVolume: -1,
+  bouyomiVoice: 0,
+  readUserName: true,
+  maxCommentLength: 120,
+  repeatSuppressionSeconds: 2,
+};
+
 export function MainView({
   state,
   onSettingsUpdate,
@@ -261,7 +279,10 @@ function SettingsView({
   onTwitchDisconnect: () => void;
   onOpenExternalUrl: (url: string) => void;
 }) {
-  const twitchSettings = state.settings?.twitch ?? { channelLogin: "", autoConnect: false };
+  const twitchSettings = {
+    ...defaultTwitchSettings,
+    ...state.settings?.twitch,
+  };
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);
   const isChannelValid = channelLogin.trim().length === 0 || /^[a-zA-Z0-9_]{3,25}$/.test(channelLogin.trim());
 
@@ -403,17 +424,9 @@ function VoicesView({
   onSpeechDiagnostics: () => Promise<BouyomiConnectionDiagnostics>;
   onSpeechTest: (text?: string) => void;
 }) {
-  const speechSettings = settings?.speech ?? {
-    adapter: "bouyomi" as const,
-    bouyomiHost: "127.0.0.1",
-    bouyomiPort: 50001,
-    bouyomiSpeed: -1,
-    bouyomiTone: -1,
-    bouyomiVolume: -1,
-    bouyomiVoice: 0,
-    readUserName: true,
-    maxCommentLength: 120,
-    repeatSuppressionSeconds: 2,
+  const speechSettings = {
+    ...defaultSpeechSettings,
+    ...settings?.speech,
   };
   const [host, setHost] = useState(speechSettings.bouyomiHost);
   const [port, setPort] = useState(String(speechSettings.bouyomiPort));
