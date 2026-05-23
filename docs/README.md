@@ -10,6 +10,7 @@
 - [読み上げ出力アダプタ](./04-speech-output.md)
 - [UI/UX設計](./05-ui-ux.md)
 - [実装ロードマップ](./06-implementation-roadmap.md)
+- [調査メモ](./RESEARCH_NOTES.md)
 
 ## 結論
 
@@ -30,4 +31,3 @@ VOICEROID2直接連携は「正式MVPの主経路」にはせず、Windows専用
 - bouyomi4rs source: <https://docs.rs/bouyomi4rs/latest/src/bouyomi4rs/lib.rs.html>
 - RemoteControl.Voiceroid: <https://github.com/VOICeVIO/RemoteControl.Voiceroid>
 - RemoteControl.Voiceroid API doc mirror: <https://github-wiki-see.page/m/VOICeVIO/RemoteControl.Voiceroid/wiki/API-Doc>
-
