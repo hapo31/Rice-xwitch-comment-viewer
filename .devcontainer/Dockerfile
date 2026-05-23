@@ -5,6 +5,7 @@ RUN apt-get update \
     build-essential \
     curl \
     file \
+    fonts-noto-cjk \
     libayatana-appindicator3-dev \
     librsvg2-dev \
     libssl-dev \

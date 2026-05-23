@@ -13,7 +13,8 @@
   "postCreateCommand": ".devcontainer/setup.sh",
   "mounts": [
     "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
-    "source=rice-cargo-target,target=/home/vscode/.cargo-target,type=volume"
+    "source=rice-cargo-target,target=/home/vscode/.cargo-target,type=volume",
+    "source=rice-codex-home,target=/home/vscode/.codex,type=volume"
   ],
   "init": true,
   "features": {

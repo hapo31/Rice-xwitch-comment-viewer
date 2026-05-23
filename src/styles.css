@@ -23,6 +23,7 @@ body,
 
 body {
   overflow: hidden;
+  @apply font-sans;
 }
 
 button,

@@ -6,6 +6,10 @@ if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
   sudo chown -R "$(id -u):$(id -g)" "$(dirname "${CARGO_TARGET_DIR}")"
 fi
 
+sudo mkdir -p "${HOME}/.codex"
+sudo chown -R "$(id -u):$(id -g)" "${HOME}/.codex"
+chmod 700 "${HOME}/.codex"
+
 rustup component add rustfmt clippy
 
 if [[ -n "${CODEX_NPM_PACKAGE:-}" ]]; then

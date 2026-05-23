@@ -17,6 +17,10 @@ codex --version
 特定バージョンに固定したい場合は、devcontainer 作成時の環境変数 `CODEX_NPM_PACKAGE` に `@openai/codex@<version>` を指定してください。
 `CODEX_NPM_PACKAGE` を指定した場合は、既存の `codex` があっても指定バージョンをインストールします。
 
+Codex の認証情報、履歴、セッション状態は named volume の `rice-codex-home` を `/home/vscode/.codex` にマウントして保持します。
+
+これにより devcontainer を Rebuild しても `~/.codex/auth.json` や `~/.codex/history.jsonl` が残ります。初回だけ、既に別コンテナ内にあった未永続化の Codex 状態は自動移行されないため、必要なら再認証してください。
+
 ## Cargo target
 
 Cargo のビルド成果物はワークスペース内の `src-tauri/target` ではなく、named volume の `/home/vscode/.cargo-target/rice` に出力します。
