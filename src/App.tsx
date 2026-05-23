@@ -310,7 +310,6 @@ export function App() {
         onTwitchStartAuth={handleTwitchStartAuth}
         onTwitchPollAuth={handleTwitchPollAuth}
         onTwitchValidateAuth={handleTwitchValidateAuth}
-        onTwitchConnect={handleTwitchConnect}
         onTwitchDisconnect={handleTwitchDisconnect}
         onOpenExternalUrl={handleOpenExternalUrl}
       />

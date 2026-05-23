@@ -28,7 +28,6 @@ interface MainViewProps {
   onTwitchStartAuth: () => void;
   onTwitchPollAuth: () => void;
   onTwitchValidateAuth: () => void;
-  onTwitchConnect: () => void;
   onTwitchDisconnect: () => void;
   onOpenExternalUrl: (url: string) => void;
 }
@@ -59,14 +58,13 @@ export function MainView({
   onTwitchStartAuth,
   onTwitchPollAuth,
   onTwitchValidateAuth,
-  onTwitchConnect,
   onTwitchDisconnect,
   onOpenExternalUrl,
 }: MainViewProps) {
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/chat" replace />} />
-      <Route path="/chat" element={<ChatView state={state} onTwitchConnect={onTwitchConnect} />} />
+      <Route path="/chat" element={<ChatView state={state} />} />
       <Route
         path="/queue"
         element={
@@ -194,15 +192,8 @@ function PlaceholderView({
   );
 }
 
-function ChatView({
-  state,
-  onTwitchConnect,
-}: {
-  state: AppState;
-  onTwitchConnect: () => void;
-}) {
+function ChatView({ state }: { state: AppState }) {
   const messages = state.chatMessages.length > 0 ? state.chatMessages : sampleMessages;
-  const canConnectChat = state.twitchAuthStatus === "authenticated" && !["connecting", "connected", "reconnecting"].includes(state.twitchConnectionStatus);
   const chatTarget = state.settings?.twitch.channelLogin || state.twitchProfile?.login || "未設定";
   const connectionLabel = {
     disconnected: "未接続",
@@ -233,15 +224,6 @@ function ChatView({
             <span className={`h-2 w-2 rounded-full ${connectionDotClass}`} />
             <span className="max-w-40 truncate">{chatTarget} / {connectionLabel}</span>
           </div>
-          <button
-            type="button"
-            disabled={!canConnectChat}
-            onClick={onTwitchConnect}
-            title="Twitch コメント接続"
-            className="inline-flex h-7 w-7 items-center justify-center border border-zinc-700 bg-zinc-850 text-zinc-200 hover:border-sky-400 disabled:cursor-not-allowed disabled:text-zinc-600"
-          >
-            <Network className="h-4 w-4" />
-          </button>
         </div>
       </header>
 
