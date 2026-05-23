@@ -2,7 +2,7 @@
 
 ## Codex CLI
 
-`postCreateCommand` で OpenAI Codex CLI を npm のグローバルパッケージとしてインストールします。
+`postCreateCommand` で OpenAI Codex CLI を確認し、未インストールの場合だけ npm のグローバルパッケージとしてインストールします。
 
 ```bash
 npm install -g @openai/codex@latest
@@ -15,6 +15,17 @@ codex --version
 ```
 
 特定バージョンに固定したい場合は、devcontainer 作成時の環境変数 `CODEX_NPM_PACKAGE` に `@openai/codex@<version>` を指定してください。
+`CODEX_NPM_PACKAGE` を指定した場合は、既存の `codex` があっても指定バージョンをインストールします。
+
+## Cargo target
+
+Cargo のビルド成果物はワークスペース内の `src-tauri/target` ではなく、named volume の `/home/vscode/.cargo-target/rice` に出力します。
+
+これにより、Tauri/Rust の大きな `deps` や `incremental` を VS Code のワークスペース監視対象から外します。既存の `src-tauri/target` は自動削除しないため、不要になったら次で削除できます。
+
+```bash
+cargo clean --manifest-path src-tauri/Cargo.toml
+```
 
 ## Windows 側の棒読みちゃんへ接続する
 

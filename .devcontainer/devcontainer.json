@@ -7,11 +7,13 @@
     "--network=host"
   ],
   "containerEnv": {
-    "RICE_BOUYOMI_HOST": "127.0.0.1"
+    "RICE_BOUYOMI_HOST": "127.0.0.1",
+    "CARGO_TARGET_DIR": "/home/vscode/.cargo-target/rice"
   },
   "postCreateCommand": ".devcontainer/setup.sh",
   "mounts": [
-    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached"
+    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
+    "source=rice-cargo-target,target=/home/vscode/.cargo-target,type=volume"
   ],
   "init": true,
   "features": {
@@ -25,18 +27,10 @@
     },
      "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-  "forwardPorts": [6080, 5901],
+  "forwardPorts": [1420],
   "portsAttributes": {
     "1420": {
       "label": "Vite dev server",
-      "onAutoForward": "silent"
-    },
-    "6080": {
-      "label": "desktop-lite Web Port",
-      "onAutoForward": "notify"
-    },
-    "5901": {
-      "label": "desktop-lite VNC Port",
       "onAutoForward": "silent"
     }
   },
@@ -66,6 +60,7 @@
         },
         "rust-analyzer.cachePriming.enable": false,
         "rust-analyzer.cargo.allTargets": false,
+        "rust-analyzer.cargo.targetDir": true,
         "rust-analyzer.cargo.features": "all",
         "rust-analyzer.checkOnSave": false
       }
