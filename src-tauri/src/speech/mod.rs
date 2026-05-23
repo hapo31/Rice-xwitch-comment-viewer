@@ -180,7 +180,7 @@ impl SpeechFormatter {
             text = truncate_chars(&text, max_len);
         }
         if self.options.read_user_name {
-            text = format!("{}さん。{}", message.user_display_name, text);
+            text = format!("{}。{}", message.user_display_name, text);
         }
 
         SpeechFormatDecision::Speak(text)
@@ -232,7 +232,7 @@ pub fn enqueue_chat_message_for_speech(
         if let Some(last_seen) = queue.last_user_enqueue.get(&message.user_id) {
             if now.duration_since(*last_seen) < Duration::from_secs(repeat_suppression_seconds) {
                 let warning_message =
-                    format!("{} さんの連投を抑制しました。", message.user_display_name);
+                    format!("{} の連投を抑制しました。", message.user_display_name);
                 let id = next_queue_id(&mut queue);
                 push_history(
                     &mut queue,
@@ -254,7 +254,7 @@ pub fn enqueue_chat_message_for_speech(
             SpeechFormatDecision::Speak(text) => text,
             SpeechFormatDecision::Blocked(reason) => {
                 let warning_message = format!(
-                    "{} さんのコメントを読み上げません: {reason}",
+                    "{} のコメントを読み上げません: {reason}",
                     message.user_display_name
                 );
                 let id = next_queue_id(&mut queue);
@@ -767,6 +767,19 @@ mod tests {
             formatter.format_chat_message(&chat("hello")),
             SpeechFormatDecision::Blocked(_)
         ));
+    }
+
+    #[test]
+    fn formatter_prepends_display_name_without_honorific() {
+        let formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            read_user_name: true,
+            ..SpeechFormatterOptions::default()
+        });
+
+        assert_eq!(
+            formatter.format_chat_message(&chat("こんにちは")),
+            SpeechFormatDecision::Speak("viewer。こんにちは".to_string())
+        );
     }
 
     #[test]

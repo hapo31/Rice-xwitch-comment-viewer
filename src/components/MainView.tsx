@@ -541,14 +541,20 @@ function SettingsView({
     ...defaultTwitchSettings,
     ...state.settings?.twitch,
   };
+  const speechSettings = {
+    ...defaultSpeechSettings,
+    ...state.settings?.speech,
+  };
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);
   const [autoConnect, setAutoConnect] = useState(twitchSettings.autoConnect);
+  const [readUserName, setReadUserName] = useState(speechSettings.readUserName);
   const isChannelValid = isValidTwitchChannelLogin(channelLogin);
 
   useEffect(() => {
     setChannelLogin(twitchSettings.channelLogin);
     setAutoConnect(twitchSettings.autoConnect);
-  }, [twitchSettings.channelLogin, twitchSettings.autoConnect]);
+    setReadUserName(speechSettings.readUserName);
+  }, [twitchSettings.channelLogin, twitchSettings.autoConnect, speechSettings.readUserName]);
 
   function saveTwitchSettings() {
     if (!isChannelValid) {
@@ -560,6 +566,10 @@ function SettingsView({
         ...twitchSettings,
         channelLogin: channelLogin.trim(),
         autoConnect,
+      },
+      speech: {
+        ...speechSettings,
+        readUserName,
       },
     });
   }
@@ -613,6 +623,10 @@ function SettingsView({
                 保存
               </button>
             </div>
+          </section>
+
+          <section className="border-y border-zinc-800">
+            <ToggleRow label="名前を読む" checked={readUserName} onChange={setReadUserName} />
           </section>
 
           <section className="border-y border-zinc-800">

@@ -87,7 +87,7 @@ event.message_id -> id
 読み上げ本文の初期フォーマット:
 
 ```text
-{display_name} さん。{message_text}
+{display_name}。{message_text}
 ```
 
 設定で以下を切り替える:

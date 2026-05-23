@@ -34,7 +34,7 @@ describe("appReducer", () => {
         id: "speech-1",
         sourceMessageId: "message-1",
         userDisplayName: "viewer",
-        text: "viewerさん。こんにちは",
+        text: "viewer。こんにちは",
         status: "speaking",
       },
     ];
