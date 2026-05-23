@@ -135,6 +135,7 @@
 ## 調査メモ
 
 - 2026-05-23: Windows リリース用に Linux Docker + `cargo-xwin` + NSIS の Dockerfile と、タグ `v[0-9]*` push でビルド/リリースする GitHub Actions workflow を追加。Tauri 公式では Windows 上の `tauri build` が本筋で、Linux/macOS からの Windows クロスビルドは NSIS 限定かつ caveat ありのため、workflow は `--bundles nsis` に固定した。Actions は build job と release job を分離し、build job は `contents: read` のみ、release job のみ `contents: write`。キャッシュ poisoning 回避のため `actions/cache` と Docker GHA cache は使わず、`docker build --pull --no-cache` と短期 artifact 受け渡しにした。
+- 2026-05-23: `cargo-xwin 0.22.0` の MSRV が Rust 1.89 だったため、Dockerfile の Rust image を `rust:1.89.0-bookworm` に更新した。
 - 2026-05-22: Phase 1 実装確認として `cargo test` と `pnpm build` を実行し、どちらも成功。棒読みちゃん実機でのテスト発話、未起動、ポート競合、アプリ連携 OFF の手動確認は未実施。
 - 2026-05-22: Phase 3 の初期実装として `tokio-tungstenite` による EventSub WebSocket 接続、Welcome 後の `channel.chat.message` 購読、keepalive 欠落/reconnect/revocation 処理、`event.message_id` fallback の重複排除、`twitch://chat-message` のフロントエンド購読を追加。`cargo test` と `pnpm build` は成功。実 Twitch チャンネルでの受信確認は未実施。
 - 2026-05-22: Side Panel のキュー上へコメント受信の開始/停止ボタンを追加し、`twitch_stop_chat` で認証解除せずに EventSub 接続だけ停止できるようにした。UI store では Twitch 認証状態とコメント受信接続状態を分離。`cargo test` と `pnpm build` は成功。

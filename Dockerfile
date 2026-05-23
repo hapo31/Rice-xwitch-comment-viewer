@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG RUST_IMAGE=rust:1.87.0-bookworm
+ARG RUST_IMAGE=rust:1.89.0-bookworm
 ARG PNPM_VERSION=8.11.0
 ARG CARGO_XWIN_VERSION=0.22.0
 ARG WINDOWS_TARGET=x86_64-pc-windows-msvc
