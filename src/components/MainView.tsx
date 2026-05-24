@@ -533,35 +533,32 @@ function AuthView({
     ...state.settings?.twitch,
   };
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);
-  const [autoConnect, setAutoConnect] = useState(twitchSettings.autoConnect);
   const isChannelValid = isValidTwitchChannelLogin(channelLogin);
-  const isDirty = channelLogin.trim() !== twitchSettings.channelLogin || autoConnect !== twitchSettings.autoConnect;
 
   useEffect(() => {
     setChannelLogin(twitchSettings.channelLogin);
-    setAutoConnect(twitchSettings.autoConnect);
-  }, [twitchSettings.channelLogin, twitchSettings.autoConnect]);
+  }, [twitchSettings.channelLogin]);
 
-  function saveTwitchSettings() {
-    if (!isChannelValid) {
+  function saveChannelLogin() {
+    const trimmedChannelLogin = channelLogin.trim();
+    if (!isValidTwitchChannelLogin(trimmedChannelLogin) || trimmedChannelLogin === twitchSettings.channelLogin) {
       return;
     }
 
     onSettingsUpdate({
       twitch: {
         ...twitchSettings,
-        channelLogin: channelLogin.trim(),
-        autoConnect,
+        channelLogin: trimmedChannelLogin,
       },
     });
   }
 
   return (
-    <main className="relative col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
+    <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Auth</h1>
-          <p className="truncate text-xs text-zinc-500">Twitch 認証と接続先チャンネル、自動接続を管理します</p>
+          <p className="truncate text-xs text-zinc-500">Twitch 認証と接続先チャンネルを管理します</p>
         </div>
         <div className="flex items-center gap-2 text-xs text-zinc-400">
           <span className={state.twitchAuthStatus === "authenticated" ? "h-2 w-2 rounded-full bg-emerald-400" : "h-2 w-2 rounded-full bg-zinc-600"} />
@@ -569,10 +566,10 @@ function AuthView({
         </div>
       </header>
 
-      <div className="h-[calc(100%-3rem)] overflow-auto p-4 pb-20">
+      <div className="h-[calc(100%-3rem)] overflow-auto p-4">
         <div className="max-w-3xl space-y-6">
           <section className="border-y border-zinc-800">
-            <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start py-3">
               <label className="pt-2 text-sm text-zinc-400" htmlFor="twitch-channel">
                 チャンネル
               </label>
@@ -581,21 +578,11 @@ function AuthView({
                   id="twitch-channel"
                   value={channelLogin}
                   onChange={(event) => setChannelLogin(event.target.value)}
+                  onBlur={saveChannelLogin}
                   className="h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
                 />
                 {!isChannelValid && <p className="mt-1 text-xs text-rose-400">Twitch のログイン名を 3 から 25 文字で入力してください。</p>}
               </div>
-            </div>
-            <div className="flex justify-end py-3">
-              <label className="mr-auto flex items-center gap-2 text-sm text-zinc-300">
-                <input
-                  type="checkbox"
-                  checked={autoConnect}
-                  onChange={(event) => setAutoConnect(event.target.checked)}
-                  className="h-4 w-4 accent-sky-400"
-                />
-                起動時にコメント受信を開始
-              </label>
             </div>
           </section>
 
@@ -661,7 +648,6 @@ function AuthView({
           </section>
         </div>
       </div>
-      <FloatingSaveButton visible={isDirty} disabled={!isChannelValid} onClick={saveTwitchSettings} />
     </main>
   );
 }
@@ -679,6 +665,10 @@ function VoicesView({
   onSpeechDiagnostics: () => Promise<BouyomiConnectionDiagnostics>;
   onSpeechTest: (text?: string) => void;
 }) {
+  const twitchSettings = {
+    ...defaultTwitchSettings,
+    ...settings?.twitch,
+  };
   const speechSettings = {
     ...defaultSpeechSettings,
     ...settings?.speech,
@@ -770,6 +760,15 @@ function VoicesView({
     });
   }
 
+  function updateAutoConnect(enabled: boolean) {
+    onSettingsUpdate({
+      twitch: {
+        ...twitchSettings,
+        autoConnect: enabled,
+      },
+    });
+  }
+
   async function runDiagnostics() {
     setIsDiagnosing(true);
     try {
@@ -784,7 +783,7 @@ function VoicesView({
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Voices</h1>
-          <p className="truncate text-xs text-zinc-500">棒読みちゃん接続と声質、自動読み上げの設定を調整します</p>
+          <p className="truncate text-xs text-zinc-500">起動時接続、棒読みちゃん接続、声質、自動読み上げの設定を調整します</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -809,6 +808,14 @@ function VoicesView({
 
       <div className="h-[calc(100%-3rem)] overflow-auto p-4 pb-20">
         <div className="max-w-3xl space-y-6">
+          <section className="border-y border-zinc-800">
+            <ToggleRow
+              label="起動時にコメント受信を開始"
+              checked={twitchSettings.autoConnect}
+              onChange={updateAutoConnect}
+            />
+          </section>
+
           <section className="border-y border-zinc-800">
             <ToggleRow label="自動読み上げ" checked={autoSpeak} onChange={setAutoSpeak} />
             <ToggleRow label="ユーザー名を読む" checked={readUserName} onChange={setReadUserName} />
