@@ -369,7 +369,6 @@ function RulesView({
   const [urlHandling, setUrlHandling] = useState(speechSettings.urlHandling);
   const [maxLength, setMaxLength] = useState(String(speechSettings.maxCommentLength));
   const [repeatSeconds, setRepeatSeconds] = useState(String(speechSettings.repeatSuppressionSeconds));
-  const [readEmotes, setReadEmotes] = useState(speechSettings.readEmotes);
 
   useEffect(() => {
     setBlockedUsers(formatRuleList(speechSettings.blockedUsers));
@@ -377,14 +376,12 @@ function RulesView({
     setUrlHandling(speechSettings.urlHandling);
     setMaxLength(String(speechSettings.maxCommentLength));
     setRepeatSeconds(String(speechSettings.repeatSuppressionSeconds));
-    setReadEmotes(speechSettings.readEmotes);
   }, [
     speechSettings.blockedUsers,
     speechSettings.blockedWords,
     speechSettings.urlHandling,
     speechSettings.maxCommentLength,
     speechSettings.repeatSuppressionSeconds,
-    speechSettings.readEmotes,
   ]);
 
   const numericMaxLength = Number(maxLength);
@@ -405,7 +402,6 @@ function RulesView({
         blockedUsers: parseRuleList(blockedUsers),
         blockedWords: parseRuleList(blockedWords),
         urlHandling,
-        readEmotes,
       },
     });
   }
@@ -429,10 +425,6 @@ function RulesView({
 
       <div className="h-[calc(100%-3rem)] overflow-auto p-4">
         <div className="max-w-3xl space-y-6">
-          <section className="border-y border-zinc-800">
-            <ToggleRow label="emote を読む" checked={readEmotes} onChange={setReadEmotes} />
-          </section>
-
           <section className="border-y border-zinc-800">
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-b border-zinc-800 py-3">
               <label className="text-sm text-zinc-400" htmlFor="rule-url-handling">
@@ -696,6 +688,7 @@ function VoicesView({
   const [voice, setVoice] = useState(String(speechSettings.bouyomiVoice));
   const [autoSpeak, setAutoSpeak] = useState(speechSettings.autoSpeak);
   const [readUserName, setReadUserName] = useState(speechSettings.readUserName);
+  const [readEmotes, setReadEmotes] = useState(speechSettings.readEmotes);
   const [testText, setTestText] = useState("テスト発話です。");
   const [diagnostics, setDiagnostics] = useState<BouyomiConnectionDiagnostics>();
   const [isDiagnosing, setIsDiagnosing] = useState(false);
@@ -709,6 +702,7 @@ function VoicesView({
     setVoice(String(speechSettings.bouyomiVoice));
     setAutoSpeak(speechSettings.autoSpeak);
     setReadUserName(speechSettings.readUserName);
+    setReadEmotes(speechSettings.readEmotes);
   }, [
     speechSettings.bouyomiHost,
     speechSettings.bouyomiPort,
@@ -718,6 +712,7 @@ function VoicesView({
     speechSettings.bouyomiVoice,
     speechSettings.autoSpeak,
     speechSettings.readUserName,
+    speechSettings.readEmotes,
   ]);
 
   const numericPort = Number(port);
@@ -743,6 +738,7 @@ function VoicesView({
         bouyomiVoice: numericVoice,
         autoSpeak,
         readUserName,
+        readEmotes,
       },
     });
   }
@@ -789,6 +785,7 @@ function VoicesView({
           <section className="border-y border-zinc-800">
             <ToggleRow label="自動読み上げ" checked={autoSpeak} onChange={setAutoSpeak} />
             <ToggleRow label="ユーザー名を読む" checked={readUserName} onChange={setReadUserName} />
+            <ToggleRow label="emote を読む" checked={readEmotes} onChange={setReadEmotes} />
           </section>
 
           <section className="border-y border-zinc-800">

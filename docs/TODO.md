@@ -99,7 +99,7 @@
 ## Phase 5: 配信運用向け仕上げ
 
 - [x] Settings 画面を Auth へ改名し、認証専用の画面として整理する。
-- [x] Voices 画面へ読み上げ基本設定を集約し、Auth 側に重複した読み上げ設定を残さない。
+- [x] Voices 画面へ読み上げ基本設定を集約し、Auth/Rules 側に重複した読み上げ設定を残さない。
 - [x] `v[0-9]*` タグ push で Windows NSIS ビルドと GitHub Release 作成を行う Actions workflow を追加する。
 - [x] Windows リリースビルド用 Dockerfile と `.dockerignore` を追加する。
 - [x] リリース workflow では build/release job を分離し、release job のみ `contents: write`、build cache は未使用にする。
@@ -112,7 +112,7 @@
 - [x] 自動読み上げ ON/OFF を実装する。
 - [x] 棒読みちゃん接続エラー後、成功するまで接続確認をポーリングして状態を復帰する。
 - [x] Rules view を実装する。
-- [x] NG ユーザー、NG ワード、URL 処理、長文処理、emote 処理の設定を実装する。
+- [x] NG ユーザー、NG ワード、URL 処理、長文処理の設定を実装する。
 - [ ] 配信中に判断しやすい日本語エラー文言を整理する。
 - [x] コメント行の表示状態テストを追加する。
 - [x] 設定フォームのバリデーションテストを追加する。
