@@ -16,6 +16,7 @@ import {
 import { useEffect, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { getChatStatusPresentation, queueStatusLabel } from "../presentation/chat";
+import { countIncompleteQueueItems } from "../presentation/queue";
 import type { AppRoutePath } from "../routes";
 import type { AppState } from "../stores/appStore";
 import type { AppLogLevel, AppSettings, BouyomiConnectionDiagnostics, ChatDisplayState, ChatMessage } from "../types";
@@ -271,7 +272,7 @@ function QueueView({
   onQueueReload: () => void;
   onQueueRemove: (itemId: string) => void;
 }) {
-  const queuedCount = state.queueItems.filter((item) => ["queued", "speaking", "error"].includes(item.status)).length;
+  const queuedCount = countIncompleteQueueItems(state.queueItems);
 
   return (
     <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">

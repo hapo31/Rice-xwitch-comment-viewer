@@ -1,5 +1,6 @@
 import { Pause, Play, Radio, RotateCcw, SkipForward, Square, Trash2, Volume2 } from "lucide-react";
 import { useLocation } from "react-router-dom";
+import { countIncompleteQueueItems } from "../presentation/queue";
 import { getRouteLabel } from "../routes";
 import type { AppState } from "../stores/appStore";
 
@@ -22,7 +23,7 @@ export function SidePanel({
 }: SidePanelProps) {
   const location = useLocation();
   const channel = state.settings?.twitch.channelLogin || "未設定";
-  const queueCount = state.queueItems.length;
+  const queueCount = countIncompleteQueueItems(state.queueItems);
   const twitchAuthLabel = {
     unauthenticated: "未認証",
     authenticated: "ログイン済み",

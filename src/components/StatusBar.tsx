@@ -1,3 +1,4 @@
+import { countIncompleteQueueItems } from "../presentation/queue";
 import type { AppState } from "../stores/appStore";
 
 interface StatusBarProps {
@@ -7,7 +8,7 @@ interface StatusBarProps {
 export function StatusBar({ state }: StatusBarProps) {
   const host = state.settings?.speech.bouyomiHost ?? "127.0.0.1";
   const port = state.settings?.speech.bouyomiPort ?? 50001;
-  const queuedCount = state.queueItems.filter((item) => ["queued", "speaking", "error"].includes(item.status)).length;
+  const queuedCount = countIncompleteQueueItems(state.queueItems);
   const twitchAuthLabel = {
     unauthenticated: "未認証",
     authenticated: "ログイン済み",
