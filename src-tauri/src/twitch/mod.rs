@@ -970,18 +970,18 @@ pub fn twitch_stop_chat(
         &app,
         TwitchStatus::Disconnected,
         Some(if stopped {
-            "Twitch コメント受信を停止しました。".to_string()
+            "Twitch チャット受信を停止しました。".to_string()
         } else {
-            "Twitch コメント受信は開始されていません。".to_string()
+            "Twitch チャット受信は開始されていません。".to_string()
         }),
     );
     emit_app_log(
         &app,
         AppLogLevel::Info,
         if stopped {
-            "Twitch コメント受信を停止しました。"
+            "Twitch チャット受信を停止しました。"
         } else {
-            "Twitch コメント受信は開始されていません。"
+            "Twitch チャット受信は開始されていません。"
         },
     );
     Ok(())

@@ -13,8 +13,8 @@
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込を確認した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 発話、制御、接続診断、Settings 画面は実装済み。接続確認は設定に応じて確認発話または無音の状態取得を行う。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Login 画面は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
-| Phase 3: EventSub コメント受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
-| Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub コメントから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
+| Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
+| Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
 | Phase 5: 配信運用向け仕上げ | 実装中 | Logs/Rules 画面、`app://log` 接続、ステータスバー集約、Login/Settings の設定整理、起動時自動接続、自動読み上げ ON/OFF、棒読みちゃんエラー後の復帰ポーリング、SidePanel の未完了キュー件数表示、各画面ヘッダー説明の日本語化、関連 TS テストを実装。詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
@@ -63,7 +63,7 @@
 - [ ] アプリ起動時の保存済み認証復元と refresh 更新を手動確認する。
 - [x] Twitch ユーザー ID と接続チャンネルを EventSub 接続へ渡す command を実装する。
 
-## Phase 3: EventSub コメント受信
+## Phase 3: EventSub チャット受信
 
 - [x] `tokio-tungstenite` を導入する。
 - [x] `EventSubClient` 相当の接続ループを作り、`wss://eventsub.wss.twitch.tv/ws` へ接続する。
@@ -77,21 +77,21 @@
 - [x] `ChatMessage` に fragments / badges / received_at を含める。
 - [x] `tauri::Emitter` events で `twitch://status` と `twitch://chat-message` を送る。
 - [x] TypeScript client で Twitch events を購読し、store へ反映する。
-- [x] Chat view にリアルタイムコメントを表示する。
-- [x] Side Panel のキュー上にコメント受信の開始/停止ボタンを追加する。
-- [x] Twitch 認証状態とコメント受信接続状態を UI store 上で分離する。
+- [x] Chat view にリアルタイムチャットを表示する。
+- [x] Side Panel のキュー上にチャット受信の開始/停止ボタンを追加する。
+- [x] Twitch 認証状態とチャット受信接続状態を UI store 上で分離する。
 - [ ] 実 Twitch 環境で `channel.chat.message` 購読と Chat view 表示を手動確認する。
 
 ## Phase 4: 読み上げキュー統合
 
 - [x] `SpeechFormatter` を実装する。
 - [x] URL、改行、制御文字、長文、emote の扱いを `SpeechFormatter` に閉じ込める。
-- [x] コメント由来の棒読みちゃんタグを初期設定で無効化またはエスケープする。
+- [x] チャット由来の棒読みちゃんタグを初期設定で無効化またはエスケープする。
 - [x] FIFO の `SpeechQueue` を実装する。
-- [x] 最大件数 200、1 コメント最大 120 文字、ユーザー単位 2 秒の連投抑制を実装する。
+- [x] 最大件数 200、1 件のチャット最大 120 文字、ユーザー単位 2 秒の連投抑制を実装する。
 - [x] キュー溢れ時に古い未読を落とし、UI に警告を出す。
 - [x] 読み上げ失敗時に 1 回だけ短い遅延で再試行する。
-- [x] コメント受信から `SpeechFormatter`、`SpeechQueue`、`BouyomiAdapter` への流れを接続する。
+- [x] チャット受信から `SpeechFormatter`、`SpeechQueue`、`BouyomiAdapter` への流れを接続する。
 - [x] `speech://queue-updated` と `speech://status` events を実装する。
 - [x] Queue view を実装し、スキップ、クリア、再読込、削除を操作できるようにする。
 - [x] `SpeechFormatter` の NG/URL/長文処理テストを追加する。
@@ -118,11 +118,12 @@
 - [x] 各画面のタイトル下説明を、画面機能が分かる日本語の概要文へ整理する。
 - [x] Rules/Settings は設定変更時だけ保存ボタンを右下からスライドイン表示し、Login は認証操作ボタンと自動保存に分離する。
 - [x] Auth の表示名を Login に変更する。
-- [x] 「起動時にコメント受信を開始」を Settings 画面の先頭に移動する。
+- [x] 「起動時にチャット受信を開始」を Settings 画面の先頭に移動する。
 - [x] Voices 画面を Settings へ改名し、`/voices` から `/settings` へリダイレクトする。
 - [x] 左ペインのチャンネル行から Login 画面へ移動できるようにする。
+- [x] Twitch 文脈の「コメント」表記を「チャット」へ統一する。
 - [ ] 配信中に判断しやすい日本語エラー文言を整理する。
-- [x] コメント行の表示状態テストを追加する。
+- [x] チャット行の表示状態テストを追加する。
 - [x] 設定フォームのバリデーションテストを追加する。
 
 ## Phase 6: VOICEROID2 実験アダプタ
@@ -143,9 +144,9 @@
 - [x] Rust: `SpeechFormatter` の NG/URL/長文処理テストを追加する。
 - [x] Rust: WebSocket 再接続状態遷移テストを追加する。
 - [x] TypeScript: store reducer テストを追加する。
-- [x] TypeScript: コメント行の表示状態テストを追加する。
+- [x] TypeScript: チャット行の表示状態テストを追加する。
 - [x] TypeScript: 設定フォームのバリデーションテストを追加する。
 - [ ] 手動: 棒読みちゃん未起動/起動中/ポート競合を確認する。
 - [ ] 手動: Twitch トークン期限切れ/認可取り消しを確認する。
-- [ ] 手動: 配信中コメント連投を確認する。
+- [ ] 手動: 配信中チャット連投を確認する。
 - [ ] 手動: ネットワーク切断と復帰を確認する。

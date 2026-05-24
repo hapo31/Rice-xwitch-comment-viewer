@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getChatStatusPresentation, queueStatusLabel } from "./chat";
 
 describe("chat status presentation", () => {
-  it("maps comment display states to labels and tones", () => {
+  it("maps chat display states to labels and tones", () => {
     expect(getChatStatusPresentation("queued")).toMatchObject({
       label: "queued",
       className: "text-sky-400",

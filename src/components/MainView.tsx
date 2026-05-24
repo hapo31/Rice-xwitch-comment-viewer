@@ -44,7 +44,7 @@ const sampleMessages: ChatMessage[] = [
     id: "sample-1",
     receivedAt: new Date().toISOString(),
     userDisplayName: "viewer_01",
-    text: "左ペインのコメント受信から Twitch EventSub へ接続できます。",
+    text: "左ペインのチャット受信から Twitch EventSub へ接続できます。",
     status: "queued",
   },
   {
@@ -240,7 +240,7 @@ function ChatView({ state }: { state: AppState }) {
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Chat</h1>
-          <p className="truncate text-xs text-zinc-500">Twitch コメントの受信状況と読み上げ状態を確認します</p>
+          <p className="truncate text-xs text-zinc-500">Twitch チャットの受信状況と読み上げ状態を確認します</p>
         </div>
         <div className="flex items-center gap-3 text-xs text-zinc-400">
           <div className="flex min-w-0 items-center gap-2">
@@ -255,7 +255,7 @@ function ChatView({ state }: { state: AppState }) {
           <div className="grid grid-cols-[88px_160px_minmax(0,1fr)_72px] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-500">
             <span>時刻</span>
             <span>ユーザー</span>
-            <span>コメント</span>
+            <span>チャット</span>
             <span className="text-right">状態</span>
           </div>
           {messages.map((message) => (
@@ -285,7 +285,7 @@ function QueueView({
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Queue</h1>
-          <p className="truncate text-xs text-zinc-500">読み上げ待ちのコメントを確認し、スキップや削除を操作します</p>
+          <p className="truncate text-xs text-zinc-500">読み上げ待ちのチャットを確認し、スキップや削除を操作します</p>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -485,7 +485,7 @@ function LogsView({ state }: { state: AppState }) {
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Logs</h1>
-          <p className="truncate text-xs text-zinc-500">認証、コメント受信、読み上げ連携の動作ログを確認します</p>
+          <p className="truncate text-xs text-zinc-500">認証、チャット受信、読み上げ連携の動作ログを確認します</p>
         </div>
         <div className="text-xs text-zinc-400">{state.logs.length} events</div>
       </header>
@@ -811,7 +811,7 @@ function SettingsView({
         <div className="max-w-3xl space-y-6">
           <section className="border-y border-zinc-800">
             <ToggleRow
-              label="起動時にコメント受信を開始"
+              label="起動時にチャット受信を開始"
               checked={twitchSettings.autoConnect}
               onChange={updateAutoConnect}
             />

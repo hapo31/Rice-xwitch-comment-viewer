@@ -4,6 +4,7 @@
 
 ## 2026-05-24
 
+- Twitch 公式用語に合わせ、UI のチャット受信/停止/キュー/ログ説明、Rust 側の日本語ログ、設計ドキュメント/TODO の「コメント」表記を「チャット」へ統一した。型名や EventSub の `channel.chat.message` 境界は既存実装のまま維持。
 - UI 整理として Settings route を `/auth` / Auth 表示へ改名し、Activity Bar アイコンを認証用に変更。Auth 画面は Twitch 認証、チャンネル、起動時自動接続だけを扱う。読み上げ基本設定の自動読み上げ/ユーザー名読み上げ/emote 読み上げは Voices へ集約し、Rules は NG/URL/長文の規則に絞った。`pnpm test`、`pnpm build`、`CARGO_TARGET_DIR=/workspaces/Rice-xwitch-comment-viewer/src-tauri/target pnpm tauri build --bundles deb` は成功。通常の `pnpm tauri build` は AppImage bundling が読み取り専用 FS で失敗するため、この devcontainer では bundle 対象指定が必要。
 - GitHub Actions の Windows リリースビルド失敗を確認。`v0.0.3` は `RICE_TWITCH_CLIENT_ID` 未設定で `test -n` が即失敗、`v0.0.2` は Tauri の Windows リソース生成で `src-tauri/icons/icon.ico` がなく失敗していた。workflow は Client ID 未設定を警告に変更し、ビルド自体は継続するようにした。Twitch ログインは従来どおりビルド時 Client ID がない場合に UI へ設定エラーを出す。`icon.png` から Windows 用 `icon.ico` を追加し、`tauri.conf.json` の bundle icon に明示した。
 
@@ -25,13 +26,13 @@
 
 - Phase 1 実装確認として `cargo test` と `pnpm build` を実行し、どちらも成功。棒読みちゃん実機でのテスト発話、未起動、ポート競合、アプリ連携 OFF の手動確認は未実施。
 - Phase 3 の初期実装として `tokio-tungstenite` による EventSub WebSocket 接続、Welcome 後の `channel.chat.message` 購読、keepalive 欠落/reconnect/revocation 処理、`event.message_id` fallback の重複排除、`twitch://chat-message` のフロントエンド購読を追加。`cargo test` と `pnpm build` は成功。実 Twitch チャンネルでの受信確認は未実施。
-- Side Panel のキュー上へコメント受信の開始/停止ボタンを追加し、`twitch_stop_chat` で認証解除せずに EventSub 接続だけ停止できるようにした。UI store では Twitch 認証状態とコメント受信接続状態を分離。`cargo test` と `pnpm build` は成功。
+- Side Panel のキュー上へチャット受信の開始/停止ボタンを追加し、`twitch_stop_chat` で認証解除せずに EventSub 接続だけ停止できるようにした。UI store では Twitch 認証状態とチャット受信接続状態を分離。`cargo test` と `pnpm build` は成功。
 
 ## 状態メモ
 
 - Git 作業ツリーは調査開始時点で clean。
 - `src-tauri/target` と `dist` がローカルに存在するため、ビルド済み成果物はある。
-- `src/components/MainView.tsx` の Chat view は EventSub 由来のコメント表示に接続済み。未受信時のみサンプルメッセージを表示する。
+- `src/components/MainView.tsx` の Chat view は EventSub 由来のチャット表示に接続済み。未受信時のみサンプルメッセージを表示する。
 - `src/stores/appStore.ts` は `twitch://status` / `twitch://chat-message` / `speech://status` の購読反映を実装済み。実キュー連携は Phase 4 で実装する。
 - `src/tauri/client.ts` で `app://log`, `twitch://status`, `twitch://chat-message`, `speech://status`, `speech://queue-updated` を購読できる。
 - `src-tauri/src/app_events/mod.rs` にイベント payload と `tauri::Emitter` helper を実装し、設定/認証/棒読みちゃん操作から発火する。

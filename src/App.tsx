@@ -66,7 +66,7 @@ export function App() {
         const message = event.message ?? "";
         const isChatConnectionEvent =
           message.includes("チャンネル") ||
-          message.includes("コメント受信") ||
+          message.includes("チャット受信") ||
           message.includes("EventSub");
         if (isChatConnectionEvent) {
           dispatch({ type: "twitch.connectionStatus", status: event.status });
@@ -284,7 +284,7 @@ export function App() {
       const channelLogin = state.settings?.twitch.channelLogin;
       dispatch({ type: "twitch.connectionStatus", status: "connecting" });
       await twitchConnect(channelLogin);
-      dispatch({ type: "warning.added", warning: "Twitch コメント接続を開始しました。" });
+      dispatch({ type: "warning.added", warning: "Twitch チャット接続を開始しました。" });
     } catch (error) {
       dispatch({ type: "twitch.connectionStatus", status: "error" });
       dispatch({ type: "warning.added", warning: String(error) });
@@ -292,7 +292,7 @@ export function App() {
   }
 
   async function handleTwitchStopChat() {
-    if (!window.confirm("Twitch コメント受信を停止しますか？")) {
+    if (!window.confirm("Twitch チャット受信を停止しますか？")) {
       return;
     }
 

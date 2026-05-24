@@ -88,7 +88,7 @@ export function TitleBar({ scale, scaleMode, onScaleModeChange }: TitleBarProps)
         className="flex min-w-0 flex-1 items-center gap-3 self-stretch px-3"
       >
         <span className="font-semibold text-zinc-100">Rice</span>
-        <span className="truncate text-zinc-500">Twitch Comment TTS</span>
+        <span className="truncate text-zinc-500">Twitch Chat TTS</span>
       </div>
 
       <div className="flex items-center gap-2 px-2">

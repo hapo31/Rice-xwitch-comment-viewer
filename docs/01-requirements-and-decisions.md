@@ -2,7 +2,7 @@
 
 ## 目的
 
-Twitch実況配信中に、コメント受信、コメント表示、読み上げキュー管理、棒読みちゃん/VOICEROID2系連携をひとつのTauriアプリにまとめる。
+Twitch実況配信中に、チャット受信、チャット表示、読み上げキュー管理、棒読みちゃん/VOICEROID2系連携をひとつのTauriアプリにまとめる。
 
 既存構成:
 
@@ -18,8 +18,8 @@ Twitch chat -> Tauri app -> Speech adapter -> bouyomichan or VOICEROID2
 
 ## 機能要求
 
-- Twitchのコメントをリアルタイムに受信する。
-- コメント一覧、読み上げキュー、接続状態をUIで確認できる。
+- Twitchのチャットをリアルタイムに受信する。
+- チャット一覧、読み上げキュー、接続状態をUIで確認できる。
 - 読み上げ対象をフィルタ/整形できる。
 - 棒読みちゃんへプロセス間通信またはTCPで発話を送れる。
 - 将来的にVOICEROID2直接操作アダプタを追加できる。
@@ -39,7 +39,7 @@ Twitch chat -> Tauri app -> Speech adapter -> bouyomichan or VOICEROID2
 | 領域 | 採用 | 理由 |
 | --- | --- | --- |
 | Twitch受信 | EventSub WebSocket | Twitch公式がローカル常駐アプリに推奨している。チャット本文、バッジ、メッセージID、通知系イベントを構造化JSONで受け取れる。 |
-| Twitch代替 | IRCはフォールバック | MultiCommentViewer系の既存コメントビューアは歴史的にWebSocket/IRC系実装が中心だが、新規実装では公式EventSubを優先する。 |
+| Twitch代替 | IRCはフォールバック | MultiCommentViewer系の既存チャットビューアは歴史的にWebSocket/IRC系実装が中心だが、新規実装では公式EventSubを優先する。 |
 | 認証 | OAuth Device Code Flow | Tauriデスクトップアプリにクライアントシークレットを埋め込まなくてよい。ユーザーはTwitchの認可画面で `user:read:chat` を許可する。 |
 | 読み上げMVP | 棒読みちゃんTCP | 既存の配信環境に近く、RustからTCPで実装しやすい。棒読みちゃん側の辞書、SAPI連携、VOICEROID2連携資産を活かせる。 |
 | VOICEROID2直接連携 | 実験的アダプタ | RemoteControl.VoiceroidやUI Automation実装例はあるが、Windows/.NET/製品バージョン依存が強い。MVPの安定性を優先して分離する。 |

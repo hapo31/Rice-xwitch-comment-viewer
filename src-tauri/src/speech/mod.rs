@@ -254,7 +254,7 @@ pub fn enqueue_chat_message_for_speech(
             SpeechFormatDecision::Speak(text) => text,
             SpeechFormatDecision::Blocked(reason) => {
                 let warning_message = format!(
-                    "{} のコメントを読み上げません: {reason}",
+                    "{} のチャットを読み上げません: {reason}",
                     message.user_display_name
                 );
                 let id = next_queue_id(&mut queue);
@@ -280,7 +280,7 @@ pub fn enqueue_chat_message_for_speech(
                 dropped.status = SpeechQueueItemStatus::Skipped;
                 push_history(&mut queue, dropped);
                 warning = Some(
-                    "読み上げキューが上限に達したため、古い未読コメントを落としました。"
+                    "読み上げキューが上限に達したため、古い未読チャットを落としました。"
                         .to_string(),
                 );
             }
@@ -470,7 +470,7 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
         emit_speech_status(
             &app,
             SpeechStatus::Speaking,
-            Some("コメントを読み上げています。".to_string()),
+            Some("チャットを読み上げています。".to_string()),
         );
         let result = speak_request_from_settings(&app, request.clone()).await;
         match result {
@@ -730,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn formatter_truncates_long_comments() {
+    fn formatter_truncates_long_chat_messages() {
         let formatter = SpeechFormatter::new(SpeechFormatterOptions {
             read_user_name: false,
             max_comment_length: 5,

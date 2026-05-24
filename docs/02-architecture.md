@@ -5,7 +5,7 @@
 ```text
 src/                      TypeScript UI
   app shell               VSCode風レイアウト、設定、ログ、キュー表示
-  stores                  コメント/キュー/接続状態
+  stores                  チャット/キュー/接続状態
   tauri client            Rust commands/eventsの呼び出し
 
 src-tauri/
@@ -40,7 +40,7 @@ Rust backend
 | --- | --- |
 | `TwitchAuthService` | Device Code Flow、トークン更新、`/validate`、ユーザーID取得 |
 | `EventSubClient` | WebSocket接続、welcome/keepalive/reconnect/revocation処理 |
-| `TwitchChatService` | `channel.chat.message`購読、イベント重複排除、コメント正規化 |
+| `TwitchChatService` | `channel.chat.message`購読、イベント重複排除、チャット正規化 |
 | `SpeechQueue` | 優先度、停止/再開/スキップ、連投抑制、バックプレッシャ |
 | `SpeechFormatter` | 読み上げ文生成、ユーザー名付与、絵文字/URL/長文処理 |
 | `SpeechAdapter` | 読み上げ先を抽象化するtrait |
@@ -124,7 +124,7 @@ Events:
 - Twitch OAuth状態: access token、refresh token、スコープ、有効期限、検証済みプロフィールをOS keyringへ保存する。設定JSONへは保存しない。
 - refresh token: 更新成功時に保存済みの値を新しい値へ差し替える。keyring保存に失敗した場合もログイン状態はメモリ上で継続する。Linuxでは `~/.rice/twitch-auth.json` にローカル保存し、それ以外ではUIへ永続化不可の警告を出す。設定JSONへはフォールバックしない。
 - LinuxではWindows Credential ManagerやmacOS Keychainに相当する単一の標準ストアがないため、Secret Service API対応ストア（GNOME Keyring、KWallet、KeePassXC Secret Serviceなど）を優先する。利用できない場合は `~/.rice` を `0700`、認証ファイルを `0600` で作成して保存する。kernel keyutilsやmock backendは永続OAuth保存には使わない。
-- コメントログ: 初期MVPではメモリのみ。後でSQLiteを追加できる境界を残す。
+- チャットログ: 初期MVPではメモリのみ。後でSQLiteを追加できる境界を残す。
 
 ## 推奨crate
 

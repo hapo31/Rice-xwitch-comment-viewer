@@ -1,10 +1,10 @@
-# Twitchコメント受信
+# Twitchチャット受信
 
 ## 採用方式
 
 Twitch公式のEventSub WebSocketを採用する。TwitchのChat & Chatbotsドキュメントでは、IRCは歴史的インターフェースとして残っているが、現在の推奨はEventSubとTwitch API側に寄っている。
 
-MultiCommentViewerはTwitch用ディレクトリとして `TwitchIF` と `TwitchSitePlugin` を持つ既存コメントビューア実装で、参考対象としては有用。ただしGPL-3.0のため、コードを流用せず、挙動やUI観察に留める。
+MultiCommentViewerはTwitch用ディレクトリとして `TwitchIF` と `TwitchSitePlugin` を持つ既存チャットビューア実装で、参考対象としては有用。ただしGPL-3.0のため、コードを流用せず、挙動やUI観察に留める。
 
 ## EventSub WebSocketの流れ
 
@@ -93,9 +93,9 @@ event.message_id -> id
 設定で以下を切り替える:
 
 - ユーザー名を読む/読まない
-- 初回コメントだけユーザー名を読む
+- 初回チャットだけユーザー名を読む
 - URLを「URL」と読む
-- emoteだけのコメントを読む/読まない
+- emoteだけのチャットを読む/読まない
 - 長文の最大文字数
 - 連投抑制秒数
 - NGユーザー/NGワード

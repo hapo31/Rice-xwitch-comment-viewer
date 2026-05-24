@@ -70,7 +70,7 @@ export function SidePanel({
         </section>
 
         <section className="shrink-0">
-          <h2 className="mb-2 text-xs font-semibold text-zinc-400">コメント受信</h2>
+          <h2 className="mb-2 text-xs font-semibold text-zinc-400">チャット受信</h2>
           <div className="grid grid-cols-2 gap-1">
             <CommandButton label="開始" icon={Radio} disabled={!canStartChat} onClick={onTwitchConnect} />
             <CommandButton label="停止" icon={Square} disabled={!canStopChat} onClick={onTwitchStopChat} danger />
