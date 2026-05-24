@@ -120,9 +120,9 @@ export function MainView({
         }
       />
       <Route
-        path="/voices"
+        path="/settings"
         element={
-          <VoicesView
+          <SettingsView
             settings={state.settings}
             onSettingsUpdate={onSettingsUpdate}
             onSpeechHealthCheck={onSpeechHealthCheck}
@@ -131,6 +131,7 @@ export function MainView({
           />
         }
       />
+      <Route path="/voices" element={<Navigate to="/settings" replace />} />
       <Route
         path="/auth"
         element={
@@ -171,7 +172,7 @@ function PlaceholderView({
     "/chat": FileText,
     "/queue": ListTodo,
     "/rules": ShieldCheck,
-    "/voices": Volume2,
+    "/settings": Volume2,
     "/auth": ShieldCheck,
     "/logs": ScrollText,
   }[path];
@@ -652,7 +653,7 @@ function AuthView({
   );
 }
 
-function VoicesView({
+function SettingsView({
   settings,
   onSettingsUpdate,
   onSpeechHealthCheck,
@@ -782,7 +783,7 @@ function VoicesView({
     <main className="relative col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold text-zinc-100">Voices</h1>
+          <h1 className="truncate text-sm font-semibold text-zinc-100">Settings</h1>
           <p className="truncate text-xs text-zinc-500">起動時接続、棒読みちゃん接続、声質、自動読み上げの設定を調整します</p>
         </div>
         <div className="flex items-center gap-2">

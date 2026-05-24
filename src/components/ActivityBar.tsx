@@ -1,4 +1,4 @@
-import { KeyRound, ListFilter, MessageSquareText, Radio, ScrollText, SlidersHorizontal, Volume2 } from "lucide-react";
+import { KeyRound, ListFilter, MessageSquareText, Radio, ScrollText, SlidersHorizontal } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import type { AppRoutePath } from "../routes";
 
@@ -12,7 +12,7 @@ const navItems: NavItem[] = [
   { path: "/chat", label: "Chat", icon: MessageSquareText },
   { path: "/queue", label: "Queue", icon: Radio },
   { path: "/rules", label: "Rules", icon: ListFilter },
-  { path: "/voices", label: "Voices", icon: Volume2 },
+  { path: "/settings", label: "Settings", icon: SlidersHorizontal },
   { path: "/auth", label: "Auth", icon: KeyRound },
   { path: "/logs", label: "Logs", icon: ScrollText },
 ];
