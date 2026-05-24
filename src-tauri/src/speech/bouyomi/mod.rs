@@ -10,7 +10,7 @@ use crate::speech::{SpeechAdapter, SpeechHealth, SpeechRequest, SpeechResult};
 use serde::Serialize;
 use std::time::Duration;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncWriteExt,
     net::TcpStream,
     time::{timeout, Instant},
 };
@@ -88,7 +88,7 @@ impl BouyomiAdapter {
             self.speak(normalize_connection_success_message(success_message))
                 .await?;
         } else {
-            self.query_is_now_playing().await?;
+            self.send_query(BouyomiQueryCommand::IsNowPlaying).await?;
         }
         Ok(started_at.elapsed())
     }
@@ -102,16 +102,8 @@ impl BouyomiAdapter {
         self.send_packet(&command.packet()).await
     }
 
-    pub async fn query_is_now_playing(&self) -> anyhow::Result<bool> {
-        let mut stream = self.connect().await?;
-        timeout(
-            self.timeout,
-            stream.write_all(&BouyomiQueryCommand::IsNowPlaying.packet()),
-        )
-        .await??;
-        let mut bytes = [0_u8; 4];
-        timeout(self.timeout, stream.read_exact(&mut bytes)).await??;
-        Ok(i32::from_le_bytes(bytes) != 0)
+    async fn send_query(&self, command: BouyomiQueryCommand) -> anyhow::Result<()> {
+        self.send_packet(&command.packet()).await
     }
 
     async fn send_packet(&self, packet: &[u8]) -> anyhow::Result<()> {
