@@ -3,7 +3,7 @@ export const appRoutes = [
   { path: "/queue", label: "Queue" },
   { path: "/rules", label: "Rules" },
   { path: "/settings", label: "Settings" },
-  { path: "/auth", label: "Auth" },
+  { path: "/auth", label: "Login" },
   { path: "/logs", label: "Logs" },
 ] as const;
 

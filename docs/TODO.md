@@ -12,10 +12,10 @@
 | --- | --- | --- |
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込を確認した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 発話、制御、接続診断、Settings 画面は実装済み。接続確認は設定に応じて確認発話または無音の状態取得を行う。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
-| Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Auth 画面は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
+| Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Login 画面は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub コメント受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub コメントから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
-| Phase 5: 配信運用向け仕上げ | 実装中 | Logs/Rules 画面、`app://log` 接続、ステータスバー集約、Auth/Settings の設定整理、起動時自動接続、自動読み上げ ON/OFF、棒読みちゃんエラー後の復帰ポーリング、SidePanel の未完了キュー件数表示、各画面ヘッダー説明の日本語化、関連 TS テストを実装。詳細な運用エラー整理は継続。 |
+| Phase 5: 配信運用向け仕上げ | 実装中 | Logs/Rules 画面、`app://log` 接続、ステータスバー集約、Login/Settings の設定整理、起動時自動接続、自動読み上げ ON/OFF、棒読みちゃんエラー後の復帰ポーリング、SidePanel の未完了キュー件数表示、各画面ヘッダー説明の日本語化、関連 TS テストを実装。詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
 ## Phase 0: プロジェクト作成
@@ -57,7 +57,7 @@
 - [x] refresh 成功時に保存済み refresh token を差し替える。
 - [x] OS keyring 優先の OAuth 保存/復元/削除を実装する。
 - [x] Linux の Secret Service 不可時に `~/.rice/twitch-auth.json` へ `0600` で保存する fallback を実装する。
-- [x] Auth 画面に認証開始、確認、有効性確認、解除を実装する。
+- [x] Login 画面に認証開始、確認、有効性確認、解除を実装する。
 - [ ] 実 Twitch Client ID で Device Code Flow を手動確認する。
 - [ ] 認可取り消し、401、期限切れ時の UI 表示を手動確認する。
 - [ ] アプリ起動時の保存済み認証復元と refresh 更新を手動確認する。
@@ -99,8 +99,8 @@
 
 ## Phase 5: 配信運用向け仕上げ
 
-- [x] Settings 画面を Auth へ改名し、認証専用の画面として整理する。
-- [x] Settings 画面へ読み上げ基本設定を集約し、Auth/Rules 側に重複した読み上げ設定を残さない。
+- [x] Settings 画面から Login 画面を分離し、認証専用の画面として整理する。
+- [x] Settings 画面へ読み上げ基本設定を集約し、Login/Rules 側に重複した読み上げ設定を残さない。
 - [x] `v[0-9]*` タグ push で Windows NSIS ビルドと GitHub Release 作成を行う Actions workflow を追加する。
 - [x] Windows リリースビルド用 Dockerfile と `.dockerignore` を追加する。
 - [x] リリース workflow では build/release job を分離し、release job のみ `contents: write`、build cache は未使用にする。
@@ -116,7 +116,8 @@
 - [x] Rules view を実装する。
 - [x] NG ユーザー、NG ワード、URL 処理、長文処理の設定を実装する。
 - [x] 各画面のタイトル下説明を、画面機能が分かる日本語の概要文へ整理する。
-- [x] Rules/Settings は設定変更時だけ保存ボタンを右下からスライドイン表示し、Auth は認証操作ボタンと自動保存に分離する。
+- [x] Rules/Settings は設定変更時だけ保存ボタンを右下からスライドイン表示し、Login は認証操作ボタンと自動保存に分離する。
+- [x] Auth の表示名を Login に変更する。
 - [x] 「起動時にコメント受信を開始」を Settings 画面の先頭に移動する。
 - [x] Voices 画面を Settings へ改名し、`/voices` から `/settings` へリダイレクトする。
 - [ ] 配信中に判断しやすい日本語エラー文言を整理する。

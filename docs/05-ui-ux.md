@@ -12,7 +12,7 @@
 +----------------------------------------------------------+
 | Activity Bar | Side Panel        | Main View             |
 |              |                   |                       |
-| icons        | connection/queue  | chat log / auth/settings |
+| icons        | connection/queue  | chat log / login/settings |
 |              | compact controls | details               |
 +----------------------------------------------------------+
 | Status Bar: Twitch connected | Bouyomi OK | queue 3 | ... |
@@ -33,7 +33,7 @@ OS標準タイトルバーは非表示にし、VSCode風の薄い独自タイト
 - Queue
 - Rules
 - Settings
-- Auth
+- Login
 - Logs
 
 アイコンは既存フロントエンド構成に合わせ、なければ `lucide-react` を採用する。
@@ -56,7 +56,7 @@ Queue:
 - クリア
 - キュー件数
 
-Auth:
+Login:
 
 - Twitch認証
 - 接続チャンネル
@@ -88,7 +88,7 @@ Settings:
 | Queue | 読み上げ待ち一覧。手動スキップ、再読込、削除ができる。 |
 | Rules | NGユーザー、NGワード、URL処理、長文処理。 |
 | Settings | 起動時接続、棒読みちゃん接続先、速度/音程/音量/声質、名前読み上げ、emote 読み上げ、テスト発話。 |
-| Auth | Twitch認証、接続チャンネル、起動時自動接続。読み上げ設定は置かない。 |
+| Login | Twitch認証、接続チャンネル。読み上げ設定は置かない。 |
 | Logs | EventSub、認証、読み上げアダプタのログ。 |
 
 ## Tailwindデザイン指針

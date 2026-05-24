@@ -13,7 +13,7 @@ const navItems: NavItem[] = [
   { path: "/queue", label: "Queue", icon: Radio },
   { path: "/rules", label: "Rules", icon: ListFilter },
   { path: "/settings", label: "Settings", icon: SlidersHorizontal },
-  { path: "/auth", label: "Auth", icon: KeyRound },
+  { path: "/auth", label: "Login", icon: KeyRound },
   { path: "/logs", label: "Logs", icon: ScrollText },
 ];
 
