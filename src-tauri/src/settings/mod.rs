@@ -53,6 +53,10 @@ pub struct SpeechSettings {
     pub url_handling: UrlHandling,
     #[serde(default = "default_read_emotes")]
     pub read_emotes: bool,
+    #[serde(default = "default_connection_success_speech_enabled")]
+    pub connection_success_speech_enabled: bool,
+    #[serde(default)]
+    pub connection_success_speech_text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +89,10 @@ fn default_url_handling() -> UrlHandling {
 
 fn default_read_emotes() -> bool {
     false
+}
+
+fn default_connection_success_speech_enabled() -> bool {
+    true
 }
 
 fn default_bouyomi_speed() -> i16 {
@@ -146,6 +154,8 @@ impl Default for AppSettings {
                 blocked_words: Vec::new(),
                 url_handling: UrlHandling::Replace,
                 read_emotes: false,
+                connection_success_speech_enabled: true,
+                connection_success_speech_text: String::new(),
             },
         }
     }
@@ -183,6 +193,8 @@ pub struct SpeechSettingsPatch {
     pub blocked_words: Option<Vec<String>>,
     pub url_handling: Option<UrlHandling>,
     pub read_emotes: Option<bool>,
+    pub connection_success_speech_enabled: Option<bool>,
+    pub connection_success_speech_text: Option<String>,
 }
 
 pub struct SettingsStore;
@@ -299,6 +311,13 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
         }
         if let Some(read_emotes) = speech.read_emotes {
             settings.speech.read_emotes = read_emotes;
+        }
+        if let Some(enabled) = speech.connection_success_speech_enabled {
+            settings.speech.connection_success_speech_enabled = enabled;
+        }
+        if let Some(text) = speech.connection_success_speech_text {
+            settings.speech.connection_success_speech_text =
+                text.trim().chars().take(120).collect();
         }
     }
 

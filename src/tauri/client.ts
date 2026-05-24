@@ -35,6 +35,8 @@ const fallbackSettings: AppSettings = {
     blockedWords: [],
     urlHandling: "replace",
     readEmotes: false,
+    connectionSuccessSpeechEnabled: true,
+    connectionSuccessSpeechText: "",
   },
 };
 

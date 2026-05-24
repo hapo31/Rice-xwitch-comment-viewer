@@ -10,12 +10,12 @@ use crate::speech::{SpeechAdapter, SpeechHealth, SpeechRequest, SpeechResult};
 use serde::Serialize;
 use std::time::Duration;
 use tokio::{
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     time::{timeout, Instant},
 };
 
-const HEALTH_CHECK_MESSAGE: &str = "棒読みちゃんと接続しました";
+pub const DEFAULT_CONNECTION_SUCCESS_MESSAGE: &str = "棒読みちゃんと接続しました";
 
 #[derive(Debug, Clone)]
 pub struct BouyomiAdapter {
@@ -78,9 +78,18 @@ impl BouyomiAdapter {
         }
     }
 
-    pub async fn health_check(&self) -> anyhow::Result<Duration> {
+    pub async fn health_check(
+        &self,
+        speak_on_success: bool,
+        success_message: &str,
+    ) -> anyhow::Result<Duration> {
         let started_at = Instant::now();
-        self.speak(HEALTH_CHECK_MESSAGE).await?;
+        if speak_on_success {
+            self.speak(normalize_connection_success_message(success_message))
+                .await?;
+        } else {
+            self.query_is_now_playing().await?;
+        }
         Ok(started_at.elapsed())
     }
 
@@ -91,6 +100,18 @@ impl BouyomiAdapter {
 
     pub async fn control(&self, command: BouyomiControlCommand) -> anyhow::Result<()> {
         self.send_packet(&command.packet()).await
+    }
+
+    pub async fn query_is_now_playing(&self) -> anyhow::Result<bool> {
+        let mut stream = self.connect().await?;
+        timeout(
+            self.timeout,
+            stream.write_all(&BouyomiQueryCommand::IsNowPlaying.packet()),
+        )
+        .await??;
+        let mut bytes = [0_u8; 4];
+        timeout(self.timeout, stream.read_exact(&mut bytes)).await??;
+        Ok(i32::from_le_bytes(bytes) != 0)
     }
 
     async fn send_packet(&self, packet: &[u8]) -> anyhow::Result<()> {
@@ -144,7 +165,7 @@ impl BouyomiAdapter {
 
 impl SpeechAdapter for BouyomiAdapter {
     async fn health_check(&self) -> anyhow::Result<SpeechHealth> {
-        BouyomiAdapter::health_check(self).await?;
+        BouyomiAdapter::health_check(self, true, DEFAULT_CONNECTION_SUCCESS_MESSAGE).await?;
         Ok(SpeechHealth::Connected)
     }
 
@@ -191,6 +212,21 @@ impl BouyomiControlCommand {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum BouyomiQueryCommand {
+    IsNowPlaying,
+}
+
+impl BouyomiQueryCommand {
+    fn packet(self) -> [u8; 2] {
+        let command: i16 = match self {
+            Self::IsNowPlaying => 0x120,
+        };
+
+        command.to_le_bytes()
+    }
+}
+
 pub fn build_talk_packet(config: &BouyomiTalkConfig, text: &str) -> Vec<u8> {
     let message = text.as_bytes();
     let mut bytes = Vec::with_capacity(15 + message.len());
@@ -205,6 +241,15 @@ pub fn build_talk_packet(config: &BouyomiTalkConfig, text: &str) -> Vec<u8> {
     bytes
 }
 
+pub fn normalize_connection_success_message(text: &str) -> &str {
+    let text = text.trim();
+    if text.is_empty() {
+        DEFAULT_CONNECTION_SUCCESS_MESSAGE
+    } else {
+        text
+    }
+}
+
 #[cfg(feature = "app")]
 #[tauri::command]
 pub async fn speech_health_check(
@@ -212,8 +257,9 @@ pub async fn speech_health_check(
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<String, String> {
     let adapter = adapter_from_settings(&state)?;
+    let (speak_on_success, success_message) = connection_success_settings(&state)?;
     let result = adapter
-        .health_check()
+        .health_check(speak_on_success, &success_message)
         .await
         .map(|elapsed| {
             format!(
@@ -239,8 +285,9 @@ pub async fn speech_health_check(
 #[tauri::command]
 pub async fn speech_health_probe(state: tauri::State<'_, AppState>) -> Result<String, String> {
     let adapter = adapter_from_settings(&state)?;
+    let (speak_on_success, success_message) = connection_success_settings(&state)?;
     adapter
-        .health_check()
+        .health_check(speak_on_success, &success_message)
         .await
         .map(|elapsed| {
             format!(
@@ -403,6 +450,15 @@ pub(crate) fn adapter_from_settings(
     Ok(BouyomiAdapter::new(addr, defaults))
 }
 
+#[cfg(feature = "app")]
+fn connection_success_settings(state: &tauri::State<'_, AppState>) -> Result<(bool, String), String> {
+    let settings = state.settings.lock().map_err(|error| error.to_string())?;
+    Ok((
+        settings.speech.connection_success_speech_enabled,
+        settings.speech.connection_success_speech_text.clone(),
+    ))
+}
+
 fn normalize_test_text(text: &str) -> String {
     let text = text.trim();
     if text.is_empty() {
@@ -466,7 +522,19 @@ mod tests {
 
     #[test]
     fn health_check_message_is_not_empty() {
-        assert_eq!(HEALTH_CHECK_MESSAGE, "棒読みちゃんと接続しました");
+        assert_eq!(
+            DEFAULT_CONNECTION_SUCCESS_MESSAGE,
+            "棒読みちゃんと接続しました"
+        );
+    }
+
+    #[test]
+    fn normalizes_empty_health_check_message_to_default() {
+        assert_eq!(
+            normalize_connection_success_message("  "),
+            DEFAULT_CONNECTION_SUCCESS_MESSAGE
+        );
+        assert_eq!(normalize_connection_success_message("接続しました"), "接続しました");
     }
 
     #[test]
@@ -502,6 +570,10 @@ mod tests {
         assert_eq!(
             BouyomiControlCommand::Clear.packet(),
             0x40_i16.to_le_bytes()
+        );
+        assert_eq!(
+            BouyomiQueryCommand::IsNowPlaying.packet(),
+            0x120_i16.to_le_bytes()
         );
     }
 

@@ -11,7 +11,7 @@
 | Phase | 状態 | メモ |
 | --- | --- | --- |
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込を確認した。 |
-| Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 発話、制御、接続診断、Voices 画面は実装済み。接続確認は空接続ではなく短い確認発話を送る。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
+| Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 発話、制御、接続診断、Voices 画面は実装済み。接続確認は設定に応じて確認発話または無音の状態取得を行う。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Auth 画面は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub コメント受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub コメントから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
@@ -41,6 +41,7 @@
 - [x] 棒読みちゃん未起動時の日本語エラーを返す。
 - [x] Voices 画面から接続確認、診断、テスト発話、ホスト/ポート/声質設定を操作できるようにする。
 - [x] 接続確認で空接続を送らず、「棒読みちゃんと接続しました」の確認発話を送る。
+- [x] 接続成功時の読み上げ ON/OFF と読み上げ文カスタマイズを設定できるようにする。
 - [ ] 実機の棒読みちゃんでテスト発話できることを確認する。
 - [ ] 棒読みちゃん未起動、ポート競合、アプリ連携 OFF の手動確認を行う。
 - [x] 接続失敗時に読み上げキューを破棄しない挙動を Phase 4 で統合確認する。

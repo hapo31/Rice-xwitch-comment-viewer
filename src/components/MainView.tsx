@@ -76,7 +76,11 @@ const defaultSpeechSettings: AppSettings["speech"] = {
   blockedWords: [],
   urlHandling: "replace",
   readEmotes: false,
+  connectionSuccessSpeechEnabled: true,
+  connectionSuccessSpeechText: "",
 };
+
+const defaultConnectionSuccessMessage = "棒読みちゃんと接続しました";
 
 export function MainView({
   state,
@@ -690,6 +694,12 @@ function VoicesView({
   const [autoSpeak, setAutoSpeak] = useState(speechSettings.autoSpeak);
   const [readUserName, setReadUserName] = useState(speechSettings.readUserName);
   const [readEmotes, setReadEmotes] = useState(speechSettings.readEmotes);
+  const [connectionSuccessSpeechEnabled, setConnectionSuccessSpeechEnabled] = useState(
+    speechSettings.connectionSuccessSpeechEnabled,
+  );
+  const [connectionSuccessSpeechText, setConnectionSuccessSpeechText] = useState(
+    speechSettings.connectionSuccessSpeechText,
+  );
   const [testText, setTestText] = useState("テスト発話です。");
   const [diagnostics, setDiagnostics] = useState<BouyomiConnectionDiagnostics>();
   const [isDiagnosing, setIsDiagnosing] = useState(false);
@@ -704,6 +714,8 @@ function VoicesView({
     setAutoSpeak(speechSettings.autoSpeak);
     setReadUserName(speechSettings.readUserName);
     setReadEmotes(speechSettings.readEmotes);
+    setConnectionSuccessSpeechEnabled(speechSettings.connectionSuccessSpeechEnabled);
+    setConnectionSuccessSpeechText(speechSettings.connectionSuccessSpeechText);
   }, [
     speechSettings.bouyomiHost,
     speechSettings.bouyomiPort,
@@ -714,6 +726,8 @@ function VoicesView({
     speechSettings.autoSpeak,
     speechSettings.readUserName,
     speechSettings.readEmotes,
+    speechSettings.connectionSuccessSpeechEnabled,
+    speechSettings.connectionSuccessSpeechText,
   ]);
 
   const numericPort = Number(port);
@@ -740,6 +754,8 @@ function VoicesView({
         autoSpeak,
         readUserName,
         readEmotes,
+        connectionSuccessSpeechEnabled,
+        connectionSuccessSpeechText,
       },
     });
   }
@@ -871,6 +887,31 @@ function VoicesView({
                   className="h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
                 />
                 {!isVoiceValid && <p className="mt-1 text-xs text-rose-400">0 から 30000 の範囲で入力してください。</p>}
+              </div>
+            </div>
+          </section>
+
+          <section className="border-y border-zinc-800">
+            <ToggleRow
+              label="接続成功時に読む"
+              checked={connectionSuccessSpeechEnabled}
+              onChange={setConnectionSuccessSpeechEnabled}
+            />
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start py-3">
+              <label className="pt-2 text-sm text-zinc-400" htmlFor="connection-success-speech-text">
+                接続成功時メッセージ
+              </label>
+              <div className="space-y-1">
+                <input
+                  id="connection-success-speech-text"
+                  value={connectionSuccessSpeechText}
+                  maxLength={120}
+                  disabled={!connectionSuccessSpeechEnabled}
+                  placeholder={defaultConnectionSuccessMessage}
+                  onChange={(event) => setConnectionSuccessSpeechText(event.target.value)}
+                  className="h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-400 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-950 disabled:text-zinc-600"
+                />
+                <div className="text-right text-xs text-zinc-500">{connectionSuccessSpeechText.length}/120</div>
               </div>
             </div>
           </section>

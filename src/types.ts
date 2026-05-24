@@ -26,6 +26,8 @@ export interface AppSettings {
     blockedWords: string[];
     urlHandling: "replace" | "read" | "block";
     readEmotes: boolean;
+    connectionSuccessSpeechEnabled: boolean;
+    connectionSuccessSpeechText: string;
   };
 }
 
