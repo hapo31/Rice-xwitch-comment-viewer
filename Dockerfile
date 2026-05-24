@@ -1,9 +1,12 @@
 # syntax=docker/dockerfile:1.7
 
 ARG RUST_IMAGE=rust:1.89.0-bookworm
+ARG NODE_IMAGE=node:22-bookworm-slim
 ARG PNPM_VERSION=8.11.0
 ARG CARGO_XWIN_VERSION=0.22.0
 ARG WINDOWS_TARGET=x86_64-pc-windows-msvc
+
+FROM ${NODE_IMAGE} AS node
 
 FROM ${RUST_IMAGE} AS build
 
@@ -18,6 +21,8 @@ ENV CARGO_TERM_COLOR=always \
 
 WORKDIR /work
 
+COPY --from=node /usr/local /usr/local
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -25,8 +30,6 @@ RUN apt-get update \
         curl \
         lld \
         llvm \
-        nodejs \
-        npm \
         nsis \
     && rm -rf /var/lib/apt/lists/*
 
