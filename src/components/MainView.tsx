@@ -126,9 +126,9 @@ export function MainView({
         }
       />
       <Route
-        path="/settings"
+        path="/auth"
         element={
-          <SettingsView
+          <AuthView
             state={state}
             onSettingsUpdate={onSettingsUpdate}
             onTwitchStartAuth={onTwitchStartAuth}
@@ -166,7 +166,7 @@ function PlaceholderView({
     "/queue": ListTodo,
     "/rules": ShieldCheck,
     "/voices": Volume2,
-    "/settings": FileText,
+    "/auth": ShieldCheck,
     "/logs": ScrollText,
   }[path];
 
@@ -369,8 +369,6 @@ function RulesView({
   const [urlHandling, setUrlHandling] = useState(speechSettings.urlHandling);
   const [maxLength, setMaxLength] = useState(String(speechSettings.maxCommentLength));
   const [repeatSeconds, setRepeatSeconds] = useState(String(speechSettings.repeatSuppressionSeconds));
-  const [readUserName, setReadUserName] = useState(speechSettings.readUserName);
-  const [autoSpeak, setAutoSpeak] = useState(speechSettings.autoSpeak);
   const [readEmotes, setReadEmotes] = useState(speechSettings.readEmotes);
 
   useEffect(() => {
@@ -379,8 +377,6 @@ function RulesView({
     setUrlHandling(speechSettings.urlHandling);
     setMaxLength(String(speechSettings.maxCommentLength));
     setRepeatSeconds(String(speechSettings.repeatSuppressionSeconds));
-    setReadUserName(speechSettings.readUserName);
-    setAutoSpeak(speechSettings.autoSpeak);
     setReadEmotes(speechSettings.readEmotes);
   }, [
     speechSettings.blockedUsers,
@@ -388,8 +384,6 @@ function RulesView({
     speechSettings.urlHandling,
     speechSettings.maxCommentLength,
     speechSettings.repeatSuppressionSeconds,
-    speechSettings.readUserName,
-    speechSettings.autoSpeak,
     speechSettings.readEmotes,
   ]);
 
@@ -406,8 +400,6 @@ function RulesView({
     onSettingsUpdate({
       speech: {
         ...speechSettings,
-        autoSpeak,
-        readUserName,
         maxCommentLength: numericMaxLength,
         repeatSuppressionSeconds: numericRepeatSeconds,
         blockedUsers: parseRuleList(blockedUsers),
@@ -438,8 +430,6 @@ function RulesView({
       <div className="h-[calc(100%-3rem)] overflow-auto p-4">
         <div className="max-w-3xl space-y-6">
           <section className="border-y border-zinc-800">
-            <ToggleRow label="自動読み上げ" checked={autoSpeak} onChange={setAutoSpeak} />
-            <ToggleRow label="ユーザー名を読む" checked={readUserName} onChange={setReadUserName} />
             <ToggleRow label="emote を読む" checked={readEmotes} onChange={setReadEmotes} />
           </section>
 
@@ -520,7 +510,7 @@ function LogsView({ state }: { state: AppState }) {
   );
 }
 
-function SettingsView({
+function AuthView({
   state,
   onSettingsUpdate,
   onTwitchStartAuth,
@@ -541,20 +531,14 @@ function SettingsView({
     ...defaultTwitchSettings,
     ...state.settings?.twitch,
   };
-  const speechSettings = {
-    ...defaultSpeechSettings,
-    ...state.settings?.speech,
-  };
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);
   const [autoConnect, setAutoConnect] = useState(twitchSettings.autoConnect);
-  const [readUserName, setReadUserName] = useState(speechSettings.readUserName);
   const isChannelValid = isValidTwitchChannelLogin(channelLogin);
 
   useEffect(() => {
     setChannelLogin(twitchSettings.channelLogin);
     setAutoConnect(twitchSettings.autoConnect);
-    setReadUserName(speechSettings.readUserName);
-  }, [twitchSettings.channelLogin, twitchSettings.autoConnect, speechSettings.readUserName]);
+  }, [twitchSettings.channelLogin, twitchSettings.autoConnect]);
 
   function saveTwitchSettings() {
     if (!isChannelValid) {
@@ -567,10 +551,6 @@ function SettingsView({
         channelLogin: channelLogin.trim(),
         autoConnect,
       },
-      speech: {
-        ...speechSettings,
-        readUserName,
-      },
     });
   }
 
@@ -578,7 +558,7 @@ function SettingsView({
     <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold text-zinc-100">Settings</h1>
+          <h1 className="truncate text-sm font-semibold text-zinc-100">Auth</h1>
           <p className="truncate text-xs text-zinc-500">Twitch OAuth Device Code Flow</p>
         </div>
         <div className="flex items-center gap-2 text-xs text-zinc-400">
@@ -623,10 +603,6 @@ function SettingsView({
                 保存
               </button>
             </div>
-          </section>
-
-          <section className="border-y border-zinc-800">
-            <ToggleRow label="名前を読む" checked={readUserName} onChange={setReadUserName} />
           </section>
 
           <section className="border-y border-zinc-800">
@@ -718,6 +694,8 @@ function VoicesView({
   const [tone, setTone] = useState(speechSettings.bouyomiTone);
   const [volume, setVolume] = useState(speechSettings.bouyomiVolume);
   const [voice, setVoice] = useState(String(speechSettings.bouyomiVoice));
+  const [autoSpeak, setAutoSpeak] = useState(speechSettings.autoSpeak);
+  const [readUserName, setReadUserName] = useState(speechSettings.readUserName);
   const [testText, setTestText] = useState("テスト発話です。");
   const [diagnostics, setDiagnostics] = useState<BouyomiConnectionDiagnostics>();
   const [isDiagnosing, setIsDiagnosing] = useState(false);
@@ -729,6 +707,8 @@ function VoicesView({
     setTone(speechSettings.bouyomiTone);
     setVolume(speechSettings.bouyomiVolume);
     setVoice(String(speechSettings.bouyomiVoice));
+    setAutoSpeak(speechSettings.autoSpeak);
+    setReadUserName(speechSettings.readUserName);
   }, [
     speechSettings.bouyomiHost,
     speechSettings.bouyomiPort,
@@ -736,6 +716,8 @@ function VoicesView({
     speechSettings.bouyomiTone,
     speechSettings.bouyomiVolume,
     speechSettings.bouyomiVoice,
+    speechSettings.autoSpeak,
+    speechSettings.readUserName,
   ]);
 
   const numericPort = Number(port);
@@ -759,6 +741,8 @@ function VoicesView({
         bouyomiTone: tone,
         bouyomiVolume: volume,
         bouyomiVoice: numericVoice,
+        autoSpeak,
+        readUserName,
       },
     });
   }
@@ -802,6 +786,11 @@ function VoicesView({
 
       <div className="h-[calc(100%-3rem)] overflow-auto p-4">
         <div className="max-w-3xl space-y-6">
+          <section className="border-y border-zinc-800">
+            <ToggleRow label="自動読み上げ" checked={autoSpeak} onChange={setAutoSpeak} />
+            <ToggleRow label="ユーザー名を読む" checked={readUserName} onChange={setReadUserName} />
+          </section>
+
           <section className="border-y border-zinc-800">
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-b border-zinc-800 py-3">
               <label className="text-sm text-zinc-400" htmlFor="bouyomi-host">
