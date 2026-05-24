@@ -17,6 +17,7 @@ import {
   speechConnectionDiagnostics,
   speechControl,
   speechHealthCheck,
+  speechHealthProbe,
   speechQueueReload,
   speechQueueRemove,
   speechTest,
@@ -35,6 +36,7 @@ export function App() {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   const displayScale = useDisplayScale();
   const autoConnectAttempted = useRef(false);
+  const speechRecoveryPollingEnabled = useRef(false);
 
   useEffect(() => {
     getSettings()
@@ -89,6 +91,7 @@ export function App() {
       subscribeSpeechStatusEvents((event) => {
         dispatch({ type: "speech.status", status: event.status });
         if (event.message && (event.status === "disconnected" || event.status === "error")) {
+          speechRecoveryPollingEnabled.current = true;
           dispatch({ type: "warning.added", warning: event.message });
         }
       }),
@@ -123,6 +126,42 @@ export function App() {
     void handleTwitchConnect();
   }, [state.settings?.twitch.autoConnect, state.twitchAuthStatus, state.twitchConnectionStatus]);
 
+  useEffect(() => {
+    const shouldPoll =
+      speechRecoveryPollingEnabled.current &&
+      state.settings &&
+      (state.speechStatus === "disconnected" || state.speechStatus === "error");
+
+    if (!shouldPoll) {
+      return;
+    }
+
+    let cancelled = false;
+    const pollSpeechHealth = async () => {
+      try {
+        const message = await speechHealthProbe();
+        if (cancelled) {
+          return;
+        }
+        speechRecoveryPollingEnabled.current = false;
+        dispatch({ type: "speech.status", status: "idle" });
+        dispatch({ type: "warning.added", warning: message });
+      } catch {
+        // Keep the existing error visible while waiting for BouyomiChan to become reachable.
+      }
+    };
+
+    void pollSpeechHealth();
+    const intervalId = window.setInterval(() => {
+      void pollSpeechHealth();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [state.settings, state.speechStatus]);
+
   async function handleSpeechTest(text?: string) {
     try {
       const speechText = typeof text === "string" ? text : "テスト発話です。";
@@ -131,6 +170,7 @@ export function App() {
       dispatch({ type: "speech.status", status: "idle" });
       dispatch({ type: "warning.added", warning: "テスト発話を送信しました。" });
     } catch (error) {
+      speechRecoveryPollingEnabled.current = true;
       dispatch({ type: "speech.status", status: "error" });
       dispatch({ type: "warning.added", warning: String(error) });
     }
@@ -142,6 +182,7 @@ export function App() {
       dispatch({ type: "speech.status", status: "idle" });
       dispatch({ type: "warning.added", warning: message });
     } catch (error) {
+      speechRecoveryPollingEnabled.current = true;
       dispatch({ type: "speech.status", status: "disconnected" });
       dispatch({ type: "warning.added", warning: String(error) });
     }

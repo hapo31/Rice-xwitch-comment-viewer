@@ -79,6 +79,14 @@ export async function speechHealthCheck(): Promise<string> {
   return invoke<string>("speech_health_check");
 }
 
+export async function speechHealthProbe(): Promise<string> {
+  if (!isTauriRuntime) {
+    return "ブラウザプレビューでは棒読みちゃん接続確認をスキップします。";
+  }
+
+  return invoke<string>("speech_health_probe");
+}
+
 export async function speechConnectionDiagnostics(): Promise<BouyomiConnectionDiagnostics> {
   if (!isTauriRuntime) {
     return {

@@ -15,6 +15,8 @@ use tokio::{
     time::{timeout, Instant},
 };
 
+const HEALTH_CHECK_MESSAGE: &str = "棒読みちゃんと接続しました";
+
 #[derive(Debug, Clone)]
 pub struct BouyomiAdapter {
     pub addr: String,
@@ -78,8 +80,7 @@ impl BouyomiAdapter {
 
     pub async fn health_check(&self) -> anyhow::Result<Duration> {
         let started_at = Instant::now();
-        let stream = self.connect().await?;
-        drop(stream);
+        self.speak(HEALTH_CHECK_MESSAGE).await?;
         Ok(started_at.elapsed())
     }
 
@@ -232,6 +233,22 @@ pub async fn speech_health_check(
         }
     }
     result
+}
+
+#[cfg(feature = "app")]
+#[tauri::command]
+pub async fn speech_health_probe(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let adapter = adapter_from_settings(&state)?;
+    adapter
+        .health_check()
+        .await
+        .map(|elapsed| {
+            format!(
+                "棒読みちゃんに接続できました。応答時間 {}ms",
+                elapsed.as_millis()
+            )
+        })
+        .map_err(to_user_message)
 }
 
 #[cfg(feature = "app")]
@@ -445,6 +462,11 @@ mod tests {
         assert_eq!(packet[10], 0);
         assert_eq!(&packet[11..15], &4_u32.to_le_bytes());
         assert_eq!(&packet[15..], b"test");
+    }
+
+    #[test]
+    fn health_check_message_is_not_empty() {
+        assert_eq!(HEALTH_CHECK_MESSAGE, "棒読みちゃんと接続しました");
     }
 
     #[test]

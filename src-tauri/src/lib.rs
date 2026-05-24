@@ -11,8 +11,8 @@ use app_events::{
 use settings::{settings_get, settings_update, AppState};
 #[cfg(feature = "app")]
 use speech::bouyomi::{
-    speech_clear, speech_connection_diagnostics, speech_health_check, speech_pause, speech_resume,
-    speech_skip, speech_test,
+    speech_clear, speech_connection_diagnostics, speech_health_check, speech_health_probe,
+    speech_pause, speech_resume, speech_skip, speech_test,
 };
 #[cfg(feature = "app")]
 use speech::{speech_queue_reload, speech_queue_remove};
@@ -52,6 +52,7 @@ pub fn run() {
             settings_get,
             settings_update,
             speech_health_check,
+            speech_health_probe,
             speech_connection_diagnostics,
             speech_test,
             speech_pause,

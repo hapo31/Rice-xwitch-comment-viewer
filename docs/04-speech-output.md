@@ -68,7 +68,7 @@ pub struct BouyomiTalkConfig {
 
 - 発話ごとに短いTCP接続を張る設計から始める。棒読みちゃん側の既存連携と相性がよい。
 - 接続失敗は読み上げキューを破棄せず、UIに「未接続」と出す。
-- ヘルスチェックは `127.0.0.1:50001` への接続確認、可能なら `is_now_playing` を使う。
+- ヘルスチェックは空の TCP 接続だけで終えず、短い接続確認メッセージを発話コマンドとして送る。必要に応じて、将来 `is_now_playing` を併用する。
 - 長文、URL、改行、制御文字は送信前に整形する。
 - 棒読みちゃんタグを許可するかは設定で切り替える。初期値は安全側で「コメント由来タグを無効化/エスケープ」する。
 
@@ -140,4 +140,3 @@ Tauri Rust
 - RemoteControl.Voiceroid: <https://github.com/VOICeVIO/RemoteControl.Voiceroid>
 - RemoteControl.Voiceroid API doc: <https://github-wiki-see.page/m/VOICeVIO/RemoteControl.Voiceroid/wiki/API-Doc>
 - VOICEROID2 UI Automation gist: <https://gist.github.com/sskwwskwww/38d99e2453c31ffc3ed335a6bdd56908>
-

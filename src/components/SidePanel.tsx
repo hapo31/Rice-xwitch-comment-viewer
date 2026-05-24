@@ -63,7 +63,7 @@ export function SidePanel({
           <div className="space-y-2">
             <PanelRow label="Twitch" value={twitchAuthLabel} tone={twitchAuthTone} />
             <PanelRow label="チャンネル" value={channel} />
-            <PanelRow label="コメント" value={twitchConnectionLabel} tone={twitchConnectionTone} />
+            <PanelRow label="サーバー接続" value={twitchConnectionLabel} tone={twitchConnectionTone} />
             <PanelRow label="読み上げ" value={state.speechStatus} tone={state.speechStatus === "idle" ? "ok" : "muted"} />
           </div>
         </section>
