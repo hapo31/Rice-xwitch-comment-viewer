@@ -234,7 +234,7 @@ function ChatView({ state }: { state: AppState }) {
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Chat</h1>
-          <p className="truncate text-xs text-zinc-500">Twitch EventSub WebSocket</p>
+          <p className="truncate text-xs text-zinc-500">Twitch コメントの受信状況と読み上げ状態を確認します</p>
         </div>
         <div className="flex items-center gap-3 text-xs text-zinc-400">
           <div className="flex min-w-0 items-center gap-2">
@@ -279,7 +279,7 @@ function QueueView({
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Queue</h1>
-          <p className="truncate text-xs text-zinc-500">Speech queue / FIFO</p>
+          <p className="truncate text-xs text-zinc-500">読み上げ待ちのコメントを確認し、スキップや削除を操作します</p>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -412,7 +412,7 @@ function RulesView({
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Rules</h1>
-          <p className="truncate text-xs text-zinc-500">Speech formatter rules</p>
+          <p className="truncate text-xs text-zinc-500">NG ユーザー、NG ワード、URL、長文の扱いを設定します</p>
         </div>
         <button
           type="button"
@@ -476,7 +476,7 @@ function LogsView({ state }: { state: AppState }) {
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Logs</h1>
-          <p className="truncate text-xs text-zinc-500">Application events</p>
+          <p className="truncate text-xs text-zinc-500">認証、コメント受信、読み上げ連携の動作ログを確認します</p>
         </div>
         <div className="text-xs text-zinc-400">{state.logs.length} events</div>
       </header>
@@ -552,7 +552,7 @@ function AuthView({
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Auth</h1>
-          <p className="truncate text-xs text-zinc-500">Twitch OAuth Device Code Flow</p>
+          <p className="truncate text-xs text-zinc-500">Twitch 認証と接続先チャンネル、自動接続を管理します</p>
         </div>
         <div className="flex items-center gap-2 text-xs text-zinc-400">
           <span className={state.twitchAuthStatus === "authenticated" ? "h-2 w-2 rounded-full bg-emerald-400" : "h-2 w-2 rounded-full bg-zinc-600"} />
@@ -758,7 +758,7 @@ function VoicesView({
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Voices</h1>
-          <p className="truncate text-xs text-zinc-500">BouyomiChan TCP</p>
+          <p className="truncate text-xs text-zinc-500">棒読みちゃん接続と声質、自動読み上げの設定を調整します</p>
         </div>
         <div className="flex items-center gap-2">
           <button
