@@ -7,6 +7,7 @@ import {
   Network,
   PlugZap,
   RotateCcw,
+  Save,
   ScrollText,
   ShieldCheck,
   SkipForward,
@@ -393,6 +394,12 @@ function RulesView({
   const numericRepeatSeconds = Number(repeatSeconds);
   const isMaxLengthValid = Number.isInteger(numericMaxLength) && numericMaxLength >= 1 && numericMaxLength <= 500;
   const isRepeatSecondsValid = Number.isInteger(numericRepeatSeconds) && numericRepeatSeconds >= 0 && numericRepeatSeconds <= 30;
+  const isDirty =
+    numericMaxLength !== speechSettings.maxCommentLength ||
+    numericRepeatSeconds !== speechSettings.repeatSuppressionSeconds ||
+    urlHandling !== speechSettings.urlHandling ||
+    !stringArrayEqual(parseRuleList(blockedUsers), speechSettings.blockedUsers) ||
+    !stringArrayEqual(parseRuleList(blockedWords), speechSettings.blockedWords);
 
   function saveRules() {
     if (!isMaxLengthValid || !isRepeatSecondsValid) {
@@ -412,23 +419,15 @@ function RulesView({
   }
 
   return (
-    <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
+    <main className="relative col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Rules</h1>
           <p className="truncate text-xs text-zinc-500">NG ユーザー、NG ワード、URL、長文の扱いを設定します</p>
         </div>
-        <button
-          type="button"
-          disabled={!isMaxLengthValid || !isRepeatSecondsValid}
-          onClick={saveRules}
-          className="border border-sky-500 bg-sky-500 px-3 py-1.5 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
-        >
-          保存
-        </button>
       </header>
 
-      <div className="h-[calc(100%-3rem)] overflow-auto p-4">
+      <div className="h-[calc(100%-3rem)] overflow-auto p-4 pb-20">
         <div className="max-w-3xl space-y-6">
           <section className="border-y border-zinc-800">
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-b border-zinc-800 py-3">
@@ -470,6 +469,11 @@ function RulesView({
           </section>
         </div>
       </div>
+      <FloatingSaveButton
+        visible={isDirty}
+        disabled={!isMaxLengthValid || !isRepeatSecondsValid}
+        onClick={saveRules}
+      />
     </main>
   );
 }
@@ -531,6 +535,7 @@ function AuthView({
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);
   const [autoConnect, setAutoConnect] = useState(twitchSettings.autoConnect);
   const isChannelValid = isValidTwitchChannelLogin(channelLogin);
+  const isDirty = channelLogin.trim() !== twitchSettings.channelLogin || autoConnect !== twitchSettings.autoConnect;
 
   useEffect(() => {
     setChannelLogin(twitchSettings.channelLogin);
@@ -552,7 +557,7 @@ function AuthView({
   }
 
   return (
-    <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
+    <main className="relative col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Auth</h1>
@@ -564,7 +569,7 @@ function AuthView({
         </div>
       </header>
 
-      <div className="h-[calc(100%-3rem)] overflow-auto p-4">
+      <div className="h-[calc(100%-3rem)] overflow-auto p-4 pb-20">
         <div className="max-w-3xl space-y-6">
           <section className="border-y border-zinc-800">
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
@@ -591,14 +596,6 @@ function AuthView({
                 />
                 起動時にコメント受信を開始
               </label>
-              <button
-                type="button"
-                disabled={!isChannelValid}
-                onClick={saveTwitchSettings}
-                className="border border-sky-500 bg-sky-500 px-3 py-1.5 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
-              >
-                保存
-              </button>
             </div>
           </section>
 
@@ -664,6 +661,7 @@ function AuthView({
           </section>
         </div>
       </div>
+      <FloatingSaveButton visible={isDirty} disabled={!isChannelValid} onClick={saveTwitchSettings} />
     </main>
   );
 }
@@ -735,9 +733,21 @@ function VoicesView({
   const isPortValid = isValidPort(port);
   const isVoiceValid = isValidBouyomiVoice(voice);
   const isHostValid = host.trim().length > 0;
+  const isDirty =
+    host.trim() !== speechSettings.bouyomiHost ||
+    numericPort !== speechSettings.bouyomiPort ||
+    speed !== speechSettings.bouyomiSpeed ||
+    tone !== speechSettings.bouyomiTone ||
+    volume !== speechSettings.bouyomiVolume ||
+    numericVoice !== speechSettings.bouyomiVoice ||
+    autoSpeak !== speechSettings.autoSpeak ||
+    readUserName !== speechSettings.readUserName ||
+    readEmotes !== speechSettings.readEmotes ||
+    connectionSuccessSpeechEnabled !== speechSettings.connectionSuccessSpeechEnabled ||
+    connectionSuccessSpeechText !== speechSettings.connectionSuccessSpeechText;
 
   function saveBouyomiSettings() {
-    if (!isHostValid || !isPortValid) {
+    if (!isHostValid || !isPortValid || !isVoiceValid) {
       return;
     }
 
@@ -770,7 +780,7 @@ function VoicesView({
   }
 
   return (
-    <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
+    <main className="relative col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Voices</h1>
@@ -797,7 +807,7 @@ function VoicesView({
         </div>
       </header>
 
-      <div className="h-[calc(100%-3rem)] overflow-auto p-4">
+      <div className="h-[calc(100%-3rem)] overflow-auto p-4 pb-20">
         <div className="max-w-3xl space-y-6">
           <section className="border-y border-zinc-800">
             <ToggleRow label="自動読み上げ" checked={autoSpeak} onChange={setAutoSpeak} />
@@ -831,16 +841,6 @@ function VoicesView({
                 />
                 {!isPortValid && <p className="mt-1 text-xs text-rose-400">1 から 65535 の範囲で入力してください。</p>}
               </div>
-            </div>
-            <div className="flex justify-end py-3">
-              <button
-                type="button"
-                disabled={!isHostValid || !isPortValid || !isVoiceValid}
-                onClick={saveBouyomiSettings}
-                className="border border-sky-500 bg-sky-500 px-3 py-1.5 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
-              >
-                保存
-              </button>
             </div>
           </section>
 
@@ -945,8 +945,51 @@ function VoicesView({
           </section>
         </div>
       </div>
+      <FloatingSaveButton
+        visible={isDirty}
+        disabled={!isHostValid || !isPortValid || !isVoiceValid}
+        onClick={saveBouyomiSettings}
+      />
     </main>
   );
+}
+
+function FloatingSaveButton({
+  visible,
+  disabled,
+  onClick,
+}: {
+  visible: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div
+      className={`absolute bottom-4 right-4 z-10 transition-all duration-200 ease-out ${
+        visible ? "translate-x-0 translate-y-0 opacity-100" : "pointer-events-none translate-x-6 translate-y-3 opacity-0"
+      }`}
+    >
+      <button
+        type="button"
+        aria-label="設定を保存"
+        title="設定を保存"
+        disabled={disabled}
+        onClick={onClick}
+        className="flex h-10 items-center gap-2 border border-sky-500 bg-sky-500 px-4 text-sm font-medium text-zinc-950 shadow-lg shadow-zinc-950/40 hover:border-sky-300 hover:bg-sky-400 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
+      >
+        <Save className="h-4 w-4" />
+        保存
+      </button>
+    </div>
+  );
+}
+
+function stringArrayEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
 }
 
 function ToggleRow({
