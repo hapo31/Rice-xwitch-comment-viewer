@@ -82,6 +82,7 @@ jobs:
           set -euo pipefail
           gh release create "${GITHUB_REF_NAME}" \
             release-artifacts/* \
+            --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME}" \
             --notes "Windows NSIS build for ${GITHUB_REF_NAME}." \
             --verify-tag
