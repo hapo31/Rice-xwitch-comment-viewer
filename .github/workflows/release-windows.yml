@@ -32,7 +32,9 @@ jobs:
       - name: Build in Docker without shared caches
         run: |
           set -euo pipefail
-          test -n "${RICE_TWITCH_CLIENT_ID}"
+          if [ -z "${RICE_TWITCH_CLIENT_ID}" ]; then
+            echo "::warning::RICE_TWITCH_CLIENT_ID is not configured. The app will build, but Twitch login will show a setup error until a client ID is provided at build time."
+          fi
           rm -rf release-artifacts
           mkdir -p release-artifacts
           docker build \

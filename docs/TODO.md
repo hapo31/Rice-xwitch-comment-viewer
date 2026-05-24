@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-05-23
+最終調査日: 2026-05-24
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
 
@@ -100,6 +100,7 @@
 - [x] `v[0-9]*` タグ push で Windows NSIS ビルドと GitHub Release 作成を行う Actions workflow を追加する。
 - [x] Windows リリースビルド用 Dockerfile と `.dockerignore` を追加する。
 - [x] リリース workflow では build/release job を分離し、release job のみ `contents: write`、build cache は未使用にする。
+- [x] Windows リリースビルドが Client ID 未設定で即失敗しないようにし、Windows 用 `icon.ico` を追加する。
 - [x] Logs view を実装する。
 - [x] `app://log` event をフロントエンドへ接続する。
 - [x] EventSub、認証、読み上げアダプタのログを Logs view に表示する。

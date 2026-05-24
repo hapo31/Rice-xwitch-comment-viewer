@@ -2,6 +2,10 @@
 
 調査や作業中に分かった補足情報を記録するファイルです。日付が新しいものほど上に追記してください。
 
+## 2026-05-24
+
+- GitHub Actions の Windows リリースビルド失敗を確認。`v0.0.3` は `RICE_TWITCH_CLIENT_ID` 未設定で `test -n` が即失敗、`v0.0.2` は Tauri の Windows リソース生成で `src-tauri/icons/icon.ico` がなく失敗していた。workflow は Client ID 未設定を警告に変更し、ビルド自体は継続するようにした。Twitch ログインは従来どおりビルド時 Client ID がない場合に UI へ設定エラーを出す。`icon.png` から Windows 用 `icon.ico` を追加し、`tauri.conf.json` の bundle icon に明示した。
+
 ## 2026-05-23
 
 - devcontainer が重い原因を調査。メモリ/ディスク容量の枯渇はなく、主因候補は `src-tauri/target` が 7.0GB まで肥大化していること、特に `debug/deps` 4.3GB、`debug/incremental` 883MB、`release/deps` 1.2GB。`postCreateCommand` は `npm install -g @openai/codex@latest` と `pnpm install --frozen-lockfile` を毎回走らせるため、Rebuild/作成時の待ち時間要因になり得る。VS Code 拡張は rust-analyzer/Tailwind/Error Lens があり、watcher exclude は設定済みだが Cargo/Rust 側の target I/O とは別。改善候補は Cargo target をワークスペース外の volume/tmpfs へ逃がす、`setup.sh` を冪等化して Codex CLI の再インストールを避ける、不要時は release 成果物を削除する、rust-analyzer の実行条件をさらに絞ること。
