@@ -893,7 +893,7 @@ function VoicesView({
 
           <section className="border-y border-zinc-800">
             <ToggleRow
-              label="接続成功時に読む"
+              label="接続成功時に読み上げさせる"
               checked={connectionSuccessSpeechEnabled}
               onChange={setConnectionSuccessSpeechEnabled}
             />
