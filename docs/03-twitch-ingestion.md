@@ -55,7 +55,8 @@ Client ID:
 
 - Client IDは秘匿情報ではないため、配布ビルドに既定値として含めてもよい。
 - 既定のClient IDはビルド時に `RICE_TWITCH_CLIENT_ID` で指定する。互換用に `TWITCH_CLIENT_ID` も受け付ける。
-- リポジトリ直下の `.env` に `RICE_TWITCH_CLIENT_ID=...` を置いた場合も、ビルド時に同じ既定値として読み込む。テンプレートは `.env.example` を使う。
+- リポジトリ直下の `.env` に `RICE_TWITCH_CLIENT_ID=...` を置いた場合も、通常の Tauri ビルド時に同じ既定値として読み込む。テンプレートは `.env.example` を使う。
+- Dockerfile 経由の Windows リリースビルドでは `.env` は Docker build context に含めない。手元では `scripts/build-windows-docker.sh` が `.env` を読み込み、`RICE_TWITCH_CLIENT_ID` を build arg として渡す。
 - Client IDはユーザー設定JSONやUIへは出さず、OAuth開始時にアプリ内部のビルド時既定値を使う。既存設定JSONに古い `clientId` が残っていても無視する。
 - Client Secretはデスクトップアプリへ含めない。
 

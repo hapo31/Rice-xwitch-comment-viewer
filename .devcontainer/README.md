@@ -70,12 +70,15 @@ netstat -ano | findstr ":50001"
 
 ## Windows リリース成果物をローカルで作る
 
-devcontainer は Docker outside Docker feature でホスト側 Docker を使えるようにします。devcontainer を Rebuild したあと、コンテナ内で次を実行すると、GitHub Actions と同じ Dockerfile 経由で Windows の NSIS インストーラーと portable zip を `release-artifacts/` に出力できます。
+devcontainer は Docker outside Docker feature でホスト側 Docker を使えるようにします。devcontainer を Rebuild したあと、`.env` に Twitch OAuth の public client ID を設定します。
 
 ```bash
-DOCKER_BUILDKIT=1 docker build \
-  --build-arg RICE_TWITCH_CLIENT_ID="${RICE_TWITCH_CLIENT_ID:-}" \
-  --target artifacts \
-  --output type=local,dest=release-artifacts \
-  .
+cp .env.example .env
+$EDITOR .env
+```
+
+その後、コンテナ内で次を実行すると、GitHub Actions と同じ Dockerfile 経由で Windows の NSIS インストーラーと portable zip を `release-artifacts/` に出力できます。Docker build は `.env` を自動では読まないため、このスクリプトが `.env` を読み込み、`RICE_TWITCH_CLIENT_ID` を build arg として渡します。
+
+```bash
+scripts/build-windows-docker.sh
 ```
