@@ -31,6 +31,7 @@ RUN apt-get update \
         lld \
         llvm \
         nsis \
+        zip \
     && rm -rf /var/lib/apt/lists/*
 
 RUN npm install --global "pnpm@${PNPM_VERSION}" \
@@ -53,7 +54,10 @@ RUN mkdir /out \
     && find "src-tauri/target/${WINDOWS_TARGET}/release/bundle/nsis" \
         -maxdepth 1 \
         -type f \
-        -exec cp {} /out/ \;
+        -exec cp {} /out/ \; \
+    && app_version="$(node -p 'require("./package.json").version')" \
+    && cd "src-tauri/target/${WINDOWS_TARGET}/release" \
+    && zip -9 "/out/Rice_${app_version}_${WINDOWS_TARGET}_portable.zip" rice.exe
 
 FROM scratch AS artifacts
 COPY --from=build /out/ /
