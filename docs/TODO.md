@@ -15,7 +15,7 @@
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Login 画面は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
-| Phase 5: 配信運用向け仕上げ | 実装中 | Logs/Rules 画面、`app://log` 接続、ステータスバー集約、Login/Settings の設定整理、起動時自動接続、自動読み上げ ON/OFF、棒読みちゃんエラー後の復帰ポーリング、SidePanel の未完了キュー件数表示、各画面ヘッダー説明の日本語化、Windows installer/portable zip のリリース生成、Client ID を渡す devcontainer/Docker ビルド経路、関連 TS テストを実装。詳細な運用エラー整理は継続。 |
+| Phase 5: 配信運用向け仕上げ | 実装中 | Logs/Rules 画面、`app://log` 接続、ステータスバー集約、Login/Settings の設定整理、起動時自動接続、自動読み上げ ON/OFF、棒読みちゃんエラー後の復帰ポーリング、SidePanel の未完了キュー件数表示、各画面ヘッダー説明の日本語化、Chat view の仮想スクロール、Windows installer/portable zip のリリース生成、Client ID を渡す devcontainer/Docker ビルド経路、関連 TS テストを実装。詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
 ## Phase 0: プロジェクト作成
@@ -125,6 +125,7 @@
 - [x] Voices 画面を Settings へ改名し、`/voices` から `/settings` へリダイレクトする。
 - [x] 左ペインのチャンネル行から Login 画面へ移動できるようにする。
 - [x] Twitch 文脈の「コメント」表記を「チャット」へ統一する。
+- [x] Chat view のチャットリストを仮想スクロール化する。
 - [ ] 配信中に判断しやすい日本語エラー文言を整理する。
 - [x] チャット行の表示状態テストを追加する。
 - [x] 設定フォームのバリデーションテストを追加する。

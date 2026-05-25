@@ -14,7 +14,8 @@ import {
   Trash2,
   Volume2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { getChatStatusPresentation, queueStatusLabel } from "../presentation/chat";
 import { countIncompleteQueueItems } from "../presentation/queue";
@@ -217,6 +218,14 @@ function PlaceholderView({
 
 function ChatView({ state }: { state: AppState }) {
   const messages = state.chatMessages.length > 0 ? state.chatMessages : sampleMessages;
+  const scrollParentRef = useRef<HTMLElement | null>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => scrollParentRef.current,
+    estimateSize: () => 44,
+    overscan: 12,
+    getItemKey: (index) => messages[index]?.id ?? index,
+  });
   const chatTarget = state.settings?.twitch.channelLogin || state.twitchProfile?.login || "未設定";
   const connectionLabel = {
     disconnected: "未接続",
@@ -250,17 +259,38 @@ function ChatView({ state }: { state: AppState }) {
         </div>
       </header>
 
-      <section className="h-[calc(100%-3rem)] overflow-auto">
+      <section ref={scrollParentRef} className="h-[calc(100%-3rem)] overflow-auto">
         <div className="min-w-[640px]">
-          <div className="grid grid-cols-[88px_160px_minmax(0,1fr)_72px] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-500">
+          <div className="sticky top-0 z-10 grid grid-cols-[88px_160px_minmax(0,1fr)_72px] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-500">
             <span>時刻</span>
             <span>ユーザー</span>
             <span>チャット</span>
             <span className="text-right">状態</span>
           </div>
-          {messages.map((message) => (
-            <ChatRow key={message.id} message={message} />
-          ))}
+          <div
+            className="relative"
+            style={{
+              height: `${rowVirtualizer.getTotalSize()}px`,
+            }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const message = messages[virtualRow.index];
+
+              return (
+                <div
+                  key={virtualRow.key}
+                  ref={rowVirtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  className="absolute left-0 top-0 w-full"
+                  style={{
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <ChatRow message={message} />
+                </div>
+              );
+            })}
+          </div>
         </div>
       </section>
     </main>
