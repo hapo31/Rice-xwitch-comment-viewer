@@ -27,7 +27,8 @@
       "version": "latest",
       "profile": "minimal"
     },
-     "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
   },
   "forwardPorts": [1420],
   "portsAttributes": {
