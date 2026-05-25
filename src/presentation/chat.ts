@@ -13,7 +13,7 @@ export interface StatusPresentation {
   className: string;
 }
 
-export function getChatStatusPresentation(status: ChatDisplayState): StatusPresentation {
+export function getQueueStatusPresentation(status: ChatDisplayState): StatusPresentation {
   return {
     queued: { icon: CircleDashed, label: "queued", className: "text-sky-400" },
     spoken: { icon: CheckCircle2, label: "spoken", className: "text-emerald-400" },

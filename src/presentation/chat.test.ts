@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { getChatStatusPresentation, queueStatusLabel } from "./chat";
+import { getQueueStatusPresentation, queueStatusLabel } from "./chat";
 
-describe("chat status presentation", () => {
-  it("maps chat display states to labels and tones", () => {
-    expect(getChatStatusPresentation("queued")).toMatchObject({
+describe("queue status presentation", () => {
+  it("maps queue display states to labels and tones", () => {
+    expect(getQueueStatusPresentation("queued")).toMatchObject({
       label: "queued",
       className: "text-sky-400",
     });
-    expect(getChatStatusPresentation("spoken")).toMatchObject({
+    expect(getQueueStatusPresentation("spoken")).toMatchObject({
       label: "spoken",
       className: "text-emerald-400",
     });
-    expect(getChatStatusPresentation("blocked")).toMatchObject({
+    expect(getQueueStatusPresentation("blocked")).toMatchObject({
       label: "blocked",
       className: "text-amber-400",
     });
-    expect(getChatStatusPresentation("error")).toMatchObject({
+    expect(getQueueStatusPresentation("error")).toMatchObject({
       label: "error",
       className: "text-rose-400",
     });

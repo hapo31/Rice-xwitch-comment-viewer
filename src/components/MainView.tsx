@@ -17,7 +17,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { getChatStatusPresentation, queueStatusLabel } from "../presentation/chat";
+import { getQueueStatusPresentation, queueStatusLabel } from "../presentation/chat";
 import { countIncompleteQueueItems } from "../presentation/queue";
 import type { AppRoutePath } from "../routes";
 import type { AppState } from "../stores/appStore";
@@ -261,11 +261,10 @@ function ChatView({ state }: { state: AppState }) {
 
       <section ref={scrollParentRef} className="h-[calc(100%-3rem)] overflow-auto">
         <div className="min-w-[640px]">
-          <div className="sticky top-0 z-10 grid grid-cols-[88px_160px_minmax(0,1fr)_72px] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-500">
+          <div className="sticky top-0 z-10 grid grid-cols-[88px_160px_minmax(0,1fr)] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-500">
             <span>時刻</span>
             <span>ユーザー</span>
             <span>チャット</span>
-            <span className="text-right">状態</span>
           </div>
           <div
             className="relative"
@@ -1148,19 +1147,16 @@ function ChatRow({ message }: { message: ChatMessage }) {
   }).format(new Date(message.receivedAt));
 
   return (
-    <div className="grid min-h-11 grid-cols-[88px_160px_minmax(0,1fr)_72px] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
+    <div className="grid min-h-11 grid-cols-[88px_160px_minmax(0,1fr)] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
       <span className="font-mono text-xs text-zinc-500">{time}</span>
       <span className="truncate pr-3 font-medium text-sky-300">{message.userDisplayName}</span>
-      <span className="line-clamp-2 pr-4 text-zinc-200">{message.text}</span>
-      <span className="flex justify-end">
-        <StatusIcon status={message.status} />
-      </span>
+      <span className="line-clamp-2 text-zinc-200">{message.text}</span>
     </div>
   );
 }
 
 function StatusIcon({ status }: { status: ChatDisplayState }) {
-  const props = getChatStatusPresentation(status);
+  const props = getQueueStatusPresentation(status);
   const Icon = props.icon;
 
   return (
