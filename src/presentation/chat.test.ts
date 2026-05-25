@@ -7,6 +7,10 @@ describe("queue status presentation", () => {
       label: "queued",
       className: "text-sky-400",
     });
+    expect(getQueueStatusPresentation("speaking")).toMatchObject({
+      label: "speaking",
+      className: "text-emerald-400",
+    });
     expect(getQueueStatusPresentation("spoken")).toMatchObject({
       label: "spoken",
       className: "text-emerald-400",

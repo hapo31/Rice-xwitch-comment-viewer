@@ -21,7 +21,7 @@ import { getQueueStatusPresentation, queueStatusLabel } from "../presentation/ch
 import { countIncompleteQueueItems } from "../presentation/queue";
 import type { AppRoutePath } from "../routes";
 import type { AppState } from "../stores/appStore";
-import type { AppLogLevel, AppSettings, BouyomiConnectionDiagnostics, ChatDisplayState, ChatMessage } from "../types";
+import type { AppLogLevel, AppSettings, BouyomiConnectionDiagnostics, ChatMessage, QueueDisplayState } from "../types";
 import { formatRuleList, isValidBouyomiVoice, isValidPort, isValidTwitchChannelLogin, parseRuleList } from "../validation";
 
 interface MainViewProps {
@@ -361,7 +361,7 @@ function QueueView({
             <div key={item.id} className="grid min-h-11 grid-cols-[140px_96px_minmax(0,1fr)_72px] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
               <span className="truncate pr-3 font-medium text-sky-300">{item.userDisplayName}</span>
               <span className="flex items-center gap-2 text-xs text-zinc-400">
-                <StatusIcon status={item.status === "speaking" ? "queued" : item.status} />
+                <StatusIcon status={item.status} />
                 {queueStatusLabel(item.status)}
               </span>
               <span className="line-clamp-2 pr-4 text-zinc-200">{item.text}</span>
@@ -1155,7 +1155,7 @@ function ChatRow({ message }: { message: ChatMessage }) {
   );
 }
 
-function StatusIcon({ status }: { status: ChatDisplayState }) {
+function StatusIcon({ status }: { status: QueueDisplayState }) {
   const props = getQueueStatusPresentation(status);
   const Icon = props.icon;
 

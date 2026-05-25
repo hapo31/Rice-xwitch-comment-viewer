@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   CircleDashed,
   CircleOff,
+  Volume2,
   type LucideIcon,
 } from "lucide-react";
 import type { ChatDisplayState, QueueDisplayState } from "../types";
@@ -13,9 +14,10 @@ export interface StatusPresentation {
   className: string;
 }
 
-export function getQueueStatusPresentation(status: ChatDisplayState): StatusPresentation {
+export function getQueueStatusPresentation(status: QueueDisplayState): StatusPresentation {
   return {
     queued: { icon: CircleDashed, label: "queued", className: "text-sky-400" },
+    speaking: { icon: Volume2, label: "speaking", className: "text-emerald-400" },
     spoken: { icon: CheckCircle2, label: "spoken", className: "text-emerald-400" },
     skipped: { icon: CircleOff, label: "skipped", className: "text-zinc-500" },
     blocked: { icon: CircleOff, label: "blocked", className: "text-amber-400" },
