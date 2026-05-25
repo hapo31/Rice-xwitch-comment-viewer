@@ -6,6 +6,7 @@ node_modules/
 dist/
 dist-ssr/
 .vite/
+release-artifacts/
 
 # Rust/Tauri build output
 src-tauri/target/
