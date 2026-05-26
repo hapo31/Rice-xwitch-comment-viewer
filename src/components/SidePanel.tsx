@@ -126,7 +126,7 @@ export function SidePanel({
             className="flex w-full items-center justify-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-2 text-sm text-zinc-100 hover:border-sky-400"
           >
             <Volume2 className="h-4 w-4" />
-            テスト発話
+            テスト読み上げ
           </button>
         </section>
       </div>

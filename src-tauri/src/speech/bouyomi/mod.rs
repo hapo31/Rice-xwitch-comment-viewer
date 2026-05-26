@@ -311,7 +311,7 @@ pub async fn speech_test(
     emit_speech_status(
         &app,
         SpeechStatus::Speaking,
-        Some("テスト発話を送信しています。".to_string()),
+        Some("テスト読み上げを送信しています。".to_string()),
     );
     let result = adapter.speak(&text).await.map_err(to_user_message);
     match &result {
@@ -319,9 +319,9 @@ pub async fn speech_test(
             emit_speech_status(
                 &app,
                 SpeechStatus::Idle,
-                Some("テスト発話を送信しました。".to_string()),
+                Some("テスト読み上げを送信しました。".to_string()),
             );
-            emit_app_log(&app, AppLogLevel::Info, "テスト発話を送信しました。");
+            emit_app_log(&app, AppLogLevel::Info, "テスト読み上げを送信しました。");
         }
         Err(message) => {
             emit_speech_status(&app, SpeechStatus::Error, Some(message.clone()));
@@ -454,7 +454,7 @@ fn connection_success_settings(state: &tauri::State<'_, AppState>) -> Result<(bo
 fn normalize_test_text(text: &str) -> String {
     let text = text.trim();
     if text.is_empty() {
-        "テスト発話です。".to_string()
+        "テスト読み上げです。".to_string()
     } else {
         text.chars().take(120).collect()
     }
@@ -481,7 +481,7 @@ fn build_diagnostic_recommendation(attempted: &[BouyomiConnectionAttempt]) -> St
         .find(|attempt| attempt.status == BouyomiConnectionStatus::Connected)
     {
         return format!(
-            "{} に接続できました。この宛先でテスト発話できます。",
+            "{} に接続できました。この宛先でテスト読み上げできます。",
             attempt.addr
         );
     }
@@ -579,7 +579,7 @@ mod tests {
         }]);
 
         assert!(recommendation.contains("127.0.0.1:50001"));
-        assert!(recommendation.contains("テスト発話"));
+        assert!(recommendation.contains("テスト読み上げ"));
     }
 
     #[test]

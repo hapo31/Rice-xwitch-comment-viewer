@@ -21,7 +21,7 @@ Twitch chat -> Tauri app -> Speech adapter -> bouyomichan or VOICEROID2
 - Twitchのチャットをリアルタイムに受信する。
 - チャット一覧、読み上げキュー、接続状態をUIで確認できる。
 - 読み上げ対象をフィルタ/整形できる。
-- 棒読みちゃんへプロセス間通信またはTCPで発話を送れる。
+- 棒読みちゃんへプロセス間通信またはTCPで読み上げを送れる。
 - 将来的にVOICEROID2直接操作アダプタを追加できる。
 - 配信中でも操作しやすい、落ち着いたツールUIにする。
 
@@ -57,4 +57,3 @@ Twitch chat -> Tauri app -> Speech adapter -> bouyomichan or VOICEROID2
 - WebSocket切断中のEventSubイベントは再送されないため、再接続/再購読を速く行う。
 - 棒読みちゃんのTCPポートは通常 `127.0.0.1:50001`。ポート競合やアプリ連携OFFを検出してUIに出す。
 - VOICEROID2直接連携は、公式に長期安定を保証されたTauri/Rust向けAPIがある前提で設計しない。
-

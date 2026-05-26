@@ -160,11 +160,11 @@ export function App() {
 
   async function handleSpeechTest(text?: string) {
     try {
-      const speechText = typeof text === "string" ? text : "テスト発話です。";
+      const speechText = typeof text === "string" ? text : "テスト読み上げです。";
       dispatch({ type: "speech.status", status: "speaking" });
       await speechTest(speechText);
       dispatch({ type: "speech.status", status: "idle" });
-      dispatch({ type: "warning.added", warning: "テスト発話を送信しました。" });
+      dispatch({ type: "warning.added", warning: "テスト読み上げを送信しました。" });
     } catch (error) {
       dispatch({ type: "speech.status", status: "error" });
       dispatch({ type: "warning.added", warning: String(error) });

@@ -718,7 +718,7 @@ function SettingsView({
   const [connectionSuccessSpeechText, setConnectionSuccessSpeechText] = useState(
     speechSettings.connectionSuccessSpeechText,
   );
-  const [testText, setTestText] = useState("テスト発話です。");
+  const [testText, setTestText] = useState("テスト読み上げです。");
   const [diagnostics, setDiagnostics] = useState<BouyomiConnectionDiagnostics>();
   const [isDiagnosing, setIsDiagnosing] = useState(false);
 
@@ -974,7 +974,7 @@ function SettingsView({
                     className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400"
                   >
                     <Volume2 className="h-4 w-4" />
-                    テスト発話
+                    テスト読み上げ
                   </button>
                 </div>
               </div>

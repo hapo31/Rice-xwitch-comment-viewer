@@ -2,6 +2,10 @@
 
 調査や作業中に分かった補足情報を記録するファイルです。日付が新しいものほど上に追記してください。
 
+## 2026-05-26
+
+- UI、Rust の通知/ログ、設計文書、TODO の日本語表記を、配信者向けに一般的な「読み上げ」へ統一。内部 API 名の `speech` はコード境界として維持。
+
 ## 2026-05-24
 
 - Twitch 公式用語に合わせ、UI のチャット受信/停止/キュー/ログ説明、Rust 側の日本語ログ、設計ドキュメント/TODO の「コメント」表記を「チャット」へ統一した。型名や EventSub の `channel.chat.message` 境界は既存実装のまま維持。
@@ -24,7 +28,7 @@
 
 ## 2026-05-22
 
-- Phase 1 実装確認として `cargo test` と `pnpm build` を実行し、どちらも成功。棒読みちゃん実機でのテスト発話、未起動、ポート競合、アプリ連携 OFF の手動確認は未実施。
+- Phase 1 実装確認として `cargo test` と `pnpm build` を実行し、どちらも成功。棒読みちゃん実機でのテスト読み上げ、未起動、ポート競合、アプリ連携 OFF の手動確認は未実施。
 - Phase 3 の初期実装として `tokio-tungstenite` による EventSub WebSocket 接続、Welcome 後の `channel.chat.message` 購読、keepalive 欠落/reconnect/revocation 処理、`event.message_id` fallback の重複排除、`twitch://chat-message` のフロントエンド購読を追加。`cargo test` と `pnpm build` は成功。実 Twitch チャンネルでの受信確認は未実施。
 - Side Panel のキュー上へチャット受信の開始/停止ボタンを追加し、`twitch_stop_chat` で認証解除せずに EventSub 接続だけ停止できるようにした。UI store では Twitch 認証状態とチャット受信接続状態を分離。`cargo test` と `pnpm build` は成功。
 
