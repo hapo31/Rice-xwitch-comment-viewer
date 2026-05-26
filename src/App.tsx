@@ -366,7 +366,6 @@ export function App() {
       <SidePanel
         state={state}
         onSpeechControl={handleSpeechControl}
-        onSpeechTest={handleSpeechTest}
         onTwitchConnect={handleTwitchConnect}
         onTwitchStopChat={handleTwitchStopChat}
         onWarningsClear={() => dispatch({ type: "warnings.cleared" })}

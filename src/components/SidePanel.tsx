@@ -1,4 +1,4 @@
-import { Pause, Play, Radio, RotateCcw, SkipForward, Square, Trash2, Volume2 } from "lucide-react";
+import { Pause, Play, Radio, RotateCcw, SkipForward, Square, Trash2 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { countIncompleteQueueItems } from "../presentation/queue";
 import { getRouteLabel } from "../routes";
@@ -7,7 +7,6 @@ import type { AppState } from "../stores/appStore";
 interface SidePanelProps {
   state: AppState;
   onSpeechControl: (command: "pause" | "resume" | "skip" | "clear") => void;
-  onSpeechTest: () => void;
   onTwitchConnect: () => void;
   onTwitchStopChat: () => void;
   onWarningsClear: () => void;
@@ -16,7 +15,6 @@ interface SidePanelProps {
 export function SidePanel({
   state,
   onSpeechControl,
-  onSpeechTest,
   onTwitchConnect,
   onTwitchStopChat,
   onWarningsClear,
@@ -116,18 +114,6 @@ export function SidePanel({
               ))}
             </div>
           )}
-        </section>
-
-        <section className="shrink-0">
-          <h2 className="mb-2 text-xs font-semibold text-zinc-400">音声</h2>
-          <button
-            type="button"
-            onClick={() => onSpeechTest()}
-            className="flex w-full items-center justify-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-2 text-sm text-zinc-100 hover:border-sky-400"
-          >
-            <Volume2 className="h-4 w-4" />
-            テスト読み上げ
-          </button>
         </section>
       </div>
     </aside>

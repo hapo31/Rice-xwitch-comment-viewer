@@ -1,4 +1,4 @@
-import { KeyRound, ListFilter, MessageSquareText, Radio, ScrollText, SlidersHorizontal } from "lucide-react";
+import { KeyRound, ListFilter, MessageSquareText, Radio, SlidersHorizontal } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import type { AppRoutePath } from "../routes";
 
@@ -14,7 +14,6 @@ const navItems: NavItem[] = [
   { path: "/rules", label: "Rules", icon: ListFilter },
   { path: "/settings", label: "Settings", icon: SlidersHorizontal },
   { path: "/auth", label: "Login", icon: KeyRound },
-  { path: "/logs", label: "Logs", icon: ScrollText },
 ];
 
 export function ActivityBar() {
