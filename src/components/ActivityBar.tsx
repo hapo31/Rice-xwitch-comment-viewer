@@ -39,9 +39,7 @@ export function ActivityBar() {
           </NavLink>
         );
       })}
-      <div className="mt-auto">
-        <SlidersHorizontal className="h-4 w-4 text-zinc-600" />
-      </div>
+      <div className="mt-auto h-11 w-11" aria-hidden="true" />
     </nav>
   );
 }
