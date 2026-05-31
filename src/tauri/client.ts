@@ -18,6 +18,7 @@ const fallbackSettings: AppSettings = {
   twitch: {
     channelLogin: "",
     autoConnect: false,
+    confirmBeforeStopChat: true,
   },
   speech: {
     adapter: "bouyomi",

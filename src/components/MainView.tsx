@@ -60,6 +60,7 @@ const sampleMessages: ChatMessage[] = [
 const defaultTwitchSettings: AppSettings["twitch"] = {
   channelLogin: "",
   autoConnect: false,
+  confirmBeforeStopChat: true,
 };
 
 const defaultSpeechSettings: AppSettings["speech"] = {
@@ -799,6 +800,15 @@ function SettingsView({
     });
   }
 
+  function updateConfirmBeforeStopChat(enabled: boolean) {
+    onSettingsUpdate({
+      twitch: {
+        ...twitchSettings,
+        confirmBeforeStopChat: enabled,
+      },
+    });
+  }
+
   async function runDiagnostics() {
     setIsDiagnosing(true);
     try {
@@ -843,6 +853,11 @@ function SettingsView({
               label="起動時にチャット受信を開始"
               checked={twitchSettings.autoConnect}
               onChange={updateAutoConnect}
+            />
+            <ToggleRow
+              label="チャット受信停止時に確認する"
+              checked={twitchSettings.confirmBeforeStopChat}
+              onChange={updateConfirmBeforeStopChat}
             />
           </section>
 

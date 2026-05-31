@@ -292,7 +292,8 @@ export function App() {
   }
 
   async function handleTwitchStopChat() {
-    if (!window.confirm("Twitch チャット受信を停止しますか？")) {
+    const shouldConfirm = state.settings?.twitch.confirmBeforeStopChat ?? true;
+    if (shouldConfirm && !window.confirm("Twitch チャット受信を停止しますか？")) {
       return;
     }
 

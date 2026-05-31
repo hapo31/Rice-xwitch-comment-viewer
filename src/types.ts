@@ -9,6 +9,7 @@ export interface AppSettings {
   twitch: {
     channelLogin: string;
     autoConnect: boolean;
+    confirmBeforeStopChat: boolean;
   };
   speech: {
     adapter: "bouyomi";

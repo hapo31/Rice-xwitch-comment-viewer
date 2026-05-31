@@ -23,6 +23,8 @@ pub struct AppSettings {
 pub struct TwitchSettings {
     pub channel_login: String,
     pub auto_connect: bool,
+    #[serde(default = "default_confirm_before_stop_chat")]
+    pub confirm_before_stop_chat: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +85,10 @@ fn default_auto_speak() -> bool {
     true
 }
 
+fn default_confirm_before_stop_chat() -> bool {
+    true
+}
+
 fn default_url_handling() -> UrlHandling {
     UrlHandling::Replace
 }
@@ -137,6 +143,7 @@ impl Default for AppSettings {
             twitch: TwitchSettings {
                 channel_login: String::new(),
                 auto_connect: false,
+                confirm_before_stop_chat: true,
             },
             speech: SpeechSettings {
                 adapter: SpeechAdapterKind::Bouyomi,
@@ -173,6 +180,7 @@ pub struct SettingsPatch {
 pub struct TwitchSettingsPatch {
     pub channel_login: Option<String>,
     pub auto_connect: Option<bool>,
+    pub confirm_before_stop_chat: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -260,6 +268,9 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
         }
         if let Some(auto_connect) = twitch.auto_connect {
             settings.twitch.auto_connect = auto_connect;
+        }
+        if let Some(confirm_before_stop_chat) = twitch.confirm_before_stop_chat {
+            settings.twitch.confirm_before_stop_chat = confirm_before_stop_chat;
         }
     }
 
