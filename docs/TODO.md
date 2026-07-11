@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-05-31
+最終調査日: 2026-07-11
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
 
@@ -58,6 +58,8 @@
 - [x] OS keyring 優先の OAuth 保存/復元/削除を実装する。
 - [x] Linux の Secret Service 不可時に `~/.rice/twitch-auth.json` へ `0600` で保存する fallback を実装する。
 - [x] Login 画面に認証開始、確認、有効性確認、解除を実装する。
+- [x] Login 画面の認証開始/解除を認証状態に応じた単一アクションへ整理する。
+- [x] Device Code Flow の待機応答を正しく判定し、自動ポーリングが継続するよう修正する。
 - [ ] 実 Twitch Client ID で Device Code Flow を手動確認する。
 - [ ] 認可取り消し、401、期限切れ時の UI 表示を手動確認する。
 - [ ] アプリ起動時の保存済み認証復元と refresh 更新を手動確認する。

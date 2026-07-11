@@ -565,6 +565,7 @@ function AuthView({
   };
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);
   const isChannelValid = isValidTwitchChannelLogin(channelLogin);
+  const isAuthenticated = state.twitchAuthStatus === "authenticated";
 
   useEffect(() => {
     setChannelLogin(twitchSettings.channelLogin);
@@ -643,37 +644,35 @@ function AuthView({
               </div>
             )}
             <div className="flex flex-wrap justify-end gap-2 py-3">
+              {state.twitchAuthPrompt && !isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={onTwitchPollAuth}
+                  className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400"
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  今すぐ確認
+                </button>
+              )}
+              {isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={onTwitchValidateAuth}
+                  className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  有効性確認
+                </button>
+              )}
               <button
                 type="button"
-                onClick={onTwitchStartAuth}
-                className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400"
+                onClick={isAuthenticated ? onTwitchDisconnect : onTwitchStartAuth}
+                className={`flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 ${
+                  isAuthenticated ? "hover:border-rose-400" : "hover:border-sky-400"
+                }`}
               >
-                <Link2 className="h-4 w-4" />
-                認証開始
-              </button>
-              <button
-                type="button"
-                onClick={onTwitchPollAuth}
-                className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400"
-              >
-                <ShieldCheck className="h-4 w-4" />
-                認証確認
-              </button>
-              <button
-                type="button"
-                onClick={onTwitchValidateAuth}
-                className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                有効性確認
-              </button>
-              <button
-                type="button"
-                onClick={onTwitchDisconnect}
-                className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-rose-400"
-              >
-                <LogOut className="h-4 w-4" />
-                解除
+                {isAuthenticated ? <LogOut className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
+                {isAuthenticated ? "認証解除" : state.twitchAuthPrompt ? "認証をやり直す" : "認証開始"}
               </button>
             </div>
           </section>

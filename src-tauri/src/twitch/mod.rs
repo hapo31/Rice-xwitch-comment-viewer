@@ -1021,7 +1021,7 @@ async fn poll_device_token(pending: &PendingDeviceAuth) -> Result<TokenResponse,
         .json::<OAuthErrorResponse>()
         .await
         .map_err(|error| PollAuthError::Other(error.into()))?;
-    match error.error.as_deref() {
+    match oauth_error_code(&error) {
         Some("authorization_pending") => Err(PollAuthError::Pending),
         Some("slow_down") => Err(PollAuthError::SlowDown),
         Some("access_denied") => Err(PollAuthError::Denied),
@@ -1033,6 +1033,10 @@ async fn poll_device_token(pending: &PendingDeviceAuth) -> Result<TokenResponse,
                 .unwrap_or_else(|| "Twitch 認証に失敗しました。".to_string())
         ))),
     }
+}
+
+fn oauth_error_code(error: &OAuthErrorResponse) -> Option<&str> {
+    error.error.as_deref().or(error.message.as_deref())
 }
 
 async fn refresh_access_token(
@@ -1434,7 +1438,30 @@ enum PollAuthError {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_chat_message, retry_backoff_seconds, EventSubEnvelope, MessageDedupe};
+    use super::{
+        normalize_chat_message, oauth_error_code, retry_backoff_seconds, EventSubEnvelope,
+        MessageDedupe, OAuthErrorResponse,
+    };
+
+    #[test]
+    fn reads_device_flow_status_from_twitch_message_field() {
+        let response = serde_json::from_str::<OAuthErrorResponse>(
+            r#"{"status":400,"message":"authorization_pending"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(oauth_error_code(&response), Some("authorization_pending"));
+    }
+
+    #[test]
+    fn reads_standard_oauth_error_field_when_present() {
+        let response = serde_json::from_str::<OAuthErrorResponse>(
+            r#"{"error":"slow_down","message":"wait before polling again"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(oauth_error_code(&response), Some("slow_down"));
+    }
 
     #[test]
     fn parses_channel_chat_message_fixture() {
