@@ -765,16 +765,24 @@ pub async fn twitch_validate_auth(
     let profile = match validate_access_token(&access_token).await {
         Ok(validate) => TwitchUserProfile::from(validate),
         Err(validate_error) => {
-            let token = refresh_access_token(&client_id, &refresh_token)
-                .await
-                .map_err(|refresh_error| {
-                    to_twitch_user_message(anyhow::anyhow!("{validate_error}; {refresh_error}"))
-                })?;
-            let profile = TwitchUserProfile::from(
-                validate_access_token(&token.access_token)
-                    .await
-                    .map_err(to_twitch_user_message)?,
-            );
+            let token = match refresh_access_token(&client_id, &refresh_token).await {
+                Ok(token) => token,
+                Err(refresh_error) => {
+                    let message = to_twitch_user_message(anyhow::anyhow!(
+                        "{validate_error}; {refresh_error}"
+                    ));
+                    clear_invalid_twitch_auth(&state, &app, &message)?;
+                    return Err(message);
+                }
+            };
+            let profile = match validate_access_token(&token.access_token).await {
+                Ok(validate) => TwitchUserProfile::from(validate),
+                Err(error) => {
+                    let message = to_twitch_user_message(error);
+                    clear_invalid_twitch_auth(&state, &app, &message)?;
+                    return Err(message);
+                }
+            };
             let mut auth = state
                 .twitch_auth
                 .lock()
@@ -924,6 +932,18 @@ pub fn twitch_disconnect(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<(), String> {
+    clear_twitch_auth_state(&state)?;
+    emit_twitch_status(
+        &app,
+        TwitchStatus::Disconnected,
+        Some("Twitch 連携を解除しました。".to_string()),
+    );
+    emit_app_log(&app, AppLogLevel::Info, "Twitch 連携を解除しました。");
+    Ok(())
+}
+
+#[cfg(feature = "app")]
+fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(), String> {
     if let Some(handle) = state
         .twitch_connection
         .lock()
@@ -940,13 +960,19 @@ pub fn twitch_disconnect(
     auth.pending = None;
     auth.token = None;
     auth.profile = None;
-    TwitchAuthStore::clear().map_err(to_secure_store_user_message)?;
-    emit_twitch_status(
-        &app,
-        TwitchStatus::Disconnected,
-        Some("Twitch 連携を解除しました。".to_string()),
-    );
-    emit_app_log(&app, AppLogLevel::Info, "Twitch 連携を解除しました。");
+    TwitchAuthStore::clear().map_err(to_secure_store_user_message)
+}
+
+#[cfg(feature = "app")]
+fn clear_invalid_twitch_auth(
+    state: &tauri::State<'_, AppState>,
+    app: &tauri::AppHandle<tauri::Wry>,
+    error_message: &str,
+) -> Result<(), String> {
+    clear_twitch_auth_state(state)?;
+    let message = format!("Twitch 認証が無効なため、認証状態を解除しました: {error_message}");
+    emit_twitch_status(app, TwitchStatus::AuthRequired, Some(message.clone()));
+    emit_app_log(app, AppLogLevel::Warning, message);
     Ok(())
 }
 
