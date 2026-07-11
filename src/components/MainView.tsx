@@ -3,6 +3,7 @@ import {
   FileText,
   Link2,
   ListTodo,
+  LoaderCircle,
   LogOut,
   Network,
   PlugZap,
@@ -35,7 +36,7 @@ interface MainViewProps {
   onQueueRemove: (itemId: string) => void;
   onTwitchStartAuth: () => void;
   onTwitchPollAuth: () => void;
-  onTwitchValidateAuth: () => void;
+  onTwitchValidateAuth: () => Promise<boolean>;
   onTwitchDisconnect: () => void;
   onOpenExternalUrl: (url: string) => void;
 }
@@ -555,7 +556,7 @@ function AuthView({
   onSettingsUpdate: (patch: Partial<AppSettings>) => void;
   onTwitchStartAuth: () => void;
   onTwitchPollAuth: () => void;
-  onTwitchValidateAuth: () => void;
+  onTwitchValidateAuth: () => Promise<boolean>;
   onTwitchDisconnect: () => void;
   onOpenExternalUrl: (url: string) => void;
 }) {
@@ -564,12 +565,20 @@ function AuthView({
     ...state.settings?.twitch,
   };
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);
+  const [isValidatingAuth, setIsValidatingAuth] = useState(false);
+  const [authValidationNotice, setAuthValidationNotice] = useState<string>();
   const isChannelValid = isValidTwitchChannelLogin(channelLogin);
   const isAuthenticated = state.twitchAuthStatus === "authenticated";
 
   useEffect(() => {
     setChannelLogin(twitchSettings.channelLogin);
   }, [twitchSettings.channelLogin]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setAuthValidationNotice(undefined);
+    }
+  }, [isAuthenticated]);
 
   function saveChannelLogin() {
     const trimmedChannelLogin = channelLogin.trim();
@@ -583,6 +592,23 @@ function AuthView({
         channelLogin: trimmedChannelLogin,
       },
     });
+  }
+
+  async function validateAuth() {
+    if (isValidatingAuth) {
+      return;
+    }
+
+    setIsValidatingAuth(true);
+    setAuthValidationNotice(undefined);
+    try {
+      const isValid = await onTwitchValidateAuth();
+      if (isValid) {
+        setAuthValidationNotice("Twitch 認証は有効です。");
+      }
+    } finally {
+      setIsValidatingAuth(false);
+    }
   }
 
   return (
@@ -657,11 +683,12 @@ function AuthView({
               {isAuthenticated && (
                 <button
                   type="button"
-                  onClick={onTwitchValidateAuth}
-                  className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400"
+                  onClick={() => void validateAuth()}
+                  disabled={isValidatingAuth}
+                  className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400 disabled:cursor-wait disabled:opacity-60"
                 >
-                  <CheckCircle2 className="h-4 w-4" />
-                  有効性確認
+                  {isValidatingAuth ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  {isValidatingAuth ? "確認中..." : "有効性確認"}
                 </button>
               )}
               <button
@@ -675,6 +702,12 @@ function AuthView({
                 {isAuthenticated ? "認証解除" : state.twitchAuthPrompt ? "認証をやり直す" : "認証開始"}
               </button>
             </div>
+            {authValidationNotice && isAuthenticated && (
+              <div className="flex items-center justify-end gap-2 border-t border-zinc-800 py-3 text-sm text-emerald-300" role="status">
+                <CheckCircle2 className="h-4 w-4" />
+                {authValidationNotice}
+              </div>
+            )}
           </section>
         </div>
       </div>

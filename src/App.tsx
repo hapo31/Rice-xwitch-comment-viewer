@@ -273,12 +273,14 @@ export function App() {
       if (result.storageWarning) {
         dispatch({ type: "warning.added", warning: result.storageWarning });
       }
+      return true;
     } catch (error) {
       dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       dispatch({ type: "twitch.authPrompt", prompt: undefined });
       dispatch({ type: "twitch.profile", profile: undefined });
       dispatch({ type: "warning.added", warning: String(error) });
+      return false;
     }
   }
 
