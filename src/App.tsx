@@ -5,6 +5,7 @@ import { SidePanel } from "./components/SidePanel";
 import { StatusBar } from "./components/StatusBar";
 import { ResizeHandles, TitleBar } from "./components/TitleBar";
 import { useDisplayScale } from "./hooks/useDisplayScale";
+import { claimStartupGuideForSession } from "./presentation/startupGuide";
 import { appReducer, initialAppState } from "./stores/appStore";
 import {
   appOpenExternalUrl,
@@ -31,6 +32,8 @@ import {
   updateSettings,
 } from "./tauri/client";
 import type { AppSettings, BouyomiConnectionDiagnostics } from "./types";
+
+const showStartupGuideForSession = claimStartupGuideForSession(window.sessionStorage);
 
 export function App() {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
@@ -378,6 +381,7 @@ export function App() {
       />
       <MainView
         state={state}
+        showStartupGuide={showStartupGuideForSession}
         onSettingsUpdate={handleSettingsUpdate}
         onSpeechHealthCheck={handleSpeechHealthCheck}
         onSpeechDiagnostics={handleSpeechDiagnostics}

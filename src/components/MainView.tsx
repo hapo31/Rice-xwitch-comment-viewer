@@ -5,6 +5,7 @@ import {
   ListTodo,
   LoaderCircle,
   LogOut,
+  KeyRound,
   Network,
   PlugZap,
   RotateCcw,
@@ -17,9 +18,10 @@ import {
 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useRef, useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Route, Routes } from "react-router-dom";
 import { getQueueStatusPresentation, queueStatusLabel } from "../presentation/chat";
 import { countIncompleteQueueItems } from "../presentation/queue";
+import { getStartupGuideMessages, type StartupGuideMessage } from "../presentation/startupGuide";
 import type { AppRoutePath } from "../routes";
 import type { AppState } from "../stores/appStore";
 import type { AppLogLevel, AppSettings, BouyomiConnectionDiagnostics, ChatMessage, QueueDisplayState } from "../types";
@@ -39,24 +41,8 @@ interface MainViewProps {
   onTwitchValidateAuth: () => Promise<boolean>;
   onTwitchDisconnect: () => void;
   onOpenExternalUrl: (url: string) => void;
+  showStartupGuide: boolean;
 }
-
-const sampleMessages: ChatMessage[] = [
-  {
-    id: "sample-1",
-    receivedAt: new Date().toISOString(),
-    userDisplayName: "viewer_01",
-    text: "左ペインのチャット受信から Twitch EventSub へ接続できます。",
-    status: "queued",
-  },
-  {
-    id: "sample-2",
-    receivedAt: new Date().toISOString(),
-    userDisplayName: "system",
-    text: "棒読みちゃんの既定接続先は 127.0.0.1:50001 です。",
-    status: "spoken",
-  },
-];
 
 const defaultTwitchSettings: AppSettings["twitch"] = {
   channelLogin: "",
@@ -88,6 +74,7 @@ const defaultConnectionSuccessMessage = "棒読みちゃんと接続しました
 
 export function MainView({
   state,
+  showStartupGuide,
   onSettingsUpdate,
   onSpeechHealthCheck,
   onSpeechDiagnostics,
@@ -104,7 +91,7 @@ export function MainView({
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/chat" replace />} />
-      <Route path="/chat" element={<ChatView state={state} />} />
+      <Route path="/chat" element={<ChatView state={state} showStartupGuide={showStartupGuide} />} />
       <Route
         path="/queue"
         element={
@@ -219,8 +206,10 @@ function PlaceholderView({
   );
 }
 
-function ChatView({ state }: { state: AppState }) {
-  const messages = state.chatMessages.length > 0 ? state.chatMessages : sampleMessages;
+function ChatView({ state, showStartupGuide }: { state: AppState; showStartupGuide: boolean }) {
+  const startupReceivedAt = useRef(new Date().toISOString());
+  const startupMessages = showStartupGuide ? getStartupGuideMessages(state, startupReceivedAt.current) : [];
+  const messages: Array<ChatMessage | StartupGuideMessage> = [...state.chatMessages, ...startupMessages];
   const scrollParentRef = useRef<HTMLElement | null>(null);
   const rowVirtualizer = useVirtualizer({
     count: messages.length,
@@ -1187,7 +1176,7 @@ function RangeRow({
   );
 }
 
-function ChatRow({ message }: { message: ChatMessage }) {
+function ChatRow({ message }: { message: ChatMessage | StartupGuideMessage }) {
   const time = new Intl.DateTimeFormat("ja-JP", {
     hour: "2-digit",
     minute: "2-digit",
@@ -1198,7 +1187,19 @@ function ChatRow({ message }: { message: ChatMessage }) {
     <div className="grid min-h-11 grid-cols-[88px_160px_minmax(0,1fr)] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
       <span className="font-mono text-xs text-zinc-500">{time}</span>
       <span className="truncate pr-3 font-medium text-sky-300">{message.userDisplayName}</span>
-      <span className="line-clamp-2 text-zinc-200">{message.text}</span>
+      <span className="line-clamp-2 text-zinc-200">
+        {"action" in message && message.action === "login" && (
+          <Link
+            to="/auth"
+            aria-label="Loginを開く"
+            title="Login"
+            className="mr-1 inline-flex align-text-bottom text-sky-400 hover:text-sky-300"
+          >
+            <KeyRound className="h-4 w-4" />
+          </Link>
+        )}
+        {message.text}
+      </span>
     </div>
   );
 }
