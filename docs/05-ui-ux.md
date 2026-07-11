@@ -31,7 +31,7 @@ OS標準タイトルバーは非表示にし、VSCode風の薄い独自タイト
 
 - Chat
 - Queue
-- Rules
+- Filter
 - Settings
 - Login
 - Logs
@@ -86,7 +86,7 @@ Settings:
 | --- | --- |
 | Chat | Twitchチャットのライブログ。読まれた/スキップ/NG適用を視覚的に区別する。 |
 | Queue | 読み上げ待ち一覧。手動スキップ、再読込、削除ができる。 |
-| Rules | NGユーザー、NGワード、URL処理、長文処理。 |
+| Filter | 読み上げるチャットの種類、NGユーザー、NGワード、URL処理、長文処理。 |
 | Settings | 起動時接続、棒読みちゃん接続先、速度/音程/音量/声質、名前読み上げ、emote 読み上げ、テスト読み上げ。 |
 | Login | Twitch認証、接続チャンネル。読み上げ設定は置かない。 |
 | Logs | EventSub、認証、読み上げアダプタのログ。 |

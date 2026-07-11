@@ -117,11 +117,12 @@ export function MainView({
         }
       />
       <Route
-        path="/rules"
+        path="/filter"
         element={
-          <RulesView settings={state.settings} onSettingsUpdate={onSettingsUpdate} />
+          <FilterView settings={state.settings} onSettingsUpdate={onSettingsUpdate} />
         }
       />
+      <Route path="/rules" element={<Navigate to="/filter" replace />} />
       <Route
         path="/settings"
         element={
@@ -174,7 +175,7 @@ function PlaceholderView({
   const Icon = {
     "/chat": FileText,
     "/queue": ListTodo,
-    "/rules": ShieldCheck,
+    "/filter": ShieldCheck,
     "/settings": Volume2,
     "/auth": ShieldCheck,
     "/logs": ScrollText,
@@ -391,7 +392,7 @@ function QueueView({
   );
 }
 
-function RulesView({
+function FilterView({
   settings,
   onSettingsUpdate,
 }: {
@@ -433,7 +434,7 @@ function RulesView({
     !stringArrayEqual(parseRuleList(blockedUsers), speechSettings.blockedUsers) ||
     !stringArrayEqual(parseRuleList(blockedWords), speechSettings.blockedWords);
 
-  function saveRules() {
+  function saveFilter() {
     if (!isMaxLengthValid || !isRepeatSecondsValid) {
       return;
     }
@@ -454,8 +455,8 @@ function RulesView({
     <main className="relative col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold text-zinc-100">Rules</h1>
-          <p className="truncate text-xs text-zinc-500">NG ユーザー、NG ワード、URL、長文の扱いを設定します</p>
+          <h1 className="truncate text-sm font-semibold text-zinc-100">Filter / フィルター</h1>
+          <p className="truncate text-xs text-zinc-500">読み上げるチャットの種類と、除外・省略する条件を設定します</p>
         </div>
       </header>
 
@@ -504,7 +505,7 @@ function RulesView({
       <FloatingSaveButton
         visible={isDirty}
         disabled={!isMaxLengthValid || !isRepeatSecondsValid}
-        onClick={saveRules}
+        onClick={saveFilter}
       />
     </main>
   );

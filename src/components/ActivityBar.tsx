@@ -11,7 +11,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { path: "/chat", label: "Chat", icon: MessageSquareText },
   { path: "/queue", label: "Queue", icon: Radio },
-  { path: "/rules", label: "Rules", icon: ListFilter },
+  { path: "/filter", label: "Filter / フィルター", icon: ListFilter },
   { path: "/settings", label: "Settings", icon: SlidersHorizontal },
   { path: "/auth", label: "Login", icon: KeyRound },
 ];

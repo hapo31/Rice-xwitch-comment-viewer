@@ -15,7 +15,7 @@
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Login 画面は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
-| Phase 5: 配信運用向け仕上げ | 実装中 | Logs/Rules 画面、`app://log` 接続、ステータスバー集約、Login/Settings の設定整理、起動時自動接続、自動読み上げ ON/OFF、チャット受信停止時の確認 ON/OFF、棒読みちゃんエラー後の復帰ポーリング、SidePanel の未完了キュー件数表示、各画面ヘッダー説明の日本語化、Chat view の仮想スクロール、Windows installer/portable zip のリリース生成、Client ID を渡す devcontainer/Docker ビルド経路、関連 TS テストを実装。詳細な運用エラー整理は継続。 |
+| Phase 5: 配信運用向け仕上げ | 実装中 | Logs/Filter 画面、`app://log` 接続、ステータスバー集約、Login/Settings の設定整理、起動時自動接続、自動読み上げ ON/OFF、チャット受信停止時の確認 ON/OFF、棒読みちゃんエラー後の復帰ポーリング、SidePanel の未完了キュー件数表示、各画面ヘッダー説明の日本語化、Chat view の仮想スクロール、Windows installer/portable zip のリリース生成、Client ID を渡す devcontainer/Docker ビルド経路、関連 TS テストを実装。詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
 ## Phase 0: プロジェクト作成
@@ -104,7 +104,7 @@
 ## Phase 5: 配信運用向け仕上げ
 
 - [x] Settings 画面から Login 画面を分離し、認証専用の画面として整理する。
-- [x] Settings 画面へ読み上げ基本設定を集約し、Login/Rules 側に重複した読み上げ設定を残さない。
+- [x] Settings 画面へ読み上げ基本設定を集約し、Login/Filter 側に重複した読み上げ設定を残さない。
 - [x] `v[0-9]*` タグ push で Windows NSIS ビルドと GitHub Release 作成を行う Actions workflow を追加する。
 - [x] Windows リリースビルド用 Dockerfile と `.dockerignore` を追加する。
 - [x] Windows リリースでインストーラーに加えて portable zip を作成する。
@@ -121,10 +121,11 @@
 - [x] 自動読み上げ ON/OFF を実装する。
 - [x] 棒読みちゃん接続エラー後、成功するまで接続確認をポーリングして状態を復帰する。
 - [x] SidePanel の「待機中」件数を読み上げ未完了の項目数に揃える。
-- [x] Rules view を実装する。
+- [x] Filter view を実装する。
 - [x] NG ユーザー、NG ワード、URL 処理、長文処理の設定を実装する。
 - [x] 各画面のタイトル下説明を、画面機能が分かる日本語の概要文へ整理する。
-- [x] Rules/Settings は設定変更時だけ保存ボタンを右下からスライドイン表示し、Login は認証操作ボタンと自動保存に分離する。
+- [x] Filter/Settings は設定変更時だけ保存ボタンを右下からスライドイン表示し、Login は認証操作ボタンと自動保存に分離する。
+- [x] Rules の表示名・内部 route・view 名を Filter / フィルターへ変更し、読み上げ対象を設定する画面だと分かる説明にする。
 - [x] Auth の表示名を Login に変更する。
 - [x] 「起動時にチャット受信を開始」を Settings 画面の先頭に移動する。
 - [x] Voices 画面を Settings へ改名し、`/voices` から `/settings` へリダイレクトする。
