@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-07-11
+最終調査日: 2026-07-12
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
 
@@ -112,6 +112,7 @@
 - [x] 手元 Docker ビルドでは `.env` の `RICE_TWITCH_CLIENT_ID` を build arg として渡すラッパースクリプトを使う。
 - [x] リリース workflow では build/release job を分離し、release job のみ `contents: write`、build cache は未使用にする。
 - [x] Windows リリースビルドが Client ID 未設定で即失敗しないようにし、Windows 用 `icon.ico` を追加する。
+- [x] Windows リリース版を GUI サブシステムで起動し、付随するコマンドウィンドウを表示しないようにする。
 - [x] main 同期確認、ローカル検証、SemVer 判断、タグ発行、CI 待機、差分パッチノート更新を扱うリリース作業スキルを追加する。
 - [x] Logs view を実装する。
 - [x] `app://log` event をフロントエンドへ接続する。
