@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rice リリース"
+  short_description: "Rice の検証からタグ発行、パッチノート更新までを安全に実行"
+  default_prompt: "$release-rice を使って Rice の新しいバージョンをリリースしてください。"
