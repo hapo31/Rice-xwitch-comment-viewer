@@ -1,6 +1,6 @@
 ---
 name: release-rice
-description: Rice のリリースを安全に実施する。main の同期確認、ローカル検証、SemVer 判断、バージョン更新、Git タグの作成と push、GitHub Actions のリリース完了確認、前回リリースとの差分から日本語パッチノートを作成・反映するときに使う。
+description: Rice のリリースを安全に実施する。main の同期確認、ローカル検証、SemVer 判断、マニフェストとアプリ内表示のバージョン更新、Git タグの作成と push、GitHub Actions のリリース完了確認、前回リリースとの差分から日本語パッチノートを作成・反映するときに使う。
 ---
 
 # Rice をリリースする
@@ -9,7 +9,7 @@ description: Rice のリリースを安全に実施する。main の同期確認
 
 ## 1. リリース前状態を確認する
 
-1. `AGENTS.md`、`docs/TODO.md`、`.github/workflows/release-windows.yml`、各バージョンファイルを読む。
+1. `AGENTS.md`、`docs/TODO.md`、`.github/workflows/release-windows.yml`、各バージョンファイルとアプリ内のバージョン表示箇所を読む。現在の表示箇所は `src/components/StatusBar.tsx` とする。
 2. `git status --short --branch` でブランチと作業ツリーを確認する。ユーザーの未コミット変更があれば勝手に stash、commit、破棄せず停止する。
 3. `git fetch origin main --tags --prune` を実行する。
 4. 現在のブランチが `main` であることを確認する。違う場合は、作業ツリーが clean なときだけ `main` への切替を提案する。
@@ -30,16 +30,17 @@ Conventional Commit の接頭辞だけで機械的に決めず、実際の diff 
 
 ## 3. バージョンを揃えてローカル検証する
 
-1. `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` を同じバージョンへ更新し、`cargo check --manifest-path src-tauri/Cargo.toml` など正規の Cargo コマンドで `Cargo.lock` を同期する。
-2. 変更が生じたら差分を確認し、`chore: bump version to X.Y.Z` として commit する。ユーザーの変更を混ぜない。
-3. 次をすべて実行する。
+1. `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`、`src/components/StatusBar.tsx` の表示バージョンを同じ `X.Y.Z` へ更新する。将来表示箇所が移動・追加されていたら、`rg` で旧バージョンとバージョン表示を検索して更新対象を特定する。
+2. `cargo check --manifest-path src-tauri/Cargo.toml` など正規の Cargo コマンドで `Cargo.lock` を同期する。
+3. 変更が生じたら差分を確認し、マニフェストとアプリ内表示を同じ `chore: bump version to X.Y.Z` commit に含める。ユーザーの変更を混ぜない。
+4. 次をすべて実行する。
    - `pnpm test`
    - `pnpm build`
    - `cargo test --manifest-path src-tauri/Cargo.toml`
    - `scripts/build-windows-docker.sh`（Docker と必要なローカル環境が利用可能な場合）
-4. Windows Docker ビルドを実行できない場合は理由を明示する。少なくとも前の3コマンドが成功しない限りリリースしない。Windows 成果物のローカル検証を省略してタグを進めるには、ユーザーの明示承認を得る。
-5. `git status --short`、バージョン3箇所、`release-artifacts` の `.exe` / `.zip`（実行時）を確認する。
-6. バージョン commit ができた場合は `git push origin main` を行い、再度 `main...origin/main` が `0 0` であることを確認する。
+5. Windows Docker ビルドを実行できない場合は理由を明示する。少なくとも前の3コマンドが成功しない限りリリースしない。Windows 成果物のローカル検証を省略してタグを進めるには、ユーザーの明示承認を得る。
+6. `git status --short`、4箇所のバージョン、旧バージョンがアプリ内表示に残っていないこと、`release-artifacts` の `.exe` / `.zip`（実行時）を確認する。`pnpm build` の成功をアプリ内表示のコンパイル検証とする。
+7. バージョン commit ができた場合は `git push origin main` を行い、再度 `main...origin/main` が `0 0` であることを確認する。
 
 ## 4. タグを発行して CI を待つ
 
