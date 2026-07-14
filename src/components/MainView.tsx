@@ -20,7 +20,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 import { getQueueStatusPresentation, queueStatusLabel } from "../presentation/chat";
-import { countIncompleteQueueItems } from "../presentation/queue";
+import { countIncompleteQueueItems, selectQueueItemsForDisplay } from "../presentation/queue";
 import { getStartupGuideMessages, type StartupGuideMessage } from "../presentation/startupGuide";
 import type { AppRoutePath } from "../routes";
 import type { AppState } from "../stores/appStore";
@@ -300,13 +300,14 @@ function QueueView({
   onQueueRemove: (itemId: string) => void;
 }) {
   const queuedCount = countIncompleteQueueItems(state.queueItems);
+  const displayItems = selectQueueItemsForDisplay(state.queueItems);
 
   return (
     <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Queue</h1>
-          <p className="truncate text-xs text-zinc-500">読み上げ待ちのチャットを確認し、スキップや削除を操作します</p>
+          <p className="truncate text-xs text-zinc-500">読み上げ待ち、エラー、フィルターで読み飛ばしたチャットを確認します</p>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -346,10 +347,10 @@ function QueueView({
           <span>読み上げ文</span>
           <span className="text-right">操作</span>
         </div>
-        {state.queueItems.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-zinc-500">待機中の読み上げはありません。</div>
+        {displayItems.length === 0 ? (
+          <div className="px-4 py-8 text-sm text-zinc-500">確認が必要な読み上げはありません。</div>
         ) : (
-          state.queueItems.map((item) => (
+          displayItems.map((item) => (
             <div key={item.id} className="grid min-h-11 grid-cols-[140px_96px_minmax(0,1fr)_72px] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
               <span className="truncate pr-3 font-medium text-sky-300">{item.userDisplayName}</span>
               <span className="flex items-center gap-2 text-xs text-zinc-400">
