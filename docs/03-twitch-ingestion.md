@@ -48,7 +48,7 @@ Device Code Flowの利点:
 - access tokenとrefresh tokenはOS keyringに保存し、設定JSONには含めない。
 - Linuxでkeyring保存に失敗した場合は `~/.rice/twitch-auth.json` へローカル保存する。ディレクトリは `0700`、ファイルは `0600` で作成し、読み込み時にも権限を補正する。ただし暗号化はしないため、OS keyringより安全性は下がる。
 - Linux以外でkeyring保存に失敗した場合もログイン状態はメモリ上で継続し、UIへ「再起動後は再ログインが必要」と警告する。設定JSONへはフォールバックしない。
-- 起動時はkeyringを優先してOAuth状態を復元し、Linuxではローカル保存ファイルも復元元にする。access tokenの検証に失敗した場合はrefresh tokenで更新を試み、成功時は保存済みrefresh tokenを即時差し替える。
+- 起動時はkeyringを優先してOAuth状態を復元し、Linuxではローカル保存ファイルも復元元にする。保存済み認証を復元しただけでは認証済みとして扱わず、Login画面の有効性確認と同じく `/validate` を実行する。access tokenの検証に失敗した場合はrefresh tokenで更新を試み、成功時は保存済みrefresh tokenを即時差し替えてから認証済み状態へ遷移する。確認の開始・成功・失敗は system チャットへ表示する。
 - LinuxではSecret Service API対応ストアを優先する。Secret Serviceが利用できない環境では認証フロー自体は許可し、保存失敗時にローカル保存へ退避する。kernel keyutilsや設定JSONへは退避しない。
 
 Client ID:

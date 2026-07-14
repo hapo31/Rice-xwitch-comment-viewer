@@ -6,6 +6,7 @@ import { StatusBar } from "./components/StatusBar";
 import { ResizeHandles, TitleBar } from "./components/TitleBar";
 import { useDisplayScale } from "./hooks/useDisplayScale";
 import { claimStartupGuideForSession } from "./presentation/startupGuide";
+import { restoreAndValidateStartupAuth } from "./startupAuth";
 import { appReducer, initialAppState } from "./stores/appStore";
 import {
   appOpenExternalUrl,
@@ -39,21 +40,55 @@ export function App() {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   const displayScale = useDisplayScale();
   const autoConnectAttempted = useRef(false);
+  const startupAuthAttempted = useRef(false);
 
   useEffect(() => {
     getSettings()
       .then((settings) => dispatch({ type: "settings.loaded", settings }))
       .catch(() => dispatch({ type: "warning.added", warning: "設定の読み込みに失敗しました。" }));
-    twitchGetStoredAuth()
-      .then((profile) => {
-        if (!profile) {
-          return;
-        }
-        dispatch({ type: "twitch.profile", profile });
+
+    if (startupAuthAttempted.current) {
+      return;
+    }
+    startupAuthAttempted.current = true;
+
+    void restoreAndValidateStartupAuth({
+      getStoredAuth: twitchGetStoredAuth,
+      validateAuth: twitchValidateAuth,
+      reportSystemMessage: addSystemChatMessage,
+    }).then((auth) => {
+      if (auth.status === "authenticated") {
+        dispatch({ type: "twitch.profile", profile: auth.result.profile });
         dispatch({ type: "twitch.authStatus", status: "authenticated" });
-      })
-      .catch(() => dispatch({ type: "warning.added", warning: "保存済み Twitch 認証の確認に失敗しました。" }));
+        dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
+        if (auth.result.storageWarning) {
+          dispatch({ type: "warning.added", warning: auth.result.storageWarning });
+          addSystemChatMessage(auth.result.storageWarning);
+        }
+        return;
+      }
+
+      if (auth.status === "error") {
+        dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
+        dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
+        dispatch({ type: "twitch.profile", profile: undefined });
+        dispatch({ type: "warning.added", warning: auth.error });
+      }
+    });
   }, []);
+
+  function addSystemChatMessage(text: string) {
+    dispatch({
+      type: "chat.message",
+      message: {
+        id: `system-${Date.now()}-${crypto.randomUUID()}`,
+        receivedAt: new Date().toISOString(),
+        userDisplayName: "system",
+        text,
+        status: "spoken",
+      },
+    });
+  }
 
   useEffect(() => {
     const unlisten: Array<() => void> = [];

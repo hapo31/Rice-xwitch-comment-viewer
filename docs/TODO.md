@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込を確認した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 読み上げ、制御、接続診断、Settings 画面は実装済み。接続確認は設定に応じて確認読み上げまたは無音の状態取得を行う。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
-| Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Login 画面は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
+| Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Login 画面、起動時の保存済み認証の自動検証は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
 | Phase 5: 配信運用向け仕上げ | 実装中 | Logs/Filter 画面、`app://log` 接続、ステータスバー集約、Login/Settings の設定整理、起動時自動接続、自動読み上げ ON/OFF、チャット受信停止時の確認 ON/OFF、棒読みちゃんエラー後の復帰ポーリング、SidePanel の未完了キュー件数表示、各画面ヘッダー説明の日本語化、Chat view の仮想スクロール、Windows installer/portable zip のリリース生成、アプリ内表示を含むリリース時のバージョン更新、Client ID を渡す devcontainer/Docker ビルド経路、関連 TS テストを実装。詳細な運用エラー整理は継続。 |
@@ -62,6 +62,8 @@
 - [x] Device Code Flow の待機応答を正しく判定し、自動ポーリングが継続するよう修正する。
 - [x] 有効性確認で認証更新にも失敗した場合は、保存済み情報を含む認証状態を解除する。
 - [x] 有効性確認中の Loading 表示と、確認成功時の通知を Login 画面へ追加する。
+- [x] 起動時に保存済み認証を `/validate` し、必要なら refresh してから認証済み状態へ遷移する。
+- [x] 起動時の認証確認進捗と結果を system チャットへ表示する。
 - [ ] 実 Twitch Client ID で Device Code Flow を手動確認する。
 - [ ] 認可取り消し、401、期限切れ時の UI 表示を手動確認する。
 - [ ] アプリ起動時の保存済み認証復元と refresh 更新を手動確認する。
