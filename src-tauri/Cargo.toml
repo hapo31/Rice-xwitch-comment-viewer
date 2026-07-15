@@ -1,6 +1,6 @@
 [package]
 name = "rice"
-version = "0.1.1"
+version = "0.1.2"
 description = "Twitch chat TTS desktop app"
 authors = ["rice"]
 edition = "2021"

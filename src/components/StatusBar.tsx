@@ -32,7 +32,7 @@ export function StatusBar({ state }: StatusBarProps) {
         <StatusItem label="Queue" value={String(queuedCount)} />
         <StatusItem label="Warnings" value={String(state.warnings.length)} tone={state.warnings.length > 0 ? "warning" : "default"} />
       </div>
-      <div className="text-zinc-500">Rice 0.1.1</div>
+      <div className="text-zinc-500">Rice 0.1.2</div>
     </footer>
   );
 }
