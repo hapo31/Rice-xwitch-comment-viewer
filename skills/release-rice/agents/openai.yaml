@@ -1,4 +1,4 @@
 interface:
   display_name: "Rice リリース"
-  short_description: "Rice の検証からタグ発行、パッチノート更新までを安全に実行"
+  short_description: "注釈付きタグを発行し、非同期リリースを安全に開始"
   default_prompt: "$release-rice を使って Rice の新しいバージョンをリリースしてください。"

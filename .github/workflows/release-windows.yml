@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-windows:
-    name: Build Windows installer and zip
+    name: Test and build Windows installer and zip
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:
@@ -23,11 +23,32 @@ jobs:
       DOCKER_BUILDKIT: "1"
       RICE_TWITCH_CLIENT_ID: ${{ vars.RICE_TWITCH_CLIENT_ID || secrets.RICE_TWITCH_CLIENT_ID }}
     steps:
-      - name: Checkout
+      - name: Checkout annotated tag
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify annotated release tag
+        run: scripts/verify-release-tag.sh "${GITHUB_REF_NAME}"
+
+      - name: Enable pinned pnpm
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@8.11.0 --activate
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test frontend and run TypeScript build
+        run: |
+          set -euo pipefail
+          pnpm test
+          pnpm build
+
+      - name: Test Rust backend
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Build in Docker without shared caches
         run: |
@@ -62,7 +83,7 @@ jobs:
           retention-days: 1
 
   release:
-    name: Create GitHub Release
+    name: Publish GitHub Release
     needs: build-windows
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
@@ -70,20 +91,19 @@ jobs:
       actions: read
       contents: write
     steps:
+      - name: Checkout release scripts
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Download release artifact bundle
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: rice-windows-${{ github.ref_name }}
           path: release-artifacts
 
-      - name: Create release
+      - name: Create or update release safely
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release create "${GITHUB_REF_NAME}" \
-            release-artifacts/* \
-            --repo "${GITHUB_REPOSITORY}" \
-            --title "${GITHUB_REF_NAME}" \
-            --notes "Windows installer and portable zip for ${GITHUB_REF_NAME}." \
-            --verify-tag
+        run: scripts/publish-release.sh "${GITHUB_REF_NAME}" "${GITHUB_REPOSITORY}" release-artifacts/*

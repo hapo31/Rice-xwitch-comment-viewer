@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-07-16
+
+- 既存リリースは `vX.Y.Z` タグを起点に、Linux Docker + cargo-xwin で Windows x86_64 の NSIS installer と portable zip を生成し、build/release の2ジョブで GitHub Release を公開していた。これを、タグ annotation message を初期 Release 本文に使い、タグ push 後はエージェントが待機しない方式へ変更した。Release は draft 作成、Assets upload、公開の順とし、再実行時は既存本文を保持して Assets を `--clobber` 更新する。
+- `git tag -F` の既定 cleanup では Markdown 見出しがコメントとして除去されるため、リリースタグ作成時は `--cleanup=verbatim` を指定する。
+
 調査や作業中に分かった補足情報を記録するファイルです。日付が新しいものほど上に追記してください。
 
 ## 2026-07-14

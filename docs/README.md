@@ -10,6 +10,7 @@
 - [読み上げ出力アダプタ](./04-speech-output.md)
 - [UI/UX設計](./05-ui-ux.md)
 - [実装ロードマップ](./06-implementation-roadmap.md)
+- [リリース手順](./releasing.md)
 - [調査メモ](./RESEARCH_NOTES.md)
 
 ## 結論

@@ -115,9 +115,10 @@
 - [x] リリース workflow では build/release job を分離し、release job のみ `contents: write`、build cache は未使用にする。
 - [x] Windows リリースビルドが Client ID 未設定で即失敗しないようにし、Windows 用 `icon.ico` を追加する。
 - [x] Windows リリース版を GUI サブシステムで起動し、付随するコマンドウィンドウを表示しないようにする。
-- [x] main 同期確認、ローカル検証、SemVer 判断、タグ発行、CI 待機、差分パッチノート更新を扱うリリース作業スキルを追加する。
+- [x] main 同期確認、ローカル検証、SemVer 判断、差分リリースノート作成、注釈付きタグ発行までを扱う非同期リリーススキルを追加する。
 - [x] リリース作業スキルでマニフェストとステータスバーの表示バージョンを同時に更新・検証する。
 - [x] `v0.1.2` パッチリリース向けにバージョンを同期し、TypeScript/Rust/Windows Docker ビルドを検証する。
+- [x] 注釈付きタグの本文から GitHub Release を非同期・冪等に公開するフローへ移行する。
 - [x] Logs view を実装する。
 - [x] `app://log` event をフロントエンドへ接続する。
 - [x] EventSub、認証、読み上げアダプタのログを Logs view に表示する。
