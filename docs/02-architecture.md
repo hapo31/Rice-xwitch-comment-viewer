@@ -4,7 +4,9 @@
 
 ```text
 src/                      TypeScript UI
-  app shell               VSCode風レイアウト、設定、ログ、キュー表示
+  app shell               VSCode風レイアウトとルーティング
+  features                Chat/Queue/Launcher等の画面単位UI
+  presentation            表示用の純粋関数
   stores                  チャット/キュー/接続状態
   tauri client            Rust commands/eventsの呼び出し
 
@@ -13,6 +15,7 @@ src-tauri/
   speech                  読み上げキュー、アダプタ共通trait
   speech/bouyomi          棒読みちゃんTCPクライアント
   speech/voiceroid        実験的VOICEROID2直接連携
+  launcher                アプリ登録、検証、起動
   settings                永続設定、トークン保存
   app_events              フロントエンドへのイベント配信
 ```
@@ -48,6 +51,7 @@ Rust backend
 | `VoiceroidAdapter` | Windows専用の実験的アダプタ。C# sidecarまたはUI Automationを隠蔽する |
 | `SettingsStore` | 一般設定JSONの保存。OAuthトークンは扱わない |
 | `TwitchAuthStore` | Twitch OAuth状態をOS keyringへ保存/復元/削除する |
+| `LauncherService` | 登録アプリのパス検証、重複排除、単体/一斉起動を扱う |
 
 ## SpeechAdapter trait案
 
@@ -108,6 +112,10 @@ Commands:
 - `speech_clear()`
 - `settings_get()`
 - `settings_update(patch: SettingsPatch)`
+- `launcher_add(paths: Vec<String>)`
+- `launcher_remove(item_id: String)`
+- `launcher_launch(item_id: String)`
+- `launcher_launch_all()`
 - `app_open_external_url(url: String)`: Twitch認証URLなど、許可した外部URLをOS既定ブラウザで開く。
 
 Events:
@@ -121,6 +129,7 @@ Events:
 ## 永続化
 
 - 一般設定: Tauriのapp data配下にJSON保存。
+- ランチャー項目: 一般設定の `launcher.items` に保存する。`kind`, `target`, `displayName`, `order` と、将来用の `backgroundColor`, `groupId`, `iconDataUrl` を境界として持つ。
 - Twitch OAuth状態: access token、refresh token、スコープ、有効期限、検証済みプロフィールをOS keyringへ保存する。設定JSONへは保存しない。
 - refresh token: 更新成功時に保存済みの値を新しい値へ差し替える。keyring保存に失敗した場合もログイン状態はメモリ上で継続する。Linuxでは `~/.rice/twitch-auth.json` にローカル保存し、それ以外ではUIへ永続化不可の警告を出す。設定JSONへはフォールバックしない。
 - LinuxではWindows Credential ManagerやmacOS Keychainに相当する単一の標準ストアがないため、Secret Service API対応ストア（GNOME Keyring、KWallet、KeePassXC Secret Serviceなど）を優先する。利用できない場合は `~/.rice` を `0700`、認証ファイルを `0600` で作成して保存する。kernel keyutilsやmock backendは永続OAuth保存には使わない。

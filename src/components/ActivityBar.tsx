@@ -1,4 +1,4 @@
-import { KeyRound, ListFilter, MessageSquareText, Radio, SlidersHorizontal } from "lucide-react";
+import { AppWindow, KeyRound, ListFilter, MessageSquareText, Radio, SlidersHorizontal } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import type { AppRoutePath } from "../routes";
 
@@ -10,6 +10,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: "/chat", label: "Chat", icon: MessageSquareText },
+  { path: "/launcher", label: "Launcher", icon: AppWindow },
   { path: "/queue", label: "Queue", icon: Radio },
   { path: "/filter", label: "Filter", icon: ListFilter },
   { path: "/settings", label: "Settings", icon: SlidersHorizontal },

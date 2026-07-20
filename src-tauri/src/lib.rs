@@ -1,4 +1,5 @@
 mod app_events;
+mod launcher;
 mod settings;
 mod speech;
 mod twitch;
@@ -7,6 +8,8 @@ mod twitch;
 use app_events::{
     emit_app_log, emit_speech_status, emit_twitch_status, AppLogLevel, SpeechStatus, TwitchStatus,
 };
+#[cfg(feature = "app")]
+use launcher::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
 #[cfg(feature = "app")]
 use settings::{settings_get, settings_update, AppState};
 #[cfg(feature = "app")]
@@ -45,10 +48,15 @@ fn app_open_external_url(url: String) -> Result<(), String> {
 #[cfg(feature = "app")]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             app_exit,
             app_open_external_url,
+            launcher_add,
+            launcher_remove,
+            launcher_launch,
+            launcher_launch_all,
             settings_get,
             settings_update,
             speech_health_check,

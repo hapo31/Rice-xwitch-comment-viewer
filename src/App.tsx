@@ -11,6 +11,10 @@ import { appReducer, initialAppState } from "./stores/appStore";
 import {
   appOpenExternalUrl,
   getSettings,
+  launcherAdd,
+  launcherLaunch,
+  launcherLaunchAll,
+  launcherRemove,
   subscribeAppLogEvents,
   subscribeSpeechQueueUpdatedEvents,
   subscribeSpeechStatusEvents,
@@ -32,7 +36,7 @@ import {
   twitchValidateAuth,
   updateSettings,
 } from "./tauri/client";
-import type { AppSettings, BouyomiConnectionDiagnostics } from "./types";
+import type { AppSettings, BouyomiConnectionDiagnostics, LauncherLaunchResult } from "./types";
 
 const showStartupGuideForSession = claimStartupGuideForSession(window.sessionStorage);
 
@@ -403,6 +407,57 @@ export function App() {
     }
   }
 
+  async function handleLauncherAdd(paths: string[]) {
+    try {
+      const items = await launcherAdd(paths);
+      dispatch({ type: "launcher.changed", items });
+      return items;
+    } catch (error) {
+      dispatch({ type: "warning.added", warning: String(error) });
+      throw error;
+    }
+  }
+
+  async function handleLauncherRemove(itemId: string) {
+    try {
+      const items = await launcherRemove(itemId);
+      dispatch({ type: "launcher.changed", items });
+      return items;
+    } catch (error) {
+      dispatch({ type: "warning.added", warning: String(error) });
+      throw error;
+    }
+  }
+
+  async function reportLauncherResult(result: LauncherLaunchResult) {
+    if (result.failures.length > 0) {
+      const firstFailure = result.failures[0];
+      dispatch({
+        type: "warning.added",
+        warning: `${firstFailure.displayName} を起動できませんでした: ${firstFailure.message}`,
+      });
+    }
+    return result;
+  }
+
+  async function handleLauncherLaunch(itemId: string) {
+    try {
+      return reportLauncherResult(await launcherLaunch(itemId));
+    } catch (error) {
+      dispatch({ type: "warning.added", warning: String(error) });
+      throw error;
+    }
+  }
+
+  async function handleLauncherLaunchAll() {
+    try {
+      return reportLauncherResult(await launcherLaunchAll());
+    } catch (error) {
+      dispatch({ type: "warning.added", warning: String(error) });
+      throw error;
+    }
+  }
+
   return (
     <div className="relative grid h-full grid-cols-[48px_280px_minmax(0,1fr)] grid-rows-[2rem_minmax(0,1fr)_24px] bg-zinc-950 text-zinc-100">
       <TitleBar scale={displayScale.scale} scaleMode={displayScale.mode} onScaleModeChange={displayScale.setMode} />
@@ -424,6 +479,10 @@ export function App() {
         onSpeechControl={handleSpeechControl}
         onQueueReload={handleQueueReload}
         onQueueRemove={handleQueueRemove}
+        onLauncherAdd={handleLauncherAdd}
+        onLauncherRemove={handleLauncherRemove}
+        onLauncherLaunch={handleLauncherLaunch}
+        onLauncherLaunchAll={handleLauncherLaunchAll}
         onTwitchStartAuth={handleTwitchStartAuth}
         onTwitchPollAuth={handleTwitchPollAuth}
         onTwitchValidateAuth={handleTwitchValidateAuth}

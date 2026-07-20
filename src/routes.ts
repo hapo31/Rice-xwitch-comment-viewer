@@ -1,5 +1,6 @@
 export const appRoutes = [
   { path: "/chat", label: "Chat" },
+  { path: "/launcher", label: "Launcher" },
   { path: "/queue", label: "Queue" },
   { path: "/filter", label: "Filter" },
   { path: "/settings", label: "Settings" },

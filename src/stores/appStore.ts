@@ -32,6 +32,7 @@ export type AppAction =
   | { type: "speech.status"; status: SpeechStatus }
   | { type: "chat.message"; message: ChatMessage }
   | { type: "queue.changed"; items: QueueItem[] }
+  | { type: "launcher.changed"; items: AppSettings["launcher"]["items"] }
   | { type: "log.added"; log: AppLogEvent }
   | { type: "warning.added"; warning: string }
   | { type: "logs.cleared" }
@@ -68,6 +69,16 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       };
     case "queue.changed":
       return { ...state, queueItems: action.items };
+    case "launcher.changed":
+      return state.settings
+        ? {
+            ...state,
+            settings: {
+              ...state.settings,
+              launcher: { ...state.settings.launcher, items: action.items },
+            },
+          }
+        : state;
     case "log.added":
       return { ...state, logs: [{ ...action.log, id: action.log.id ?? logId(action.log) }, ...state.logs].slice(0, 500) };
     case "warning.added":

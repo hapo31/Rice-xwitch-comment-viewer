@@ -1,5 +1,12 @@
 # 調査メモ
 
+## 2026-07-20
+
+- 画面追加前の整理として、約1,200行に集約されていた `MainView.tsx` から Chat / Queue / Filter / Settings / Login / Logs を `src/features` 配下へ分離した。`MainView.tsx` は route と props 配線に限定し、共通設定フォーム部品と既定値も別ファイルへ移した。
+- Tauri v2 のファイルDnDは `getCurrentWebview().onDragDropEvent` から絶対パスを取得できる。ファイル選択はWeb標準の `<input type=file>` では絶対パスを保持できないため、公式 Dialog plugin の複数選択を使用する。初期 Launcher は `.exe` / `.lnk` に限定し、Rust側でも存在、ファイル種別、重複を再検証する。
+- Launcher項目は `kind`, `target`, `displayName`, `order`, `backgroundColor`, `groupId`, `iconDataUrl` を持たせた。現在はapplicationだけを登録し、website種別は予約として拒否する。これにより後続の色編集、枠付きグループ、pointer sensorによる並べ替え、Webリンク追加を既存項目の置換なしで拡張できる。
+- Windowsの関連アイコンは登録時に非表示PowerShellから抽出する。対象パスはスクリプトへ連結せず子プロセス環境変数で渡し、抽出失敗時はUIの汎用アプリアイコンへフォールバックする。Linux上の自動検証は完了したが、Windows実機で日本語や記号を含むパス、`.lnk`、管理者権限要求、一斉起動の部分失敗を確認する必要がある。
+
 ## 2026-07-16
 
 - 既存リリースは `vX.Y.Z` タグを起点に、Linux Docker + cargo-xwin で Windows x86_64 の NSIS installer と portable zip を生成し、build/release の2ジョブで GitHub Release を公開していた。これを、タグ annotation message を初期 Release 本文に使い、タグ push 後はエージェントが待機しない方式へ変更した。Release は draft 作成、Assets upload、公開の順とし、再実行時は既存本文を保持して Assets を `--clobber` 更新する。

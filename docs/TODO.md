@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-07-15
+最終調査日: 2026-07-20
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
 
@@ -15,7 +15,7 @@
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Login 画面、起動時の保存済み認証の自動検証は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
-| Phase 5: 配信運用向け仕上げ | 実装中 | Logs/Filter 画面、`app://log` 接続、ステータスバー集約、Login/Settings の設定整理、起動時自動接続、自動読み上げ ON/OFF、チャット受信停止時の確認 ON/OFF、棒読みちゃんエラー後の復帰ポーリング、SidePanel の未完了キュー件数表示、Queue view の要確認項目への限定と新着順表示、各画面ヘッダー説明の日本語化、Chat view の仮想スクロール、Windows installer/portable zip のリリース生成、アプリ内表示を含むリリース時のバージョン更新、Client ID を渡す devcontainer/Docker ビルド経路、関連 TS テストを実装。詳細な運用エラー整理は継続。 |
+| Phase 5: 配信運用向け仕上げ | 実装中 | 既存の運用機能に加え、画面実装の feature 分割と Windows アプリ用 Launcher（選択/DnD登録、実アイコン、削除、単体/一斉起動、永続化）を実装。`cargo test` 29件、`pnpm test` 22件、`pnpm build` は成功。Windows 実機確認と詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
 ## Phase 0: プロジェクト作成
@@ -105,6 +105,10 @@
 
 ## Phase 5: 配信運用向け仕上げ
 
+- [x] 画面実装を `features` 単位へ分割し、ルーティング層を画面配線のみに整理する。
+- [x] Windows 10 スタートメニュー風の Launcher 画面を追加する。
+- [x] Launcher でアプリの選択/DnD登録、削除、単体起動、一斉起動を実装する。
+- [x] Launcher の登録内容を永続化し、将来の色変更・グループ・並べ替え・Webリンクに拡張できるモデルにする。
 - [x] Settings 画面から Login 画面を分離し、認証専用の画面として整理する。
 - [x] Settings 画面へ読み上げ基本設定を集約し、Login/Filter 側に重複した読み上げ設定を残さない。
 - [x] `v[0-9]*` タグ push で Windows NSIS ビルドと GitHub Release 作成を行う Actions workflow を追加する。
@@ -165,10 +169,14 @@
 - [x] Rust: `channel.chat.message` JSON fixture のパーステストを追加する。
 - [x] Rust: `SpeechFormatter` の NG/URL/長文処理テストを追加する。
 - [x] Rust: WebSocket 再接続状態遷移テストを追加する。
+- [x] Rust: Launcher の拡張子、重複、順序、予約種別、旧設定互換テストを追加する。
 - [x] TypeScript: store reducer テストを追加する。
 - [x] TypeScript: キュー行の状態表示テストを追加する。
 - [x] TypeScript: 設定フォームのバリデーションテストを追加する。
+- [x] TypeScript: Launcher の表示順、背景色、DnDパス判定、起動結果表示テストを追加する。
 - [ ] 手動: 棒読みちゃん未起動/起動中/ポート競合を確認する。
 - [ ] 手動: Twitch トークン期限切れ/認可取り消しを確認する。
 - [ ] 手動: 配信中チャット連投を確認する。
 - [ ] 手動: ネットワーク切断と復帰を確認する。
+- [ ] 手動: Windows 10/11 で `.exe` / `.lnk` の選択・DnD登録、実アイコン、単体/一斉起動、削除、再起動後の復元を確認する。
+- [ ] 手動: 空白・日本語・`&` を含むアプリパスと、移動済みアプリを含む一斉起動の部分失敗表示を確認する。

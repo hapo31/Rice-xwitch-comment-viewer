@@ -20,6 +20,9 @@ export function SidePanel({
   onWarningsClear,
 }: SidePanelProps) {
   const location = useLocation();
+  if (location.pathname === "/launcher") {
+    return null;
+  }
   const channel = state.settings?.twitch.channelLogin || "未設定";
   const queueCount = countIncompleteQueueItems(state.queueItems);
   const twitchAuthLabel = {

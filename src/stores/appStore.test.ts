@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appReducer, initialAppState } from "./appStore";
-import type { ChatMessage, QueueItem } from "../types";
+import type { AppSettings, ChatMessage, LauncherItem, QueueItem } from "../types";
 
 function chatMessage(id: string): ChatMessage {
   return {
@@ -42,6 +42,31 @@ describe("appReducer", () => {
     const state = appReducer(initialAppState, { type: "queue.changed", items });
 
     expect(state.queueItems).toEqual(items);
+  });
+
+  it("replaces launcher items without changing the other settings", () => {
+    const settings = {
+      twitch: { channelLogin: "rice", autoConnect: false, confirmBeforeStopChat: true },
+      speech: {},
+      launcher: { items: [] },
+    } as unknown as AppSettings;
+    const items: LauncherItem[] = [
+      {
+        id: "launcher-1",
+        kind: "application",
+        target: "C:\\Apps\\Example.exe",
+        displayName: "Example",
+        order: 0,
+      },
+    ];
+
+    const state = appReducer(
+      { ...initialAppState, settings },
+      { type: "launcher.changed", items },
+    );
+
+    expect(state.settings?.launcher.items).toEqual(items);
+    expect(state.settings?.twitch.channelLogin).toBe("rice");
   });
 
   it("keeps only the latest five warnings", () => {

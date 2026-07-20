@@ -2,11 +2,17 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthView } from "../features/auth/AuthView";
 import { ChatView } from "../features/chat/ChatView";
 import { FilterView } from "../features/filter/FilterView";
+import { LauncherView } from "../features/launcher/LauncherView";
 import { LogsView } from "../features/logs/LogsView";
 import { QueueView } from "../features/queue/QueueView";
 import { SettingsView } from "../features/settings/SettingsView";
 import type { AppState } from "../stores/appStore";
-import type { AppSettings, BouyomiConnectionDiagnostics } from "../types";
+import type {
+  AppSettings,
+  BouyomiConnectionDiagnostics,
+  LauncherItem,
+  LauncherLaunchResult,
+} from "../types";
 
 interface MainViewProps {
   state: AppState;
@@ -17,6 +23,10 @@ interface MainViewProps {
   onSpeechControl: (command: "pause" | "resume" | "skip" | "clear") => void;
   onQueueReload: () => void;
   onQueueRemove: (itemId: string) => void;
+  onLauncherAdd: (paths: string[]) => Promise<LauncherItem[]>;
+  onLauncherRemove: (itemId: string) => Promise<LauncherItem[]>;
+  onLauncherLaunch: (itemId: string) => Promise<LauncherLaunchResult>;
+  onLauncherLaunchAll: () => Promise<LauncherLaunchResult>;
   onTwitchStartAuth: () => void;
   onTwitchPollAuth: () => void;
   onTwitchValidateAuth: () => Promise<boolean>;
@@ -35,6 +45,10 @@ export function MainView({
   onSpeechControl,
   onQueueReload,
   onQueueRemove,
+  onLauncherAdd,
+  onLauncherRemove,
+  onLauncherLaunch,
+  onLauncherLaunchAll,
   onTwitchStartAuth,
   onTwitchPollAuth,
   onTwitchValidateAuth,
@@ -53,6 +67,19 @@ export function MainView({
             onSpeechControl={onSpeechControl}
             onQueueReload={onQueueReload}
             onQueueRemove={onQueueRemove}
+          />
+        }
+      />
+      <Route
+        path="/launcher"
+        element={
+          <LauncherView
+            items={state.settings?.launcher.items ?? []}
+            isReady={Boolean(state.settings)}
+            onAdd={onLauncherAdd}
+            onRemove={onLauncherRemove}
+            onLaunch={onLauncherLaunch}
+            onLaunchAll={onLauncherLaunchAll}
           />
         }
       />

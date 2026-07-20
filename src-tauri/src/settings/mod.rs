@@ -1,5 +1,6 @@
 #[cfg(feature = "app")]
 use crate::app_events::{emit_app_log, AppLogLevel};
+use crate::launcher::{normalize_launcher_items, LauncherSettings, LauncherSettingsPatch};
 use crate::speech::SpeechQueueState;
 use crate::twitch::TwitchAuthState;
 #[cfg(feature = "app")]
@@ -16,6 +17,8 @@ use tauri::Manager;
 pub struct AppSettings {
     pub twitch: TwitchSettings,
     pub speech: SpeechSettings,
+    #[serde(default)]
+    pub launcher: LauncherSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,6 +167,7 @@ impl Default for AppSettings {
                 connection_success_speech_enabled: true,
                 connection_success_speech_text: String::new(),
             },
+            launcher: LauncherSettings::default(),
         }
     }
 }
@@ -173,6 +177,7 @@ impl Default for AppSettings {
 pub struct SettingsPatch {
     pub twitch: Option<TwitchSettingsPatch>,
     pub speech: Option<SpeechSettingsPatch>,
+    pub launcher: Option<LauncherSettingsPatch>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -332,6 +337,12 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
         }
     }
 
+    if let Some(launcher) = patch.launcher {
+        if let Some(items) = launcher.items {
+            settings.launcher.items = normalize_launcher_items(items)?;
+        }
+    }
+
     Ok(())
 }
 
@@ -360,4 +371,24 @@ fn settings_path<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> anyhow::Result<std::path::PathBuf> {
     Ok(app.path().app_data_dir()?.join("settings.json"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppSettings;
+
+    #[test]
+    fn legacy_settings_without_launcher_use_an_empty_default() {
+        let settings = AppSettings::default();
+        let mut value = serde_json::to_value(settings).expect("serialize default settings");
+        value
+            .as_object_mut()
+            .expect("settings must be an object")
+            .remove("launcher");
+
+        let restored: AppSettings =
+            serde_json::from_value(value).expect("deserialize legacy settings");
+
+        assert!(restored.launcher.items.is_empty());
+    }
 }

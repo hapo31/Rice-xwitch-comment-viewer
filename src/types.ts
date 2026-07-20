@@ -30,6 +30,39 @@ export interface AppSettings {
     connectionSuccessSpeechEnabled: boolean;
     connectionSuccessSpeechText: string;
   };
+  launcher: LauncherSettings;
+}
+
+export interface LauncherSettings {
+  items: LauncherItem[];
+}
+
+/**
+ * `website` is reserved for the planned URL launcher support. The backend
+ * currently creates and launches `application` items only.
+ */
+export type LauncherItemKind = "application" | "website";
+
+export interface LauncherItem {
+  id: string;
+  kind: LauncherItemKind;
+  target: string;
+  displayName: string;
+  iconDataUrl?: string;
+  backgroundColor?: string;
+  groupId?: string;
+  order: number;
+}
+
+export interface LauncherLaunchFailure {
+  itemId: string;
+  displayName: string;
+  message: string;
+}
+
+export interface LauncherLaunchResult {
+  launchedCount: number;
+  failures: LauncherLaunchFailure[];
 }
 
 export interface ChatMessage {

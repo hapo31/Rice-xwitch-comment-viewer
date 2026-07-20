@@ -4,6 +4,8 @@ import type {
   AppLogEvent,
   AppSettings,
   BouyomiConnectionDiagnostics,
+  LauncherItem,
+  LauncherLaunchResult,
   SpeechQueueUpdatedEvent,
   SpeechStatusEvent,
   TwitchAuthPollResult,
@@ -39,6 +41,9 @@ const fallbackSettings: AppSettings = {
     connectionSuccessSpeechEnabled: true,
     connectionSuccessSpeechText: "",
   },
+  launcher: {
+    items: [],
+  },
 };
 
 const isTauriRuntime = "__TAURI_INTERNALS__" in window;
@@ -54,6 +59,11 @@ function normalizeSettings(settings: Partial<AppSettings> | undefined): AppSetti
     speech: {
       ...fallbackSettings.speech,
       ...settings?.speech,
+    },
+    launcher: {
+      ...fallbackSettings.launcher,
+      ...settings?.launcher,
+      items: settings?.launcher?.items ?? fallbackSettings.launcher.items,
     },
   };
 }
@@ -72,6 +82,42 @@ export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSe
   }
 
   return normalizeSettings(await invoke<Partial<AppSettings>>("settings_update", { patch }));
+}
+
+export async function launcherAdd(paths: string[]): Promise<LauncherItem[]> {
+  if (!isTauriRuntime) {
+    return [];
+  }
+
+  return invoke<LauncherItem[]>("launcher_add", { paths });
+}
+
+export async function launcherRemove(itemId: string): Promise<LauncherItem[]> {
+  if (!isTauriRuntime) {
+    return [];
+  }
+
+  return invoke<LauncherItem[]>("launcher_remove", { itemId });
+}
+
+export async function launcherLaunch(itemId: string): Promise<LauncherLaunchResult> {
+  if (!isTauriRuntime) {
+    return { launchedCount: 1, failures: [] };
+  }
+
+  return invoke<LauncherLaunchResult>("launcher_launch", { itemId });
+}
+
+export async function launcherLaunchAll(): Promise<LauncherLaunchResult> {
+  if (!isTauriRuntime) {
+    return { launchedCount: 0, failures: [] };
+  }
+
+  return invoke<LauncherLaunchResult>("launcher_launch_all");
+}
+
+export function isDesktopRuntime(): boolean {
+  return isTauriRuntime;
 }
 
 export async function speechHealthCheck(): Promise<string> {

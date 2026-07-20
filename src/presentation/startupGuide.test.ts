@@ -25,6 +25,7 @@ const settings: AppSettings = {
     connectionSuccessSpeechEnabled: true,
     connectionSuccessSpeechText: "棒読みちゃんと接続しました",
   },
+  launcher: { items: [] },
 };
 
 describe("startup guide messages", () => {
