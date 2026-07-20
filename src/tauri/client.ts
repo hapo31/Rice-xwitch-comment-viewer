@@ -46,7 +46,21 @@ const fallbackSettings: AppSettings = {
   },
 };
 
-const isTauriRuntime = "__TAURI_INTERNALS__" in window;
+const isTauriRuntime = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+export interface AppBuildInfo {
+  version: string;
+  isDev: boolean;
+  commitHash?: string;
+}
+
+export async function getAppBuildInfo(): Promise<AppBuildInfo | undefined> {
+  if (!isTauriRuntime) {
+    return undefined;
+  }
+
+  return invoke<AppBuildInfo>("app_build_info");
+}
 
 function normalizeSettings(settings: Partial<AppSettings> | undefined): AppSettings {
   return {

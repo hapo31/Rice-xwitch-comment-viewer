@@ -10,6 +10,7 @@ use app_events::{
 };
 #[cfg(feature = "app")]
 use launcher::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
+use serde::Serialize;
 #[cfg(feature = "app")]
 use settings::{settings_get, settings_update, AppState};
 #[cfg(feature = "app")]
@@ -45,6 +46,28 @@ fn app_open_external_url(url: String) -> Result<(), String> {
     })
 }
 
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct AppBuildInfo {
+    version: &'static str,
+    is_dev: bool,
+    commit_hash: Option<&'static str>,
+}
+
+fn app_build_info_value() -> AppBuildInfo {
+    AppBuildInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        is_dev: cfg!(debug_assertions),
+        commit_hash: option_env!("RICE_GIT_COMMIT"),
+    }
+}
+
+#[cfg(feature = "app")]
+#[tauri::command]
+fn app_build_info() -> AppBuildInfo {
+    app_build_info_value()
+}
+
 #[cfg(feature = "app")]
 pub fn run() {
     tauri::Builder::default()
@@ -53,6 +76,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_exit,
             app_open_external_url,
+            app_build_info,
             launcher_add,
             launcher_remove,
             launcher_launch,
@@ -207,7 +231,18 @@ pub(crate) type SharedSettings<T> = Mutex<T>;
 
 #[cfg(all(test, feature = "app"))]
 mod tests {
-    use super::validate_external_url;
+    use super::{app_build_info_value, validate_external_url};
+
+    #[test]
+    fn reports_package_build_information() {
+        let info = app_build_info_value();
+
+        assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(info.is_dev, cfg!(debug_assertions));
+        assert!(info.commit_hash.is_none_or(
+            |hash| hash.len() == 7 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+        ));
+    }
 
     #[test]
     fn allows_twitch_activate_url() {

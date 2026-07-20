@@ -1,7 +1,14 @@
 fn main() {
     println!("cargo:rerun-if-env-changed=RICE_TWITCH_CLIENT_ID");
     println!("cargo:rerun-if-env-changed=TWITCH_CLIENT_ID");
+    println!("cargo:rerun-if-env-changed=RICE_GIT_COMMIT");
+    println!("cargo:rerun-if-env-changed=GITHUB_SHA");
     println!("cargo:rerun-if-changed=../.env");
+    emit_git_rerun_paths();
+
+    if let Some(commit) = get_commit_hash() {
+        println!("cargo:rustc-env=RICE_GIT_COMMIT={commit}");
+    }
 
     let twitch_client_id = env_value("RICE_TWITCH_CLIENT_ID")
         .or_else(|| env_value("TWITCH_CLIENT_ID"))
@@ -17,6 +24,44 @@ fn main() {
     if std::env::var_os("CARGO_FEATURE_APP").is_some() {
         tauri_build::build();
     }
+}
+
+fn get_commit_hash() -> Option<String> {
+    env_value("RICE_GIT_COMMIT")
+        .or_else(|| env_value("GITHUB_SHA"))
+        .or_else(|| git_output(&["rev-parse", "--short=7", "HEAD"]))
+        .map(|value| value.trim().to_string())
+        .filter(|value| value.len() >= 7 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .map(|value| value[..7].to_ascii_lowercase())
+}
+
+fn emit_git_rerun_paths() {
+    if let Some(head_path) =
+        git_output(&["rev-parse", "--path-format=absolute", "--git-path", "HEAD"])
+    {
+        println!("cargo:rerun-if-changed={}", head_path.trim());
+    }
+
+    if let Some(reference) = git_output(&["symbolic-ref", "-q", "HEAD"]) {
+        if let Some(reference_path) = git_output(&[
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            reference.trim(),
+        ]) {
+            println!("cargo:rerun-if-changed={}", reference_path.trim());
+        }
+    }
+}
+
+fn git_output(args: &[&str]) -> Option<String> {
+    std::process::Command::new("git")
+        .args(args)
+        .current_dir(std::env::var_os("CARGO_MANIFEST_DIR")?)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
 }
 
 fn env_value(key: &str) -> Option<String> {

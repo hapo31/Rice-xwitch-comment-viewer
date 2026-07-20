@@ -1,11 +1,19 @@
+import { useEffect, useState } from "react";
 import { countIncompleteQueueItems } from "../presentation/queue";
 import type { AppState } from "../stores/appStore";
+import { getAppBuildInfo, type AppBuildInfo } from "../tauri/client";
 
 interface StatusBarProps {
   state: AppState;
 }
 
 export function StatusBar({ state }: StatusBarProps) {
+  const [buildInfo, setBuildInfo] = useState<AppBuildInfo>();
+
+  useEffect(() => {
+    void getAppBuildInfo().then(setBuildInfo).catch(() => undefined);
+  }, []);
+
   const host = state.settings?.speech.bouyomiHost ?? "127.0.0.1";
   const port = state.settings?.speech.bouyomiPort ?? 50001;
   const queuedCount = countIncompleteQueueItems(state.queueItems);
@@ -32,9 +40,17 @@ export function StatusBar({ state }: StatusBarProps) {
         <StatusItem label="Queue" value={String(queuedCount)} />
         <StatusItem label="Warnings" value={String(state.warnings.length)} tone={state.warnings.length > 0 ? "warning" : "default"} />
       </div>
-      <div className="text-zinc-500">Rice 0.1.2</div>
+      <div className="text-zinc-500">{buildInfo ? formatBuildLabel(buildInfo) : "Rice"}</div>
     </footer>
   );
+}
+
+export function formatBuildLabel({ version, isDev, commitHash }: AppBuildInfo): string {
+  if (!isDev) {
+    return `Rice ${version}`;
+  }
+
+  return `Rice ${version} (dev${commitHash ? ` ${commitHash}` : ""})`;
 }
 
 function StatusItem({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warning" }) {

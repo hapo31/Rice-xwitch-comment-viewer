@@ -2,6 +2,7 @@
 
 ## 2026-07-20
 
+- ステータスバーのバージョン直書きを廃止し、Rust の Cargo package version と `debug_assertions` から表示を組み立てるようにした。通常のリリースビルドは `Rice X.Y.Z`、それ以外は `Rice X.Y.Z (dev abcdef0)` と表示する。コミットはビルド時に `RICE_GIT_COMMIT`、`GITHUB_SHA`、ローカル Git の順で取得し、取得不能でも `(dev)` は維持する。
 - 画面追加前の整理として、約1,200行に集約されていた `MainView.tsx` から Chat / Queue / Filter / Settings / Login / Logs を `src/features` 配下へ分離した。`MainView.tsx` は route と props 配線に限定し、共通設定フォーム部品と既定値も別ファイルへ移した。
 - Tauri v2 のファイルDnDは `getCurrentWebview().onDragDropEvent` から絶対パスを取得できる。ファイル選択はWeb標準の `<input type=file>` では絶対パスを保持できないため、公式 Dialog plugin の複数選択を使用する。初期 Launcher は `.exe` / `.lnk` に限定し、Rust側でも存在、ファイル種別、重複を再検証する。
 - Launcher項目は `kind`, `target`, `displayName`, `order`, `backgroundColor`, `groupId`, `iconDataUrl` を持たせた。現在はapplicationだけを登録し、website種別は予約として拒否する。これにより後続の色編集、枠付きグループ、pointer sensorによる並べ替え、Webリンク追加を既存項目の置換なしで拡張できる。
