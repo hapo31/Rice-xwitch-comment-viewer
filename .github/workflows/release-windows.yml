@@ -29,6 +29,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # actions/checkout resolves tag events to the peeled commit and can replace
+      # the local annotated tag ref with a lightweight tag. Restore the tag object
+      # before validating and reading its annotation message.
+      - name: Restore annotated tag object
+        run: git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+
       - name: Verify annotated release tag
         run: scripts/verify-release-tag.sh "${GITHUB_REF_NAME}"
 
