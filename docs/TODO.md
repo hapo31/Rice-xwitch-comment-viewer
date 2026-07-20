@@ -127,6 +127,7 @@
 - [x] 注釈付きタグの本文から GitHub Release を非同期・冪等に公開するフローへ移行する。
 - [x] `actions/checkout` がタグ event の注釈付きタグを軽量タグへ置き換える場合に、検証前にリモートのタグ object を復元する。
 - [x] リポジトリ公開後に `v0.2.1` の失敗 run を再実行し、注釈付きタグの復元と検証が成功することを確認する。
+- [x] Release workflow の Rust テスト前に Tauri が必要とする Linux 開発パッケージを導入し、`v0.2.2` として再リリースする。
 - [x] Logs view を実装する。
 - [x] `app://log` event をフロントエンドへ接続する。
 - [x] EventSub、認証、読み上げアダプタのログを Logs view に表示する。
