@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-07-20
+最終調査日: 2026-07-21
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
 
@@ -15,7 +15,7 @@
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Login 画面、起動時の保存済み認証の自動検証は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
-| Phase 5: 配信運用向け仕上げ | 実装中 | 既存の運用機能に加え、画面実装の feature 分割、Windows アプリ用 Launcher、dev ビルド識別表示を実装。`cargo test` 30件、`pnpm test` 25件、`pnpm build` は成功。Windows 実機確認と詳細な運用エラー整理は継続。 |
+| Phase 5: 配信運用向け仕上げ | 実装中 | 既存の運用機能に加え、画面実装の feature 分割、Windows アプリ用 Launcher、dev ビルド識別表示を実装。Release 公開スクリプトを現行 GitHub CLI の引数制約へ対応。`cargo test` 30件、`pnpm test` 25件、`pnpm build` は成功。Windows 実機確認と詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
 ## Phase 0: プロジェクト作成
@@ -128,6 +128,7 @@
 - [x] `actions/checkout` がタグ event の注釈付きタグを軽量タグへ置き換える場合に、検証前にリモートのタグ object を復元する。
 - [x] リポジトリ公開後に `v0.2.1` の失敗 run を再実行し、注釈付きタグの復元と検証が成功することを確認する。
 - [x] Release workflow の Rust テスト前に Tauri が必要とする Linux 開発パッケージを導入し、`v0.2.2` として再リリースする。
+- [ ] `gh release create` の `--notes-from-tag` / `--repo` 非互換を解消し、`v0.2.3` Release workflow を再トリガーする。
 - [x] Logs view を実装する。
 - [x] `app://log` event をフロントエンドへ接続する。
 - [x] EventSub、認証、読み上げアダプタのログを Logs view に表示する。

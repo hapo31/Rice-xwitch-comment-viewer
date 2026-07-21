@@ -1,5 +1,9 @@
 # 調査メモ
 
+## 2026-07-21
+
+- `v0.2.2` の Release workflow は Windows installer / portable zip のビルドと artifact upload まで成功し、公開ジョブだけが失敗していた。GitHub Actions 上の `gh 2.92.0` では `gh release create --notes-from-tag` と `--repo` の併用が拒否されるため、作成時だけ対象リポジトリを `GH_REPO` で指定するよう変更した。既存 Release の確認・asset upload・draft 公開は従来どおり明示的な `--repo` を使う。
+
 ## 2026-07-20
 
 - ステータスバーのバージョン直書きを廃止し、Rust の Cargo package version と `debug_assertions` から表示を組み立てるようにした。通常のリリースビルドは `Rice X.Y.Z`、それ以外は `Rice X.Y.Z (dev abcdef0)` と表示する。コミットはビルド時に `RICE_GIT_COMMIT`、`GITHUB_SHA`、ローカル Git の順で取得し、取得不能でも `(dev)` は維持する。

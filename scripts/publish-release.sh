@@ -14,8 +14,7 @@ assets=("$@")
 if gh release view "${tag_name}" --repo "${repository}" >/dev/null 2>&1; then
   is_draft="$(gh release view "${tag_name}" --repo "${repository}" --json isDraft --jq .isDraft)"
 else
-  gh release create "${tag_name}" \
-    --repo "${repository}" \
+  GH_REPO="${repository}" gh release create "${tag_name}" \
     --title "${tag_name}" \
     --notes-from-tag \
     --verify-tag \
