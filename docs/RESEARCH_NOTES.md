@@ -1,5 +1,9 @@
 # 調査メモ
 
+## 2026-08-02
+
+- UI 倍率はルートフォントサイズを変更するため、`rem` の Activity Bar 操作部品だけが拡大し、固定 `px` のシェル列・Status Bar 行からはみ出していた。Activity Bar 3rem、Side Panel 17.5rem、Status Bar 1.5rem に統一し、100/125/150% と自動倍率でも親子が同じ比率で拡大する回帰テストを追加した。
+
 ## 2026-07-21
 
 - `v0.2.3` の local / remote tag object には annotation message が正しく保存されていたが、Release 公開ジョブの `actions/checkout@v6.0.0` が peeled commit をローカルのタグ ref へ割り当て、`gh release create --notes-from-tag` がコミットメッセージへフォールバックしていた。build job と同じ tag object の再取得・検証を release job にも追加した。次回のタグリリースで実動作確認が必要。
