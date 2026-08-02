@@ -13,7 +13,7 @@
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込を確認した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 読み上げ、制御、接続診断、Settings 画面は実装済み。接続確認は設定に応じて確認読み上げまたは無音の状態取得を行う。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Login 画面、起動時の保存済み認証の自動検証は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
-| Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
+| Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
 | Phase 5: 配信運用向け仕上げ | 実装中 | 既存の運用機能に加え、画面実装の feature 分割、Windows アプリ用 Launcher、dev ビルド識別表示を実装。Release 公開スクリプトを現行 GitHub CLI の引数制約へ対応。`cargo test` 30件、`pnpm test` 25件、`pnpm build` は成功。Windows 実機確認と詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
@@ -79,6 +79,7 @@
 - [x] `session_reconnect` を処理する。
 - [x] `revocation` を処理し、UI に再ログインまたは再接続が必要な状態を出す。
 - [x] `metadata.message_id` または `event.message_id` で重複排除する。
+- [x] EventSub の重複排除キャッシュを再接続間で維持し、件数上限と有効期限を設ける。
 - [x] `channel.chat.message` JSON fixture のパーステストを追加する。
 - [x] `ChatMessage` に fragments / badges / received_at を含める。
 - [x] `tauri::Emitter` events で `twitch://status` と `twitch://chat-message` を送る。
@@ -176,6 +177,7 @@
 - [x] Rust: `channel.chat.message` JSON fixture のパーステストを追加する。
 - [x] Rust: `SpeechFormatter` の NG/URL/長文処理テストを追加する。
 - [x] Rust: WebSocket 再接続状態遷移テストを追加する。
+- [x] Rust: 通常再接続と reconnect ハンドオーバーをまたぐ重複排除テストを追加する。
 - [x] Rust: Launcher の拡張子、重複、順序、予約種別、旧設定互換テストを追加する。
 - [x] TypeScript: store reducer テストを追加する。
 - [x] TypeScript: キュー行の状態表示テストを追加する。

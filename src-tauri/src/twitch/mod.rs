@@ -11,8 +11,7 @@ use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
-#[cfg(feature = "app")]
-use std::time::Duration;
+use std::time::{Duration, Instant};
 #[cfg(all(feature = "app", target_os = "linux"))]
 use std::{
     fs::{self, OpenOptions},
@@ -37,7 +36,8 @@ const KEYRING_SERVICE: &str = "rice.twitch.oauth";
 const KEYRING_ACCOUNT: &str = "default";
 const CHANNEL_CHAT_MESSAGE_TYPE: &str = "channel.chat.message";
 const CHANNEL_CHAT_MESSAGE_VERSION: &str = "1";
-const DEDUPE_CACHE_LIMIT: usize = 500;
+const DEDUPE_CACHE_LIMIT: usize = 5_000;
+const DEDUPE_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
 #[cfg(all(feature = "app", target_os = "linux"))]
 const FALLBACK_AUTH_DIR: &str = ".rice";
 #[cfg(all(feature = "app", target_os = "linux"))]
@@ -1127,9 +1127,18 @@ async fn run_eventsub_connection(
     let mut url = TWITCH_EVENTSUB_WS_URL.to_string();
     let mut subscribe_on_welcome = true;
     let mut retry_attempt = 0u64;
+    let mut seen_message_ids = MessageDedupe::new(DEDUPE_CACHE_LIMIT, DEDUPE_CACHE_TTL);
 
     loop {
-        match run_eventsub_session(&app, &params, &url, subscribe_on_welcome).await {
+        match run_eventsub_session(
+            &app,
+            &params,
+            &url,
+            subscribe_on_welcome,
+            &mut seen_message_ids,
+        )
+        .await
+        {
             Ok(EventSubSessionExit::Reconnect(reconnect_url)) => {
                 retry_attempt = 0;
                 url = reconnect_url;
@@ -1173,6 +1182,7 @@ async fn run_eventsub_session(
     params: &EventSubConnectionParams,
     url: &str,
     subscribe_on_welcome: bool,
+    seen_message_ids: &mut MessageDedupe,
 ) -> anyhow::Result<EventSubSessionExit> {
     emit_twitch_status(
         app,
@@ -1185,7 +1195,6 @@ async fn run_eventsub_session(
 
     let (mut socket, _) = connect_async(url).await?;
     let mut keepalive_timeout = Duration::from_secs(40);
-    let mut seen_message_ids = MessageDedupe::new(DEDUPE_CACHE_LIMIT);
 
     loop {
         let next_message =
@@ -1362,31 +1371,51 @@ fn retry_backoff_seconds(attempt: u64) -> u64 {
 
 struct MessageDedupe {
     limit: usize,
+    ttl: Duration,
     seen: HashSet<String>,
-    order: VecDeque<String>,
+    order: VecDeque<(String, Instant)>,
 }
 
 impl MessageDedupe {
-    fn new(limit: usize) -> Self {
+    fn new(limit: usize, ttl: Duration) -> Self {
         Self {
             limit,
+            ttl,
             seen: HashSet::new(),
             order: VecDeque::new(),
         }
     }
 
     fn insert(&mut self, id: String) -> bool {
+        self.insert_at(id, Instant::now())
+    }
+
+    fn insert_at(&mut self, id: String, now: Instant) -> bool {
+        self.remove_expired(now);
+
         if !self.seen.insert(id.clone()) {
             return false;
         }
 
-        self.order.push_back(id);
+        self.order.push_back((id, now));
         while self.order.len() > self.limit {
-            if let Some(old_id) = self.order.pop_front() {
+            if let Some((old_id, _)) = self.order.pop_front() {
                 self.seen.remove(&old_id);
             }
         }
         true
+    }
+
+    fn remove_expired(&mut self, now: Instant) {
+        while self
+            .order
+            .front()
+            .is_some_and(|(_, seen_at)| now.saturating_duration_since(*seen_at) >= self.ttl)
+        {
+            if let Some((expired_id, _)) = self.order.pop_front() {
+                self.seen.remove(&expired_id);
+            }
+        }
     }
 }
 
@@ -1468,6 +1497,18 @@ mod tests {
         normalize_chat_message, oauth_error_code, retry_backoff_seconds, EventSubEnvelope,
         MessageDedupe, OAuthErrorResponse,
     };
+    use std::time::{Duration, Instant};
+
+    fn process_session(
+        dedupe: &mut MessageDedupe,
+        message_ids: &[&str],
+        received_at: Instant,
+    ) -> Vec<bool> {
+        message_ids
+            .iter()
+            .map(|id| dedupe.insert_at((*id).to_string(), received_at))
+            .collect()
+    }
 
     #[test]
     fn reads_device_flow_status_from_twitch_message_field() {
@@ -1511,13 +1552,57 @@ mod tests {
 
     #[test]
     fn message_dedupe_rejects_duplicate_ids() {
-        let mut dedupe = MessageDedupe::new(2);
+        let mut dedupe = MessageDedupe::new(2, Duration::from_secs(60));
 
         assert!(dedupe.insert("a".to_string()));
         assert!(!dedupe.insert("a".to_string()));
         assert!(dedupe.insert("b".to_string()));
         assert!(dedupe.insert("c".to_string()));
         assert!(dedupe.insert("a".to_string()));
+    }
+
+    #[test]
+    fn message_dedupe_expires_ids_after_ttl() {
+        let started_at = Instant::now();
+        let mut dedupe = MessageDedupe::new(10, Duration::from_secs(60));
+
+        assert!(dedupe.insert_at("a".to_string(), started_at));
+        assert!(!dedupe.insert_at("a".to_string(), started_at + Duration::from_secs(59)));
+        assert!(dedupe.insert_at("a".to_string(), started_at + Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn normal_reconnect_keeps_message_dedupe() {
+        let started_at = Instant::now();
+        let mut connection_dedupe = MessageDedupe::new(10, Duration::from_secs(60));
+
+        let first_session =
+            process_session(&mut connection_dedupe, &["before-reconnect"], started_at);
+        let reconnected_session = process_session(
+            &mut connection_dedupe,
+            &["before-reconnect", "after-reconnect"],
+            started_at + Duration::from_secs(2),
+        );
+
+        assert_eq!(first_session, vec![true]);
+        assert_eq!(reconnected_session, vec![false, true]);
+    }
+
+    #[test]
+    fn reconnect_handover_keeps_message_dedupe() {
+        let started_at = Instant::now();
+        let mut connection_dedupe = MessageDedupe::new(10, Duration::from_secs(60));
+
+        let original_session =
+            process_session(&mut connection_dedupe, &["before-handover"], started_at);
+        let handover_session = process_session(
+            &mut connection_dedupe,
+            &["before-handover", "after-handover"],
+            started_at + Duration::from_millis(100),
+        );
+
+        assert_eq!(original_session, vec![true]);
+        assert_eq!(handover_session, vec![false, true]);
     }
 
     #[test]
