@@ -1,5 +1,9 @@
 # 調査メモ
 
+## 2026-08-02
+
+- Codex state backup は認証情報・履歴・セッションを含む一方、従来の既定保存先は repository 内で `.dockerignore` の対象外だった。既定保存先を XDG state directory へ移し、Docker context を root Dockerfile の必要 source だけに限定する default-deny allowlist とした。local/CI build は送信前検査を実行し、allowlist、Dockerfile の `COPY` source、credential/state archive、秘密鍵、`.env` の混入を検出する。
+
 ## 2026-07-21
 
 - `v0.2.3` の local / remote tag object には annotation message が正しく保存されていたが、Release 公開ジョブの `actions/checkout@v6.0.0` が peeled commit をローカルのタグ ref へ割り当て、`gh release create --notes-from-tag` がコミットメッセージへフォールバックしていた。build job と同じ tag object の再取得・検証を release job にも追加した。次回のタグリリースで実動作確認が必要。
