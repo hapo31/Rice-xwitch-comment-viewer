@@ -131,6 +131,7 @@
 - [x] Release workflow の Rust テスト前に Tauri が必要とする Linux 開発パッケージを導入し、`v0.2.2` として再リリースする。
 - [x] `gh release create` の `--notes-from-tag` / `--repo` 非互換を解消し、`v0.2.3` Release workflow の build / publish 成功を確認する。
 - [x] Release 公開ジョブでも annotated tag を復元・検証し、`--notes-from-tag` がコミットメッセージへフォールバックしないようにする。
+- [x] UI 倍率変更時に Activity Bar、Side Panel、Status Bar が操作部品と同じ比率で拡大するよう、アプリシェル寸法を rem に統一する。
 - [x] Logs view を実装する。
 - [x] `app://log` event をフロントエンドへ接続する。
 - [x] EventSub、認証、読み上げアダプタのログを Logs view に表示する。
@@ -183,6 +184,7 @@
 - [x] TypeScript: キュー行の状態表示テストを追加する。
 - [x] TypeScript: 設定フォームのバリデーションテストを追加する。
 - [x] TypeScript: Launcher の表示順、背景色、DnDパス判定、起動結果表示テストを追加する。
+- [x] TypeScript: 100/125/150% と自動倍率でアプリシェル寸法が一貫して拡大するレイアウト回帰テストを追加する。
 - [ ] 手動: 棒読みちゃん未起動/起動中/ポート競合を確認する。
 - [ ] 手動: Twitch トークン期限切れ/認可取り消しを確認する。
 - [ ] 手動: 配信中チャット連投を確認する。
