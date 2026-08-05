@@ -2,6 +2,7 @@
 
 ## 2026-08-02
 
+- Codex state backup は認証情報・履歴・セッションを含む一方、従来の既定保存先は repository 内で `.dockerignore` の対象外だった。既定保存先を XDG state directory へ移し、Docker context を root Dockerfile の必要 source だけに限定する default-deny allowlist とした。local/CI build は送信前検査を実行し、allowlist、Dockerfile の `COPY` source、credential/state archive、秘密鍵、`.env` の混入を検出する。
 - UI 倍率はルートフォントサイズを変更するため、`rem` の Activity Bar 操作部品だけが拡大し、固定 `px` のシェル列・Status Bar 行からはみ出していた。Activity Bar 3rem、Side Panel 17.5rem、Status Bar 1.5rem に統一し、100/125/150% と自動倍率でも親子が同じ比率で拡大する回帰テストを追加した。
 - EventSub の重複排除キャッシュは WebSocket セッション内で生成されていたため、通常再接続と `session_reconnect` ハンドオーバーで既知 ID が失われていた。接続ループのライフタイムへ移し、最大 5,000 件・10 分の期限付きキャッシュとして、再接続直後の再配送によるチャット二重表示と二重読み上げを防ぐようにした。
 
