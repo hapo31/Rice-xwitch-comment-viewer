@@ -1,0 +1,60 @@
+name: Devcontainer bootstrap
+
+on:
+  pull_request:
+    paths:
+      - ".devcontainer/**"
+      - "scripts/verify-devcontainer-bootstrap.sh"
+      - ".github/workflows/devcontainer-bootstrap.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/Cargo.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".devcontainer/**"
+      - "scripts/verify-devcontainer-bootstrap.sh"
+      - ".github/workflows/devcontainer-bootstrap.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/Cargo.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+
+      - name: Verify bootstrap manifest
+        run: scripts/verify-devcontainer-bootstrap.sh
+
+      - name: Rebuild immutable devcontainer image
+        run: docker build --pull --file .devcontainer/Dockerfile --tag rice-devcontainer-bootstrap:${{ github.sha }} .
+
+      - name: Verify baked tool versions and primary development commands
+        run: |
+          set -euo pipefail
+          image="rice-devcontainer-bootstrap:${{ github.sha }}"
+          docker run --rm --entrypoint bash "${image}" -lc '
+            set -euo pipefail
+            expected_codex="$(jq -r .packages.codex.version /usr/local/share/rice-devcontainer/bootstrap-lock.json)"
+            test "$(codex --version)" = "codex-cli ${expected_codex}"
+            test "$(pnpm --version)" = "8.11.0"
+            test "$(rustc --version | awk '\''{ print $2 }'\'')" = "1.89.0"
+          '
+          docker run --rm --entrypoint bash -v "${GITHUB_WORKSPACE}:/workspaces/rice" -w /workspaces/rice "${image}" -lc '
+            set -euo pipefail
+            pnpm install --frozen-lockfile
+            pnpm test
+            pnpm build
+            cargo test --locked --manifest-path src-tauri/Cargo.toml
+          '

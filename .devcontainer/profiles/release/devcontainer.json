@@ -1,0 +1,12 @@
+{
+  "name": "rice (local Windows release build)",
+  "build": {
+    "dockerfile": "../../Dockerfile",
+    "context": "../../.."
+  },
+  "init": true,
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+  "remoteUser": "vscode"
+}

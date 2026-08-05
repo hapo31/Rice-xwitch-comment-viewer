@@ -1,5 +1,11 @@
 # 調査メモ
 
+## 2026-08-05: Issue #97 devcontainer bootstrap と capability 分離
+
+- 通常 devcontainer では host `.ssh`、`.gitconfig`、Codex state volume、Docker socket、`--network=host` が `postCreateCommand` と同居しており、`@openai/codex@latest` を未固定で global install していた。これを、base/Node/Rust image digest、Codex 0.98.0 と pnpm 8.11.0 の tarball SHA-512、Rust 1.89.0 を `.devcontainer/bootstrap-lock.json` に記録する構成へ変更した。
+- Codex/pnpm は build stage で integrity を検証し lifecycle script を無効化して導入し、Rust/rustfmt/clippy も固定 Rust image から build 時に導入する。通常 profile の post-create は baked Codex の version 確認と project の `pnpm install --frozen-lockfile` だけにした。
+- SSH agent + Codex state、Windows Bouyomi 用 host network、ローカル release 用 Docker socket を別 config に分離した。SSH profile は `${SSH_AUTH_SOCK}` の scoped agent を使い、秘密鍵ディレクトリを bind mount しない。新しい CI は bootstrap 更新時に lock 検証、image rebuild、tool version と `pnpm test` / `pnpm build` / `cargo test` を実行する。
+
 ## 2026-07-21
 
 - `v0.2.3` の local / remote tag object には annotation message が正しく保存されていたが、Release 公開ジョブの `actions/checkout@v6.0.0` が peeled commit をローカルのタグ ref へ割り当て、`gh release create --notes-from-tag` がコミットメッセージへフォールバックしていた。build job と同じ tag object の再取得・検証を release job にも追加した。次回のタグリリースで実動作確認が必要。
