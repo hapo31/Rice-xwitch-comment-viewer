@@ -3,6 +3,14 @@
 ## 2026-08-05
 
 - Issue #103 として、OS keyring 保存失敗時の Linux 固有の平文 fallback を廃止した。認証は session-only として続行し、再起動後の再ログインを UI 警告で案内する。旧版の `~/.rice/twitch-auth.json` は keyring が利用できる場合だけ移行・削除し、失敗時は読み込まず、削除・Twitch のアクセス取り消し・再ログインを案内する。fake credential store による保存成功/失敗、復旧移行、移行不能、解除、keyring 読込失敗時の復旧案内の自動テストを追加し、`cargo test`（36件）、`pnpm test`（25件）、`pnpm build` が成功した。実 Linux Secret Service と旧ファイルを使う手動確認は残る。
+- 一般設定の直接上書きは保存途中の終了で `settings.json` を破損し、Tauri setup の失敗でアプリ全体を起動不能にしていた。保存は同一ディレクトリの一時ファイルを `sync_all` 後に atomic replace する方式へ変更し、Windows は `MoveFileExW` の replace/write-through を使う。保存前の正常版は `settings.json.bak` 1世代だけ保持する。
+- 起動時に本体が不正なら破損データを日時付きで退避し、正常な backup から復旧する。backup も不正なら両方を退避して既定値で起動する。復旧通知は backend log に加え、起動後に一度だけ取得する command を通じて system Chat、Logs、警告へ表示する。
+
+## 2026-08-02
+
+- Codex state backup は認証情報・履歴・セッションを含む一方、従来の既定保存先は repository 内で `.dockerignore` の対象外だった。既定保存先を XDG state directory へ移し、Docker context を root Dockerfile の必要 source だけに限定する default-deny allowlist とした。local/CI build は送信前検査を実行し、allowlist、Dockerfile の `COPY` source、credential/state archive、秘密鍵、`.env` の混入を検出する。
+- UI 倍率はルートフォントサイズを変更するため、`rem` の Activity Bar 操作部品だけが拡大し、固定 `px` のシェル列・Status Bar 行からはみ出していた。Activity Bar 3rem、Side Panel 17.5rem、Status Bar 1.5rem に統一し、100/125/150% と自動倍率でも親子が同じ比率で拡大する回帰テストを追加した。
+- EventSub の重複排除キャッシュは WebSocket セッション内で生成されていたため、通常再接続と `session_reconnect` ハンドオーバーで既知 ID が失われていた。接続ループのライフタイムへ移し、最大 5,000 件・10 分の期限付きキャッシュとして、再接続直後の再配送によるチャット二重表示と二重読み上げを防ぐようにした。
 
 ## 2026-07-21
 

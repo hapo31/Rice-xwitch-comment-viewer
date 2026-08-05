@@ -10,6 +10,7 @@
 
 - アプリが起動し、空のChat viewを表示できる。
 - 設定JSONを読み書きできる。
+- 設定保存中の中断でも完全な旧版または新版を保ち、破損時はbackupまたは既定値で起動できる。
 
 ## Phase 1: 棒読みちゃん連携
 
@@ -95,6 +96,7 @@ Rust:
 - `SpeechFormatter` のNG/URL/長文処理テスト
 - WebSocket再接続状態遷移のユニットテスト
 - ランチャー項目の拡張子、重複、順序、旧設定互換のユニットテスト
+- 設定JSONの原子的保存、disk full/replace failure、破損本体/backup復旧のユニットテスト
 
 TypeScript:
 

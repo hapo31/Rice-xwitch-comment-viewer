@@ -33,6 +33,10 @@ export interface AppSettings {
   launcher: LauncherSettings;
 }
 
+export interface SettingsRecoveryNotice {
+  message: string;
+}
+
 export interface LauncherSettings {
   items: LauncherItem[];
 }

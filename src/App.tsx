@@ -5,6 +5,7 @@ import { SidePanel } from "./components/SidePanel";
 import { StatusBar } from "./components/StatusBar";
 import { ResizeHandles, TitleBar } from "./components/TitleBar";
 import { useDisplayScale } from "./hooks/useDisplayScale";
+import { APP_SHELL_CLASS_NAME } from "./layout/appShell";
 import { claimStartupGuideForSession } from "./presentation/startupGuide";
 import { restoreAndValidateStartupAuth } from "./startupAuth";
 import { appReducer, initialAppState } from "./stores/appStore";
@@ -27,6 +28,7 @@ import {
   speechQueueReload,
   speechQueueRemove,
   speechTest,
+  takeSettingsRecoveryNotice,
   twitchConnect,
   twitchDisconnect,
   twitchGetStoredAuth,
@@ -47,8 +49,22 @@ export function App() {
   const startupAuthAttempted = useRef(false);
 
   useEffect(() => {
-    getSettings()
-      .then((settings) => dispatch({ type: "settings.loaded", settings }))
+    Promise.all([getSettings(), takeSettingsRecoveryNotice()])
+      .then(([settings, recoveryNotice]) => {
+        dispatch({ type: "settings.loaded", settings });
+        if (recoveryNotice) {
+          addSystemChatMessage(recoveryNotice.message);
+          dispatch({
+            type: "log.added",
+            log: {
+              level: "warning",
+              message: recoveryNotice.message,
+              occurredAtMs: Date.now(),
+            },
+          });
+          dispatch({ type: "warning.added", warning: recoveryNotice.message });
+        }
+      })
       .catch(() => dispatch({ type: "warning.added", warning: "設定の読み込みに失敗しました。" }));
 
     if (startupAuthAttempted.current) {
@@ -461,7 +477,7 @@ export function App() {
   }
 
   return (
-    <div className="relative grid h-full grid-cols-[48px_280px_minmax(0,1fr)] grid-rows-[2rem_minmax(0,1fr)_24px] bg-zinc-950 text-zinc-100">
+    <div className={APP_SHELL_CLASS_NAME}>
       <TitleBar scale={displayScale.scale} scaleMode={displayScale.mode} onScaleModeChange={displayScale.setMode} />
       <ActivityBar />
       <SidePanel
