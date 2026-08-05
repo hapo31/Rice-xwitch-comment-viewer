@@ -27,6 +27,8 @@ docker volume create rice-codex-home
 
 これにより devcontainer を Rebuild しても `~/.codex/auth.json` や `~/.codex/history.jsonl` が残ります。初回だけ、既に別コンテナ内にあった未永続化の Codex 状態は自動移行されないため、必要なら再認証してください。
 
+手動退避には `.devcontainer/codex-state-transfer.sh backup` を使います。バックアップは認証情報、履歴、セッションを含むため、既定では workspace 外の `${XDG_STATE_HOME:-$HOME/.local/state}/rice-xwitch-comment-viewer/codex-state-backup.zip` に `0600` で保存します。保存先を変更する場合は `CODEX_BACKUP_DIR` または `CODEX_BACKUP_ZIP` を指定してください。workspace 内へ置く場合も `.codex-state-backup/` を使用し、Git や Docker など外部へ送信しないでください。
+
 ## Cargo target
 
 Cargo のビルド成果物はワークスペース内の `src-tauri/target` ではなく、named volume の `/home/vscode/.cargo-target/rice` に出力します。
@@ -82,3 +84,7 @@ $EDITOR .env
 ```bash
 scripts/build-windows-docker.sh
 ```
+
+このスクリプトは送信前に `scripts/check-docker-context.sh` を実行します。root Dockerfile が必要とする source だけを `.dockerignore` の allowlist として許可し、Codex state、`.env`、秘密鍵、credential archive が context に入る構成なら停止します。remote/shared Docker daemon を使う場合、allowlist 内の source code は daemon、BuildKit frontend、cache 管理者から参照できるデータ境界に入るものとして扱ってください。
+
+過去に secret-bearing context を remote/shared builder へ送った可能性がある場合は、対象 builder の利用を停止し、管理者へ context/cache/log の削除を依頼してください。そのうえで `codex logout` を実行し、OpenAI アカウントのセキュリティ設定で該当セッションや API key を失効させ、`codex login` で再認証します。影響範囲を確認できるまで、漏えいした可能性がある archive は再利用しないでください。
