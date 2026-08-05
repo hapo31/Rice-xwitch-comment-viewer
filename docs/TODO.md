@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-07-21
+最終調査日: 2026-08-05
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
 
@@ -10,12 +10,12 @@
 
 | Phase | 状態 | メモ |
 | --- | --- | --- |
-| Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込を確認した。 |
+| Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込、原子的保存、破損時のbackup/既定値復旧を確認した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 読み上げ、制御、接続診断、Settings 画面は実装済み。接続確認は設定に応じて確認読み上げまたは無音の状態取得を行う。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Login 画面、起動時の保存済み認証の自動検証は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
-| Phase 5: 配信運用向け仕上げ | 実装中 | 既存の運用機能に加え、画面実装の feature 分割、Windows アプリ用 Launcher、dev ビルド識別表示を実装。Release 公開スクリプトを現行 GitHub CLI の引数制約へ対応。`cargo test` 30件、`pnpm test` 25件、`pnpm build` は成功。Windows 実機確認と詳細な運用エラー整理は継続。 |
+| Phase 5: 配信運用向け仕上げ | 実装中 | 既存の運用機能に加え、画面実装の feature 分割、Windows アプリ用 Launcher、dev ビルド識別表示、設定破損時の復旧通知を実装。Release 公開スクリプトを現行 GitHub CLI の引数制約へ対応。`cargo test` 35件、`pnpm test` 25件、`pnpm build` は成功。Windows 実機確認と詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
 ## Phase 0: プロジェクト作成
@@ -28,6 +28,7 @@
 - [x] 独自 Title Bar、ウィンドウ操作、リサイズハンドルを作る。
 - [x] UI 倍率の自動/手動切替を作る。
 - [x] 一般設定を Tauri app data 配下の `settings.json` に保存する。
+- [x] `settings.json` を原子的に保存し、破損時に backup または既定値で復旧して退避先を system Chat/Logs/警告へ表示する。
 - [x] `app_events` からフロントエンドへ流すイベント設計を実装に接続する。
 - [x] Phase 0 完了条件として、Tauri アプリ起動と設定 JSON 読み書きを手動確認する。
 
@@ -181,6 +182,7 @@
 - [x] Rust: WebSocket 再接続状態遷移テストを追加する。
 - [x] Rust: 通常再接続と reconnect ハンドオーバーをまたぐ重複排除テストを追加する。
 - [x] Rust: Launcher の拡張子、重複、順序、予約種別、旧設定互換テストを追加する。
+- [x] Rust: 設定JSONの原子的保存、disk full/replace failure、破損本体/backup復旧テストを追加する。
 - [x] TypeScript: store reducer テストを追加する。
 - [x] TypeScript: キュー行の状態表示テストを追加する。
 - [x] TypeScript: 設定フォームのバリデーションテストを追加する。

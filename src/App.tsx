@@ -28,6 +28,7 @@ import {
   speechQueueReload,
   speechQueueRemove,
   speechTest,
+  takeSettingsRecoveryNotice,
   twitchConnect,
   twitchDisconnect,
   twitchGetStoredAuth,
@@ -48,8 +49,22 @@ export function App() {
   const startupAuthAttempted = useRef(false);
 
   useEffect(() => {
-    getSettings()
-      .then((settings) => dispatch({ type: "settings.loaded", settings }))
+    Promise.all([getSettings(), takeSettingsRecoveryNotice()])
+      .then(([settings, recoveryNotice]) => {
+        dispatch({ type: "settings.loaded", settings });
+        if (recoveryNotice) {
+          addSystemChatMessage(recoveryNotice.message);
+          dispatch({
+            type: "log.added",
+            log: {
+              level: "warning",
+              message: recoveryNotice.message,
+              occurredAtMs: Date.now(),
+            },
+          });
+          dispatch({ type: "warning.added", warning: recoveryNotice.message });
+        }
+      })
       .catch(() => dispatch({ type: "warning.added", warning: "設定の読み込みに失敗しました。" }));
 
     if (startupAuthAttempted.current) {

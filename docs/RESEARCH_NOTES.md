@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-08-05
+
+- 一般設定の直接上書きは保存途中の終了で `settings.json` を破損し、Tauri setup の失敗でアプリ全体を起動不能にしていた。保存は同一ディレクトリの一時ファイルを `sync_all` 後に atomic replace する方式へ変更し、Windows は `MoveFileExW` の replace/write-through を使う。保存前の正常版は `settings.json.bak` 1世代だけ保持する。
+- 起動時に本体が不正なら破損データを日時付きで退避し、正常な backup から復旧する。backup も不正なら両方を退避して既定値で起動する。復旧通知は backend log に加え、起動後に一度だけ取得する command を通じて system Chat、Logs、警告へ表示する。
+
 ## 2026-08-02
 
 - Codex state backup は認証情報・履歴・セッションを含む一方、従来の既定保存先は repository 内で `.dockerignore` の対象外だった。既定保存先を XDG state directory へ移し、Docker context を root Dockerfile の必要 source だけに限定する default-deny allowlist とした。local/CI build は送信前検査を実行し、allowlist、Dockerfile の `COPY` source、credential/state archive、秘密鍵、`.env` の混入を検出する。

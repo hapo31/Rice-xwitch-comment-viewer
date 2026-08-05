@@ -8,6 +8,7 @@ import type {
   LauncherLaunchResult,
   SpeechQueueUpdatedEvent,
   SpeechStatusEvent,
+  SettingsRecoveryNotice,
   TwitchAuthPollResult,
   TwitchStatusEvent,
   TwitchChatMessageEvent,
@@ -88,6 +89,14 @@ export async function getSettings(): Promise<AppSettings> {
   }
 
   return normalizeSettings(await invoke<Partial<AppSettings>>("settings_get"));
+}
+
+export async function takeSettingsRecoveryNotice(): Promise<SettingsRecoveryNotice | undefined> {
+  if (!isTauriRuntime) {
+    return undefined;
+  }
+
+  return (await invoke<SettingsRecoveryNotice | null>("settings_take_recovery_notice")) ?? undefined;
 }
 
 export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
