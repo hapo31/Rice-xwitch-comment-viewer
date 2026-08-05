@@ -1,24 +1,53 @@
-.git
-.github
+# Keep the release build context default-deny. Every exception must correspond
+# to a source path copied by the root Dockerfile and is checked by
+# scripts/check-docker-context.sh before a local or CI build.
+**
+
+# Dockerfile release inputs.
+!Dockerfile
+!package.json
+!pnpm-lock.yaml
+!index.html
+!postcss.config.js
+!tailwind.config.js
+!tsconfig.json
+!vite.config.ts
+!src/
+!src/**
+!src-tauri/
+!src-tauri/Cargo.toml
+!src-tauri/Cargo.lock
+!src-tauri/build.rs
+!src-tauri/tauri.conf.json
+!src-tauri/capabilities/
+!src-tauri/capabilities/**
+!src-tauri/icons/
+!src-tauri/icons/**
+!src-tauri/src/
+!src-tauri/src/**
+
+# Secret and developer state denies come last so they override the source
+# exceptions above, including if a credential is accidentally placed in src/.
 .codex
-.env
-.env.*
-!.env.example
-node_modules
-.pnpm-store
-dist
-dist-ssr
-.vite
-src-tauri/target
-src-tauri/gen
-*.log
-npm-debug.log*
-pnpm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.idea
-.vscode
-*.swp
-*.swo
-.DS_Store
-Thumbs.db
+.codex/**
+.codex-state-backup
+.codex-state-backup/**
+**/codex-state-backup*.zip
+**/auth.json
+**/credentials.json
+**/history.jsonl
+**/sessions/**
+**/.env
+**/.env.*
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx
+**/id_rsa
+**/id_ed25519
+**/*.zip
+**/*.tar
+**/*.tar.gz
+**/*.tgz
+**/*.7z
+**/*.rar

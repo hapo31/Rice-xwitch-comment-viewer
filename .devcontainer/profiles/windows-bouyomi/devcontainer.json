@@ -1,0 +1,13 @@
+{
+  "name": "rice (Windows Bouyomi host network)",
+  "build": {
+    "dockerfile": "../../Dockerfile",
+    "context": "../../.."
+  },
+  "init": true,
+  "runArgs": ["--network=host"],
+  "containerEnv": {
+    "RICE_BOUYOMI_HOST": "127.0.0.1"
+  },
+  "remoteUser": "vscode"
+}

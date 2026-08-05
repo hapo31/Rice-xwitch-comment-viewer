@@ -10,12 +10,12 @@
 
 | Phase | 状態 | メモ |
 | --- | --- | --- |
-| Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込を確認した。 |
+| Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込、原子的保存、破損時のbackup/既定値復旧を確認した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 読み上げ、制御、接続診断、Settings 画面は実装済み。接続確認は設定に応じて確認読み上げまたは無音の状態取得を行う。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
-| Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Login 画面、起動時の保存済み認証の自動検証は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
-| Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
+| Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring、session-only 保存失敗処理、旧 Linux 平文ファイルの移行/削除、Login 画面、起動時の保存済み認証の自動検証は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
+| Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
-| Phase 5: 配信運用向け仕上げ | 実装中 | 既存の運用機能に加え、画面実装の feature 分割、Windows アプリ用 Launcher、dev ビルド識別表示、重要 Issue の並列修正スキルを実装。ルート README と MIT License を追加。Release 公開スクリプトを現行 GitHub CLI の引数制約へ対応。`cargo test` 30件、`pnpm test` 25件、`pnpm build` は成功。Windows 実機確認と詳細な運用エラー整理は継続。 |
+| Phase 5: 配信運用向け仕上げ | 実装中 | Launcher、dev ビルド識別、設定破損時の復旧通知、重要 Issue の並列修正スキル、ルート README と MIT License を実装。devcontainer bootstrap を固定・build 時検証へ移し、SSH agent/Docker/host network を明示 profile に分離した。Windows 実機確認と詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
 ## Phase 0: プロジェクト作成
@@ -28,6 +28,7 @@
 - [x] 独自 Title Bar、ウィンドウ操作、リサイズハンドルを作る。
 - [x] UI 倍率の自動/手動切替を作る。
 - [x] 一般設定を Tauri app data 配下の `settings.json` に保存する。
+- [x] `settings.json` を原子的に保存し、破損時に backup または既定値で復旧して退避先を system Chat/Logs/警告へ表示する。
 - [x] `app_events` からフロントエンドへ流すイベント設計を実装に接続する。
 - [x] Phase 0 完了条件として、Tauri アプリ起動と設定 JSON 読み書きを手動確認する。
 
@@ -56,7 +57,8 @@
 - [x] access token 検証失敗時に refresh token で更新する。
 - [x] refresh 成功時に保存済み refresh token を差し替える。
 - [x] OS keyring 優先の OAuth 保存/復元/削除を実装する。
-- [x] Linux の Secret Service 不可時に `~/.rice/twitch-auth.json` へ `0600` で保存する fallback を実装する。
+- [x] Issue #103: keyring 保存に失敗しても OAuth token を平文ファイルへ自動保存せず、session-only として継続する。既存の Linux fallback file は keyring 復旧時に移行・削除し、移行できない場合は削除・token revoke・再ログインを案内する。
+- [x] 旧版の Linux Secret Service fallback `~/.rice/twitch-auth.json` を検出し、keyring への移行成功時に削除する。新規の fallback file は作成しない。
 - [x] Login 画面に認証開始、確認、有効性確認、解除を実装する。
 - [x] Login 画面の認証開始/解除を認証状態に応じた単一アクションへ整理する。
 - [x] Device Code Flow の待機応答を正しく判定し、自動ポーリングが継続するよう修正する。
@@ -79,6 +81,7 @@
 - [x] `session_reconnect` を処理する。
 - [x] `revocation` を処理し、UI に再ログインまたは再接続が必要な状態を出す。
 - [x] `metadata.message_id` または `event.message_id` で重複排除する。
+- [x] EventSub の重複排除キャッシュを再接続間で維持し、件数上限と有効期限を設ける。
 - [x] `channel.chat.message` JSON fixture のパーステストを追加する。
 - [x] `ChatMessage` に fragments / badges / received_at を含める。
 - [x] `tauri::Emitter` events で `twitch://status` と `twitch://chat-message` を送る。
@@ -106,6 +109,7 @@
 ## Phase 5: 配信運用向け仕上げ
 
 - [x] プロジェクト概要、主な機能、導入方法、ライセンスを案内するルート README と MIT License を追加する。
+- [x] Issue #97: devcontainer の bootstrap を固定し、通常開発と SSH/Docker/host network 利用を明示的な profile に分離する。
 - [x] 画面実装を `features` 単位へ分割し、ルーティング層を画面配線のみに整理する。
 - [x] Windows 10 スタートメニュー風の Launcher 画面を追加する。
 - [x] Launcher でアプリの選択/DnD登録、削除、単体起動、一斉起動を実装する。
@@ -132,6 +136,8 @@
 - [x] `gh release create` の `--notes-from-tag` / `--repo` 非互換を解消し、`v0.2.3` Release workflow の build / publish 成功を確認する。
 - [x] Release 公開ジョブでも annotated tag を復元・検証し、`--notes-from-tag` がコミットメッセージへフォールバックしないようにする。
 - [x] 重要 Issue を独立 worktree と個別 PR で並列修正する `issue-fix-batch` スキルを追加する。
+- [x] Docker build context を default-deny allowlist 化し、Codex state/credential の送信前検査と退避先の workspace 外移動を行う（#98）。
+- [x] UI 倍率変更時に Activity Bar、Side Panel、Status Bar が操作部品と同じ比率で拡大するよう、アプリシェル寸法を rem に統一する。
 - [x] Logs view を実装する。
 - [x] `app://log` event をフロントエンドへ接続する。
 - [x] EventSub、認証、読み上げアダプタのログを Logs view に表示する。
@@ -178,11 +184,14 @@
 - [x] Rust: `channel.chat.message` JSON fixture のパーステストを追加する。
 - [x] Rust: `SpeechFormatter` の NG/URL/長文処理テストを追加する。
 - [x] Rust: WebSocket 再接続状態遷移テストを追加する。
+- [x] Rust: 通常再接続と reconnect ハンドオーバーをまたぐ重複排除テストを追加する。
 - [x] Rust: Launcher の拡張子、重複、順序、予約種別、旧設定互換テストを追加する。
+- [x] Rust: 設定JSONの原子的保存、disk full/replace failure、破損本体/backup復旧テストを追加する。
 - [x] TypeScript: store reducer テストを追加する。
 - [x] TypeScript: キュー行の状態表示テストを追加する。
 - [x] TypeScript: 設定フォームのバリデーションテストを追加する。
 - [x] TypeScript: Launcher の表示順、背景色、DnDパス判定、起動結果表示テストを追加する。
+- [x] TypeScript: 100/125/150% と自動倍率でアプリシェル寸法が一貫して拡大するレイアウト回帰テストを追加する。
 - [ ] 手動: 棒読みちゃん未起動/起動中/ポート競合を確認する。
 - [ ] 手動: Twitch トークン期限切れ/認可取り消しを確認する。
 - [ ] 手動: 配信中チャット連投を確認する。

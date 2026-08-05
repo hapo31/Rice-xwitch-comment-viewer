@@ -65,6 +65,9 @@ jobs:
       - name: Test Rust backend
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
+      - name: Verify Docker build context policy
+        run: scripts/check-docker-context.sh
+
       - name: Build in Docker without shared caches
         run: |
           set -euo pipefail

@@ -4,6 +4,8 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
+scripts/check-docker-context.sh
+
 if [ -f .env ]; then
   set -a
   # shellcheck disable=SC1091
