@@ -1,0 +1,4 @@
+interface:
+  display_name: "Issue Fix Batch"
+  short_description: "GitHub Issueをworktreeと個別PRで並列修正"
+  default_prompt: "Use $issue-fix-batch to fix selected GitHub Issues in parallel with separate worktrees and draft PRs."

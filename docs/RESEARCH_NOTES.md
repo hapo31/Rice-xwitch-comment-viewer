@@ -1,5 +1,9 @@
 # 調査メモ
 
+## 2026-08-05
+
+- 複数の GitHub Issue を並列修正する際は、親が重要度・変更範囲・既存 PR を基に選定し、各 Luna へ Issue の解釈を委ねつつ、独立 worktree／branch／commit に隔離する。`issue-fix-batch` スキルでは並列数を wave 単位で制御し、実装担当を `gpt-5.6-terra` に限定して、親のレビュー後に Issue ごとの Draft PR を作る手順と固定プロンプトを定義した。
+
 ## 2026-07-21
 
 - `v0.2.3` の local / remote tag object には annotation message が正しく保存されていたが、Release 公開ジョブの `actions/checkout@v6.0.0` が peeled commit をローカルのタグ ref へ割り当て、`gh release create --notes-from-tag` がコミットメッセージへフォールバックしていた。build job と同じ tag object の再取得・検証を release job にも追加した。次回のタグリリースで実動作確認が必要。
