@@ -15,9 +15,8 @@ use std::collections::{HashSet, VecDeque};
 use std::time::Duration;
 #[cfg(all(feature = "app", target_os = "linux"))]
 use std::{
-    fs::{self, OpenOptions},
-    io::Write,
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+    fs,
+    os::unix::fs::{DirBuilderExt, PermissionsExt},
     path::{Path, PathBuf},
 };
 #[cfg(feature = "app")]
@@ -39,9 +38,9 @@ const CHANNEL_CHAT_MESSAGE_TYPE: &str = "channel.chat.message";
 const CHANNEL_CHAT_MESSAGE_VERSION: &str = "1";
 const DEDUPE_CACHE_LIMIT: usize = 500;
 #[cfg(all(feature = "app", target_os = "linux"))]
-const FALLBACK_AUTH_DIR: &str = ".rice";
+const LEGACY_AUTH_DIR: &str = ".rice";
 #[cfg(all(feature = "app", target_os = "linux"))]
-const FALLBACK_AUTH_FILE: &str = "twitch-auth.json";
+const LEGACY_AUTH_FILE: &str = "twitch-auth.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -372,62 +371,192 @@ impl TwitchAuthState {
 pub struct TwitchAuthStore;
 
 #[cfg(feature = "app")]
-impl TwitchAuthStore {
-    pub fn load() -> anyhow::Result<Option<TwitchAuthState>> {
-        let keyring_result = match keyring_entry() {
-            Ok(entry) => match entry.get_password() {
-                Ok(secret) => serde_json::from_str::<StoredTwitchAuth>(&secret)
-                    .map(TwitchAuthState::restore)
-                    .map(Some)
-                    .map_err(anyhow::Error::from),
-                Err(keyring::Error::NoEntry) => Ok(None),
-                Err(error) => Err(error.into()),
+trait AuthSecretStore {
+    fn load_secret(&self) -> anyhow::Result<Option<String>>;
+    fn save_secret(&self, secret: &str) -> anyhow::Result<()>;
+    fn clear_secret(&self) -> anyhow::Result<()>;
+}
+
+#[cfg(feature = "app")]
+struct AuthStorage<'a, SecureStore, LegacyStore> {
+    secure: &'a SecureStore,
+    legacy: &'a LegacyStore,
+}
+
+#[cfg(feature = "app")]
+pub(crate) struct AuthLoadResult {
+    pub(crate) auth: Option<TwitchAuthState>,
+    pub(crate) storage_warning: Option<String>,
+}
+
+#[cfg(feature = "app")]
+impl<SecureStore: AuthSecretStore, LegacyStore: AuthSecretStore>
+    AuthStorage<'_, SecureStore, LegacyStore>
+{
+    fn load(&self) -> AuthLoadResult {
+        match self.secure.load_secret() {
+            Ok(Some(secret)) => match restore_stored_auth(&secret) {
+                Ok(auth) => AuthLoadResult {
+                    auth: Some(auth),
+                    storage_warning: self
+                        .legacy
+                        .clear_secret()
+                        .err()
+                        .map(to_legacy_cleanup_user_message),
+                },
+                Err(error) => AuthLoadResult {
+                    auth: None,
+                    storage_warning: Some(format!(
+                        "OS の資格情報ストアにある Twitch 認証情報を読み込めませんでした。Login から再認証してください: {error}"
+                    )),
+                },
             },
-            Err(error) => Err(error),
+            Ok(None) => self.migrate_legacy_auth(None),
+            Err(error) => self.migrate_legacy_auth(Some(error)),
+        }
+    }
+
+    fn migrate_legacy_auth(&self, secure_load_error: Option<anyhow::Error>) -> AuthLoadResult {
+        let secret = match self.legacy.load_secret() {
+            Ok(Some(secret)) => secret,
+            Ok(None) => {
+                return AuthLoadResult {
+                    auth: None,
+                    storage_warning: secure_load_error.map(to_secure_store_load_user_message),
+                }
+            }
+            Err(error) => {
+                return AuthLoadResult {
+                    auth: None,
+                    storage_warning: Some(to_auth_recovery_failure_user_message(
+                        secure_load_error,
+                        error,
+                    )),
+                }
+            }
         };
 
-        match keyring_result {
-            Ok(Some(auth)) => Ok(Some(auth)),
-            Ok(None) => load_fallback_auth(),
-            Err(error) => match load_fallback_auth() {
-                Ok(Some(auth)) => Ok(Some(auth)),
-                Ok(None) => Err(error),
-                Err(fallback_error) => Err(anyhow::anyhow!("{error}; {fallback_error}")),
+        let auth = match restore_stored_auth(&secret) {
+            Ok(auth) => auth,
+            Err(error) => {
+                return AuthLoadResult {
+                    auth: None,
+                    storage_warning: Some(to_auth_recovery_failure_user_message(
+                        secure_load_error,
+                        error,
+                    )),
+                }
+            }
+        };
+
+        match self.secure.save_secret(&secret) {
+            Ok(()) => AuthLoadResult {
+                auth: Some(auth),
+                storage_warning: self.legacy.clear_secret().err().map_or_else(
+                    || {
+                        Some(
+                            "以前のローカル認証情報を OS の資格情報ストアへ移行し、平文ファイルを削除しました。"
+                                .to_string(),
+                        )
+                    },
+                    |error| {
+                        Some(format!(
+                            "以前のローカル認証情報を OS の資格情報ストアへ移行しましたが、平文ファイルを削除できませんでした。{}",
+                            to_legacy_cleanup_user_message(error)
+                        ))
+                    },
+                ),
+            },
+            Err(error) => AuthLoadResult {
+                auth: None,
+                storage_warning: Some(to_auth_recovery_failure_user_message(
+                    secure_load_error,
+                    error,
+                )),
             },
         }
     }
 
-    fn save(auth: &TwitchAuthState) -> anyhow::Result<Option<String>> {
+    fn save(&self, auth: &TwitchAuthState) -> anyhow::Result<Option<String>> {
         let stored = auth
             .stored_auth()
             .ok_or_else(|| anyhow::anyhow!("保存できる Twitch 認証状態がありません。"))?;
         let secret = serde_json::to_string(&stored)?;
 
-        match keyring_entry()
-            .and_then(|entry| entry.set_password(&secret).map_err(anyhow::Error::from))
-        {
-            Ok(()) => {
-                clear_fallback_auth()?;
-                Ok(None)
-            }
-            Err(error) => save_fallback_auth(&stored, error),
+        match self.secure.save_secret(&secret) {
+            Ok(()) => Ok(self
+                .legacy
+                .clear_secret()
+                .err()
+                .map(to_legacy_cleanup_user_message)),
+            Err(error) => Ok(Some(to_session_only_user_message(error))),
         }
     }
 
+    fn clear(&self) -> anyhow::Result<()> {
+        let secure_result = self.secure.clear_secret();
+        let legacy_result = self.legacy.clear_secret();
+        match (secure_result, legacy_result) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) => Err(error),
+            (Ok(()), Err(error)) => Err(error),
+            (Err(secure_error), Err(legacy_error)) => {
+                Err(anyhow::anyhow!("{secure_error}; {legacy_error}"))
+            }
+        }
+    }
+}
+
+#[cfg(feature = "app")]
+impl TwitchAuthStore {
+    pub(crate) fn load() -> AuthLoadResult {
+        AuthStorage {
+            secure: &KeyringAuthStore,
+            legacy: &LegacyAuthStore,
+        }
+        .load()
+    }
+
+    fn save(auth: &TwitchAuthState) -> anyhow::Result<Option<String>> {
+        AuthStorage {
+            secure: &KeyringAuthStore,
+            legacy: &LegacyAuthStore,
+        }
+        .save(auth)
+    }
+
     fn clear() -> anyhow::Result<()> {
-        let keyring_result = keyring_entry().and_then(|entry| match entry.delete_credential() {
+        AuthStorage {
+            secure: &KeyringAuthStore,
+            legacy: &LegacyAuthStore,
+        }
+        .clear()
+    }
+}
+
+#[cfg(feature = "app")]
+struct KeyringAuthStore;
+
+#[cfg(feature = "app")]
+impl AuthSecretStore for KeyringAuthStore {
+    fn load_secret(&self) -> anyhow::Result<Option<String>> {
+        let entry = keyring_entry()?;
+        match entry.get_password() {
+            Ok(secret) => Ok(Some(secret)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn save_secret(&self, secret: &str) -> anyhow::Result<()> {
+        keyring_entry()?.set_password(secret)?;
+        Ok(())
+    }
+
+    fn clear_secret(&self) -> anyhow::Result<()> {
+        match keyring_entry()?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(error) => Err(error.into()),
-        });
-
-        let fallback_result = clear_fallback_auth();
-        match (keyring_result, fallback_result) {
-            (Ok(()), Ok(())) => Ok(()),
-            (Err(error), Ok(())) => handle_keyring_clear_error(error),
-            (Ok(()), Err(error)) => Err(error),
-            (Err(keyring_error), Err(fallback_error)) => {
-                Err(anyhow::anyhow!("{keyring_error}; {fallback_error}"))
-            }
         }
     }
 }
@@ -437,9 +566,49 @@ fn keyring_entry() -> anyhow::Result<keyring::Entry> {
     Ok(keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)?)
 }
 
+#[cfg(feature = "app")]
+struct LegacyAuthStore;
+
 #[cfg(all(feature = "app", target_os = "linux"))]
-fn load_fallback_auth() -> anyhow::Result<Option<TwitchAuthState>> {
-    let path = match fallback_auth_path() {
+impl AuthSecretStore for LegacyAuthStore {
+    fn load_secret(&self) -> anyhow::Result<Option<String>> {
+        load_legacy_auth_secret()
+    }
+
+    fn save_secret(&self, _secret: &str) -> anyhow::Result<()> {
+        Err(anyhow::anyhow!("平文の認証情報ファイルは作成しません。"))
+    }
+
+    fn clear_secret(&self) -> anyhow::Result<()> {
+        clear_legacy_auth()
+    }
+}
+
+#[cfg(all(feature = "app", not(target_os = "linux")))]
+impl AuthSecretStore for LegacyAuthStore {
+    fn load_secret(&self) -> anyhow::Result<Option<String>> {
+        Ok(None)
+    }
+
+    fn save_secret(&self, _secret: &str) -> anyhow::Result<()> {
+        Err(anyhow::anyhow!("平文の認証情報ファイルは作成しません。"))
+    }
+
+    fn clear_secret(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "app")]
+fn restore_stored_auth(secret: &str) -> anyhow::Result<TwitchAuthState> {
+    serde_json::from_str::<StoredTwitchAuth>(secret)
+        .map(TwitchAuthState::restore)
+        .map_err(anyhow::Error::from)
+}
+
+#[cfg(all(feature = "app", target_os = "linux"))]
+fn load_legacy_auth_secret() -> anyhow::Result<Option<String>> {
+    let path = match legacy_auth_path() {
         Ok(path) => path,
         Err(_) => return Ok(None),
     };
@@ -447,54 +616,13 @@ fn load_fallback_auth() -> anyhow::Result<Option<TwitchAuthState>> {
         return Ok(None);
     }
 
-    ensure_fallback_permissions(&path)?;
-    let secret = fs::read_to_string(path)?;
-    let stored = serde_json::from_str::<StoredTwitchAuth>(&secret)?;
-    Ok(Some(TwitchAuthState::restore(stored)))
-}
-
-#[cfg(all(feature = "app", not(target_os = "linux")))]
-fn load_fallback_auth() -> anyhow::Result<Option<TwitchAuthState>> {
-    Ok(None)
+    ensure_legacy_permissions(&path)?;
+    Ok(Some(fs::read_to_string(path)?))
 }
 
 #[cfg(all(feature = "app", target_os = "linux"))]
-fn save_fallback_auth(
-    stored: &StoredTwitchAuth,
-    keyring_error: anyhow::Error,
-) -> anyhow::Result<Option<String>> {
-    let path = fallback_auth_path()?;
-    ensure_fallback_parent(&path)?;
-
-    let temp_path = path.with_extension("json.tmp");
-    let mut file = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .mode(0o600)
-        .open(&temp_path)?;
-    file.write_all(serde_json::to_string_pretty(stored)?.as_bytes())?;
-    file.sync_all()?;
-    drop(file);
-
-    fs::set_permissions(&temp_path, fs::Permissions::from_mode(0o600))?;
-    fs::rename(&temp_path, &path)?;
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
-
-    Ok(Some(to_local_file_store_user_message(keyring_error, &path)))
-}
-
-#[cfg(all(feature = "app", not(target_os = "linux")))]
-fn save_fallback_auth(
-    _stored: &StoredTwitchAuth,
-    keyring_error: anyhow::Error,
-) -> anyhow::Result<Option<String>> {
-    Err(keyring_error)
-}
-
-#[cfg(all(feature = "app", target_os = "linux"))]
-fn clear_fallback_auth() -> anyhow::Result<()> {
-    let path = match fallback_auth_path() {
+fn clear_legacy_auth() -> anyhow::Result<()> {
+    let path = match legacy_auth_path() {
         Ok(path) => path,
         Err(_) => return Ok(()),
     };
@@ -505,33 +633,18 @@ fn clear_fallback_auth() -> anyhow::Result<()> {
     }
 }
 
-#[cfg(all(feature = "app", not(target_os = "linux")))]
-fn clear_fallback_auth() -> anyhow::Result<()> {
-    Ok(())
-}
-
 #[cfg(all(feature = "app", target_os = "linux"))]
-fn handle_keyring_clear_error(_error: anyhow::Error) -> anyhow::Result<()> {
-    Ok(())
-}
-
-#[cfg(all(feature = "app", not(target_os = "linux")))]
-fn handle_keyring_clear_error(error: anyhow::Error) -> anyhow::Result<()> {
-    Err(error)
-}
-
-#[cfg(all(feature = "app", target_os = "linux"))]
-fn fallback_auth_path() -> anyhow::Result<PathBuf> {
+fn legacy_auth_path() -> anyhow::Result<PathBuf> {
     let home = std::env::var_os("HOME").ok_or_else(|| {
         anyhow::anyhow!("HOME が設定されていないため、Twitch 認証情報を保存できません。")
     })?;
     Ok(PathBuf::from(home)
-        .join(FALLBACK_AUTH_DIR)
-        .join(FALLBACK_AUTH_FILE))
+        .join(LEGACY_AUTH_DIR)
+        .join(LEGACY_AUTH_FILE))
 }
 
 #[cfg(all(feature = "app", target_os = "linux"))]
-fn ensure_fallback_parent(path: &Path) -> anyhow::Result<()> {
+fn ensure_legacy_parent_permissions(path: &Path) -> anyhow::Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| anyhow::anyhow!("Twitch 認証情報の保存先ディレクトリが見つかりません。"))?;
@@ -551,8 +664,8 @@ fn ensure_fallback_parent(path: &Path) -> anyhow::Result<()> {
 }
 
 #[cfg(all(feature = "app", target_os = "linux"))]
-fn ensure_fallback_permissions(path: &Path) -> anyhow::Result<()> {
-    ensure_fallback_parent(path)?;
+fn ensure_legacy_permissions(path: &Path) -> anyhow::Result<()> {
+    ensure_legacy_parent_permissions(path)?;
     fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
@@ -1419,22 +1532,51 @@ fn to_twitch_user_message(error: anyhow::Error) -> String {
 }
 
 fn to_secure_store_user_message(error: anyhow::Error) -> String {
-    #[cfg(target_os = "linux")]
-    {
-        return format!(
-            "Twitch 認証情報を保存できませんでした。Linux では Secret Service 対応の資格情報ストア（GNOME Keyring、KWallet、KeePassXC Secret Service など）または ~/.rice/twitch-auth.json へのローカル保存を使います: {error}"
-        );
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    format!("Twitch 認証情報を安全に保存できませんでした。ログインは続行しましたが、アプリ再起動後は再ログインが必要です。OS の資格情報ストアを確認してください: {error}")
+    format!(
+        "Twitch 認証情報を安全に削除できませんでした。OS の資格情報ストアを確認してから再度解除してください: {error}"
+    )
 }
 
-#[cfg(all(feature = "app", target_os = "linux"))]
-fn to_local_file_store_user_message(error: anyhow::Error, path: &Path) -> String {
+#[cfg(feature = "app")]
+fn to_session_only_user_message(error: anyhow::Error) -> String {
     format!(
-        "OS の資格情報ストアに保存できなかったため、Twitch 認証情報を {} に保存しました。ディレクトリは 700、ファイルは 600 で作成していますが、暗号化はされません: {error}",
-        path.display()
+        "OS の資格情報ストアに保存できなかったため、今回の Twitch ログインはこの起動中だけ有効です。認証情報ファイルは作成していません。アプリを再起動したら再ログインしてください。OS の資格情報ストアを確認してください: {error}"
+    )
+}
+
+#[cfg(feature = "app")]
+fn to_secure_store_load_user_message(error: anyhow::Error) -> String {
+    format!(
+        "OS の資格情報ストアから Twitch 認証情報を読み込めませんでした。資格情報ストアがロックまたは一時的に利用できない可能性があります。OS の資格情報ストアを確認してから再起動するか、Login から再ログインしてください: {error}"
+    )
+}
+
+#[cfg(feature = "app")]
+fn to_legacy_auth_user_message(error: anyhow::Error) -> String {
+    format!(
+        "以前の平文 Twitch 認証情報（Linux: ~/.rice/twitch-auth.json）を OS の資格情報ストアへ移行できませんでした。安全のため読み込まず、再ログインが必要です。ファイルを削除し、Twitch の「設定と接続」からこのアプリのアクセスを取り消してから再ログインしてください: {error}"
+    )
+}
+
+#[cfg(feature = "app")]
+fn to_auth_recovery_failure_user_message(
+    secure_load_error: Option<anyhow::Error>,
+    legacy_error: anyhow::Error,
+) -> String {
+    match secure_load_error {
+        Some(secure_error) => format!(
+            "{} さらに、{}",
+            to_secure_store_load_user_message(secure_error),
+            to_legacy_auth_user_message(legacy_error)
+        ),
+        None => to_legacy_auth_user_message(legacy_error),
+    }
+}
+
+#[cfg(feature = "app")]
+fn to_legacy_cleanup_user_message(error: anyhow::Error) -> String {
+    format!(
+        "以前の平文 Twitch 認証情報（Linux: ~/.rice/twitch-auth.json）が残っています。ファイルを削除し、Twitch の「設定と接続」からこのアプリのアクセスを取り消して再ログインしてください: {error}"
     )
 }
 
@@ -1465,9 +1607,92 @@ enum PollAuthError {
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_chat_message, oauth_error_code, retry_backoff_seconds, EventSubEnvelope,
-        MessageDedupe, OAuthErrorResponse,
+        normalize_chat_message, oauth_error_code, retry_backoff_seconds, AuthSecretStore,
+        AuthStorage, EventSubEnvelope, MessageDedupe, OAuthErrorResponse, StoredTwitchAuth,
+        TwitchAuthState, TwitchToken, TwitchUserProfile,
     };
+    use std::cell::RefCell;
+
+    #[derive(Default)]
+    struct FakeAuthSecretStore {
+        secret: RefCell<Option<String>>,
+        fail_load: bool,
+        fail_save: bool,
+        fail_clear: bool,
+        save_calls: RefCell<usize>,
+    }
+
+    impl FakeAuthSecretStore {
+        fn with_secret(secret: String) -> Self {
+            Self {
+                secret: RefCell::new(Some(secret)),
+                ..Self::default()
+            }
+        }
+    }
+
+    impl AuthSecretStore for FakeAuthSecretStore {
+        fn load_secret(&self) -> anyhow::Result<Option<String>> {
+            if self.fail_load {
+                return Err(anyhow::anyhow!("fake secure-store read failure"));
+            }
+            Ok(self.secret.borrow().clone())
+        }
+
+        fn save_secret(&self, secret: &str) -> anyhow::Result<()> {
+            *self.save_calls.borrow_mut() += 1;
+            if self.fail_save {
+                return Err(anyhow::anyhow!("fake secure-store write failure"));
+            }
+            *self.secret.borrow_mut() = Some(secret.to_string());
+            Ok(())
+        }
+
+        fn clear_secret(&self) -> anyhow::Result<()> {
+            if self.fail_clear {
+                return Err(anyhow::anyhow!("fake secure-store clear failure"));
+            }
+            *self.secret.borrow_mut() = None;
+            Ok(())
+        }
+    }
+
+    fn stored_auth_secret() -> String {
+        serde_json::to_string(&StoredTwitchAuth {
+            client_id: "client-id".to_string(),
+            access_token: "access-token".to_string(),
+            refresh_token: "refresh-token".to_string(),
+            scopes: vec!["user:read:chat".to_string()],
+            expires_in: 3600,
+            profile: TwitchUserProfile {
+                user_id: "user-id".to_string(),
+                login: "viewer".to_string(),
+                client_id: "client-id".to_string(),
+                scopes: vec!["user:read:chat".to_string()],
+                expires_in: 3600,
+            },
+        })
+        .unwrap()
+    }
+
+    fn twitch_auth_state() -> TwitchAuthState {
+        TwitchAuthState {
+            pending: None,
+            token: Some(TwitchToken {
+                access_token: "access-token".to_string(),
+                refresh_token: "refresh-token".to_string(),
+                scopes: vec!["user:read:chat".to_string()],
+                expires_in: 3600,
+            }),
+            profile: Some(TwitchUserProfile {
+                user_id: "user-id".to_string(),
+                login: "viewer".to_string(),
+                client_id: "client-id".to_string(),
+                scopes: vec!["user:read:chat".to_string()],
+                expires_in: 3600,
+            }),
+        }
+    }
 
     #[test]
     fn reads_device_flow_status_from_twitch_message_field() {
@@ -1528,5 +1753,124 @@ mod tests {
         assert_eq!(retry_backoff_seconds(3), 10);
         assert_eq!(retry_backoff_seconds(4), 30);
         assert_eq!(retry_backoff_seconds(10), 30);
+    }
+
+    #[test]
+    fn saves_auth_to_the_secure_store_when_available() {
+        let secure = FakeAuthSecretStore::default();
+        let legacy = FakeAuthSecretStore::default();
+        let storage = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        };
+
+        assert_eq!(storage.save(&twitch_auth_state()).unwrap(), None);
+        assert!(secure.secret.borrow().is_some());
+        assert!(legacy.secret.borrow().is_none());
+        assert_eq!(*legacy.save_calls.borrow(), 0);
+    }
+
+    #[test]
+    fn keeps_auth_session_only_when_secure_store_write_fails() {
+        let secure = FakeAuthSecretStore {
+            fail_save: true,
+            ..FakeAuthSecretStore::default()
+        };
+        let legacy = FakeAuthSecretStore::default();
+        let storage = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        };
+
+        let warning = storage.save(&twitch_auth_state()).unwrap().unwrap();
+
+        assert!(warning.contains("この起動中だけ有効"));
+        assert!(warning.contains("認証情報ファイルは作成していません"));
+        assert!(secure.secret.borrow().is_none());
+        assert!(legacy.secret.borrow().is_none());
+        assert_eq!(*legacy.save_calls.borrow(), 0);
+    }
+
+    #[test]
+    fn migrates_existing_legacy_auth_after_secure_store_recovers() {
+        let legacy_secret = stored_auth_secret();
+        let secure = FakeAuthSecretStore::default();
+        let legacy = FakeAuthSecretStore::with_secret(legacy_secret.clone());
+        let storage = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        };
+
+        let restored = storage.load();
+
+        assert_eq!(restored.auth.unwrap().profile().unwrap().login, "viewer");
+        assert!(restored
+            .storage_warning
+            .unwrap()
+            .contains("移行し、平文ファイルを削除"));
+        assert_eq!(
+            secure.secret.borrow().as_deref(),
+            Some(legacy_secret.as_str())
+        );
+        assert!(legacy.secret.borrow().is_none());
+    }
+
+    #[test]
+    fn warns_when_secure_store_cannot_be_read_and_no_legacy_auth_exists() {
+        let secure = FakeAuthSecretStore {
+            fail_load: true,
+            ..FakeAuthSecretStore::default()
+        };
+        let legacy = FakeAuthSecretStore::default();
+        let storage = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        };
+
+        let restored = storage.load();
+
+        assert!(restored.auth.is_none());
+        let warning = restored.storage_warning.unwrap();
+        assert!(warning.contains("資格情報ストアから Twitch 認証情報を読み込めません"));
+        assert!(warning.contains("fake secure-store read failure"));
+        assert!(warning.contains("資格情報ストアを確認"));
+        assert!(warning.contains("再ログイン"));
+    }
+
+    #[test]
+    fn leaves_legacy_auth_unread_when_migration_is_rejected() {
+        let secure = FakeAuthSecretStore {
+            fail_save: true,
+            ..FakeAuthSecretStore::default()
+        };
+        let legacy = FakeAuthSecretStore::with_secret(stored_auth_secret());
+        let storage = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        };
+
+        let restored = storage.load();
+
+        assert!(restored.auth.is_none());
+        let warning = restored.storage_warning.unwrap();
+        assert!(warning.contains("安全のため読み込まず"));
+        assert!(warning.contains("ファイルを削除"));
+        assert!(warning.contains("アクセスを取り消し"));
+        assert!(legacy.secret.borrow().is_some());
+    }
+
+    #[test]
+    fn logout_clears_secure_and_legacy_auth_state() {
+        let secure = FakeAuthSecretStore::with_secret(stored_auth_secret());
+        let legacy = FakeAuthSecretStore::with_secret(stored_auth_secret());
+        let storage = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        };
+
+        storage.clear().unwrap();
+
+        assert!(secure.secret.borrow().is_none());
+        assert!(legacy.secret.borrow().is_none());
     }
 }

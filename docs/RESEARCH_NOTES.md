@@ -1,5 +1,9 @@
 # 調査メモ
 
+## 2026-08-05
+
+- Issue #103 として、OS keyring 保存失敗時の Linux 固有の平文 fallback を廃止した。認証は session-only として続行し、再起動後の再ログインを UI 警告で案内する。旧版の `~/.rice/twitch-auth.json` は keyring が利用できる場合だけ移行・削除し、失敗時は読み込まず、削除・Twitch のアクセス取り消し・再ログインを案内する。fake credential store による保存成功/失敗、復旧移行、移行不能、解除、keyring 読込失敗時の復旧案内の自動テストを追加し、`cargo test`（36件）、`pnpm test`（25件）、`pnpm build` が成功した。実 Linux Secret Service と旧ファイルを使う手動確認は残る。
+
 ## 2026-07-21
 
 - `v0.2.3` の local / remote tag object には annotation message が正しく保存されていたが、Release 公開ジョブの `actions/checkout@v6.0.0` が peeled commit をローカルのタグ ref へ割り当て、`gh release create --notes-from-tag` がコミットメッセージへフォールバックしていた。build job と同じ tag object の再取得・検証を release job にも追加した。次回のタグリリースで実動作確認が必要。

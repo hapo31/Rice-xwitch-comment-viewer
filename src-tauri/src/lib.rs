@@ -116,29 +116,35 @@ pub fn run() {
                 SpeechStatus::Disconnected,
                 Some("棒読みちゃん接続を確認してください。".to_string()),
             );
-            match TwitchAuthStore::load() {
-                Ok(Some(auth)) => {
-                    *state
-                        .twitch_auth
-                        .lock()
-                        .expect("twitch auth mutex poisoned") = auth;
-                    emit_twitch_status(
-                        app.handle(),
-                        TwitchStatus::Connected,
-                        Some("保存済みの Twitch 認証情報を復元しました。".to_string()),
-                    );
-                    emit_app_log(
-                        app.handle(),
-                        AppLogLevel::Info,
-                        "保存済みの Twitch 認証情報を復元しました。",
-                    );
-                }
-                Ok(None) => {}
-                Err(error) => emit_app_log(
+            let restored_auth = TwitchAuthStore::load();
+            let has_restored_auth = restored_auth.auth.is_some();
+            if let Some(auth) = restored_auth.auth {
+                *state
+                    .twitch_auth
+                    .lock()
+                    .expect("twitch auth mutex poisoned") = auth;
+                emit_twitch_status(
                     app.handle(),
-                    AppLogLevel::Warning,
-                    format!("保存済みの Twitch 認証情報を読み込めませんでした: {error}"),
-                ),
+                    TwitchStatus::Connected,
+                    Some("保存済みの Twitch 認証情報を復元しました。".to_string()),
+                );
+                emit_app_log(
+                    app.handle(),
+                    AppLogLevel::Info,
+                    "保存済みの Twitch 認証情報を復元しました。",
+                );
+            }
+            if let Some(warning) = restored_auth.storage_warning {
+                emit_app_log(app.handle(), AppLogLevel::Warning, warning.clone());
+                emit_twitch_status(
+                    app.handle(),
+                    if has_restored_auth {
+                        TwitchStatus::Connected
+                    } else {
+                        TwitchStatus::AuthRequired
+                    },
+                    Some(warning),
+                );
             }
             Ok(())
         })

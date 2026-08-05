@@ -281,6 +281,7 @@ export function App() {
         dispatch({ type: "warning.added", warning: `Twitch に ${result.profile.login} としてログインしました。` });
         if (result.storageWarning) {
           dispatch({ type: "warning.added", warning: result.storageWarning });
+          addSystemChatMessage(result.storageWarning);
         }
       } else {
         if (state.twitchAuthPrompt && (result.status === "pending" || result.status === "slowDown")) {
@@ -314,6 +315,7 @@ export function App() {
       dispatch({ type: "warning.added", warning: "Twitch 認証は有効です。" });
       if (result.storageWarning) {
         dispatch({ type: "warning.added", warning: result.storageWarning });
+        addSystemChatMessage(result.storageWarning);
       }
       return true;
     } catch (error) {
