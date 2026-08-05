@@ -12,7 +12,7 @@ use app_events::{
 use launcher::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
 use serde::Serialize;
 #[cfg(feature = "app")]
-use settings::{settings_get, settings_update, AppState};
+use settings::{settings_get, settings_take_recovery_notice, settings_update, AppState};
 #[cfg(feature = "app")]
 use speech::bouyomi::{
     speech_clear, speech_connection_diagnostics, speech_health_check, speech_health_probe,
@@ -82,6 +82,7 @@ pub fn run() {
             launcher_launch,
             launcher_launch_all,
             settings_get,
+            settings_take_recovery_notice,
             settings_update,
             speech_health_check,
             speech_health_probe,
@@ -103,9 +104,23 @@ pub fn run() {
         ])
         .setup(|app| {
             let state = app.state::<AppState>();
-            let settings = settings::SettingsStore::load(app.handle())?;
-            *state.settings.lock().expect("settings mutex poisoned") = settings;
-            emit_app_log(app.handle(), AppLogLevel::Info, "設定を読み込みました。");
+            let loaded_settings = settings::SettingsStore::load(app.handle())?;
+            *state.settings.lock().expect("settings mutex poisoned") = loaded_settings.settings;
+            *state
+                .settings_recovery_notice
+                .lock()
+                .expect("settings recovery mutex poisoned") = loaded_settings.recovery_notice;
+            let recovery_message = state
+                .settings_recovery_notice
+                .lock()
+                .expect("settings recovery mutex poisoned")
+                .as_ref()
+                .map(|notice| notice.message.clone());
+            if let Some(message) = recovery_message {
+                emit_app_log(app.handle(), AppLogLevel::Warning, message);
+            } else {
+                emit_app_log(app.handle(), AppLogLevel::Info, "設定を読み込みました。");
+            }
             emit_twitch_status(
                 app.handle(),
                 TwitchStatus::Disconnected,
