@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}"
-BACKUP_DIR="${CODEX_BACKUP_DIR:-${REPO_ROOT}/.codex-state-backup}"
-BACKUP_ZIP="${CODEX_BACKUP_ZIP:-${BACKUP_DIR}/codex-state-backup.zip}"
+DEFAULT_STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
+if [[ -n "${CODEX_BACKUP_ZIP:-}" ]]; then
+  BACKUP_ZIP="${CODEX_BACKUP_ZIP}"
+  BACKUP_DIR="$(dirname "${BACKUP_ZIP}")"
+else
+  BACKUP_DIR="${CODEX_BACKUP_DIR:-${DEFAULT_STATE_HOME}/rice-xwitch-comment-viewer}"
+  BACKUP_ZIP="${BACKUP_DIR}/codex-state-backup.zip"
+fi
 
 usage() {
   cat <<'USAGE'
@@ -15,7 +19,8 @@ Usage:
 
 Environment:
   CODEX_HOME        Source/restore directory. Default: $HOME/.codex
-  CODEX_BACKUP_ZIP  Backup zip path. Default: .codex-state-backup/codex-state-backup.zip
+  CODEX_BACKUP_DIR  Backup directory. Default: $XDG_STATE_HOME/rice-xwitch-comment-viewer
+  CODEX_BACKUP_ZIP  Backup zip path. Default: $CODEX_BACKUP_DIR/codex-state-backup.zip
 USAGE
 }
 

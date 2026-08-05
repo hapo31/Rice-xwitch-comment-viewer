@@ -12,7 +12,7 @@ use app_events::{
 use launcher::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
 use serde::Serialize;
 #[cfg(feature = "app")]
-use settings::{settings_get, settings_update, AppState};
+use settings::{settings_get, settings_take_recovery_notice, settings_update, AppState};
 #[cfg(feature = "app")]
 use speech::bouyomi::{
     speech_clear, speech_connection_diagnostics, speech_health_check, speech_health_probe,
@@ -82,6 +82,7 @@ pub fn run() {
             launcher_launch,
             launcher_launch_all,
             settings_get,
+            settings_take_recovery_notice,
             settings_update,
             speech_health_check,
             speech_health_probe,
@@ -103,9 +104,23 @@ pub fn run() {
         ])
         .setup(|app| {
             let state = app.state::<AppState>();
-            let settings = settings::SettingsStore::load(app.handle())?;
-            *state.settings.lock().expect("settings mutex poisoned") = settings;
-            emit_app_log(app.handle(), AppLogLevel::Info, "設定を読み込みました。");
+            let loaded_settings = settings::SettingsStore::load(app.handle())?;
+            *state.settings.lock().expect("settings mutex poisoned") = loaded_settings.settings;
+            *state
+                .settings_recovery_notice
+                .lock()
+                .expect("settings recovery mutex poisoned") = loaded_settings.recovery_notice;
+            let recovery_message = state
+                .settings_recovery_notice
+                .lock()
+                .expect("settings recovery mutex poisoned")
+                .as_ref()
+                .map(|notice| notice.message.clone());
+            if let Some(message) = recovery_message {
+                emit_app_log(app.handle(), AppLogLevel::Warning, message);
+            } else {
+                emit_app_log(app.handle(), AppLogLevel::Info, "設定を読み込みました。");
+            }
             emit_twitch_status(
                 app.handle(),
                 TwitchStatus::Disconnected,
@@ -116,29 +131,35 @@ pub fn run() {
                 SpeechStatus::Disconnected,
                 Some("棒読みちゃん接続を確認してください。".to_string()),
             );
-            match TwitchAuthStore::load() {
-                Ok(Some(auth)) => {
-                    *state
-                        .twitch_auth
-                        .lock()
-                        .expect("twitch auth mutex poisoned") = auth;
-                    emit_twitch_status(
-                        app.handle(),
-                        TwitchStatus::Connected,
-                        Some("保存済みの Twitch 認証情報を復元しました。".to_string()),
-                    );
-                    emit_app_log(
-                        app.handle(),
-                        AppLogLevel::Info,
-                        "保存済みの Twitch 認証情報を復元しました。",
-                    );
-                }
-                Ok(None) => {}
-                Err(error) => emit_app_log(
+            let restored_auth = TwitchAuthStore::load();
+            let has_restored_auth = restored_auth.auth.is_some();
+            if let Some(auth) = restored_auth.auth {
+                *state
+                    .twitch_auth
+                    .lock()
+                    .expect("twitch auth mutex poisoned") = auth;
+                emit_twitch_status(
                     app.handle(),
-                    AppLogLevel::Warning,
-                    format!("保存済みの Twitch 認証情報を読み込めませんでした: {error}"),
-                ),
+                    TwitchStatus::Connected,
+                    Some("保存済みの Twitch 認証情報を復元しました。".to_string()),
+                );
+                emit_app_log(
+                    app.handle(),
+                    AppLogLevel::Info,
+                    "保存済みの Twitch 認証情報を復元しました。",
+                );
+            }
+            if let Some(warning) = restored_auth.storage_warning {
+                emit_app_log(app.handle(), AppLogLevel::Warning, warning.clone());
+                emit_twitch_status(
+                    app.handle(),
+                    if has_restored_auth {
+                        TwitchStatus::Connected
+                    } else {
+                        TwitchStatus::AuthRequired
+                    },
+                    Some(warning),
+                );
             }
             Ok(())
         })

@@ -7,10 +7,14 @@ use crate::twitch::TwitchAuthState;
 use crate::twitch::TwitchConnectionHandle;
 use crate::SharedSettings;
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "app")]
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(feature = "app")]
 use tauri::Manager;
+
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -134,6 +138,7 @@ pub(crate) fn default_twitch_client_id() -> String {
 #[derive(Debug, Default)]
 pub struct AppState {
     pub settings: SharedSettings<AppSettings>,
+    pub settings_recovery_notice: SharedSettings<Option<SettingsRecoveryNotice>>,
     pub twitch_auth: SharedSettings<TwitchAuthState>,
     pub speech_queue: SharedSettings<SpeechQueueState>,
     #[cfg(feature = "app")]
@@ -212,18 +217,43 @@ pub struct SpeechSettingsPatch {
 
 pub struct SettingsStore;
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsRecoveryNotice {
+    pub message: String,
+}
+
+#[derive(Debug)]
+pub struct LoadedSettings {
+    pub settings: AppSettings,
+    pub recovery_notice: Option<SettingsRecoveryNotice>,
+}
+
 impl SettingsStore {
     #[cfg(feature = "app")]
-    pub fn load<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyhow::Result<AppSettings> {
+    pub fn load<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyhow::Result<LoadedSettings> {
         let path = settings_path(app)?;
+        Self::load_from_path(&path)
+    }
+
+    fn load_from_path(path: &Path) -> anyhow::Result<LoadedSettings> {
         if !path.exists() {
             let settings = AppSettings::default();
-            Self::save(app, &settings)?;
-            return Ok(settings);
+            Self::save_to_path(path, &settings)?;
+            return Ok(LoadedSettings {
+                settings,
+                recovery_notice: None,
+            });
         }
 
         let text = fs::read_to_string(path)?;
-        serde_json::from_str(&text).map_err(Into::into)
+        match serde_json::from_str(&text) {
+            Ok(settings) => Ok(LoadedSettings {
+                settings,
+                recovery_notice: None,
+            }),
+            Err(_) => Self::recover_from_invalid_primary(path),
+        }
     }
 
     #[cfg(feature = "app")]
@@ -232,14 +262,239 @@ impl SettingsStore {
         settings: &AppSettings,
     ) -> anyhow::Result<()> {
         let path = settings_path(app)?;
+        Self::save_to_path(&path, settings)
+    }
+
+    fn save_to_path(path: &Path, settings: &AppSettings) -> anyhow::Result<()> {
+        let text = serde_json::to_string_pretty(settings)?;
+        Self::save_text_to_path(path, &text, SaveFault::None)
+    }
+
+    fn save_text_to_path(path: &Path, text: &str, fault: SaveFault) -> anyhow::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        let text = serde_json::to_string_pretty(settings)?;
-        fs::write(path, text)?;
+        let temporary_path = write_temp_file(path, text.as_bytes(), fault)?;
+        let result = (|| {
+            if path.exists() {
+                let previous = fs::read_to_string(path)?;
+                serde_json::from_str::<AppSettings>(&previous).map_err(|error| {
+                    anyhow::anyhow!("既存の設定をバックアップできませんでした: {error}")
+                })?;
+                atomic_write(&backup_path(path), previous.as_bytes(), SaveFault::None)?;
+            }
+            replace_file(&temporary_path, path, fault)?;
+            sync_parent_directory(path)?;
+            Ok(())
+        })();
+
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary_path);
+        }
+        result
+    }
+
+    fn recover_from_invalid_primary(path: &Path) -> anyhow::Result<LoadedSettings> {
+        let corrupted_primary = quarantine_file(path)?;
+        let backup = backup_path(path);
+
+        if backup.exists() {
+            let backup_text = fs::read_to_string(&backup)?;
+            if let Ok(settings) = serde_json::from_str::<AppSettings>(&backup_text) {
+                atomic_write(path, backup_text.as_bytes(), SaveFault::None)?;
+                return Ok(LoadedSettings {
+                    settings,
+                    recovery_notice: Some(SettingsRecoveryNotice {
+                        message: format!(
+                            "設定ファイルが破損していたため、バックアップから復旧しました。破損ファイル: {}",
+                            corrupted_primary.display()
+                        ),
+                    }),
+                });
+            }
+
+            let corrupted_backup = quarantine_file(&backup)?;
+            let settings = AppSettings::default();
+            Self::save_to_path(path, &settings)?;
+            return Ok(LoadedSettings {
+                settings,
+                recovery_notice: Some(SettingsRecoveryNotice {
+                    message: format!(
+                        "設定ファイルとバックアップが破損していたため、既定値で起動しました。退避先: {}, {}",
+                        corrupted_primary.display(),
+                        corrupted_backup.display()
+                    ),
+                }),
+            });
+        }
+
+        let settings = AppSettings::default();
+        Self::save_to_path(path, &settings)?;
+        Ok(LoadedSettings {
+            settings,
+            recovery_notice: Some(SettingsRecoveryNotice {
+                message: format!(
+                    "設定ファイルが破損していたため、既定値で起動しました。破損ファイル: {}",
+                    corrupted_primary.display()
+                ),
+            }),
+        })
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SaveFault {
+    None,
+    TempWrite,
+    Replace,
+}
+
+fn backup_path(path: &Path) -> PathBuf {
+    path.with_file_name(format!(
+        "{}.bak",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("settings.json")
+    ))
+}
+
+fn quarantine_file(path: &Path) -> anyhow::Result<PathBuf> {
+    let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S%3f");
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("settings.json");
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("設定ファイルの親フォルダを取得できません。"))?;
+
+    for suffix in 0..1000_u16 {
+        let candidate = parent.join(format!("{file_name}.corrupt-{timestamp}-{suffix}"));
+        if !candidate.exists() {
+            fs::rename(path, &candidate)?;
+            sync_parent_directory(path)?;
+            return Ok(candidate);
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "破損した設定ファイルの退避先を作成できません。"
+    ))
+}
+
+fn atomic_write(path: &Path, contents: &[u8], fault: SaveFault) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let temporary_path = write_temp_file(path, contents, fault)?;
+    let result =
+        replace_file(&temporary_path, path, fault).and_then(|_| sync_parent_directory(path));
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    result
+}
+
+fn write_temp_file(path: &Path, contents: &[u8], fault: SaveFault) -> anyhow::Result<PathBuf> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("設定ファイルの親フォルダを取得できません。"))?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("settings.json");
+
+    for _ in 0..1000 {
+        let counter = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let temporary_path = parent.join(format!(".{file_name}.{counter}.tmp"));
+        let mut file = match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary_path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        };
+
+        let result = if fault == SaveFault::TempWrite {
+            Err(io::Error::new(
+                io::ErrorKind::StorageFull,
+                "fault injected: disk full",
+            ))
+        } else {
+            file.write_all(contents).and_then(|_| file.sync_all())
+        };
+        if let Err(error) = result {
+            let _ = fs::remove_file(&temporary_path);
+            return Err(error.into());
+        }
+        return Ok(temporary_path);
+    }
+
+    Err(anyhow::anyhow!(
+        "設定保存用の一時ファイルを作成できません。"
+    ))
+}
+
+fn replace_file(source: &Path, destination: &Path, fault: SaveFault) -> anyhow::Result<()> {
+    if fault == SaveFault::Replace {
+        return Err(anyhow::anyhow!("fault injected: atomic replace failed"));
+    }
+
+    atomic_replace(source, destination)?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn atomic_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    fs::rename(source, destination)
+}
+
+#[cfg(target_os = "windows")]
+fn atomic_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let destination = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let result = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if result == 0 {
+        Err(io::Error::last_os_error())
+    } else {
         Ok(())
     }
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(path: &Path) -> anyhow::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("設定ファイルの親フォルダを取得できません。"))?;
+    File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_path: &Path) -> anyhow::Result<()> {
+    Ok(())
 }
 
 #[cfg(feature = "app")]
@@ -254,14 +509,28 @@ pub fn settings_get(state: tauri::State<'_, AppState>) -> Result<AppSettings, St
 
 #[cfg(feature = "app")]
 #[tauri::command]
+pub fn settings_take_recovery_notice(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<SettingsRecoveryNotice>, String> {
+    state
+        .settings_recovery_notice
+        .lock()
+        .map_err(|error| error.to_string())
+        .map(|mut notice| notice.take())
+}
+
+#[cfg(feature = "app")]
+#[tauri::command]
 pub fn settings_update(
     app: tauri::AppHandle<tauri::Wry>,
     state: tauri::State<'_, AppState>,
     patch: SettingsPatch,
 ) -> Result<AppSettings, String> {
     let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
-    apply_patch(&mut settings, patch)?;
-    SettingsStore::save(&app, &settings).map_err(|error| error.to_string())?;
+    let mut updated = settings.clone();
+    apply_patch(&mut updated, patch)?;
+    SettingsStore::save(&app, &updated).map_err(|error| error.to_string())?;
+    *settings = updated;
     emit_app_log(&app, AppLogLevel::Info, "設定を保存しました。");
     Ok(settings.clone())
 }
@@ -375,7 +644,33 @@ fn settings_path<R: tauri::Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use super::AppSettings;
+    use super::{backup_path, AppSettings, SaveFault, SettingsStore};
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn settings_path_for_test(name: &str) -> PathBuf {
+        let counter = TEST_DIRECTORY_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "rice-settings-{name}-{}-{counter}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).expect("create test directory");
+        directory.join("settings.json")
+    }
+
+    fn settings_with_channel(channel_login: &str) -> AppSettings {
+        let mut settings = AppSettings::default();
+        settings.twitch.channel_login = channel_login.to_string();
+        settings
+    }
+
+    fn cleanup(path: &std::path::Path) {
+        fs::remove_dir_all(path.parent().expect("test path parent"))
+            .expect("remove test directory");
+    }
 
     #[test]
     fn legacy_settings_without_launcher_use_an_empty_default() {
@@ -390,5 +685,119 @@ mod tests {
             serde_json::from_value(value).expect("deserialize legacy settings");
 
         assert!(restored.launcher.items.is_empty());
+    }
+
+    #[test]
+    fn save_keeps_a_complete_backup_and_replaces_the_primary() {
+        let path = settings_path_for_test("atomic-save");
+        let previous = settings_with_channel("previous");
+        let next = settings_with_channel("next");
+        SettingsStore::save_to_path(&path, &previous).expect("save previous settings");
+
+        SettingsStore::save_to_path(&path, &next).expect("atomically save next settings");
+
+        let primary: AppSettings =
+            serde_json::from_str(&fs::read_to_string(&path).expect("read primary"))
+                .expect("primary must be complete JSON");
+        let backup: AppSettings =
+            serde_json::from_str(&fs::read_to_string(backup_path(&path)).expect("read backup"))
+                .expect("backup must be complete JSON");
+        assert_eq!(primary.twitch.channel_login, "next");
+        assert_eq!(backup.twitch.channel_login, "previous");
+        cleanup(&path);
+    }
+
+    #[test]
+    fn disk_full_while_writing_the_temp_file_preserves_the_primary() {
+        let path = settings_path_for_test("disk-full");
+        let previous = settings_with_channel("previous");
+        SettingsStore::save_to_path(&path, &previous).expect("save previous settings");
+        let original = fs::read_to_string(&path).expect("read primary");
+
+        let result = SettingsStore::save_text_to_path(&path, "{}", SaveFault::TempWrite);
+
+        assert!(result.is_err());
+        assert_eq!(fs::read_to_string(&path).expect("read primary"), original);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn replace_failure_preserves_the_primary_and_leaves_a_valid_backup() {
+        let path = settings_path_for_test("replace-failure");
+        let previous = settings_with_channel("previous");
+        SettingsStore::save_to_path(&path, &previous).expect("save previous settings");
+        let original = fs::read_to_string(&path).expect("read primary");
+
+        let result = SettingsStore::save_text_to_path(&path, "{}", SaveFault::Replace);
+
+        assert!(result.is_err());
+        assert_eq!(fs::read_to_string(&path).expect("read primary"), original);
+        let backup: AppSettings =
+            serde_json::from_str(&fs::read_to_string(backup_path(&path)).expect("read backup"))
+                .expect("backup must be complete JSON");
+        assert_eq!(backup.twitch.channel_login, "previous");
+        cleanup(&path);
+    }
+
+    #[test]
+    fn malformed_primary_recovers_from_backup_and_quarantines_the_data() {
+        let path = settings_path_for_test("recover-backup");
+        let backup_settings = settings_with_channel("backup-channel");
+        fs::write(&path, "{\"twitch\":").expect("write malformed primary");
+        fs::write(
+            backup_path(&path),
+            serde_json::to_string(&backup_settings).expect("serialize backup"),
+        )
+        .expect("write backup");
+
+        let loaded = SettingsStore::load_from_path(&path).expect("recover settings");
+
+        assert_eq!(loaded.settings.twitch.channel_login, "backup-channel");
+        assert!(loaded
+            .recovery_notice
+            .expect("recovery notice")
+            .message
+            .contains("バックアップから復旧"));
+        assert!(path
+            .parent()
+            .expect("test directory")
+            .read_dir()
+            .expect("read directory")
+            .any(|entry| entry
+                .expect("directory entry")
+                .file_name()
+                .to_string_lossy()
+                .contains("settings.json.corrupt-")));
+        cleanup(&path);
+    }
+
+    #[test]
+    fn malformed_primary_and_backup_start_with_defaults_and_quarantine_both() {
+        let path = settings_path_for_test("recover-default");
+        fs::write(&path, "{\"twitch\":").expect("write malformed primary");
+        fs::write(backup_path(&path), "{\"speech\":").expect("write malformed backup");
+
+        let loaded = SettingsStore::load_from_path(&path).expect("recover settings");
+
+        assert_eq!(loaded.settings.twitch.channel_login, "");
+        assert!(loaded
+            .recovery_notice
+            .expect("recovery notice")
+            .message
+            .contains("既定値"));
+        let quarantined_count = path
+            .parent()
+            .expect("test directory")
+            .read_dir()
+            .expect("read directory")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"))
+            .count();
+        assert_eq!(quarantined_count, 2);
+        let primary: AppSettings =
+            serde_json::from_str(&fs::read_to_string(&path).expect("read defaults"))
+                .expect("defaults must be valid JSON");
+        assert_eq!(primary.twitch.channel_login, "");
+        cleanup(&path);
     }
 }

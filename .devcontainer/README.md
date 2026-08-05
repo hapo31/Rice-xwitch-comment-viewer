@@ -46,6 +46,8 @@ docker volume create rice-codex-home
 
 Treat a suspected malicious rebuild or bootstrap-integrity failure as a credential incident. Stop the container, revoke and recreate any SSH keys loaded into the agent, revoke Codex sessions/tokens and remove `rice-codex-home`, rotate any GitHub/Twitch credentials used from the container, and review Docker activity before enabling the release profile again. Rebuild only from a reviewed commit after verifying the lock with `scripts/verify-devcontainer-bootstrap.sh`.
 
+手動退避には `.devcontainer/codex-state-transfer.sh backup` を使います。バックアップは認証情報、履歴、セッションを含むため、既定では workspace 外の `${XDG_STATE_HOME:-$HOME/.local/state}/rice-xwitch-comment-viewer/codex-state-backup.zip` に `0600` で保存します。保存先を変更する場合は `CODEX_BACKUP_DIR` または `CODEX_BACKUP_ZIP` を指定してください。workspace 内へ置く場合も `.codex-state-backup/` を使用し、Git や Docker など外部へ送信しないでください。
+
 ## Cargo target
 
 The normal profile writes Cargo build artifacts to the `rice-cargo-target` named volume at `/home/vscode/.cargo-target/rice`, keeping large artifacts out of workspace file watching. Existing `src-tauri/target` content is never removed automatically.
@@ -70,3 +72,7 @@ scripts/build-windows-docker.sh
 ```
 
 The script creates the NSIS installer and portable zip in `release-artifacts/`. Docker builds do not read `.env` automatically; the script passes `RICE_TWITCH_CLIENT_ID` as a build argument.
+
+このスクリプトは送信前に `scripts/check-docker-context.sh` を実行します。root Dockerfile が必要とする source だけを `.dockerignore` の allowlist として許可し、Codex state、`.env`、秘密鍵、credential archive が context に入る構成なら停止します。remote/shared Docker daemon を使う場合、allowlist 内の source code は daemon、BuildKit frontend、cache 管理者から参照できるデータ境界に入るものとして扱ってください。
+
+過去に secret-bearing context を remote/shared builder へ送った可能性がある場合は、対象 builder の利用を停止し、管理者へ context/cache/log の削除を依頼してください。そのうえで `codex logout` を実行し、OpenAI アカウントのセキュリティ設定で該当セッションや API key を失効させ、`codex login` で再認証します。影響範囲を確認できるまで、漏えいした可能性がある archive は再利用しないでください。
