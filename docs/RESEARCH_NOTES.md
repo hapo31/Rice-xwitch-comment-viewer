@@ -1,5 +1,9 @@
 # 調査メモ
 
+## 2026-08-02
+
+- EventSub の重複排除キャッシュは WebSocket セッション内で生成されていたため、通常再接続と `session_reconnect` ハンドオーバーで既知 ID が失われていた。接続ループのライフタイムへ移し、最大 5,000 件・10 分の期限付きキャッシュとして、再接続直後の再配送によるチャット二重表示と二重読み上げを防ぐようにした。
+
 ## 2026-07-21
 
 - `v0.2.3` の local / remote tag object には annotation message が正しく保存されていたが、Release 公開ジョブの `actions/checkout@v6.0.0` が peeled commit をローカルのタグ ref へ割り当て、`gh release create --notes-from-tag` がコミットメッセージへフォールバックしていた。build job と同じ tag object の再取得・検証を release job にも追加した。次回のタグリリースで実動作確認が必要。
