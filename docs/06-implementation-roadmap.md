@@ -29,8 +29,8 @@
 - `user:read:chat` スコープでUser Access Tokenを取得する。
 - refresh token更新と `/validate` を実装する。
 - OAuth状態をOS keyringへ保存し、起動時に復元する。
-- keyringへ保存できない場合は設定JSONへフォールバックせず、ログインは継続する。Linuxでは `~/.rice/twitch-auth.json` に `0600` でローカル保存し、それ以外では再起動後に再ログインが必要な状態としてUIに出す。
-- LinuxではSecret Service API対応ストアが利用できない場合も認証フローは止めず、ローカル保存へ退避する。
+- keyringへ保存できない場合は設定JSON・平文ローカルファイルへフォールバックせず、ログインを session-only として継続する。再起動後に再ログインが必要な状態としてUIに出す。
+- LinuxではSecret Service API対応ストアが利用できない場合も認証フローは止めない。旧版の `~/.rice/twitch-auth.json` は keyring に移行できる場合だけ削除し、移行不能時は削除・アクセス取り消し・再ログインを案内する。
 - ユーザーIDとログイン名を取得し、設定画面に表示する。
 
 完了条件:

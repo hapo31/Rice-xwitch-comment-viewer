@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込、原子的保存、破損時のbackup/既定値復旧を確認した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 読み上げ、制御、接続診断、Settings 画面は実装済み。接続確認は設定に応じて確認読み上げまたは無音の状態取得を行う。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
-| Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring/ Linux fallback、Login 画面、起動時の保存済み認証の自動検証は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
+| Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring、session-only 保存失敗処理、旧 Linux 平文ファイルの移行/削除、Login 画面、起動時の保存済み認証の自動検証は実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
 | Phase 5: 配信運用向け仕上げ | 実装中 | 既存の運用機能に加え、画面実装の feature 分割、Windows アプリ用 Launcher、dev ビルド識別表示、設定破損時の復旧通知を実装。Release 公開スクリプトを現行 GitHub CLI の引数制約へ対応。`cargo test` 35件、`pnpm test` 25件、`pnpm build` は成功。Windows 実機確認と詳細な運用エラー整理は継続。 |
@@ -57,7 +57,8 @@
 - [x] access token 検証失敗時に refresh token で更新する。
 - [x] refresh 成功時に保存済み refresh token を差し替える。
 - [x] OS keyring 優先の OAuth 保存/復元/削除を実装する。
-- [x] Linux の Secret Service 不可時に `~/.rice/twitch-auth.json` へ `0600` で保存する fallback を実装する。
+- [x] Issue #103: keyring 保存に失敗しても OAuth token を平文ファイルへ自動保存せず、session-only として継続する。既存の Linux fallback file は keyring 復旧時に移行・削除し、移行できない場合は削除・token revoke・再ログインを案内する。
+- [x] 旧版の Linux Secret Service fallback `~/.rice/twitch-auth.json` を検出し、keyring への移行成功時に削除する。新規の fallback file は作成しない。
 - [x] Login 画面に認証開始、確認、有効性確認、解除を実装する。
 - [x] Login 画面の認証開始/解除を認証状態に応じた単一アクションへ整理する。
 - [x] Device Code Flow の待機応答を正しく判定し、自動ポーリングが継続するよう修正する。

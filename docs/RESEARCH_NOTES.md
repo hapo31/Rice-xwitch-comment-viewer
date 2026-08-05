@@ -2,6 +2,7 @@
 
 ## 2026-08-05
 
+- Issue #103 として、OS keyring 保存失敗時の Linux 固有の平文 fallback を廃止した。認証は session-only として続行し、再起動後の再ログインを UI 警告で案内する。旧版の `~/.rice/twitch-auth.json` は keyring が利用できる場合だけ移行・削除し、失敗時は読み込まず、削除・Twitch のアクセス取り消し・再ログインを案内する。fake credential store による保存成功/失敗、復旧移行、移行不能、解除、keyring 読込失敗時の復旧案内の自動テストを追加し、`cargo test`（36件）、`pnpm test`（25件）、`pnpm build` が成功した。実 Linux Secret Service と旧ファイルを使う手動確認は残る。
 - 一般設定の直接上書きは保存途中の終了で `settings.json` を破損し、Tauri setup の失敗でアプリ全体を起動不能にしていた。保存は同一ディレクトリの一時ファイルを `sync_all` 後に atomic replace する方式へ変更し、Windows は `MoveFileExW` の replace/write-through を使う。保存前の正常版は `settings.json.bak` 1世代だけ保持する。
 - 起動時に本体が不正なら破損データを日時付きで退避し、正常な backup から復旧する。backup も不正なら両方を退避して既定値で起動する。復旧通知は backend log に加え、起動後に一度だけ取得する command を通じて system Chat、Logs、警告へ表示する。
 

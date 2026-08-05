@@ -132,8 +132,8 @@ Events:
 - 設定復旧: 起動時に本体のJSONが不正なら backup を検証して復旧する。backup も不正または不在なら、破損ファイルを `settings.json.corrupt-<timestamp>-<suffix>` として退避して既定値で起動する。復旧内容と退避先は Logs、system Chat、警告通知に表示する。
 - ランチャー項目: 一般設定の `launcher.items` に保存する。`kind`, `target`, `displayName`, `order` と、将来用の `backgroundColor`, `groupId`, `iconDataUrl` を境界として持つ。
 - Twitch OAuth状態: access token、refresh token、スコープ、有効期限、検証済みプロフィールをOS keyringへ保存する。設定JSONへは保存しない。
-- refresh token: 更新成功時に保存済みの値を新しい値へ差し替える。keyring保存に失敗した場合もログイン状態はメモリ上で継続する。Linuxでは `~/.rice/twitch-auth.json` にローカル保存し、それ以外ではUIへ永続化不可の警告を出す。設定JSONへはフォールバックしない。
-- LinuxではWindows Credential ManagerやmacOS Keychainに相当する単一の標準ストアがないため、Secret Service API対応ストア（GNOME Keyring、KWallet、KeePassXC Secret Serviceなど）を優先する。利用できない場合は `~/.rice` を `0700`、認証ファイルを `0600` で作成して保存する。kernel keyutilsやmock backendは永続OAuth保存には使わない。
+- refresh token: 更新成功時に保存済みの値を新しい値へ差し替える。keyring保存に失敗した場合もログイン状態はメモリ上で継続するが、token はディスクへ保存しない。UIには session-only であることと、再起動後に再ログインが必要なことを表示する。
+- 旧版が Linux に作成した `~/.rice/twitch-auth.json` は互換性のため検出する。OS keyringへ移行できた場合だけ削除し、移行できない場合は安全のため読み込まず、削除・Twitch 側のアクセス取り消し・再ログインを案内する。新たな平文ファイルは作成しない。Linuxでは Secret Service API対応ストア（GNOME Keyring、KWallet、KeePassXC Secret Serviceなど）を優先する。kernel keyutilsやmock backendは永続OAuth保存には使わない。
 - チャットログ: 初期MVPではメモリのみ。後でSQLiteを追加できる境界を残す。
 
 ## 推奨crate

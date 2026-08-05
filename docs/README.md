@@ -11,6 +11,7 @@
 - [UI/UX設計](./05-ui-ux.md)
 - [実装ロードマップ](./06-implementation-roadmap.md)
 - [リリース手順](./releasing.md)
+- [認証情報の保存と安全性](./07-oauth-storage-security.md)
 - [調査メモ](./RESEARCH_NOTES.md)
 
 ## 結論
