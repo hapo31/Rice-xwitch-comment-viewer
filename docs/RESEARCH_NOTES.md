@@ -1,5 +1,11 @@
 # 調査メモ
 
+## 2026-08-05: Issue #97 devcontainer bootstrap と capability 分離
+
+- 通常 devcontainer では host `.ssh`、`.gitconfig`、Codex state volume、Docker socket、`--network=host` が `postCreateCommand` と同居しており、`@openai/codex@latest` を未固定で global install していた。これを、base/Node/Rust image digest、Codex 0.98.0 と pnpm 8.11.0 の tarball SHA-512、Rust 1.89.0 を `.devcontainer/bootstrap-lock.json` に記録する構成へ変更した。
+- Codex/pnpm は build stage で integrity を検証し lifecycle script を無効化して導入し、Rust/rustfmt/clippy も固定 Rust image から build 時に導入する。通常 profile の post-create は baked Codex の version 確認と project の `pnpm install --frozen-lockfile` だけにした。
+- SSH agent + Codex state、Windows Bouyomi 用 host network、ローカル release 用 Docker socket を別 config に分離した。SSH profile は `${SSH_AUTH_SOCK}` の scoped agent を使い、秘密鍵ディレクトリを bind mount しない。新しい CI は bootstrap 更新時に lock 検証、image rebuild、tool version と `pnpm test` / `pnpm build` / `cargo test` を実行する。
+
 ## 2026-08-05
 
 - Issue #103 として、OS keyring 保存失敗時の Linux 固有の平文 fallback を廃止した。認証は session-only として続行し、再起動後の再ログインを UI 警告で案内する。旧版の `~/.rice/twitch-auth.json` は keyring が利用できる場合だけ移行・削除し、失敗時は読み込まず、削除・Twitch のアクセス取り消し・再ログインを案内する。fake credential store による保存成功/失敗、復旧移行、移行不能、解除、keyring 読込失敗時の復旧案内の自動テストを追加し、`cargo test`（36件）、`pnpm test`（25件）、`pnpm build` が成功した。実 Linux Secret Service と旧ファイルを使う手動確認は残る。

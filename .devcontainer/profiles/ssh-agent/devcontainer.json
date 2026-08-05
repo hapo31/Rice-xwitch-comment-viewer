@@ -1,0 +1,16 @@
+{
+  "name": "rice (SSH agent and Codex state)",
+  "build": {
+    "dockerfile": "../../Dockerfile",
+    "context": "../../.."
+  },
+  "init": true,
+  "containerEnv": {
+    "SSH_AUTH_SOCK": "/tmp/vscode-ssh-auth.sock"
+  },
+  "mounts": [
+    "source=${localEnv:SSH_AUTH_SOCK},target=/tmp/vscode-ssh-auth.sock,type=bind",
+    "source=rice-codex-home,target=/home/vscode/.codex,type=volume"
+  ],
+  "remoteUser": "vscode"
+}

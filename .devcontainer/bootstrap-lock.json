@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "images": {
+    "base": {
+      "reference": "mcr.microsoft.com/devcontainers/base:bookworm",
+      "digest": "sha256:73d85a96694a2cadca1ba3fcb5721f2312a64f1d571dd86f6c77e10a708931dc"
+    },
+    "nodeBootstrap": {
+      "reference": "docker.io/library/node:20.19.4-bookworm-slim",
+      "digest": "sha256:6db5e436948af8f0244488a1f658c2c8e55a3ae51ca2e1686ed042be8f25f70a"
+    },
+    "rustBootstrap": {
+      "reference": "docker.io/library/rust:1.89.0-bookworm",
+      "digest": "sha256:948f9b08a66e7fe01b03a98ef1c7568292e07ec2e4fe90d88c07bb14563c84ff"
+    }
+  },
+  "packages": {
+    "codex": {
+      "name": "@openai/codex",
+      "version": "0.98.0",
+      "integrity": "sha512-CKjrhAmzTvWn7Vbsi27iZRKBAJw9a7ZTTkWQDbLgQZP1weGbDIBk1r6wiLEp1ZmDO7w0fHPLYgnVspiOrYgcxg==",
+      "tarball": "https://registry.npmjs.org/@openai/codex/-/codex-0.98.0.tgz"
+    },
+    "pnpm": {
+      "name": "pnpm",
+      "version": "8.11.0",
+      "integrity": "sha512-nfh8FsmNsntOBR14fmfyIH7EfoCcywe/e17ErNzRYTNVg5o40LkAFEkj1qcFdwC3TSoMyxVYvrJBZHoSBqmnqw==",
+      "tarball": "https://registry.npmjs.org/pnpm/-/pnpm-8.11.0.tgz"
+    }
+  },
+  "toolchains": {
+    "rust": {
+      "version": "1.89.0",
+      "components": ["rustfmt", "clippy"],
+      "image": "rustBootstrap"
+    }
+  }
+}

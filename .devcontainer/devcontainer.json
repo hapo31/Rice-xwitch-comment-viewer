@@ -1,35 +1,17 @@
 {
   "name": "rice",
   "build": {
-    "dockerfile": "Dockerfile"
+    "dockerfile": "Dockerfile",
+    "context": ".."
   },
-  "runArgs": [
-    "--network=host"
-  ],
   "containerEnv": {
-    "RICE_BOUYOMI_HOST": "127.0.0.1",
     "CARGO_TARGET_DIR": "/home/vscode/.cargo-target/rice"
   },
   "postCreateCommand": ".devcontainer/setup.sh",
   "mounts": [
-    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
-    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached,readonly",
-    "source=rice-cargo-target,target=/home/vscode/.cargo-target,type=volume",
-    "source=rice-codex-home,target=/home/vscode/.codex,type=volume"
+    "source=rice-cargo-target,target=/home/vscode/.cargo-target,type=volume"
   ],
   "init": true,
-  "features": {
-    "ghcr.io/devcontainers/features/node:2.0.0": {
-      "version": "20",
-      "pnpmVersion": "8.11.0"
-    },
-    "ghcr.io/devcontainers/features/rust:1": {
-      "version": "latest",
-      "profile": "minimal"
-    },
-    "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
-  },
   "forwardPorts": [1420],
   "portsAttributes": {
     "1420": {

@@ -1,89 +1,77 @@
 # Devcontainer notes
 
-## Codex CLI
+## Default profile and bootstrap lock
 
-`postCreateCommand` で OpenAI Codex CLI を確認し、未インストールの場合だけ npm のグローバルパッケージとしてインストールします。
+`.devcontainer/devcontainer.json` is the normal development profile. It does not mount host SSH keys or Git configuration, a Codex state volume, the Docker socket, or host networking.
 
-```bash
-npm install -g @openai/codex@latest
-```
+Node 20.19.4, pnpm 8.11.0, Codex CLI 0.98.0, Rust 1.89.0, and the base images are fixed in [`bootstrap-lock.json`](./bootstrap-lock.json). The Dockerfile downloads the two npm tarballs during the image build, checks their SHA-512 integrity, and installs them with lifecycle scripts disabled. Rust, rustfmt, and clippy are copied from the fixed Rust image. Thus these tools are installed before any profile can mount host credentials or Docker access.
 
-devcontainer を Rebuild したあと、コンテナ内で次を実行して確認できます。
+After a normal Rebuild, `postCreateCommand` only verifies the baked Codex version and runs the project's lockfile-based `pnpm install`. Check the installed tools with:
 
 ```bash
 codex --version
+pnpm --version
+rustc --version
 ```
 
-特定バージョンに固定したい場合は、devcontainer 作成時の環境変数 `CODEX_NPM_PACKAGE` に `@openai/codex@<version>` を指定してください。
-`CODEX_NPM_PACKAGE` を指定した場合は、既存の `codex` があっても指定バージョンをインストールします。
+Do not change a version, digest, or integrity value in isolation. Update `bootstrap-lock.json` and `.devcontainer/Dockerfile` in the same reviewed dependency/tool update PR, then run:
 
-Codex の認証情報、履歴、セッション状態は named volume の `rice-codex-home` を `/home/vscode/.codex` にマウントして保持します。
+```bash
+scripts/verify-devcontainer-bootstrap.sh
+docker build --pull --file .devcontainer/Dockerfile --tag rice-devcontainer-bootstrap .
+docker run --rm rice-devcontainer-bootstrap codex --version
+```
 
-devcontainer を作成する前に手動で用意する場合、作成する volume 名は `rice-codex-home` です。
+The `Devcontainer bootstrap` workflow runs this rebuild, version verification, and `pnpm test`, `pnpm build`, and `cargo test` whenever these bootstrap files change.
+
+## Opt-in capability profiles
+
+Open these configuration files explicitly (for example, with `devcontainer up --workspace-folder . --config <path>`, or by selecting that configuration in the Dev Containers UI). They deliberately do not inherit the normal profile's `postCreateCommand`: the image is already verified before the capability is mounted, and project setup remains a user-initiated `pnpm install --frozen-lockfile`.
+
+| Profile | Capability | Use only when |
+| --- | --- | --- |
+| [`profiles/ssh-agent/devcontainer.json`](./profiles/ssh-agent/devcontainer.json) | Scoped SSH agent socket and `rice-codex-home` state volume | Git-over-SSH or a persisted Codex login is required. |
+| [`profiles/windows-bouyomi/devcontainer.json`](./profiles/windows-bouyomi/devcontainer.json) | `--network=host` | Connecting to a Windows-side BouyomiChan server from mirrored WSL2 networking. |
+| [`profiles/release/devcontainer.json`](./profiles/release/devcontainer.json) | Docker outside of Docker | Running `scripts/build-windows-docker.sh` locally. |
+
+The SSH profile requires a running agent and uses `${SSH_AUTH_SOCK}`. It never bind-mounts `~/.ssh`, so private-key files are not readable by the container. Load only the key needed for this repository and remove it from the agent when finished. Do not combine the release profile with SSH or host-network profiles unless the task genuinely requires every capability.
+
+Codex state in the SSH-agent profile is retained in `rice-codex-home` at `/home/vscode/.codex`. Create it manually if needed:
 
 ```bash
 docker volume create rice-codex-home
 ```
 
-これにより devcontainer を Rebuild しても `~/.codex/auth.json` や `~/.codex/history.jsonl` が残ります。初回だけ、既に別コンテナ内にあった未永続化の Codex 状態は自動移行されないため、必要なら再認証してください。
+## Credential incident response
+
+Treat a suspected malicious rebuild or bootstrap-integrity failure as a credential incident. Stop the container, revoke and recreate any SSH keys loaded into the agent, revoke Codex sessions/tokens and remove `rice-codex-home`, rotate any GitHub/Twitch credentials used from the container, and review Docker activity before enabling the release profile again. Rebuild only from a reviewed commit after verifying the lock with `scripts/verify-devcontainer-bootstrap.sh`.
 
 手動退避には `.devcontainer/codex-state-transfer.sh backup` を使います。バックアップは認証情報、履歴、セッションを含むため、既定では workspace 外の `${XDG_STATE_HOME:-$HOME/.local/state}/rice-xwitch-comment-viewer/codex-state-backup.zip` に `0600` で保存します。保存先を変更する場合は `CODEX_BACKUP_DIR` または `CODEX_BACKUP_ZIP` を指定してください。workspace 内へ置く場合も `.codex-state-backup/` を使用し、Git や Docker など外部へ送信しないでください。
 
 ## Cargo target
 
-Cargo のビルド成果物はワークスペース内の `src-tauri/target` ではなく、named volume の `/home/vscode/.cargo-target/rice` に出力します。
+The normal profile writes Cargo build artifacts to the `rice-cargo-target` named volume at `/home/vscode/.cargo-target/rice`, keeping large artifacts out of workspace file watching. Existing `src-tauri/target` content is never removed automatically.
 
-これにより、Tauri/Rust の大きな `deps` や `incremental` を VS Code のワークスペース監視対象から外します。既存の `src-tauri/target` は自動削除しないため、不要になったら次で削除できます。
+## Windows-side BouyomiChan connection
 
-```bash
-cargo clean --manifest-path src-tauri/Cargo.toml
-```
-
-## Windows 側の棒読みちゃんへ接続する
-
-この devcontainer は、WSL2 の `networkingMode=mirrored` と WSL2 上の Docker を前提に、`--network=host` で起動します。
-
-この構成では、devcontainer から Windows 側の TCP サーバーへ `127.0.0.1` で到達できることを期待します。棒読みちゃんを Windows 側で起動し、アプリ連携の TCP ポートを有効にしたうえで、Rice の棒読みちゃん接続先を次にします。
+Use the explicit Windows Bouyomi profile when WSL2 mirrored networking requires host networking. Start BouyomiChan on Windows with its TCP integration enabled, then set:
 
 ```text
 host: 127.0.0.1
 port: 50001
 ```
 
-新規に作られる設定 JSON では、devcontainer の `RICE_BOUYOMI_HOST=127.0.0.1` が既定値として使われます。既に設定 JSON がある場合は、Voices 画面でホストを手動で `127.0.0.1` に変更してください。
+If it cannot connect, confirm that BouyomiChan is running, TCP integration is enabled, it is listening on `127.0.0.1:50001` (or `0.0.0.0:50001`), and Windows Firewall permits the connection. Apply profile changes with a Rebuild.
 
-`host.docker.internal` は Docker Desktop では便利ですが、WSL2 上の Docker では Windows ホストではなく Docker/WSL 側の gateway を指すことがあります。このリポジトリの devcontainer では使わない方針にしています。
+## Local Windows release artifacts
 
-設定を反映するには devcontainer の Rebuild が必要です。
-
-接続できない場合は、まず次を確認してください。
-
-- 棒読みちゃんが起動している
-- 棒読みちゃんのアプリ連携/TCP 受付が有効
-- 棒読みちゃんが `0.0.0.0:50001` または `127.0.0.1:50001` で LISTEN している
-- Voices 画面のホストが `127.0.0.1`
-- Windows Defender Firewall やセキュリティソフトが WSL/Docker からの接続を遮断していない
-
-Windows 側では次で待ち受け状態を確認できます。
-
-```powershell
-netstat -ano | findstr ":50001"
-```
-
-## Windows リリース成果物をローカルで作る
-
-devcontainer は Docker outside Docker feature でホスト側 Docker を使えるようにします。devcontainer を Rebuild したあと、`.env` に Twitch OAuth の public client ID を設定します。
-
-```bash
-cp .env.example .env
-$EDITOR .env
-```
-
-その後、コンテナ内で次を実行すると、GitHub Actions と同じ Dockerfile 経由で Windows の NSIS インストーラーと portable zip を `release-artifacts/` に出力できます。Docker build は `.env` を自動では読まないため、このスクリプトが `.env` を読み込み、`RICE_TWITCH_CLIENT_ID` を build arg として渡します。
+Use only the explicit release profile to access the host Docker daemon. Set the Twitch OAuth public client ID in `.env` and run:
 
 ```bash
 scripts/build-windows-docker.sh
 ```
+
+The script creates the NSIS installer and portable zip in `release-artifacts/`. Docker builds do not read `.env` automatically; the script passes `RICE_TWITCH_CLIENT_ID` as a build argument.
 
 このスクリプトは送信前に `scripts/check-docker-context.sh` を実行します。root Dockerfile が必要とする source だけを `.dockerignore` の allowlist として許可し、Codex state、`.env`、秘密鍵、credential archive が context に入る構成なら停止します。remote/shared Docker daemon を使う場合、allowlist 内の source code は daemon、BuildKit frontend、cache 管理者から参照できるデータ境界に入るものとして扱ってください。
 
