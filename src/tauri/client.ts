@@ -217,6 +217,14 @@ export async function speechQueueRemove(itemId: string): Promise<void> {
   return invoke<void>("speech_queue_remove", { itemId });
 }
 
+export async function speechQueueRetry(itemId: string): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("speech_queue_retry", { itemId });
+}
+
 export async function twitchStartAuth(): Promise<TwitchDeviceAuthStart> {
   if (!isTauriRuntime) {
     return {

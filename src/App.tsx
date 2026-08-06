@@ -27,6 +27,7 @@ import {
   speechHealthProbe,
   speechQueueReload,
   speechQueueRemove,
+  speechQueueRetry,
   speechTest,
   takeSettingsRecoveryNotice,
   twitchConnect,
@@ -425,6 +426,14 @@ export function App() {
     }
   }
 
+  async function handleQueueRetry(itemId: string) {
+    try {
+      await speechQueueRetry(itemId);
+    } catch (error) {
+      dispatch({ type: "warning.added", warning: String(error) });
+    }
+  }
+
   async function handleLauncherAdd(paths: string[]) {
     try {
       const items = await launcherAdd(paths);
@@ -497,6 +506,7 @@ export function App() {
         onSpeechControl={handleSpeechControl}
         onQueueReload={handleQueueReload}
         onQueueRemove={handleQueueRemove}
+        onQueueRetry={handleQueueRetry}
         onLauncherAdd={handleLauncherAdd}
         onLauncherRemove={handleLauncherRemove}
         onLauncherLaunch={handleLauncherLaunch}
