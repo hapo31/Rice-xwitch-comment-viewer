@@ -266,8 +266,16 @@ impl SettingsStore {
     }
 
     fn save_to_path(path: &Path, settings: &AppSettings) -> anyhow::Result<()> {
+        Self::save_to_path_with_fault(path, settings, SaveFault::None)
+    }
+
+    fn save_to_path_with_fault(
+        path: &Path,
+        settings: &AppSettings,
+        fault: SaveFault,
+    ) -> anyhow::Result<()> {
         let text = serde_json::to_string_pretty(settings)?;
-        Self::save_text_to_path(path, &text, SaveFault::None)
+        Self::save_text_to_path(path, &text, fault)
     }
 
     fn save_text_to_path(path: &Path, text: &str, fault: SaveFault) -> anyhow::Result<()> {
@@ -519,6 +527,18 @@ pub fn settings_take_recovery_notice(
         .map(|mut notice| notice.take())
 }
 
+pub(crate) fn update_settings_transaction(
+    settings: &mut AppSettings,
+    update: impl FnOnce(&mut AppSettings) -> Result<(), String>,
+    save: impl FnOnce(&AppSettings) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut candidate = settings.clone();
+    update(&mut candidate)?;
+    save(&candidate)?;
+    *settings = candidate;
+    Ok(())
+}
+
 #[cfg(feature = "app")]
 #[tauri::command]
 pub fn settings_update(
@@ -527,10 +547,11 @@ pub fn settings_update(
     patch: SettingsPatch,
 ) -> Result<AppSettings, String> {
     let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
-    let mut updated = settings.clone();
-    apply_patch(&mut updated, patch)?;
-    SettingsStore::save(&app, &updated).map_err(|error| error.to_string())?;
-    *settings = updated;
+    update_settings_transaction(
+        &mut settings,
+        |candidate| apply_patch(candidate, patch),
+        |candidate| SettingsStore::save(&app, candidate).map_err(|error| error.to_string()),
+    )?;
     emit_app_log(&app, AppLogLevel::Info, "設定を保存しました。");
     Ok(settings.clone())
 }
@@ -644,7 +665,11 @@ fn settings_path<R: tauri::Runtime>(
 
 #[cfg(test)]
 mod tests {
-    use super::{backup_path, AppSettings, SaveFault, SettingsStore};
+    use super::{
+        apply_patch, backup_path, update_settings_transaction, AppSettings, SaveFault,
+        SettingsPatch, SettingsStore,
+    };
+    use crate::launcher::{normalize_launcher_items, LauncherItem, LauncherItemKind};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -798,6 +823,109 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(&path).expect("read defaults"))
                 .expect("defaults must be valid JSON");
         assert_eq!(primary.twitch.channel_login, "");
+        cleanup(&path);
+    }
+
+    #[test]
+    fn failed_patch_validation_keeps_memory_and_disk_unchanged() {
+        let path = settings_path_for_test("transaction-validation");
+        let previous = settings_with_channel("previous");
+        SettingsStore::save_to_path(&path, &previous).expect("save previous settings");
+        let original_disk = fs::read_to_string(&path).expect("read previous settings");
+        let mut settings = previous;
+        let patch: SettingsPatch = serde_json::from_value(serde_json::json!({
+            "twitch": { "channelLogin": "candidate" },
+            "speech": { "bouyomiSpeed": 301 }
+        }))
+        .expect("deserialize patch");
+
+        let result = update_settings_transaction(
+            &mut settings,
+            |candidate| apply_patch(candidate, patch),
+            |candidate| {
+                SettingsStore::save_to_path(&path, candidate).map_err(|error| error.to_string())
+            },
+        );
+
+        assert!(result.is_err());
+        assert_eq!(settings.twitch.channel_login, "previous");
+        assert_eq!(
+            fs::read_to_string(&path).expect("read unchanged settings"),
+            original_disk
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn failed_persistence_keeps_memory_and_disk_unchanged() {
+        let path = settings_path_for_test("transaction-save");
+        let previous = settings_with_channel("previous");
+        SettingsStore::save_to_path(&path, &previous).expect("save previous settings");
+        let original_disk = fs::read_to_string(&path).expect("read previous settings");
+        let mut settings = previous;
+        let patch: SettingsPatch = serde_json::from_value(serde_json::json!({
+            "twitch": { "channelLogin": "candidate" }
+        }))
+        .expect("deserialize patch");
+
+        let result = update_settings_transaction(
+            &mut settings,
+            |candidate| apply_patch(candidate, patch),
+            |candidate| {
+                SettingsStore::save_to_path_with_fault(&path, candidate, SaveFault::Replace)
+                    .map_err(|error| error.to_string())
+            },
+        );
+
+        assert!(result.is_err());
+        assert_eq!(settings.twitch.channel_login, "previous");
+        assert_eq!(
+            fs::read_to_string(&path).expect("read unchanged settings"),
+            original_disk
+        );
+        cleanup(&path);
+    }
+
+    #[test]
+    fn launcher_update_commits_memory_only_after_persistence() {
+        let path = settings_path_for_test("transaction-launcher");
+        let application_path = path.parent().expect("test directory").join("viewer.exe");
+        fs::write(&application_path, b"launcher test").expect("create application");
+        let mut settings = AppSettings::default();
+        SettingsStore::save_to_path(&path, &settings).expect("save initial settings");
+        let items = vec![LauncherItem {
+            id: "viewer".to_string(),
+            kind: LauncherItemKind::Application,
+            target: application_path.to_string_lossy().into_owned(),
+            display_name: "Viewer".to_string(),
+            icon_data_url: None,
+            background_color: None,
+            group_id: None,
+            order: 0,
+        }];
+
+        update_settings_transaction(
+            &mut settings,
+            |candidate| {
+                candidate.launcher.items = normalize_launcher_items(items)?;
+                Ok(())
+            },
+            |candidate| {
+                SettingsStore::save_to_path(&path, candidate).map_err(|error| error.to_string())
+            },
+        )
+        .expect("commit launcher settings");
+
+        let saved: AppSettings = serde_json::from_str(
+            &fs::read_to_string(&path).expect("read persisted launcher settings"),
+        )
+        .expect("deserialize persisted launcher settings");
+        assert_eq!(settings.launcher.items.len(), 1);
+        assert_eq!(saved.launcher.items.len(), 1);
+        assert_eq!(
+            settings.launcher.items[0].target,
+            saved.launcher.items[0].target
+        );
         cleanup(&path);
     }
 }
