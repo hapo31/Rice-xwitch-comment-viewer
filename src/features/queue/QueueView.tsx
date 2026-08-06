@@ -9,11 +9,13 @@ export function QueueView({
   onSpeechControl,
   onQueueReload,
   onQueueRemove,
+  onQueueRetry,
 }: {
   state: AppState;
   onSpeechControl: (command: "pause" | "resume" | "skip" | "clear") => void;
   onQueueReload: () => void;
   onQueueRemove: (itemId: string) => void;
+  onQueueRetry: (itemId: string) => void;
 }) {
   const queuedCount = countIncompleteQueueItems(state.queueItems);
   const displayItems = selectQueueItemsForDisplay(state.queueItems);
@@ -57,7 +59,7 @@ export function QueueView({
       </header>
 
       <section className="h-[calc(100%-3rem)] overflow-auto">
-        <div className="grid grid-cols-[140px_96px_minmax(0,1fr)_72px] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-500">
+        <div className="grid grid-cols-[140px_96px_minmax(0,1fr)_80px] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-500">
           <span>ユーザー</span>
           <span>状態</span>
           <span>読み上げ文</span>
@@ -67,7 +69,7 @@ export function QueueView({
           <div className="px-4 py-8 text-sm text-zinc-500">確認が必要な読み上げはありません。</div>
         ) : (
           displayItems.map((item) => (
-            <div key={item.id} className="grid min-h-11 grid-cols-[140px_96px_minmax(0,1fr)_72px] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
+            <div key={item.id} className="grid min-h-11 grid-cols-[140px_96px_minmax(0,1fr)_80px] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
               <span className="truncate pr-3 font-medium text-sky-300">{item.userDisplayName}</span>
               <span className="flex items-center gap-2 text-xs text-zinc-400">
                 <StatusIcon status={item.status} />
@@ -75,6 +77,17 @@ export function QueueView({
               </span>
               <span className="line-clamp-2 pr-4 text-zinc-200">{item.text}</span>
               <span className="flex justify-end">
+                {item.status === "error" && (
+                  <button
+                    type="button"
+                    aria-label="エラー項目を再試行"
+                    title="エラー項目を再試行"
+                    onClick={() => onQueueRetry(item.id)}
+                    className="mr-1 flex h-7 w-7 items-center justify-center border border-zinc-800 bg-zinc-850 text-zinc-400 hover:border-sky-400 hover:text-sky-200"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
                   aria-label="キュー項目を削除"

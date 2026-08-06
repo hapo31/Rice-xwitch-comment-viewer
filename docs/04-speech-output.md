@@ -134,6 +134,14 @@ Tauri Rust
 - `Disconnected`
 - `Error`
 
+送信項目の状態遷移:
+
+- 新規項目は `Ready` として pending に入り、初回送信する。
+- 初回送信に失敗した項目は `RetryScheduled` となり、短い遅延後に 1 回だけ自動再試行する。この間は FIFO を保つため後続を送信しない。
+- 再試行にも失敗した項目は `RetryExhausted` / 表示状態 `Error` として pending からエラー履歴へ隔離する。自動 worker は履歴を送信対象にせず、後続 pending 項目の処理を継続する。
+- 新しいチャットの enqueue と通常の再開は `RetryExhausted` を `Ready` へ戻さない。Queue 画面の「再試行」は明示的な復旧操作であり、対象を pending の末尾へ戻して自動再試行枠を新たに 1 回だけ与える。
+- エラー履歴は Queue 画面で確認・再試行・削除できる。接続復旧後に読み上げ直すか、破棄するかを配信者が判断する。
+
 ## 参照元
 
 - bouyomi4rs source: <https://docs.rs/bouyomi4rs/latest/src/bouyomi4rs/lib.rs.html>
