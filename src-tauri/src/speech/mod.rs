@@ -93,6 +93,116 @@ struct SpeechQueueItem {
     text: String,
     status: SpeechQueueItemStatus,
     retry_count: u8,
+    delivery_state: SpeechQueueDeliveryState,
+}
+
+/// `retry_count` は送信を試した回数ではなく、自動再試行を既に予約した回数を表す。
+/// 上限に達した項目は pending から履歴へ移すため、通常の worker 再起動では送信対象にならない。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpeechQueueDeliveryState {
+    Ready,
+    RetryScheduled,
+    RetryExhausted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SpeechQueueFailureTransition {
+    RetryScheduled,
+    RetryExhausted,
+    Ignored,
+}
+
+impl SpeechQueueState {
+    fn has_auto_processable_item(&self) -> bool {
+        self.pending
+            .front()
+            .is_some_and(|item| item.delivery_state == SpeechQueueDeliveryState::Ready)
+    }
+
+    fn begin_next_request(&mut self) -> Option<SpeechRequest> {
+        let item = self.pending.front_mut()?;
+        if item.delivery_state != SpeechQueueDeliveryState::Ready {
+            return None;
+        }
+
+        item.status = SpeechQueueItemStatus::Speaking;
+        Some(SpeechRequest {
+            id: item.id.clone(),
+            source_message_id: item.source_message_id.clone(),
+            text: item.text.clone(),
+            voice: None,
+            speed: None,
+            tone: None,
+            volume: None,
+        })
+    }
+
+    fn complete_request(&mut self, request_id: &str) -> bool {
+        let Some(front) = self.pending.front() else {
+            return false;
+        };
+        if front.id != request_id {
+            return false;
+        }
+
+        let mut item = self.pending.pop_front().expect("front checked");
+        item.status = SpeechQueueItemStatus::Spoken;
+        push_history(self, item);
+        true
+    }
+
+    fn fail_request(&mut self, request_id: &str) -> SpeechQueueFailureTransition {
+        let Some(front) = self.pending.front() else {
+            return SpeechQueueFailureTransition::Ignored;
+        };
+        if front.id != request_id {
+            return SpeechQueueFailureTransition::Ignored;
+        }
+
+        if front.retry_count == 0 {
+            let item = self.pending.front_mut().expect("front checked");
+            item.retry_count = 1;
+            item.status = SpeechQueueItemStatus::Queued;
+            item.delivery_state = SpeechQueueDeliveryState::RetryScheduled;
+            return SpeechQueueFailureTransition::RetryScheduled;
+        }
+
+        let mut item = self.pending.pop_front().expect("front checked");
+        item.status = SpeechQueueItemStatus::Error;
+        item.delivery_state = SpeechQueueDeliveryState::RetryExhausted;
+        push_history(self, item);
+        SpeechQueueFailureTransition::RetryExhausted
+    }
+
+    fn activate_scheduled_retry(&mut self, request_id: &str) -> bool {
+        let Some(item) = self.pending.front_mut() else {
+            return false;
+        };
+        if item.id != request_id || item.delivery_state != SpeechQueueDeliveryState::RetryScheduled
+        {
+            return false;
+        }
+
+        item.delivery_state = SpeechQueueDeliveryState::Ready;
+        true
+    }
+
+    fn retry_exhausted_item(&mut self, item_id: &str) -> bool {
+        let Some(index) = self.history.iter().position(|item| {
+            item.id == item_id
+                && item.status == SpeechQueueItemStatus::Error
+                && item.delivery_state == SpeechQueueDeliveryState::RetryExhausted
+        }) else {
+            return false;
+        };
+
+        let mut item = self.history.remove(index).expect("history index checked");
+        item.status = SpeechQueueItemStatus::Queued;
+        item.retry_count = 0;
+        item.delivery_state = SpeechQueueDeliveryState::Ready;
+        self.pending.push_back(item);
+        true
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -243,6 +353,7 @@ pub fn enqueue_chat_message_for_speech(
                         text: message.text.clone(),
                         status: SpeechQueueItemStatus::Blocked,
                         retry_count: 0,
+                        delivery_state: SpeechQueueDeliveryState::Ready,
                     },
                 );
                 emit_queue_snapshot(&app, &queue, Some(warning_message));
@@ -267,6 +378,7 @@ pub fn enqueue_chat_message_for_speech(
                         text: message.text.clone(),
                         status: SpeechQueueItemStatus::Blocked,
                         retry_count: 0,
+                        delivery_state: SpeechQueueDeliveryState::Ready,
                     },
                 );
                 emit_queue_snapshot(&app, &queue, Some(warning_message));
@@ -293,9 +405,10 @@ pub fn enqueue_chat_message_for_speech(
             text: formatted_text,
             status: SpeechQueueItemStatus::Queued,
             retry_count: 0,
+            delivery_state: SpeechQueueDeliveryState::Ready,
         };
         queue.pending.push_back(item);
-        if !queue.is_processing && !queue.paused {
+        if !queue.is_processing && !queue.paused && queue.has_auto_processable_item() {
             queue.is_processing = true;
             should_spawn = true;
         }
@@ -367,6 +480,8 @@ pub fn remove_queue_item(app: &tauri::AppHandle<tauri::Wry>, item_id: &str) -> R
         let mut item = queue.pending.remove(index).expect("queue index checked");
         item.status = SpeechQueueItemStatus::Skipped;
         push_history(&mut queue, item);
+    } else if let Some(index) = queue.history.iter().position(|item| item.id == item_id) {
+        queue.history.remove(index);
     }
     emit_queue_snapshot(app, &queue, None);
     Ok(())
@@ -385,6 +500,43 @@ pub fn speech_queue_remove(
     item_id: String,
 ) -> Result<(), String> {
     remove_queue_item(&app, &item_id)
+}
+
+#[cfg(feature = "app")]
+#[tauri::command]
+pub fn speech_queue_retry(
+    app: tauri::AppHandle<tauri::Wry>,
+    item_id: String,
+) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut should_spawn = false;
+    {
+        let mut queue = state
+            .speech_queue
+            .lock()
+            .map_err(|error| error.to_string())?;
+        if !queue.retry_exhausted_item(&item_id) {
+            return Err(
+                "このエラー項目は再試行できません。キューを再読込して状態を確認してください。"
+                    .to_string(),
+            );
+        }
+        if !queue.is_processing && !queue.paused && queue.has_auto_processable_item() {
+            queue.is_processing = true;
+            should_spawn = true;
+        }
+        emit_queue_snapshot(
+            &app,
+            &queue,
+            Some(
+                "エラー項目をキューの末尾へ戻しました。自動再試行は再度 1 回までです。".to_string(),
+            ),
+        );
+    }
+    if should_spawn {
+        tokio::spawn(process_speech_queue(app));
+    }
+    Ok(())
 }
 
 #[cfg(feature = "app")]
@@ -409,7 +561,7 @@ pub fn resume_queue(app: tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
             .lock()
             .map_err(|error| error.to_string())?;
         queue.paused = false;
-        if !queue.pending.is_empty() && !queue.is_processing {
+        if !queue.is_processing && queue.has_auto_processable_item() {
             queue.is_processing = true;
             should_spawn = true;
         }
@@ -443,7 +595,7 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                 emit_queue_snapshot(&app, &queue, None);
                 return;
             }
-            let Some(item) = queue.pending.front_mut() else {
+            if queue.pending.is_empty() {
                 queue.is_processing = false;
                 emit_speech_status(
                     &app,
@@ -452,16 +604,11 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                 );
                 emit_queue_snapshot(&app, &queue, None);
                 return;
-            };
-            item.status = SpeechQueueItemStatus::Speaking;
-            let request = SpeechRequest {
-                id: item.id.clone(),
-                source_message_id: item.source_message_id.clone(),
-                text: item.text.clone(),
-                voice: None,
-                speed: None,
-                tone: None,
-                volume: None,
+            }
+            let Some(request) = queue.begin_next_request() else {
+                queue.is_processing = false;
+                emit_queue_snapshot(&app, &queue, None);
+                return;
             };
             emit_queue_snapshot(&app, &queue, None);
             request
@@ -483,17 +630,11 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                         return;
                     }
                 };
-                if let Some(front) = queue.pending.front() {
-                    if front.id == request.id {
-                        let mut item = queue.pending.pop_front().expect("front checked");
-                        item.status = SpeechQueueItemStatus::Spoken;
-                        push_history(&mut queue, item);
-                    }
-                }
+                queue.complete_request(&request.id);
                 emit_queue_snapshot(&app, &queue, None);
             }
             Err(error_message) => {
-                let mut retry = None;
+                let transition;
                 {
                     let state = app.state::<AppState>();
                     let mut queue = match state.speech_queue.lock() {
@@ -503,28 +644,31 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                             return;
                         }
                     };
-                    if let Some(item) = queue.pending.front_mut() {
-                        if item.id == request.id && item.retry_count == 0 {
-                            item.retry_count = 1;
-                            item.status = SpeechQueueItemStatus::Queued;
-                            retry = Some(item.id.clone());
-                        } else if item.id == request.id {
-                            item.status = SpeechQueueItemStatus::Error;
-                        }
-                    }
-
-                    if retry.is_none() {
-                        queue.is_processing = false;
-                    }
-                    emit_speech_status(&app, SpeechStatus::Error, Some(error_message.clone()));
-                    emit_app_log(&app, AppLogLevel::Error, error_message.clone());
-                    emit_queue_snapshot(&app, &queue, Some(error_message));
+                    transition = queue.fail_request(&request.id);
+                    let queue_message = match transition {
+                        SpeechQueueFailureTransition::RetryScheduled => error_message.clone(),
+                        SpeechQueueFailureTransition::RetryExhausted => format!(
+                            "{error_message} 自動再試行を終了し、エラー履歴へ移しました。Queue の「再試行」で明示的に復旧できます。"
+                        ),
+                        SpeechQueueFailureTransition::Ignored => error_message.clone(),
+                    };
+                    emit_speech_status(&app, SpeechStatus::Error, Some(queue_message.clone()));
+                    emit_app_log(&app, AppLogLevel::Error, queue_message.clone());
+                    emit_queue_snapshot(&app, &queue, Some(queue_message));
                 }
-                if retry.is_some() {
+                if transition == SpeechQueueFailureTransition::RetryScheduled {
                     tokio::time::sleep(RETRY_DELAY).await;
-                    continue;
+                    let state = app.state::<AppState>();
+                    let mut queue = match state.speech_queue.lock() {
+                        Ok(queue) => queue,
+                        Err(error) => {
+                            emit_app_log(&app, AppLogLevel::Error, error.to_string());
+                            return;
+                        }
+                    };
+                    queue.activate_scheduled_retry(&request.id);
+                    emit_queue_snapshot(&app, &queue, None);
                 }
-                return;
             }
         }
     }
@@ -687,7 +831,6 @@ fn next_queue_id(queue: &mut SpeechQueueState) -> String {
     format!("speech-{id}")
 }
 
-#[cfg(feature = "app")]
 fn push_history(queue: &mut SpeechQueueState, item: SpeechQueueItem) {
     queue.history.push_front(item);
     while queue.history.len() > DEFAULT_HISTORY_LIMIT {
@@ -699,6 +842,32 @@ fn push_history(queue: &mut SpeechQueueState, item: SpeechQueueItem) {
 mod tests {
     use super::*;
     use crate::twitch::Platform;
+
+    fn queued_item(id: &str) -> SpeechQueueItem {
+        SpeechQueueItem {
+            id: id.to_string(),
+            source_message_id: None,
+            user_display_name: "viewer".to_string(),
+            text: "こんにちは".to_string(),
+            status: SpeechQueueItemStatus::Queued,
+            retry_count: 0,
+            delivery_state: SpeechQueueDeliveryState::Ready,
+        }
+    }
+
+    fn exhaust_front_item(queue: &mut SpeechQueueState) {
+        let initial = queue.begin_next_request().expect("initial request");
+        assert_eq!(
+            queue.fail_request(&initial.id),
+            SpeechQueueFailureTransition::RetryScheduled
+        );
+        assert!(queue.activate_scheduled_retry(&initial.id));
+        let retry = queue.begin_next_request().expect("retry request");
+        assert_eq!(
+            queue.fail_request(&retry.id),
+            SpeechQueueFailureTransition::RetryExhausted
+        );
+    }
 
     fn chat(text: &str) -> ChatMessage {
         ChatMessage {
@@ -805,6 +974,116 @@ mod tests {
         assert_eq!(
             formatter.format_chat_message(&chat("(speed 300) test")),
             SpeechFormatDecision::Speak("（speed 300） test".to_string())
+        );
+    }
+
+    #[test]
+    fn first_failure_schedules_exactly_one_automatic_retry() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("speech-1"));
+
+        let request = queue.begin_next_request().expect("initial request");
+        assert_eq!(
+            queue.fail_request(&request.id),
+            SpeechQueueFailureTransition::RetryScheduled
+        );
+        let item = queue.pending.front().expect("scheduled item");
+        assert_eq!(item.retry_count, 1);
+        assert_eq!(item.status, SpeechQueueItemStatus::Queued);
+        assert_eq!(
+            item.delivery_state,
+            SpeechQueueDeliveryState::RetryScheduled
+        );
+        assert!(queue.begin_next_request().is_none());
+
+        assert!(queue.activate_scheduled_retry(&request.id));
+        assert_eq!(
+            queue.begin_next_request().expect("retry request").id,
+            "speech-1"
+        );
+    }
+
+    #[test]
+    fn successful_retry_moves_item_to_spoken_history() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("speech-1"));
+
+        let initial = queue.begin_next_request().expect("initial request");
+        assert_eq!(
+            queue.fail_request(&initial.id),
+            SpeechQueueFailureTransition::RetryScheduled
+        );
+        assert!(queue.activate_scheduled_retry(&initial.id));
+        let retry = queue.begin_next_request().expect("retry request");
+        assert!(queue.complete_request(&retry.id));
+
+        assert!(queue.pending.is_empty());
+        let item = queue.history.front().expect("spoken history");
+        assert_eq!(item.status, SpeechQueueItemStatus::Spoken);
+        assert_eq!(item.retry_count, 1);
+    }
+
+    #[test]
+    fn exhausted_item_isolated_and_does_not_block_later_items() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("speech-a"));
+        queue.pending.push_back(queued_item("speech-b"));
+
+        exhaust_front_item(&mut queue);
+
+        let failed = queue.history.front().expect("failed history");
+        assert_eq!(failed.id, "speech-a");
+        assert_eq!(failed.status, SpeechQueueItemStatus::Error);
+        assert_eq!(failed.retry_count, 1);
+        assert_eq!(
+            failed.delivery_state,
+            SpeechQueueDeliveryState::RetryExhausted
+        );
+        assert_eq!(
+            queue.begin_next_request().expect("next item request").id,
+            "speech-b"
+        );
+    }
+
+    #[test]
+    fn enqueue_and_resume_do_not_revive_an_exhausted_item() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("speech-a"));
+        exhaust_front_item(&mut queue);
+
+        assert!(!queue.has_auto_processable_item());
+        queue.pending.push_back(queued_item("speech-b"));
+        assert!(queue.has_auto_processable_item());
+        assert_eq!(
+            queue.begin_next_request().expect("new item request").id,
+            "speech-b"
+        );
+        let failed = queue.history.front().expect("failed history");
+        assert_eq!(failed.id, "speech-a");
+        assert_eq!(failed.retry_count, 1);
+        assert_eq!(
+            failed.delivery_state,
+            SpeechQueueDeliveryState::RetryExhausted
+        );
+    }
+
+    #[test]
+    fn manual_retry_explicitly_restores_the_automatic_retry_budget() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("speech-1"));
+        exhaust_front_item(&mut queue);
+
+        assert!(queue.retry_exhausted_item("speech-1"));
+        assert!(queue.history.is_empty());
+        let item = queue.pending.front().expect("manually requeued item");
+        assert_eq!(item.status, SpeechQueueItemStatus::Queued);
+        assert_eq!(item.retry_count, 0);
+        assert_eq!(item.delivery_state, SpeechQueueDeliveryState::Ready);
+
+        let request = queue.begin_next_request().expect("manual retry request");
+        assert_eq!(
+            queue.fail_request(&request.id),
+            SpeechQueueFailureTransition::RetryScheduled
         );
     }
 }
