@@ -49,7 +49,7 @@ Rust backend
 | `SpeechAdapter` | 読み上げ先を抽象化するtrait |
 | `BouyomiAdapter` | 棒読みちゃんTCPプロトコル実装 |
 | `VoiceroidAdapter` | Windows専用の実験的アダプタ。C# sidecarまたはUI Automationを隠蔽する |
-| `SettingsStore` | 一般設定JSONを原子的に保存し、破損時はbackupまたは既定値へ復旧する。OAuthトークンは扱わない |
+| `SettingsStore` | 一般設定JSONを原子的に保存し、破損時はbackupまたは既定値へ復旧する。更新は候補を保存できた場合だけ共有メモリへ反映する。OAuthトークンは扱わない |
 | `TwitchAuthStore` | Twitch OAuth状態をOS keyringへ保存/復元/削除する |
 | `LauncherService` | 登録アプリのパス検証、重複排除、単体/一斉起動を扱う |
 

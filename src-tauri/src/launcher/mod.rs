@@ -1,7 +1,7 @@
 #[cfg(feature = "app")]
 use crate::app_events::{emit_app_log, AppLogLevel};
 #[cfg(feature = "app")]
-use crate::settings::{AppState, SettingsStore};
+use crate::settings::{update_settings_transaction, AppState, SettingsStore};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
@@ -355,13 +355,17 @@ pub fn launcher_add(
     let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
     let new_items = build_new_items(&settings.launcher.items, paths)?;
     let added_count = new_items.len();
-    let previous_items = settings.launcher.items.clone();
-    settings.launcher.items.extend(new_items);
-
-    if let Err(error) = SettingsStore::save(&app, &settings) {
-        settings.launcher.items = previous_items;
-        return Err(format!("ランチャーの設定を保存できませんでした: {error}"));
-    }
+    update_settings_transaction(
+        &mut settings,
+        |candidate| {
+            candidate.launcher.items.extend(new_items);
+            Ok(())
+        },
+        |candidate| {
+            SettingsStore::save(&app, candidate)
+                .map_err(|error| format!("ランチャーの設定を保存できませんでした: {error}"))
+        },
+    )?;
 
     let items = settings.launcher.items.clone();
     drop(settings);
@@ -391,11 +395,18 @@ pub fn launcher_remove(
         return Err("削除するランチャー項目が見つかりません。".to_string());
     };
 
-    let removed = settings.launcher.items.remove(index);
-    if let Err(error) = SettingsStore::save(&app, &settings) {
-        settings.launcher.items.insert(index, removed);
-        return Err(format!("ランチャーの設定を保存できませんでした: {error}"));
-    }
+    let removed = settings.launcher.items[index].clone();
+    update_settings_transaction(
+        &mut settings,
+        |candidate| {
+            candidate.launcher.items.remove(index);
+            Ok(())
+        },
+        |candidate| {
+            SettingsStore::save(&app, candidate)
+                .map_err(|error| format!("ランチャーの設定を保存できませんでした: {error}"))
+        },
+    )?;
 
     let items = settings.launcher.items.clone();
     drop(settings);
