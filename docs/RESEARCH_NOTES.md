@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-08-06: Issue #23 EventSub 再購読時の認証更新
+
+- EventSub 接続 task が開始時点の access token を `EventSubConnectionParams` に保持していたため、Login 画面などで token を更新しても、後続の通常再接続で古い token を使っていた。接続パラメータから認証情報を除き、購読のたびにアプリの認証状態から現在の token を取得するようにした。
+- 購読が 401 の時だけ refresh を一度実行し、更新された access token / rotation 後の refresh token を既存の OS credential store 保存経路へ直ちに渡してから再購読する。refresh 失敗または更新後の再試行の 401 は認証状態を解除して Login での再認証を案内する。期限切れ token の再試行、refresh 失敗時に再試行しないこと、rotation が保存対象へ反映されることを Rust の非同期テストで確認した。
+
 ## 2026-08-05: Issue #97 devcontainer bootstrap と capability 分離
 
 - 通常 devcontainer では host `.ssh`、`.gitconfig`、Codex state volume、Docker socket、`--network=host` が `postCreateCommand` と同居しており、`@openai/codex@latest` を未固定で global install していた。これを、base/Node/Rust image digest、Codex 0.98.0 と pnpm 8.11.0 の tarball SHA-512、Rust 1.89.0 を `.devcontainer/bootstrap-lock.json` に記録する構成へ変更した。
