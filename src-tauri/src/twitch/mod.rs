@@ -19,6 +19,8 @@ use std::{
     path::{Path, PathBuf},
 };
 #[cfg(feature = "app")]
+use tauri::Manager;
+#[cfg(feature = "app")]
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 const TWITCH_DEVICE_URL: &str = "https://id.twitch.tv/oauth2/device";
@@ -307,11 +309,26 @@ struct OAuthErrorResponse {
 #[cfg(feature = "app")]
 #[derive(Debug, Clone)]
 struct EventSubConnectionParams {
-    client_id: String,
-    access_token: String,
     broadcaster_user_id: String,
     broadcaster_login: String,
     user_id: String,
+}
+
+#[cfg(feature = "app")]
+#[derive(Debug, Clone)]
+struct EventSubAuthCredentials {
+    client_id: String,
+    access_token: String,
+    refresh_token: String,
+}
+
+#[cfg(feature = "app")]
+#[derive(Debug, thiserror::Error)]
+enum SubscriptionRequestError {
+    #[error("Twitch EventSub 購読の認証が拒否されました。")]
+    Unauthorized,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 #[cfg(feature = "app")]
@@ -364,6 +381,51 @@ impl TwitchAuthState {
             expires_in: token.expires_in,
             profile,
         })
+    }
+
+    #[cfg(feature = "app")]
+    fn eventsub_credentials(&self) -> anyhow::Result<EventSubAuthCredentials> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Twitch にログインしていません。"))?;
+        let profile = self.profile.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Twitch のユーザー情報がありません。認証を確認してください。")
+        })?;
+        let client_id = if profile.client_id.trim().is_empty() {
+            default_twitch_client_id()
+        } else {
+            profile.client_id.clone()
+        };
+
+        if client_id.trim().is_empty() {
+            return Err(anyhow::anyhow!(
+                "Twitch Client ID が見つかりません。再ログインしてください。"
+            ));
+        }
+
+        Ok(EventSubAuthCredentials {
+            client_id,
+            access_token: token.access_token.clone(),
+            refresh_token: token.refresh_token.clone(),
+        })
+    }
+
+    fn replace_token(&mut self, token: TokenResponse) -> anyhow::Result<String> {
+        let scopes = token_scopes(
+            token.scope,
+            self.profile.as_ref().ok_or_else(|| {
+                anyhow::anyhow!("Twitch のユーザー情報がありません。認証を確認してください。")
+            })?,
+        );
+        let access_token = token.access_token.clone();
+        self.token = Some(TwitchToken {
+            access_token,
+            refresh_token: token.refresh_token,
+            scopes,
+            expires_in: token.expires_in,
+        });
+        Ok(token.access_token)
     }
 }
 
@@ -997,8 +1059,6 @@ pub async fn twitch_connect(
         .await
         .map_err(to_twitch_user_message)?;
     let params = EventSubConnectionParams {
-        client_id,
-        access_token,
         broadcaster_user_id: broadcaster.id.clone(),
         broadcaster_login: broadcaster.login.clone(),
         user_id,
@@ -1330,7 +1390,7 @@ async fn run_eventsub_session(
                             keepalive_timeout = Duration::from_secs(seconds);
                         }
                         if subscribe_on_welcome {
-                            create_chat_message_subscription(params, &session.id).await?;
+                            create_chat_message_subscription(app, params, &session.id).await?;
                         }
                         emit_twitch_status(
                             app,
@@ -1410,9 +1470,139 @@ async fn run_eventsub_session(
 
 #[cfg(feature = "app")]
 async fn create_chat_message_subscription(
+    app: &tauri::AppHandle<tauri::Wry>,
     params: &EventSubConnectionParams,
     session_id: &str,
 ) -> anyhow::Result<()> {
+    let credentials = app
+        .state::<AppState>()
+        .twitch_auth
+        .lock()
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?
+        .eventsub_credentials()?;
+    let subscription_client_id = credentials.client_id.clone();
+    let refresh_app = app.clone();
+    let refresh_credentials = credentials.clone();
+
+    match retry_eventsub_subscription(
+        credentials.access_token,
+        |access_token| {
+            let client_id = subscription_client_id.clone();
+            async move {
+                send_chat_message_subscription(params, session_id, &client_id, &access_token).await
+            }
+        },
+        move || {
+            let app = refresh_app.clone();
+            let credentials = refresh_credentials.clone();
+            async move { refresh_eventsub_access_token(&app, &credentials).await }
+        },
+    )
+    .await
+    {
+        Ok(()) => Ok(()),
+        Err(SubscriptionRequestError::Unauthorized) => {
+            let message =
+                "Twitch 認証を更新しても EventSub 購読が拒否されました。再ログインしてください。";
+            clear_eventsub_auth(app, message)?;
+            Err(anyhow::anyhow!(message))
+        }
+        Err(SubscriptionRequestError::Other(error)) => Err(error),
+    }
+}
+
+#[cfg(feature = "app")]
+async fn retry_eventsub_subscription<Subscribe, SubscribeFuture, Refresh, RefreshFuture>(
+    access_token: String,
+    mut subscribe: Subscribe,
+    mut refresh: Refresh,
+) -> Result<(), SubscriptionRequestError>
+where
+    Subscribe: FnMut(String) -> SubscribeFuture,
+    SubscribeFuture: std::future::Future<Output = Result<(), SubscriptionRequestError>>,
+    Refresh: FnMut() -> RefreshFuture,
+    RefreshFuture: std::future::Future<Output = anyhow::Result<String>>,
+{
+    match subscribe(access_token).await {
+        Ok(()) => Ok(()),
+        Err(SubscriptionRequestError::Unauthorized) => {
+            let refreshed_access_token = refresh().await?;
+            subscribe(refreshed_access_token).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(feature = "app")]
+async fn refresh_eventsub_access_token(
+    app: &tauri::AppHandle<tauri::Wry>,
+    credentials: &EventSubAuthCredentials,
+) -> anyhow::Result<String> {
+    let latest_credentials = app
+        .state::<AppState>()
+        .twitch_auth
+        .lock()
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?
+        .eventsub_credentials()?;
+    if latest_credentials.refresh_token != credentials.refresh_token {
+        return Ok(latest_credentials.access_token);
+    }
+
+    let refreshed =
+        match refresh_access_token(&credentials.client_id, &credentials.refresh_token).await {
+            Ok(token) => token,
+            Err(error) => {
+                let message = to_twitch_user_message(error);
+                clear_eventsub_auth(app, &message)?;
+                return Err(anyhow::anyhow!(message));
+            }
+        };
+
+    let (access_token, storage_warning, did_refresh) = {
+        let state = app.state::<AppState>();
+        let mut auth = state
+            .twitch_auth
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        let current_credentials = auth.eventsub_credentials()?;
+        if current_credentials.refresh_token != credentials.refresh_token {
+            (current_credentials.access_token, None, false)
+        } else {
+            let access_token = auth.replace_token(refreshed)?;
+            let storage_warning = save_or_storage_warning(&auth);
+            (access_token, storage_warning, true)
+        }
+    };
+
+    if did_refresh {
+        emit_app_log(
+            app,
+            AppLogLevel::Info,
+            "Twitch EventSub の再購読前に認証を更新しました。",
+        );
+    }
+    if let Some(warning) = storage_warning {
+        emit_app_log(app, AppLogLevel::Warning, warning);
+    }
+    Ok(access_token)
+}
+
+#[cfg(feature = "app")]
+fn clear_eventsub_auth(
+    app: &tauri::AppHandle<tauri::Wry>,
+    error_message: &str,
+) -> anyhow::Result<()> {
+    let state = app.state::<AppState>();
+    clear_invalid_twitch_auth(&state, app, error_message).map_err(|error| anyhow::anyhow!(error))
+}
+
+#[cfg(feature = "app")]
+async fn send_chat_message_subscription(
+    params: &EventSubConnectionParams,
+    session_id: &str,
+    client_id: &str,
+    access_token: &str,
+) -> Result<(), SubscriptionRequestError> {
     let body = serde_json::json!({
         "type": CHANNEL_CHAT_MESSAGE_TYPE,
         "version": CHANNEL_CHAT_MESSAGE_VERSION,
@@ -1427,11 +1617,16 @@ async fn create_chat_message_subscription(
     });
     let response = reqwest::Client::new()
         .post(TWITCH_EVENTSUB_SUBSCRIPTIONS_URL)
-        .header("Client-Id", &params.client_id)
-        .bearer_auth(&params.access_token)
+        .header("Client-Id", client_id)
+        .bearer_auth(access_token)
         .json(&body)
         .send()
-        .await?;
+        .await
+        .map_err(anyhow::Error::from)?;
+
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(SubscriptionRequestError::Unauthorized);
+    }
 
     parse_json_response::<serde_json::Value>(response).await?;
     Ok(())
@@ -1640,6 +1835,8 @@ mod tests {
         AuthStorage, EventSubEnvelope, MessageDedupe, OAuthErrorResponse, StoredTwitchAuth,
         TwitchAuthState, TwitchToken, TwitchUserProfile,
     };
+    #[cfg(feature = "app")]
+    use super::{retry_eventsub_subscription, SubscriptionRequestError, TokenResponse};
     use std::{
         cell::RefCell,
         time::{Duration, Instant},
@@ -1840,6 +2037,98 @@ mod tests {
         assert_eq!(retry_backoff_seconds(3), 10);
         assert_eq!(retry_backoff_seconds(4), 30);
         assert_eq!(retry_backoff_seconds(10), 30);
+    }
+
+    #[cfg(feature = "app")]
+    #[tokio::test]
+    async fn eventsub_reconnect_with_expired_access_token_refreshes_and_retries_once() {
+        let attempted_tokens = RefCell::new(Vec::new());
+        let refresh_calls = RefCell::new(0);
+
+        let result = retry_eventsub_subscription(
+            "expired-access-token".to_string(),
+            |access_token| {
+                attempted_tokens.borrow_mut().push(access_token.clone());
+                async move {
+                    if access_token == "expired-access-token" {
+                        Err(SubscriptionRequestError::Unauthorized)
+                    } else {
+                        Ok(())
+                    }
+                }
+            },
+            || {
+                *refresh_calls.borrow_mut() += 1;
+                async { Ok("refreshed-access-token".to_string()) }
+            },
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(
+            *attempted_tokens.borrow(),
+            vec!["expired-access-token", "refreshed-access-token"]
+        );
+        assert_eq!(*refresh_calls.borrow(), 1);
+    }
+
+    #[cfg(feature = "app")]
+    #[tokio::test]
+    async fn eventsub_refresh_failure_does_not_retry_the_subscription() {
+        let attempts = RefCell::new(0);
+        let result = retry_eventsub_subscription(
+            "expired-access-token".to_string(),
+            |_| {
+                *attempts.borrow_mut() += 1;
+                async { Err(SubscriptionRequestError::Unauthorized) }
+            },
+            || async { Err(anyhow::anyhow!("refresh token was revoked")) },
+        )
+        .await;
+
+        assert_eq!(*attempts.borrow(), 1);
+        assert!(
+            matches!(result, Err(SubscriptionRequestError::Other(error)) if error.to_string().contains("revoked"))
+        );
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn eventsub_credentials_use_the_refreshed_token_and_persist_refresh_rotation() {
+        let mut auth = twitch_auth_state();
+        assert_eq!(
+            auth.eventsub_credentials().unwrap().access_token,
+            "access-token"
+        );
+
+        auth.replace_token(TokenResponse {
+            access_token: "refreshed-access-token".to_string(),
+            refresh_token: "rotated-refresh-token".to_string(),
+            scope: vec!["user:read:chat".to_string()],
+            expires_in: 7200,
+        })
+        .unwrap();
+
+        let stored = auth.stored_auth().unwrap();
+        assert_eq!(
+            auth.eventsub_credentials().unwrap().access_token,
+            "refreshed-access-token"
+        );
+        assert_eq!(stored.access_token, "refreshed-access-token");
+        assert_eq!(stored.refresh_token, "rotated-refresh-token");
+        assert_eq!(stored.expires_in, 7200);
+
+        let secure = FakeAuthSecretStore::default();
+        let legacy = FakeAuthSecretStore::default();
+        let storage = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        };
+        assert_eq!(storage.save(&auth).unwrap(), None);
+        let persisted =
+            serde_json::from_str::<StoredTwitchAuth>(secure.secret.borrow().as_deref().unwrap())
+                .unwrap();
+        assert_eq!(persisted.refresh_token, "rotated-refresh-token");
     }
 
     #[test]
