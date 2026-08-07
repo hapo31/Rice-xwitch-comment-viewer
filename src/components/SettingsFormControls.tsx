@@ -1,4 +1,26 @@
 import { Save } from "lucide-react";
+import type { ReactNode } from "react";
+
+export function SettingsSection({
+  id,
+  title,
+  children,
+}: {
+  id: string;
+  title: string;
+  children: ReactNode;
+}) {
+  const headingId = `${id}-heading`;
+
+  return (
+    <section aria-labelledby={headingId} className="border-y border-zinc-800">
+      <h2 id={headingId} className="border-b border-zinc-800 px-3 py-2 text-xs font-semibold text-zinc-300">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
 
 export function FloatingSaveButton({
   visible,
