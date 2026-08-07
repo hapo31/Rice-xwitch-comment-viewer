@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { getStartupGuideMessages, type StartupGuideMessage } from "../../presentation/startupGuide";
 import type { AppState } from "../../stores/appStore";
 import type { ChatMessage } from "../../types";
+import { CHAT_GRID_TEMPLATE } from "./chatLayout";
 
 export function ChatView({ state, showStartupGuide }: { state: AppState; showStartupGuide: boolean }) {
   const startupReceivedAt = useRef(new Date().toISOString());
@@ -51,9 +52,12 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
         </div>
       </header>
 
-      <section ref={scrollParentRef} className="h-[calc(100%-3rem)] overflow-auto">
-        <div className="min-w-[640px]">
-          <div className="sticky top-0 z-10 grid grid-cols-[88px_160px_minmax(0,1fr)] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-500">
+      <section ref={scrollParentRef} className="h-[calc(100%-3rem)] overflow-x-hidden overflow-y-auto">
+        <div className="min-w-0">
+          <div
+            className="sticky top-0 z-10 grid border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-500"
+            style={{ gridTemplateColumns: CHAT_GRID_TEMPLATE }}
+          >
             <span>時刻</span>
             <span>ユーザー</span>
             <span>チャット</span>
@@ -96,7 +100,10 @@ function ChatRow({ message }: { message: ChatMessage | StartupGuideMessage }) {
   }).format(new Date(message.receivedAt));
 
   return (
-    <div className="grid min-h-11 grid-cols-[88px_160px_minmax(0,1fr)] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
+    <div
+      className="grid min-h-11 items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900"
+      style={{ gridTemplateColumns: CHAT_GRID_TEMPLATE }}
+    >
       <span className="font-mono text-xs text-zinc-500">{time}</span>
       <span className="truncate pr-3 font-medium text-sky-300">{message.userDisplayName}</span>
       <span className="line-clamp-2 text-zinc-200">
