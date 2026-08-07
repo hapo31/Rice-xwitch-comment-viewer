@@ -3,6 +3,7 @@ import {
   FloatingSaveButton,
   NumberRuleRow,
   RuleTextArea,
+  SettingsSection,
 } from "../../components/SettingsFormControls";
 import type { AppSettings } from "../../types";
 import { formatRuleList, parseRuleList } from "../../validation";
@@ -78,7 +79,7 @@ export function FilterView({
 
       <div className="h-[calc(100%-3rem)] overflow-auto p-4 pb-20">
         <div className="max-w-3xl space-y-6">
-          <section className="border-y border-zinc-800">
+          <SettingsSection id="speech-rules" title="読み上げ条件">
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-b border-zinc-800 py-3">
               <label className="text-sm text-zinc-400" htmlFor="rule-url-handling">
                 URL
@@ -110,12 +111,12 @@ export function FilterView({
               valid={isRepeatSecondsValid}
               error="0 から 30 の範囲で入力してください。"
             />
-          </section>
+          </SettingsSection>
 
-          <section className="border-y border-zinc-800">
+          <SettingsSection id="blocked-rules" title="除外リスト">
             <RuleTextArea label="NG ユーザー" value={blockedUsers} onChange={setBlockedUsers} />
             <RuleTextArea label="NG ワード" value={blockedWords} onChange={setBlockedWords} />
-          </section>
+          </SettingsSection>
         </div>
       </div>
       <FloatingSaveButton

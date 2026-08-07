@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-08-07: Issue #38 Settings / Filter の設定群見出し
+
+- Settings と Filter は区切り線だけで設定群を分けていたため、共有 `SettingsSection` に `section`、関連付けた `h2`、静かな小見出しスタイルを集約した。両画面とも画面名の `h1` の下で同じ階層を使い、見出しナビゲーションから設定群へ移動できる。
+- React の静的レンダリングで両画面の見出し一覧を検証し、`pnpm test`（31件）と `pnpm build` が成功した。画面上での密度と読みやすさは次回の手動 UI 確認で確認する。
+
 ## 2026-08-06: Issue #23 EventSub 再購読時の認証更新
 
 - EventSub 接続 task が開始時点の access token を `EventSubConnectionParams` に保持していたため、Login 画面などで token を更新しても、後続の通常再接続で古い token を使っていた。接続パラメータから認証情報を除き、購読のたびにアプリの認証状態から現在の token を取得するようにした。

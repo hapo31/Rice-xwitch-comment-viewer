@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   FloatingSaveButton,
   RangeRow,
+  SettingsSection,
   ToggleRow,
 } from "../../components/SettingsFormControls";
 import type { AppSettings, BouyomiConnectionDiagnostics } from "../../types";
@@ -176,7 +177,7 @@ export function SettingsView({
 
       <div className="h-[calc(100%-3rem)] overflow-auto p-4 pb-20">
         <div className="max-w-3xl space-y-6">
-          <section className="border-y border-zinc-800">
+          <SettingsSection id="chat-reception" title="チャット受信">
             <ToggleRow
               label="起動時にチャット受信を開始"
               checked={twitchSettings.autoConnect}
@@ -187,15 +188,15 @@ export function SettingsView({
               checked={twitchSettings.confirmBeforeStopChat}
               onChange={updateConfirmBeforeStopChat}
             />
-          </section>
+          </SettingsSection>
 
-          <section className="border-y border-zinc-800">
+          <SettingsSection id="automatic-speech" title="自動読み上げ">
             <ToggleRow label="自動読み上げ" checked={autoSpeak} onChange={setAutoSpeak} />
             <ToggleRow label="ユーザー名を読む" checked={readUserName} onChange={setReadUserName} />
             <ToggleRow label="emote を読む" checked={readEmotes} onChange={setReadEmotes} />
-          </section>
+          </SettingsSection>
 
-          <section className="border-y border-zinc-800">
+          <SettingsSection id="bouyomi-connection" title="棒読みちゃん接続">
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-b border-zinc-800 py-3">
               <label className="text-sm text-zinc-400" htmlFor="bouyomi-host">
                 ホスト
@@ -222,10 +223,10 @@ export function SettingsView({
                 {!isPortValid && <p className="mt-1 text-xs text-rose-400">1 から 65535 の範囲で入力してください。</p>}
               </div>
             </div>
-          </section>
+          </SettingsSection>
 
           {diagnostics && (
-            <section className="border-y border-zinc-800">
+            <SettingsSection id="connection-diagnostics" title="接続診断">
               <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
                 <span className="text-sm text-zinc-400">診断結果</span>
                 <div className="space-y-2">
@@ -247,10 +248,10 @@ export function SettingsView({
                   </div>
                 ))}
               </div>
-            </section>
+            </SettingsSection>
           )}
 
-          <section className="border-y border-zinc-800">
+          <SettingsSection id="voice-settings" title="声質">
             <RangeRow label="速度" value={speed} min={-1} max={300} onChange={setSpeed} />
             <RangeRow label="音程" value={tone} min={-1} max={200} onChange={setTone} />
             <RangeRow label="音量" value={volume} min={-1} max={100} onChange={setVolume} />
@@ -269,9 +270,9 @@ export function SettingsView({
                 {!isVoiceValid && <p className="mt-1 text-xs text-rose-400">0 から 30000 の範囲で入力してください。</p>}
               </div>
             </div>
-          </section>
+          </SettingsSection>
 
-          <section className="border-y border-zinc-800">
+          <SettingsSection id="connection-success-speech" title="接続成功時の読み上げ">
             <ToggleRow
               label="接続成功時に読み上げさせる"
               checked={connectionSuccessSpeechEnabled}
@@ -294,9 +295,9 @@ export function SettingsView({
                 <div className="text-right text-xs text-zinc-500">{connectionSuccessSpeechText.length}/120</div>
               </div>
             </div>
-          </section>
+          </SettingsSection>
 
-          <section className="border-y border-zinc-800">
+          <SettingsSection id="speech-test" title="テスト読み上げ">
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start py-3">
               <label className="pt-2 text-sm text-zinc-400" htmlFor="speech-test-text">
                 テスト文
@@ -322,7 +323,7 @@ export function SettingsView({
                 </div>
               </div>
             </div>
-          </section>
+          </SettingsSection>
         </div>
       </div>
       <FloatingSaveButton
