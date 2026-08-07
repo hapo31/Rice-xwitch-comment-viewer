@@ -285,6 +285,12 @@ impl SpeechFormatter {
         }
         text = collapse_spaces(&text);
 
+        // Normalization and omitted emotes can remove every readable character. Do not
+        // turn that into an empty packet or a display-name-only utterance.
+        if text.is_empty() {
+            return SpeechFormatDecision::Blocked("読み上げる本文がありません。".to_string());
+        }
+
         let max_len = self.options.max_comment_length.max(1);
         if text.chars().count() > max_len {
             text = truncate_chars(&text, max_len);
@@ -896,6 +902,62 @@ mod tests {
             formatter.format_chat_message(&chat("hello\nhttps://example.com/\u{0007}")),
             SpeechFormatDecision::Speak("hello URL省略".to_string())
         );
+    }
+
+    #[test]
+    fn formatter_blocks_messages_without_readable_body_after_normalization() {
+        let emote_only = ChatMessage {
+            fragments: vec![MessageFragment {
+                kind: "emote".to_string(),
+                text: "Kappa".to_string(),
+                emote: Some(crate::twitch::ChatEmote {
+                    id: "25".to_string(),
+                    emote_set_id: "0".to_string(),
+                    owner_id: None,
+                }),
+                cheermote: None,
+            }],
+            ..chat("Kappa")
+        };
+        let cases = [
+            ("control chars only", chat("\u{0007}\u{001b}"), None),
+            ("line breaks and tabs only", chat("\n\r\t"), None),
+            ("emote only", emote_only, None),
+            (
+                "normal text with control chars",
+                chat("hello\u{0007}\n\tworld"),
+                Some("hello world"),
+            ),
+        ];
+
+        for read_user_name in [false, true] {
+            let formatter = SpeechFormatter::new(SpeechFormatterOptions {
+                read_user_name,
+                ..SpeechFormatterOptions::default()
+            });
+
+            for (case_name, message, expected_text) in &cases {
+                match expected_text {
+                    Some(expected_text) => {
+                        let expected = if read_user_name {
+                            format!("viewer。{expected_text}")
+                        } else {
+                            expected_text.to_string()
+                        };
+                        assert_eq!(
+                            formatter.format_chat_message(message),
+                            SpeechFormatDecision::Speak(expected),
+                            "{case_name}"
+                        );
+                    }
+                    None => assert_eq!(
+                        formatter.format_chat_message(message),
+                        SpeechFormatDecision::Blocked("読み上げる本文がありません。".to_string()),
+                        "{case_name}, read_user_name={read_user_name}"
+                    ),
+                }
+            }
+        }
     }
 
     #[test]

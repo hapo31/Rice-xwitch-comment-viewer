@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-08-07: Issue #78 正規化後に空となる読み上げ本文
+
+- `SpeechFormatter` は raw text の空判定だけでは BEL などの制御文字のみのチャットを通してしまい、名前読み上げ OFF では空の talk packet、ON ではユーザー名だけを送る可能性があった。制御文字/空白の正規化、URL・タグ処理、emote 除外の後に本文が空なら、設定にかかわらず `読み上げる本文がありません。` の理由で `Blocked` とする。既存の enqueue 経路はこの理由を Queue history と UI の警告へ渡す。
+- 制御文字のみ、改行/タブのみ、emote のみ、通常文字＋制御文字を、ユーザー名読み上げ ON/OFF の両方で検証するテーブルテストを追加した。`CARGO_TARGET_DIR=/tmp/rice-issue-78-cargo-target cargo test` は 56 件すべて成功。実 Twitch + 棒読みちゃんで本文なしチャットが UI の Blocked 履歴として表示され、talk packet が送られないことは手動確認として残る。
+
 ## 2026-08-07: Issue #38 Settings / Filter の設定群見出し
 
 - Settings と Filter は区切り線だけで設定群を分けていたため、共有 `SettingsSection` に `section`、関連付けた `h2`、静かな小見出しスタイルを集約した。両画面とも画面名の `h1` の下で同じ階層を使い、見出しナビゲーションから設定群へ移動できる。
