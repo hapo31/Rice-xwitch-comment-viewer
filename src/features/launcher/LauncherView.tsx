@@ -185,13 +185,13 @@ export function LauncherView({
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-5">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Launcher</h1>
-          <p className="truncate text-xs text-zinc-500">よく使うアプリを登録して、ここからすばやく起動します</p>
+          <p className="truncate text-xs text-zinc-400">よく使うアプリを登録して、ここからすばやく起動します</p>
         </div>
         <button
           type="button"
           disabled={!isReady || items.length === 0 || Boolean(busyAction)}
           onClick={() => void launchAll()}
-          className="flex h-8 shrink-0 items-center gap-2 border border-sky-600 bg-sky-700 px-3 text-xs font-medium text-white transition-colors hover:bg-sky-600 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
+          className="flex h-8 shrink-0 items-center gap-2 border border-sky-600 bg-sky-700 px-3 text-xs font-medium text-white transition-colors hover:bg-sky-600 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-400"
         >
           <Layers3 className="h-4 w-4" />
           {busyAction === "launch-all" ? "起動中…" : "一斉に起動"}
@@ -273,7 +273,7 @@ export function LauncherView({
               disabled={!isReady || Boolean(busyAction)}
               onClick={() => void selectApplications()}
               aria-label="アプリをランチャーに追加"
-              className="group flex h-[156px] w-full flex-col items-center justify-center border border-dashed border-zinc-700 bg-zinc-900/60 text-zinc-500 transition-colors hover:border-sky-500 hover:bg-zinc-900 hover:text-sky-300 disabled:cursor-wait disabled:opacity-60"
+              className="group flex h-[156px] w-full flex-col items-center justify-center border border-dashed border-zinc-700 bg-zinc-900/60 text-zinc-400 transition-colors hover:border-sky-500 hover:bg-zinc-900 hover:text-sky-300 disabled:cursor-wait disabled:opacity-60"
             >
               <span className="flex h-14 w-14 items-center justify-center border border-zinc-700 bg-zinc-850 group-hover:border-sky-600">
                 <Plus className="h-7 w-7" />
@@ -283,9 +283,9 @@ export function LauncherView({
           </div>
         </div>
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex min-h-10 items-center justify-between gap-4 border-t border-zinc-800 bg-zinc-900/95 px-5 py-2 text-[11px] text-zinc-500">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex min-h-10 items-center justify-between gap-4 border-t border-zinc-800 bg-zinc-900/95 px-5 py-2 text-[11px] text-zinc-400">
           <p className="truncate" aria-live="polite">{notice}</p>
-          <p className="hidden shrink-0 items-center gap-1.5 text-zinc-600 lg:flex">
+          <p className="hidden shrink-0 items-center gap-1.5 text-zinc-400 lg:flex">
             <ExternalLink className="h-3 w-3" />
             タイルを押すと起動・右下の … から削除
           </p>

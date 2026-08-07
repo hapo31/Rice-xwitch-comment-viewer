@@ -108,7 +108,7 @@ export function SidePanel({
             </button>
           </div>
           {state.warnings.length === 0 ? (
-            <p className="text-xs text-zinc-500">現在の警告はありません。</p>
+            <p className="text-xs text-zinc-400">現在の警告はありません。</p>
           ) : (
             <div className="max-h-full space-y-2 overflow-y-auto pr-1">
               {state.warnings.map((warning, index) => (

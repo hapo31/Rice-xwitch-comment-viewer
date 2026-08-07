@@ -42,7 +42,7 @@ export function StatusBar({ state }: StatusBarProps) {
         <StatusItem label="キュー" value={String(queuedCount)} />
         <StatusItem label="Warnings" value={String(state.warnings.length)} tone={state.warnings.length > 0 ? "warning" : "default"} />
       </div>
-      <div className="text-zinc-500">{buildInfo ? formatBuildLabel(buildInfo) : "Rice"}</div>
+      <div className="text-zinc-400">{buildInfo ? formatBuildLabel(buildInfo) : "Rice"}</div>
     </footer>
   );
 }
@@ -58,7 +58,7 @@ export function formatBuildLabel({ version, isDev, commitHash }: AppBuildInfo): 
 function StatusItem({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warning" }) {
   return (
     <span className={`min-w-0 truncate ${tone === "warning" ? "text-amber-300" : ""}`}>
-      <span className="text-zinc-500">{label}: </span>
+      <span className="text-zinc-400">{label}: </span>
       {value}
     </span>
   );

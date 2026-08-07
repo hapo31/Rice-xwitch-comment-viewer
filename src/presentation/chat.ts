@@ -19,7 +19,7 @@ export function getQueueStatusPresentation(status: QueueDisplayState): StatusPre
     queued: { icon: CircleDashed, label: "待機", className: "text-sky-400" },
     speaking: { icon: Volume2, label: "読み上げ中", className: "text-emerald-400" },
     spoken: { icon: CheckCircle2, label: "完了", className: "text-emerald-400" },
-    skipped: { icon: CircleOff, label: "スキップ", className: "text-zinc-500" },
+    skipped: { icon: CircleOff, label: "スキップ", className: "text-zinc-400" },
     blocked: { icon: CircleOff, label: "抑制", className: "text-amber-400" },
     error: { icon: AlertCircle, label: "エラー", className: "text-rose-400" },
   }[status];

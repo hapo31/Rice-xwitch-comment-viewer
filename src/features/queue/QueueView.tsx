@@ -25,7 +25,7 @@ export function QueueView({
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Queue</h1>
-          <p className="truncate text-xs text-zinc-500">読み上げ待ち、エラー、フィルターで読み飛ばしたチャットを確認します</p>
+          <p className="truncate text-xs text-zinc-400">読み上げ待ち、エラー、フィルターで読み飛ばしたチャットを確認します</p>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -59,14 +59,14 @@ export function QueueView({
       </header>
 
       <section className="h-[calc(100%-3rem)] overflow-auto">
-        <div className="grid grid-cols-[140px_96px_minmax(0,1fr)_80px] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-500">
+        <div className="grid grid-cols-[140px_96px_minmax(0,1fr)_80px] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400">
           <span>ユーザー</span>
           <span>状態</span>
           <span>読み上げ文</span>
           <span className="text-right">操作</span>
         </div>
         {displayItems.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-zinc-500">確認が必要な読み上げはありません。</div>
+          <div className="px-4 py-8 text-sm text-zinc-400">確認が必要な読み上げはありません。</div>
         ) : (
           displayItems.map((item) => (
             <div key={item.id} className="grid min-h-11 grid-cols-[140px_96px_minmax(0,1fr)_80px] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
