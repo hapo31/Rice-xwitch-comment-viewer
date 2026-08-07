@@ -38,6 +38,9 @@ jobs:
       - name: Verify annotated release tag
         run: scripts/verify-release-tag.sh "${GITHUB_REF_NAME}"
 
+      - name: Verify manifest and tag versions
+        run: scripts/verify-release-version.sh "${GITHUB_REF_NAME#v}" --tag "${GITHUB_REF_NAME}"
+
       - name: Enable pinned pnpm
         run: |
           set -euo pipefail

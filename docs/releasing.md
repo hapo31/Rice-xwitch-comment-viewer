@@ -10,7 +10,9 @@ Codex では次のようにリポジトリ内スキルを指定する。
 $release-rice を使って v1.2.3 をリリースしてください。
 ```
 
-スキルは作業ツリーと `main` の同期状態を確認し、4 個のバージョン表示を更新して検証・commit・push する。その後、前回タグとの差分から Markdown のリリースノートを作り、本文を annotation message にしたタグを発行する。内容が曖昧な場合はタグ作成前に確認を求める。
+スキルは作業ツリーと `main` の同期状態を確認し、3 manifest の version を更新して検証・commit・push する。StatusBar は Rust の Cargo package version を `app_build_info` command 経由で動的表示するため、version literal の更新対象ではない。その後、前回タグとの差分から Markdown のリリースノートを作り、本文を annotation message にしたタグを発行する。内容が曖昧な場合はタグ作成前に確認を求める。
+
+version bump の commit 前には `scripts/verify-release-version.sh X.Y.Z --changed-from HEAD` を実行し、変更対象が `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` のみであることを確認する。タグ作成後は `scripts/verify-release-version.sh X.Y.Z --tag vX.Y.Z` で同じ 3 manifest と tag version を照合する。
 
 ```bash
 git tag -a v1.2.3 --cleanup=verbatim -F release-notes.md
