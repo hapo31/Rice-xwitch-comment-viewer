@@ -7,6 +7,7 @@ import {
 } from "../../components/SettingsFormControls";
 import type { AppSettings } from "../../types";
 import { formatRuleList, parseRuleList } from "../../validation";
+import { focusIndicatorClass } from "../../presentation/focus";
 import { defaultSpeechSettings } from "../settings/defaults";
 
 export function FilterView({
@@ -88,7 +89,7 @@ export function FilterView({
                 id="rule-url-handling"
                 value={urlHandling}
                 onChange={(event) => setUrlHandling(event.target.value as AppSettings["speech"]["urlHandling"])}
-                className="h-9 w-52 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
+                className={`h-9 w-52 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
               >
                 <option value="replace">URL省略</option>
                 <option value="read">そのまま読む</option>
