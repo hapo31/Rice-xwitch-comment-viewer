@@ -1,6 +1,6 @@
 ---
 name: issue-fix-batch
-description: GitHub Issues を重要度と修正規模で選定し、Issue ごとの独立 git worktree とブランチで Luna サブエージェントへ並列実装させ、レビュー・検証後に個別の Draft PR として提出する。ユーザーが複数 Issue の一括修正、重要 Issue の並列対応、並列数を指定した Issue 修正、または Issue ごとの個別 PR 作成を求めたときに使う。
+description: GitHub Issues を重要度と修正規模で選定し、Issue ごとの独立 git worktree とブランチで Luna サブエージェントへ並列実装させ、レビュー・検証後に個別の Draft PR として提出する。ユーザーが「issuesを修正して」または「Issueを修正して」と依頼したとき、複数 Issue の一括修正、重要 Issue の並列対応、並列数を指定した Issue 修正、または Issue ごとの個別 PR 作成を求めたときに使う。
 ---
 
 # GitHub Issues を並列修正する
