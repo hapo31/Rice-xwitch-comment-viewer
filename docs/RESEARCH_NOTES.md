@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-08-07: Issue #54 Logs 描画負荷
+
+- Logs view は新着順と 500 件の保持上限を維持したまま、既存の Chat view と同じ `@tanstack/react-virtual` で表示中と周辺行だけを描画するようにした。行 key にはログ ID を使うため、連続追加時も既存行の識別とスクロールコンテナを維持する。
+- 日時表示の `Intl.DateTimeFormat("ja-JP", ...)` は presentation モジュールで一度だけ作成して再利用する。500件を整形しても formatter が1回しか生成されない回帰テストと、`pnpm build` を確認した。実 WebView での連続ログ投入時の commit 時間は未計測。
+
 ## 2026-08-07: Issue #51 focus indicator
 
 - `outline-none focus:border-sky-400` の入力は、色だけの 1px border 変化に依存していた。共通の `focusIndicatorClass` に `focus-visible` の 2px ring と 2px offset を集約し、マウス操作で ring を表示しないようにした。すべての keyboard-focusable control には CSS fallback を置き、Windows 高コントラストではシステムの `Highlight` 色による 2px outline を使う。
