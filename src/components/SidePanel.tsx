@@ -1,6 +1,7 @@
 import { Pause, Play, Radio, RotateCcw, SkipForward, Square, Trash2 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { countIncompleteQueueItems } from "../presentation/queue";
+import { speechStatusLabel } from "../presentation/chat";
 import { getRouteLabel } from "../routes";
 import type { AppState } from "../stores/appStore";
 
@@ -66,7 +67,7 @@ export function SidePanel({
             <PanelRow label="Twitch" value={twitchAuthLabel} tone={twitchAuthTone} />
             <PanelRow label="チャンネル" value={channel} to="/auth" title="Login 画面でチャンネルを設定" />
             <PanelRow label="サーバー接続" value={twitchConnectionLabel} tone={twitchConnectionTone} />
-            <PanelRow label="読み上げ" value={state.speechStatus} tone={state.speechStatus === "idle" ? "ok" : "muted"} />
+            <PanelRow label="読み上げ" value={speechStatusLabel(state.speechStatus)} tone={state.speechStatus === "idle" ? "ok" : "muted"} />
           </div>
         </section>
 
