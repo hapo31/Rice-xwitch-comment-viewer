@@ -104,4 +104,23 @@ describe("appReducer", () => {
       level: "warning",
     });
   });
+
+  it("assigns distinct IDs to consecutive identical application logs", () => {
+    const log = {
+      level: "warning" as const,
+      message: "Twitch EventSub が切断されました。",
+      occurredAtMs: 1,
+    };
+
+    const state = appReducer(
+      appReducer(initialAppState, { type: "log.added", log }),
+      { type: "log.added", log },
+    );
+
+    expect(state.logs).toHaveLength(2);
+    expect(state.logs.map((entry) => entry.id)).toEqual([
+      "1-warning-Twitch EventSub が切断されました。-1",
+      "1-warning-Twitch EventSub が切断されました。",
+    ]);
+  });
 });

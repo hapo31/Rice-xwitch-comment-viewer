@@ -10,6 +10,8 @@ import type {
   TwitchUserProfile,
 } from "../types";
 
+export type StoredAppLogEvent = AppLogEvent & { id: string };
+
 export interface AppState {
   twitchAuthStatus: AuthStatus;
   twitchConnectionStatus: TwitchChatConnectionStatus;
@@ -19,7 +21,7 @@ export interface AppState {
   settings?: AppSettings;
   chatMessages: ChatMessage[];
   queueItems: QueueItem[];
-  logs: AppLogEvent[];
+  logs: StoredAppLogEvent[];
   warnings: string[];
 }
 
@@ -80,7 +82,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           }
         : state;
     case "log.added":
-      return { ...state, logs: [{ ...action.log, id: action.log.id ?? logId(action.log) }, ...state.logs].slice(0, 500) };
+      return {
+        ...state,
+        logs: [
+          { ...action.log, id: uniqueLogId(action.log, state.logs) },
+          ...state.logs,
+        ].slice(0, 500),
+      };
     case "warning.added":
       return { ...state, warnings: [action.warning, ...state.warnings].slice(0, 5) };
     case "logs.cleared":
@@ -92,6 +100,15 @@ export function appReducer(state: AppState, action: AppAction): AppState {
   }
 }
 
-function logId(log: AppLogEvent): string {
-  return `${log.occurredAtMs}-${log.level}-${log.message}`;
+function uniqueLogId(log: AppLogEvent, existingLogs: StoredAppLogEvent[]): string {
+  const baseId = log.id ?? `${log.occurredAtMs}-${log.level}-${log.message}`;
+  let id = baseId;
+  let suffix = 1;
+
+  while (existingLogs.some((existingLog) => existingLog.id === id)) {
+    id = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  return id;
 }

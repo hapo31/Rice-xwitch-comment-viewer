@@ -124,7 +124,7 @@ Events:
 - `twitch://chat-message`
 - `speech://queue-updated`
 - `speech://status`
-- `app://log`
+- `app://log`: `id` は Logs view の React key に使う表示用 ID として一意にする。受信時に ID が欠ける、または既存 ID と重複する場合は、frontend store が連番 suffix を付ける。ログ本文の重複排除は行わない。
 
 ## 永続化
 
