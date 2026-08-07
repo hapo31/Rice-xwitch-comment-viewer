@@ -148,6 +148,7 @@ export interface TwitchDeviceAuthStart {
   userCode: string;
   verificationUri: string;
   expiresIn: number;
+  expiresAtMs: number;
   interval: number;
 }
 

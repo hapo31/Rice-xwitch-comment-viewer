@@ -160,6 +160,7 @@ pub struct TwitchDeviceAuthStart {
     pub user_code: String,
     pub verification_uri: String,
     pub expires_in: u64,
+    pub expires_at_ms: u64,
     pub interval: u64,
 }
 
@@ -760,6 +761,11 @@ pub async fn twitch_start_auth(
         user_code: response.user_code.clone(),
         verification_uri: response.verification_uri,
         expires_in: response.expires_in,
+        expires_at_ms: std::time::SystemTime::now()
+            .checked_add(std::time::Duration::from_secs(response.expires_in))
+            .and_then(|deadline| deadline.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|deadline| deadline.as_millis() as u64)
+            .unwrap_or(u64::MAX),
         interval: response.interval,
     };
 
