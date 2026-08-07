@@ -15,6 +15,10 @@
 - Device Code 開始レスポンスが相対的な `expiresIn` だけを返し、Login 画面が初期値を固定表示していた。Rust command で発行時刻から算出した `expiresAtMs`（UNIX epoch milliseconds）を返し、UI はこの絶対期限と現在時刻で残り秒数を更新するようにした。
 - 期限到達時はコードと認可 URL を隠し、確認操作を無効化する。標準の button による「認証をやり直す」はキーボード操作でき、新しい Device Code を発行する。fake timer で期限直前と期限到達の境界を検証した。実 Twitch の Device Code を用いた表示・再発行の手動確認は残る。
 
+## 2026-08-07: Issue #41 Logs view の重複 React key
+
+- Rust が送る `app://log` payload には ID がなく、従来の frontend reducer は timestamp・level・message だけから ID を作っていた。同一 payload を連続受信すると ID が重複するため、保持するログは dedupe せず、frontend store が既存 ID と衝突したときだけ `-1` 以降の連番 suffix を付けるようにした。これにより Logs view の key は一意で、同文ログの件数と新着順を維持する。
+
 ## 2026-08-06: Issue #23 EventSub 再購読時の認証更新
 
 - EventSub 接続 task が開始時点の access token を `EventSubConnectionParams` に保持していたため、Login 画面などで token を更新しても、後続の通常再接続で古い token を使っていた。接続パラメータから認証情報を除き、購読のたびにアプリの認証状態から現在の token を取得するようにした。
