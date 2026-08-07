@@ -92,22 +92,38 @@ export function TitleBar({ scale, scaleMode, onScaleModeChange }: TitleBarProps)
       </div>
 
       <div className="flex items-center gap-2 px-2">
-        <span className="font-mono text-zinc-500">{Math.round(scale * 100)}%</span>
-        <div className="flex overflow-hidden border border-zinc-800 bg-zinc-950" aria-label="UI倍率">
+        <output className="font-mono text-zinc-500" aria-label="現在の表示倍率">
+          {Math.round(scale * 100)}%
+        </output>
+        <fieldset className="flex overflow-hidden border border-zinc-800 bg-zinc-950">
+          <legend className="sr-only">UI倍率</legend>
           {scaleOptions.map((option) => (
-            <button
+            <label
               key={option.mode}
-              type="button"
-              onClick={() => onScaleModeChange(option.mode)}
               className={[
-                "h-6 px-2 text-[0.6875rem] transition-colors",
+                "cursor-pointer",
                 scaleMode === option.mode ? "bg-sky-500 text-zinc-950" : "text-zinc-400 hover:bg-zinc-850 hover:text-zinc-100",
               ].join(" ")}
             >
-              {option.label}
-            </button>
+              <input
+                type="radio"
+                name="ui-scale"
+                value={option.mode}
+                checked={scaleMode === option.mode}
+                onChange={() => onScaleModeChange(option.mode)}
+                className="peer sr-only"
+              />
+              <span
+                className={[
+                  "flex h-6 items-center px-2 text-[0.6875rem] transition-colors",
+                  "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-[-2px] peer-focus-visible:outline-sky-400",
+                ].join(" ")}
+              >
+                {option.label}
+              </span>
+            </label>
           ))}
-        </div>
+        </fieldset>
       </div>
 
       <div className="flex self-stretch">
