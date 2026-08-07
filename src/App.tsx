@@ -5,6 +5,7 @@ import { SidePanel } from "./components/SidePanel";
 import { StatusBar } from "./components/StatusBar";
 import { ResizeHandles, TitleBar } from "./components/TitleBar";
 import { useDisplayScale } from "./hooks/useDisplayScale";
+import { getDeviceAuthRemainingSeconds } from "./features/auth/deviceAuthExpiry";
 import { APP_SHELL_CLASS_NAME } from "./layout/appShell";
 import { claimStartupGuideForSession } from "./presentation/startupGuide";
 import { restoreAndValidateStartupAuth } from "./startupAuth";
@@ -279,9 +280,15 @@ export function App() {
       return;
     }
 
+    if (getDeviceAuthRemainingSeconds(state.twitchAuthPrompt.expiresAtMs) === 0) {
+      return;
+    }
+
     const delay = Math.max(state.twitchAuthPrompt.interval, 1) * 1000;
     const timer = window.setTimeout(() => {
-      void handleTwitchPollAuth({ quietWaiting: true });
+      if (state.twitchAuthPrompt && getDeviceAuthRemainingSeconds(state.twitchAuthPrompt.expiresAtMs) > 0) {
+        void handleTwitchPollAuth({ quietWaiting: true });
+      }
     }, delay);
 
     return () => window.clearTimeout(timer);

@@ -231,6 +231,7 @@ export async function twitchStartAuth(): Promise<TwitchDeviceAuthStart> {
       userCode: "ABCDEFGH",
       verificationUri: "https://www.twitch.tv/activate",
       expiresIn: 1800,
+      expiresAtMs: Date.now() + 1800 * 1000,
       interval: 5,
     };
   }

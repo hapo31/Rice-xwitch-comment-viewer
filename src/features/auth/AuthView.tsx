@@ -4,6 +4,7 @@ import type { AppState } from "../../stores/appStore";
 import type { AppSettings } from "../../types";
 import { isValidTwitchChannelLogin } from "../../validation";
 import { defaultTwitchSettings } from "../settings/defaults";
+import { formatDeviceAuthRemainingTime, getDeviceAuthRemainingSeconds } from "./deviceAuthExpiry";
 
 export function AuthView({
   state,
@@ -29,6 +30,7 @@ export function AuthView({
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);
   const [isValidatingAuth, setIsValidatingAuth] = useState(false);
   const [authValidationNotice, setAuthValidationNotice] = useState<string>();
+  const [nowMs, setNowMs] = useState(Date.now());
   const isChannelValid = isValidTwitchChannelLogin(channelLogin);
   const isAuthenticated = state.twitchAuthStatus === "authenticated";
 
@@ -41,6 +43,21 @@ export function AuthView({
       setAuthValidationNotice(undefined);
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!state.twitchAuthPrompt) {
+      return;
+    }
+
+    setNowMs(Date.now());
+    const timer = window.setInterval(() => setNowMs(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [state.twitchAuthPrompt]);
+
+  const remainingSeconds = state.twitchAuthPrompt
+    ? getDeviceAuthRemainingSeconds(state.twitchAuthPrompt.expiresAtMs, nowMs)
+    : 0;
+  const isAuthPromptExpired = Boolean(state.twitchAuthPrompt) && remainingSeconds === 0;
 
   function saveChannelLogin() {
     const trimmedChannelLogin = channelLogin.trim();
@@ -118,16 +135,22 @@ export function AuthView({
               <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
                 <span className="text-sm text-zinc-400">認証コード</span>
                 <div className="space-y-2">
-                  <p className="font-mono text-lg font-semibold text-zinc-100">{state.twitchAuthPrompt.userCode}</p>
-                  <button
-                    type="button"
-                    onClick={() => onOpenExternalUrl(state.twitchAuthPrompt?.verificationUri ?? "")}
-                    className="inline-flex items-center gap-2 text-sm text-sky-300 hover:text-sky-200"
-                  >
-                    <Link2 className="h-4 w-4" />
-                    {state.twitchAuthPrompt.verificationUri}
-                  </button>
-                  <p className="text-xs text-zinc-500">期限 {Math.floor(state.twitchAuthPrompt.expiresIn / 60)} 分 / 自動確認間隔 {state.twitchAuthPrompt.interval} 秒</p>
+                  {isAuthPromptExpired ? (
+                    <p className="text-sm text-amber-300" role="status">認証コードの期限が切れました。認証をやり直してください。</p>
+                  ) : (
+                    <>
+                      <p className="font-mono text-lg font-semibold text-zinc-100">{state.twitchAuthPrompt.userCode}</p>
+                      <button
+                        type="button"
+                        onClick={() => onOpenExternalUrl(state.twitchAuthPrompt?.verificationUri ?? "")}
+                        className="inline-flex items-center gap-2 text-sm text-sky-300 hover:text-sky-200"
+                      >
+                        <Link2 className="h-4 w-4" />
+                        {state.twitchAuthPrompt.verificationUri}
+                      </button>
+                      <p className="text-xs text-zinc-500">残り {formatDeviceAuthRemainingTime(remainingSeconds)} / 自動確認間隔 {state.twitchAuthPrompt.interval} 秒</p>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -136,7 +159,8 @@ export function AuthView({
                 <button
                   type="button"
                   onClick={onTwitchPollAuth}
-                  className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400"
+                  disabled={isAuthPromptExpired}
+                  className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <ShieldCheck className="h-4 w-4" />
                   今すぐ確認

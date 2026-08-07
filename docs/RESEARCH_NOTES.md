@@ -10,6 +10,11 @@
 - UI倍率は視覚的な背景色のみで現在値を表していた。名前付き `fieldset` 内の native radio group に変更し、各選択肢の選択状態をブラウザ標準の支援技術 API と矢印キー操作へ委譲した。実際に適用中の倍率は `output` として別途公開し、radio の `checked` と視覚的な選択表示は同じ `scaleMode` から生成する。
 - server-rendered markup のテストで、グループ名、4つの radio、選択済みの倍率、現在の表示倍率を検証した。`pnpm test`（31件）と `pnpm build` が成功した。Windows のスクリーンリーダーでの実機確認は未実施。
 
+## 2026-08-07: Issue #47 Device Code の期限表示
+
+- Device Code 開始レスポンスが相対的な `expiresIn` だけを返し、Login 画面が初期値を固定表示していた。Rust command で発行時刻から算出した `expiresAtMs`（UNIX epoch milliseconds）を返し、UI はこの絶対期限と現在時刻で残り秒数を更新するようにした。
+- 期限到達時はコードと認可 URL を隠し、確認操作を無効化する。標準の button による「認証をやり直す」はキーボード操作でき、新しい Device Code を発行する。fake timer で期限直前と期限到達の境界を検証した。実 Twitch の Device Code を用いた表示・再発行の手動確認は残る。
+
 ## 2026-08-06: Issue #23 EventSub 再購読時の認証更新
 
 - EventSub 接続 task が開始時点の access token を `EventSubConnectionParams` に保持していたため、Login 画面などで token を更新しても、後続の通常再接続で古い token を使っていた。接続パラメータから認証情報を除き、購読のたびにアプリの認証状態から現在の token を取得するようにした。
