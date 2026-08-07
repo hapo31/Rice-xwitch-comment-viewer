@@ -116,7 +116,7 @@ function StatusIcon({ status }: { status: QueueDisplayState }) {
   const Icon = props.icon;
 
   return (
-    <span title={props.label} aria-label={props.label}>
+    <span aria-hidden="true">
       <Icon className={`h-4 w-4 ${props.className}`} />
     </span>
   );

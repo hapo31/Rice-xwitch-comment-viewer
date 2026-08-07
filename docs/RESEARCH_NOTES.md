@@ -19,6 +19,10 @@
 
 - Rust が送る `app://log` payload には ID がなく、従来の frontend reducer は timestamp・level・message だけから ID を作っていた。同一 payload を連続受信すると ID が重複するため、保持するログは dedupe せず、frontend store が既存 ID と衝突したときだけ `-1` 以降の連番 suffix を付けるようにした。これにより Logs view の key は一意で、同文ログの件数と新着順を維持する。
 
+## 2026-08-07: Issue #45 UI 状態ラベルのローカライズ
+
+- Speech/Queue の enum 値が Side Panel、Status Bar、Queue アイコンの tooltip/accessible name に直接渡されていた。presentation mapping を表示専用の日本語ラベルへ統一し、Queue 行では隣接する可視状態テキストだけを支援技術に公開するため、装飾アイコンを `aria-hidden` にした。全 Speech/Queue 状態を対象に日本語ラベルと色を検証する TypeScript テストを追加し、`pnpm test`（31件）、`pnpm build`、`git diff --check` が成功した。
+
 ## 2026-08-06: Issue #23 EventSub 再購読時の認証更新
 
 - EventSub 接続 task が開始時点の access token を `EventSubConnectionParams` に保持していたため、Login 画面などで token を更新しても、後続の通常再接続で古い token を使っていた。接続パラメータから認証情報を除き、購読のたびにアプリの認証状態から現在の token を取得するようにした。
