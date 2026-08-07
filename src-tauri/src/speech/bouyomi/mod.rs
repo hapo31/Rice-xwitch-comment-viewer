@@ -8,6 +8,7 @@ use crate::settings::AppState;
 use crate::speech::{clear_speech_queue, pause_queue, resume_queue, skip_current_queue_item};
 use crate::speech::{SpeechAdapter, SpeechHealth, SpeechRequest, SpeechResult};
 use serde::Serialize;
+use std::net::IpAddr;
 use std::time::Duration;
 use tokio::{
     io::AsyncWriteExt,
@@ -18,8 +19,71 @@ use tokio::{
 pub const DEFAULT_CONNECTION_SUCCESS_MESSAGE: &str = "棒読みちゃんと接続しました";
 
 #[derive(Debug, Clone)]
+pub struct BouyomiAddress {
+    host: String,
+    port: u16,
+}
+
+impl BouyomiAddress {
+    pub fn new(host: impl AsRef<str>, port: u16) -> Result<Self, String> {
+        if port == 0 {
+            return Err("棒読みちゃんのポート番号が無効です。".to_string());
+        }
+
+        Ok(Self {
+            host: validate_bouyomi_host(host.as_ref())?,
+            port,
+        })
+    }
+
+    fn display(&self) -> String {
+        if matches!(self.host.parse::<IpAddr>(), Ok(IpAddr::V6(_))) {
+            format!("[{}]:{}", self.host, self.port)
+        } else {
+            format!("{}:{}", self.host, self.port)
+        }
+    }
+}
+
+pub fn validate_bouyomi_host(host: &str) -> Result<String, String> {
+    let host = host.trim();
+    let invalid = || {
+        "棒読みちゃんのホストが無効です。IPv4、DNS名、または角括弧なしのIPv6アドレスを入力してください。"
+            .to_string()
+    };
+
+    if host.is_empty() || host.contains(char::is_whitespace) || host.contains(['[', ']']) {
+        return Err(invalid());
+    }
+
+    if host.contains(':') {
+        return host
+            .parse::<IpAddr>()
+            .ok()
+            .filter(|address| address.is_ipv6())
+            .map(|_| host.to_string())
+            .ok_or_else(invalid);
+    }
+
+    if host.parse::<IpAddr>().is_ok()
+        || host.split('.').all(|label| {
+            !label.is_empty()
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || character == '-')
+        })
+    {
+        Ok(host.to_string())
+    } else {
+        Err(invalid())
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct BouyomiAdapter {
-    pub addr: String,
+    address: BouyomiAddress,
     pub defaults: BouyomiTalkConfig,
     pub timeout: Duration,
 }
@@ -70,12 +134,16 @@ impl Default for BouyomiTalkConfig {
 }
 
 impl BouyomiAdapter {
-    pub fn new(addr: impl Into<String>, defaults: BouyomiTalkConfig) -> Self {
-        Self {
-            addr: addr.into(),
+    pub fn new(
+        host: impl AsRef<str>,
+        port: u16,
+        defaults: BouyomiTalkConfig,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            address: BouyomiAddress::new(host, port)?,
             defaults,
             timeout: Duration::from_secs(2),
-        }
+        })
     }
 
     pub async fn health_check(
@@ -113,19 +181,23 @@ impl BouyomiAdapter {
     }
 
     async fn connect(&self) -> anyhow::Result<TcpStream> {
-        self.connect_to_addr(&self.addr).await
+        self.connect_to_address().await
     }
 
-    async fn connect_to_addr(&self, addr: &str) -> anyhow::Result<TcpStream> {
-        Ok(timeout(self.timeout, TcpStream::connect(addr)).await??)
+    async fn connect_to_address(&self) -> anyhow::Result<TcpStream> {
+        Ok(timeout(
+            self.timeout,
+            TcpStream::connect((self.address.host.as_str(), self.address.port)),
+        )
+        .await??)
     }
 
     pub async fn diagnose(&self) -> BouyomiConnectionDiagnostics {
         let mut attempted = Vec::new();
 
-        let addr = self.addr.clone();
+        let addr = self.address.display();
         let started_at = Instant::now();
-        let result = self.connect_to_addr(&addr).await;
+        let result = self.connect_to_address().await;
         let elapsed_ms = started_at.elapsed().as_millis();
 
         match result {
@@ -148,7 +220,7 @@ impl BouyomiAdapter {
 
         let recommendation = build_diagnostic_recommendation(&attempted);
         BouyomiConnectionDiagnostics {
-            configured_addr: self.addr.clone(),
+            configured_addr: self.address.display(),
             attempted,
             recommendation,
         }
@@ -426,11 +498,6 @@ pub(crate) fn adapter_from_settings(
     state: &tauri::State<'_, AppState>,
 ) -> Result<BouyomiAdapter, String> {
     let settings = state.settings.lock().map_err(|error| error.to_string())?;
-    let addr = format!(
-        "{}:{}",
-        settings.speech.bouyomi_host, settings.speech.bouyomi_port
-    );
-
     let defaults = BouyomiTalkConfig {
         speed: settings.speech.bouyomi_speed,
         tone: settings.speech.bouyomi_tone,
@@ -439,11 +506,17 @@ pub(crate) fn adapter_from_settings(
         code: 0,
     };
 
-    Ok(BouyomiAdapter::new(addr, defaults))
+    BouyomiAdapter::new(
+        &settings.speech.bouyomi_host,
+        settings.speech.bouyomi_port,
+        defaults,
+    )
 }
 
 #[cfg(feature = "app")]
-fn connection_success_settings(state: &tauri::State<'_, AppState>) -> Result<(bool, String), String> {
+fn connection_success_settings(
+    state: &tauri::State<'_, AppState>,
+) -> Result<(bool, String), String> {
     let settings = state.settings.lock().map_err(|error| error.to_string())?;
     Ok((
         settings.speech.connection_success_speech_enabled,
@@ -513,6 +586,25 @@ mod tests {
     }
 
     #[test]
+    fn accepts_and_formats_ipv4_dns_and_ipv6_addresses() {
+        let ipv4 = BouyomiAddress::new("127.0.0.1", 50001).unwrap();
+        let dns = BouyomiAddress::new("localhost", 50001).unwrap();
+        let ipv6 = BouyomiAddress::new("::1", 50001).unwrap();
+
+        assert_eq!(ipv4.display(), "127.0.0.1:50001");
+        assert_eq!(dns.display(), "localhost:50001");
+        assert_eq!(ipv6.display(), "[::1]:50001");
+    }
+
+    #[test]
+    fn rejects_invalid_bouyomi_addresses_with_a_japanese_message() {
+        for host in ["", "[::1]", "::1:50001", "invalid host"] {
+            let error = BouyomiAddress::new(host, 50001).unwrap_err();
+            assert!(error.contains("棒読みちゃんのホストが無効"));
+        }
+    }
+
+    #[test]
     fn health_check_message_is_not_empty() {
         assert_eq!(
             DEFAULT_CONNECTION_SUCCESS_MESSAGE,
@@ -526,7 +618,10 @@ mod tests {
             normalize_connection_success_message("  "),
             DEFAULT_CONNECTION_SUCCESS_MESSAGE
         );
-        assert_eq!(normalize_connection_success_message("接続しました"), "接続しました");
+        assert_eq!(
+            normalize_connection_success_message("接続しました"),
+            "接続しました"
+        );
     }
 
     #[test]

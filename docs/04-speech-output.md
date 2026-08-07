@@ -50,9 +50,14 @@ MVPでは棒読みちゃんTCPアダプタを正式採用する。VOICEROID2直�
 
 ```rust
 pub struct BouyomiAdapter {
-    addr: std::net::SocketAddr,
+    address: BouyomiAddress,
     defaults: BouyomiTalkConfig,
     timeout: std::time::Duration,
+}
+
+pub struct BouyomiAddress {
+    host: String,
+    port: u16,
 }
 
 pub struct BouyomiTalkConfig {
@@ -67,6 +72,9 @@ pub struct BouyomiTalkConfig {
 実装ルール:
 
 - 読み上げごとに短いTCP接続を張る設計から始める。棒読みちゃん側の既存連携と相性がよい。
+- 接続先は host と port を構造化して保持し、接続時は `(host, port)` の `ToSocketAddrs` を使う。これにより IPv4・DNS名・IPv6を同じ経路で解決する。`SocketAddr` 単体ではDNS名を保持できないため使わない。
+- host欄はIPv4、DNS名、または角括弧なしのIPv6アドレスを受け付ける。portをhost欄へ含めず、IPv6 zone identifierは初期実装では受け付けない。表示・diagnosticsではIPv6を `[::1]:50001` のように角括弧付きで表記する。
+- hostの妥当性検証とaddress構築はアダプタの一箇所に集約し、設定保存、queue、health、test、control、diagnosticsから共通して利用する。
 - 接続失敗は読み上げキューを破棄せず、UIに「未接続」と出す。
 - ヘルスチェックは空の TCP 接続だけで終えず、設定に応じて短い接続確認メッセージを読み上げコマンドとして送る。接続成功時の読み上げが OFF の場合は、無音の状態取得コマンドを送信できた時点で接続成功として扱う。
 - 長文、URL、改行、制御文字は送信前に整形する。

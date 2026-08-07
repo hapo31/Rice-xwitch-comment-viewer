@@ -7,7 +7,7 @@ import {
   ToggleRow,
 } from "../../components/SettingsFormControls";
 import type { AppSettings, BouyomiConnectionDiagnostics } from "../../types";
-import { isValidBouyomiVoice, isValidPort } from "../../validation";
+import { isValidBouyomiHost, isValidBouyomiVoice, isValidPort } from "../../validation";
 import { defaultSpeechSettings, defaultTwitchSettings } from "./defaults";
 
 const defaultConnectionSuccessMessage = "棒読みちゃんと接続しました";
@@ -82,7 +82,7 @@ export function SettingsView({
   const numericVoice = Number(voice);
   const isPortValid = isValidPort(port);
   const isVoiceValid = isValidBouyomiVoice(voice);
-  const isHostValid = host.trim().length > 0;
+  const isHostValid = isValidBouyomiHost(host);
   const isDirty =
     host.trim() !== speechSettings.bouyomiHost ||
     numericPort !== speechSettings.bouyomiPort ||
@@ -207,6 +207,7 @@ export function SettingsView({
                 onChange={(event) => setHost(event.target.value)}
                 className="h-9 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
               />
+              {!isHostValid && <p className="mt-1 text-xs text-rose-400">IPv4、DNS名、または角括弧なしのIPv6アドレスを入力してください。</p>}
             </div>
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-b border-zinc-800 py-3">
               <label className="text-sm text-zinc-400" htmlFor="bouyomi-port">

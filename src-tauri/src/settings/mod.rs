@@ -574,7 +574,7 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
             settings.speech.adapter = adapter;
         }
         if let Some(host) = speech.bouyomi_host {
-            settings.speech.bouyomi_host = host.trim().to_string();
+            settings.speech.bouyomi_host = crate::speech::bouyomi::validate_bouyomi_host(&host)?;
         }
         if let Some(port) = speech.bouyomi_port {
             if port == 0 {
