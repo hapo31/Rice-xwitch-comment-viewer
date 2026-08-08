@@ -96,7 +96,7 @@ export function AuthView({
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Login</h1>
-          <p className="truncate text-xs text-zinc-500">Twitch 認証と接続先チャンネルを管理します</p>
+          <p className="truncate text-xs text-zinc-400">Twitch 認証と接続先チャンネルを管理します</p>
         </div>
         <div className="flex items-center gap-2 text-xs text-zinc-400">
           <span className={state.twitchAuthStatus === "authenticated" ? "h-2 w-2 rounded-full bg-emerald-400" : "h-2 w-2 rounded-full bg-zinc-600"} />
@@ -129,7 +129,7 @@ export function AuthView({
               <span className="text-sm text-zinc-400">認証状態</span>
               <div className="space-y-2 text-sm">
                 <p className="text-zinc-200">{state.twitchProfile ? `${state.twitchProfile.login} / ${state.twitchProfile.userId}` : "未ログイン"}</p>
-                <p className="text-xs text-zinc-500">必要スコープ: user:read:chat</p>
+                <p className="text-xs text-zinc-400">必要スコープ: user:read:chat</p>
               </div>
             </div>
             {state.twitchAuthPrompt && (
@@ -149,7 +149,7 @@ export function AuthView({
                         <Link2 className="h-4 w-4" />
                         {state.twitchAuthPrompt.verificationUri}
                       </button>
-                      <p className="text-xs text-zinc-500">残り {formatDeviceAuthRemainingTime(remainingSeconds)} / 自動確認間隔 {state.twitchAuthPrompt.interval} 秒</p>
+                      <p className="text-xs text-zinc-400">残り {formatDeviceAuthRemainingTime(remainingSeconds)} / 自動確認間隔 {state.twitchAuthPrompt.interval} 秒</p>
                     </>
                   )}
                 </div>

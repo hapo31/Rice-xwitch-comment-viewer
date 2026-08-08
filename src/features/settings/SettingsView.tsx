@@ -153,14 +153,14 @@ export function SettingsView({
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold text-zinc-100">Settings</h1>
-          <p className="truncate text-xs text-zinc-500">起動時接続、棒読みちゃん接続、声質、自動読み上げの設定を調整します</p>
+          <p className="truncate text-xs text-zinc-400">起動時接続、棒読みちゃん接続、声質、自動読み上げの設定を調整します</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={runDiagnostics}
             disabled={isDiagnosing}
-            className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-xs text-zinc-100 hover:border-sky-400 disabled:cursor-wait disabled:text-zinc-500"
+            className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-xs text-zinc-100 hover:border-sky-400 disabled:cursor-wait disabled:text-zinc-400"
           >
             <Network className="h-4 w-4" />
             診断
@@ -233,7 +233,7 @@ export function SettingsView({
                 <span className="text-sm text-zinc-400">診断結果</span>
                 <div className="space-y-2">
                   <p className="text-sm text-zinc-200">{diagnostics.recommendation}</p>
-                  <p className="font-mono text-xs text-zinc-500">configured: {diagnostics.configuredAddr}</p>
+                  <p className="font-mono text-xs text-zinc-400">configured: {diagnostics.configuredAddr}</p>
                 </div>
               </div>
               <div className="divide-y divide-zinc-800">
@@ -244,9 +244,9 @@ export function SettingsView({
                     </span>
                     <div className="min-w-0">
                       <p className="font-mono text-zinc-200">{attempt.addr}</p>
-                      <p className="mt-1 break-words text-zinc-500">{attempt.message}</p>
+                      <p className="mt-1 break-words text-zinc-400">{attempt.message}</p>
                     </div>
-                    <span className="text-right font-mono text-zinc-500">{attempt.elapsedMs}ms</span>
+                    <span className="text-right font-mono text-zinc-400">{attempt.elapsedMs}ms</span>
                   </div>
                 ))}
               </div>
@@ -292,9 +292,9 @@ export function SettingsView({
                   disabled={!connectionSuccessSpeechEnabled}
                   placeholder={defaultConnectionSuccessMessage}
                   onChange={(event) => setConnectionSuccessSpeechText(event.target.value)}
-                  className={`h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-950 disabled:text-zinc-600 ${focusIndicatorClass}`}
+                  className={`h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 placeholder:text-zinc-400 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-950 disabled:text-zinc-400 ${focusIndicatorClass}`}
                 />
-                <div className="text-right text-xs text-zinc-500">{connectionSuccessSpeechText.length}/120</div>
+                <div className="text-right text-xs text-zinc-400">{connectionSuccessSpeechText.length}/120</div>
               </div>
             </div>
           </SettingsSection>
@@ -312,7 +312,7 @@ export function SettingsView({
                   onChange={(event) => setTestText(event.target.value)}
                   className={`h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
                 />
-                <div className="flex items-center justify-between text-xs text-zinc-500">
+                <div className="flex items-center justify-between text-xs text-zinc-400">
                   <span>{testText.length}/120</span>
                   <button
                     type="button"

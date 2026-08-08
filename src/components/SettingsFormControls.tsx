@@ -44,7 +44,7 @@ export function FloatingSaveButton({
         title="設定を保存"
         disabled={disabled}
         onClick={onClick}
-        className="flex h-10 items-center gap-2 border border-sky-500 bg-sky-500 px-4 text-sm font-medium text-zinc-950 shadow-lg shadow-zinc-950/40 hover:border-sky-300 hover:bg-sky-400 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
+        className="flex h-10 items-center gap-2 border border-sky-500 bg-sky-500 px-4 text-sm font-medium text-zinc-950 shadow-lg shadow-zinc-950/40 hover:border-sky-300 hover:bg-sky-400 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-400"
       >
         <Save className="h-4 w-4" />
         保存
