@@ -120,6 +120,7 @@ export function FilterView({
 
           <SettingsSection id="blocked-rules" title="除外リスト">
             <RuleTextArea
+              id="rule-blocked-users"
               label="NG ユーザー"
               value={blockedUsers}
               onChange={setBlockedUsers}
@@ -127,6 +128,7 @@ export function FilterView({
               overflowCount={blockedUserRules.overflowCount}
             />
             <RuleTextArea
+              id="rule-blocked-words"
               label="NG ワード"
               value={blockedWords}
               onChange={setBlockedWords}
