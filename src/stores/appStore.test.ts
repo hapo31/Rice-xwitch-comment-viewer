@@ -156,11 +156,11 @@ describe("appReducer", () => {
       {
         type: "chat.message",
         message: {
+          kind: "system",
           id: "system-auth-waiting",
           receivedAt: "2026-08-08T00:00:00Z",
           userDisplayName: "system",
           text: message,
-          status: "spoken",
         },
       },
     );

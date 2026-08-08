@@ -4,6 +4,7 @@ import type { ChatMessage } from "../types";
 
 function twitchMessage(id: string): ChatMessage {
   return {
+    kind: "user",
     id,
     receivedAt: "2026-08-08T00:00:00Z",
     userDisplayName: "viewer",
@@ -14,7 +15,13 @@ function twitchMessage(id: string): ChatMessage {
 }
 
 function systemMessage(id: string): ChatMessage {
-  return { ...twitchMessage(id), platform: undefined, userDisplayName: "system" };
+  return {
+    kind: "system",
+    id,
+    receivedAt: "2026-08-08T00:00:00Z",
+    userDisplayName: "system",
+    text: "起動ガイド",
+  };
 }
 
 describe("ChatLiveAnnouncementController", () => {
