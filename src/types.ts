@@ -70,7 +70,8 @@ export interface LauncherLaunchResult {
   failures: LauncherLaunchFailure[];
 }
 
-export interface ChatMessage {
+export interface UserChatMessage {
+  kind: "user";
   id: string;
   receivedAt: string;
   userDisplayName: string;
@@ -84,6 +85,16 @@ export interface ChatMessage {
   fragments?: TwitchMessageFragment[];
   badges?: TwitchChatBadge[];
 }
+
+export interface SystemChatMessage {
+  kind: "system";
+  id: string;
+  receivedAt: string;
+  userDisplayName: "system";
+  text: string;
+}
+
+export type ChatMessage = UserChatMessage | SystemChatMessage;
 
 export interface TwitchChatMessageEvent {
   id: string;

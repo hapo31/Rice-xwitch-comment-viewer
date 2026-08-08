@@ -44,6 +44,11 @@
 
 - Tauri の最小幅は 900px だが、Chat の内容には `min-w-[640px]` があり、Activity Bar と Side Panel を除いた 572px の Main View を必ず超過していた。UI 倍率ではシェルも拡大するため、同じ最小幅で Chat に残る幅は 100%/125%/150% で 572/490/408px となる。
 - 固定最小幅を削除し、時刻・ユーザーは下限を持つ可変列、本文は残り幅の列へ変更した。Chat のスクロール領域は縦方向だけを許可し、狭幅時は既存の省略表示と2行制限で主要情報を維持する。境界幅の TypeScript テストで3倍率の本文列が正の幅を保つことを確認した。Windows の実機で各倍率の見た目と操作性を確認する必要がある。
+## 2026-08-08: Issue #21 自動処理の system Chat timeline
+
+- Chat message を user/system の discriminated union にし、Twitch status event を一箇所で timeline event に変換した。自動接続の開始・失敗、EventSub の接続/切断/再接続/復旧、認証更新・取消、棒読みちゃん probe の再到達を既存の Logs/Warnings とともに Chat view の `system` 行へ残す。keepalive は対象外とし、同じ発信元の直前の状態遷移は抑止する。
+- timeline routing・重複抑止・system 表示の presentation・store の型をテストし、`pnpm test`（40件）、`pnpm build`、`git diff --check` が成功した。実 Twitch の EventSub 切断/再接続、認可取消、棒読みちゃん停止後の自動復旧は手動確認として残る。
+
 ## 2026-08-08: Issue #52 フィルターで除外された Queue 項目の dismiss
 
 - Queue view は `blocked` を表示対象にしていた一方、削除操作は `queued`/`error` に限られ、読み上げ側の clear は pending だけを消していた。待機中の読み上げをキャンセルする `speech_queue_remove` と、表示履歴を消す `speech_queue_dismiss` / `speech_queue_dismiss_history` を分離した。blocked と error は履歴 dismiss の対象で、読み上げ中の項目は従来どおり削除できない。

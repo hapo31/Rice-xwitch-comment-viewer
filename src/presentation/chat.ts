@@ -38,3 +38,12 @@ export function speechStatusLabel(status: SpeechStatus): string {
     error: "接続エラー",
   }[status];
 }
+
+export function getChatMessagePresentation(message: { kind: "user" | "system" }): {
+  userNameClassName: string;
+  textClassName: string;
+} {
+  return message.kind === "system"
+    ? { userNameClassName: "text-amber-300", textClassName: "text-zinc-300" }
+    : { userNameClassName: "text-sky-300", textClassName: "text-zinc-200" };
+}

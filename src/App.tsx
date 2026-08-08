@@ -11,6 +11,7 @@ import { useStreamHotkeys } from "./hooks/useStreamHotkeys";
 import { getDeviceAuthRemainingSeconds } from "./features/auth/deviceAuthExpiry";
 import { APP_SHELL_CLASS_NAME } from "./layout/appShell";
 import { claimStartupGuideForSession } from "./presentation/startupGuide";
+import { autoConnectTimelineEvent, speechRecoveryTimelineEvent, SystemTimelineRouter, timelineEventFromTwitchStatus } from "./presentation/systemTimeline";
 import { restoreAndValidateStartupAuth } from "./startupAuth";
 import { appReducer, initialAppState } from "./stores/appStore";
 import {
@@ -55,6 +56,7 @@ export function App() {
   const displayScale = useDisplayScale();
   const autoConnectAttempted = useRef(false);
   const startupAuthAttempted = useRef(false);
+  const systemTimelineRouter = useRef(new SystemTimelineRouter());
 
   useEffect(() => {
     Promise.all([getSettings(), takeSettingsRecoveryNotice()])
@@ -109,11 +111,11 @@ export function App() {
     dispatch({
       type: "chat.message",
       message: {
+        kind: "system",
         id: `system-${Date.now()}-${crypto.randomUUID()}`,
         receivedAt: new Date().toISOString(),
         userDisplayName: "system",
         text,
-        status: "spoken",
       },
     });
   }
@@ -138,6 +140,10 @@ export function App() {
     reportNotification("success", source, message);
     dispatch({ type: "log.added", log: { level: "info", message, occurredAtMs: Date.now() } });
     addSystemChatMessage(message);
+  }
+
+  function routeSystemTimelineEvent(event: Parameters<SystemTimelineRouter["shouldRecord"]>[0]) {
+    if (systemTimelineRouter.current.shouldRecord(event)) addSystemChatMessage(event.message);
   }
 
   useEffect(() => {
@@ -165,12 +171,15 @@ export function App() {
         if (event.message && (event.status === "authRequired" || event.status === "error")) {
           reportNotification("error", "event", event.message);
         }
+        const timelineEvent = timelineEventFromTwitchStatus(event);
+        if (timelineEvent) routeSystemTimelineEvent(timelineEvent);
       }),
       subscribeTwitchChatMessageEvents((message) => {
         dispatch({
           type: "chat.message",
           message: {
             ...message,
+            kind: "user",
             status: "queued",
           },
         });
@@ -179,6 +188,7 @@ export function App() {
         dispatch({ type: "speech.status", status: event.status });
         if (event.message && (event.status === "disconnected" || event.status === "error")) {
           reportNotification("error", "event", event.message);
+          routeSystemTimelineEvent(speechRecoveryTimelineEvent(event.message, event.status));
         }
       }),
       subscribeSpeechQueueUpdatedEvents((event) => {
@@ -209,7 +219,7 @@ export function App() {
     }
 
     autoConnectAttempted.current = true;
-    void handleTwitchConnect();
+    void handleTwitchConnect({ automatic: true });
   }, [state.settings?.twitch.autoConnect, state.twitchAuthStatus, state.twitchConnectionStatus]);
 
   useEffect(() => {
@@ -230,6 +240,7 @@ export function App() {
         }
         dispatch({ type: "speech.status", status: "idle" });
         reportInfo(message, "event");
+        routeSystemTimelineEvent(speechRecoveryTimelineEvent(message, "idle"));
       } catch {
         // Keep the existing error visible while waiting for BouyomiChan to become reachable.
       }
@@ -384,15 +395,17 @@ export function App() {
     }
   }
 
-  async function handleTwitchConnect() {
+  async function handleTwitchConnect({ automatic = false }: { automatic?: boolean } = {}) {
     try {
       const channelLogin = state.settings?.twitch.channelLogin;
       dispatch({ type: "twitch.connectionStatus", status: "connecting" });
+      if (automatic) routeSystemTimelineEvent(autoConnectTimelineEvent("started", "Twitch チャットの自動接続を開始します。"));
       await twitchConnect(channelLogin);
       reportInfo("Twitch チャット接続を開始しました。");
     } catch (error) {
       dispatch({ type: "twitch.connectionStatus", status: "error" });
       reportError(error);
+      if (automatic) routeSystemTimelineEvent(autoConnectTimelineEvent("failed", `Twitch チャットの自動接続に失敗しました: ${String(error)}`));
     }
   }
 

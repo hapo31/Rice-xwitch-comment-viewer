@@ -4,6 +4,7 @@ import type { AppSettings, ChatMessage, LauncherItem, QueueItem } from "../types
 
 function chatMessage(id: string): ChatMessage {
   return {
+    kind: "user",
     id,
     receivedAt: "2026-05-23T00:00:00Z",
     userDisplayName: "viewer",
@@ -26,6 +27,11 @@ describe("appReducer", () => {
     expect(state.chatMessages).toHaveLength(200);
     expect(state.chatMessages[0]?.id).toBe("204");
     expect(state.chatMessages[state.chatMessages.length - 1]?.id).toBe("5");
+  });
+
+  it("keeps system messages distinct from viewer chat", () => {
+    const state = appReducer(initialAppState, { type: "chat.message", message: { kind: "system", id: "system-1", receivedAt: "2026-05-23T00:00:00Z", userDisplayName: "system", text: "Twitch EventSub を再接続しました。" } });
+    expect(state.chatMessages[0]).toMatchObject({ kind: "system", userDisplayName: "system" });
   });
 
   it("replaces queue items from speech queue events", () => {
