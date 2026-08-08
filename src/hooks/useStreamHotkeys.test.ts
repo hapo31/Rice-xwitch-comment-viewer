@@ -11,6 +11,7 @@ function keyEvent(overrides: Partial<KeyboardEvent> = {}) {
     key: "",
     metaKey: false,
     repeat: false,
+    shiftKey: false,
     target: null,
     ...overrides,
   } as KeyboardEvent;
@@ -38,5 +39,12 @@ describe("stream hotkeys", () => {
     expect(
       getStreamHotkey(keyEvent({ code: "Space", target: { tagName: "BUTTON" } as unknown as EventTarget })),
     ).toBeUndefined();
+  });
+
+  it.each([
+    { code: "Space", key: " ", shiftKey: true },
+    { key: "S", shiftKey: true },
+  ])("does not fire speech controls with Shift modifiers", (event) => {
+    expect(getStreamHotkey(keyEvent(event))).toBeUndefined();
   });
 });

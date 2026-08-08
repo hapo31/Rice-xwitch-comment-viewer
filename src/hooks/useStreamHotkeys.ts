@@ -46,7 +46,7 @@ export function getStreamHotkey(event: KeyboardEvent): StreamHotkey | undefined 
     return "openSettings";
   }
 
-  if (event.ctrlKey || event.metaKey || event.altKey) {
+  if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
     return undefined;
   }
 

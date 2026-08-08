@@ -223,7 +223,7 @@
 - [x] TypeScript: Issue #26 の最小幅 900px における Chat 主要列の 100/125/150% レイアウト回帰テストを追加する。
 - [x] TypeScript: Issue #36 の起動済みチャット除外、連投集約、重複・system チャット抑制、通知停止中の既読化をテストする。
 - [x] TypeScript: Issue #49 の route 別 document title と PUSH/POP/REPLACE ごとのフォーカス方針をテストする。
-- [x] TypeScript: Issue #17 の Space / S / Cmd/Ctrl+, と入力中・IME・キーリピート時のショートカット抑止をテストする。
+ - [x] TypeScript: Issue #17 の Space / S / Cmd/Ctrl+, と入力中・IME・キーリピート・Shift 修飾時のショートカット抑止をテストする。
 - [ ] 手動: 棒読みちゃん未起動/起動中/ポート競合を確認する。
 - [ ] 手動: Twitch トークン期限切れ/認可取り消しを確認する。
 - [ ] 手動: 配信中チャット連投を確認する。
