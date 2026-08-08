@@ -343,7 +343,11 @@ export function App() {
           });
         }
         if (!options.quietWaiting || (result.status !== "pending" && result.status !== "slowDown")) {
-          reportNotification(result.status === "denied" || result.status === "expired" ? "warning" : "info", "event", result.message);
+          if (result.status === "pending" || result.status === "slowDown") {
+            reportInfo(result.message, "event");
+          } else {
+            reportNotification(result.status === "denied" || result.status === "expired" ? "warning" : "info", "event", result.message);
+          }
         }
         if (result.status === "expired" || result.status === "denied") {
           dispatch({ type: "twitch.authPrompt", prompt: undefined });

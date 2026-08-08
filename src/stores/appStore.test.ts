@@ -140,6 +140,29 @@ describe("appReducer", () => {
     });
   });
 
+  it("stores OAuth waiting progress in Logs and system Chat", () => {
+    const message = "Twitch の認証を待っています。";
+    const state = appReducer(
+      appReducer(initialAppState, {
+        type: "log.added",
+        log: { level: "info", message, occurredAtMs: 1 },
+      }),
+      {
+        type: "chat.message",
+        message: {
+          id: "system-auth-waiting",
+          receivedAt: "2026-08-08T00:00:00Z",
+          userDisplayName: "system",
+          text: message,
+          status: "spoken",
+        },
+      },
+    );
+
+    expect(state.logs[0]).toMatchObject({ level: "info", message });
+    expect(state.chatMessages[0]).toMatchObject({ userDisplayName: "system", text: message });
+  });
+
   it("assigns distinct IDs to consecutive identical application logs", () => {
     const log = {
       level: "warning" as const,
