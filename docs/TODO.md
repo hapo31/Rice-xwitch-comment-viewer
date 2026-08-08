@@ -14,7 +14,7 @@
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 読み上げ、制御、接続診断、Settings 画面は実装済み。接続先は host/port を構造化し、IPv4・DNS・IPv6を共通の接続経路で扱う。接続確認は設定に応じて確認読み上げまたは無音の状態取得を行う。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring、session-only 保存失敗処理、旧 Linux 平文ファイルの移行/削除、Login 画面、起動時の保存済み認証の自動検証は実装済み。Device Code の絶対期限に基づく残り時間と期限切れ時の再発行導線も実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映、再購読時の最新 access token 取得と 401 時の一度だけの refresh/retry（Issue #23）を実装。実 Twitch 環境での手動確認が必要。 |
-| Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。Issue #57 で失敗済み項目をエラー履歴へ隔離し、明示的な手動再試行のみで retry budget を復元するようにした。Issue #78 で正規化後に本文が空のチャットを理由付きで Blocked にした。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
+| Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。Issue #57 で失敗済み項目をエラー履歴へ隔離し、明示的な手動再試行のみで retry budget を復元するようにした。Issue #78 で正規化後に本文が空のチャットを理由付きで Blocked にした。Issue #52 で待機中の読み上げ制御と履歴 dismiss を分離し、blocked を含む履歴を個別・一括で削除可能にした。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
 | Phase 5: 配信運用向け仕上げ | 実装中 | Launcher、dev ビルド識別、設定破損時の復旧通知、設定更新 transaction、重要 Issue の並列修正スキル、ルート README と MIT License を実装。Issue #15 で通常文字を `zinc-400` に統一し、コントラストと低コントラスト文字の再導入を検査した。Issue #26 で最小幅 900px の Chat レイアウトを 100/125/150% に対応させた。Issue #37 で Chat 行の Twitch バッジを短縮ラベルと支援技術向け名称で表示した。Issue #39 で NG ルールの 200 件上限を frontend/backend ともに明示検証し、ASCII 大小文字を区別しない重複を除外した。Settings / Filter の設定群には統一した見出しを追加し、Issue #41 で同一内容の連続ログにも一意な表示 ID を割り当て、Issue #45 で Speech/Queue の内部状態値を日本語表示へ集約し、Queue 状態アイコンを支援技術から隠した。Issue #54 で Logs を仮想化し日時 formatter を再利用するようにした。Issue #51 で keyboard focus indicator と forced-colors fallback を追加した。release-rice は 3 manifest と tag の version を共通 script で照合し、StatusBar の動的 build info は source 更新対象から除外した。devcontainer bootstrap を固定・build 時検証へ移し、SSH agent/Docker/host network を明示 profile に分離した。Windows 実機確認と詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
@@ -108,6 +108,7 @@
 - [x] チャット受信から `SpeechFormatter`、`SpeechQueue`、`BouyomiAdapter` への流れを接続する。
 - [x] `speech://queue-updated` と `speech://status` events を実装する。
 - [x] Queue view を実装し、スキップ、クリア、再読込、削除を操作できるようにする。
+- [x] Issue #52: 読み上げ待機の制御から履歴の dismiss を分離し、blocked を含む履歴を個別・一括で削除できるようにする。
 - [x] `SpeechFormatter` の NG/URL/長文処理テストを追加する。
 - [x] TypeScript の store reducer テストを追加する。
 

@@ -23,6 +23,8 @@ interface MainViewProps {
   onSpeechControl: (command: "pause" | "resume" | "skip" | "clear") => void;
   onQueueReload: () => void;
   onQueueRemove: (itemId: string) => void;
+  onQueueDismiss: (itemId: string) => void;
+  onQueueDismissHistory: () => void;
   onQueueRetry: (itemId: string) => void;
   onLauncherAdd: (paths: string[]) => Promise<LauncherItem[]>;
   onLauncherRemove: (itemId: string) => Promise<LauncherItem[]>;
@@ -46,6 +48,8 @@ export function MainView({
   onSpeechControl,
   onQueueReload,
   onQueueRemove,
+  onQueueDismiss,
+  onQueueDismissHistory,
   onQueueRetry,
   onLauncherAdd,
   onLauncherRemove,
@@ -69,6 +73,8 @@ export function MainView({
             onSpeechControl={onSpeechControl}
             onQueueReload={onQueueReload}
             onQueueRemove={onQueueRemove}
+            onQueueDismiss={onQueueDismiss}
+            onQueueDismissHistory={onQueueDismissHistory}
             onQueueRetry={onQueueRetry}
           />
         }

@@ -9,12 +9,16 @@ export function QueueView({
   onSpeechControl,
   onQueueReload,
   onQueueRemove,
+  onQueueDismiss,
+  onQueueDismissHistory,
   onQueueRetry,
 }: {
   state: AppState;
   onSpeechControl: (command: "pause" | "resume" | "skip" | "clear") => void;
   onQueueReload: () => void;
   onQueueRemove: (itemId: string) => void;
+  onQueueDismiss: (itemId: string) => void;
+  onQueueDismissHistory: () => void;
   onQueueRetry: (itemId: string) => void;
 }) {
   const queuedCount = countIncompleteQueueItems(state.queueItems);
@@ -48,9 +52,18 @@ export function QueueView({
           </button>
           <button
             type="button"
-            aria-label="キューをクリア"
-            title="キューをクリア"
+            aria-label="待機中の読み上げをクリア"
+            title="待機中の読み上げをクリア"
             onClick={() => onSpeechControl("clear")}
+            className="flex h-8 w-8 items-center justify-center border border-zinc-700 bg-zinc-850 text-zinc-200 hover:border-rose-400"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="表示履歴をクリア"
+            title="表示履歴をクリア"
+            onClick={onQueueDismissHistory}
             className="flex h-8 w-8 items-center justify-center border border-zinc-700 bg-zinc-850 text-zinc-200 hover:border-rose-400"
           >
             <Trash2 className="h-4 w-4" />
@@ -90,10 +103,10 @@ export function QueueView({
                 )}
                 <button
                   type="button"
-                  aria-label="キュー項目を削除"
-                  title="キュー項目を削除"
-                  disabled={!["queued", "error"].includes(item.status)}
-                  onClick={() => onQueueRemove(item.id)}
+                  aria-label={item.status === "queued" ? "待機中の読み上げを削除" : "履歴項目を削除"}
+                  title={item.status === "queued" ? "待機中の読み上げを削除" : "履歴項目を削除"}
+                  disabled={!["queued", "error", "blocked"].includes(item.status)}
+                  onClick={() => (item.status === "queued" ? onQueueRemove(item.id) : onQueueDismiss(item.id))}
                   className="flex h-7 w-7 items-center justify-center border border-zinc-800 bg-zinc-850 text-zinc-400 hover:border-rose-400 hover:text-rose-200 disabled:cursor-not-allowed disabled:text-zinc-700"
                 >
                   <Trash2 className="h-3.5 w-3.5" />

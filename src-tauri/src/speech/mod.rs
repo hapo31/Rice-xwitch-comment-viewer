@@ -113,6 +113,34 @@ enum SpeechQueueFailureTransition {
 }
 
 impl SpeechQueueState {
+    fn clear_pending(&mut self) {
+        self.pending.clear();
+    }
+
+    fn remove_pending_item(&mut self, item_id: &str) -> bool {
+        let Some(index) = self.pending.iter().position(|item| item.id == item_id) else {
+            return false;
+        };
+
+        let mut item = self.pending.remove(index).expect("queue index checked");
+        item.status = SpeechQueueItemStatus::Skipped;
+        push_history(self, item);
+        true
+    }
+
+    fn dismiss_history_item(&mut self, item_id: &str) -> bool {
+        let Some(index) = self.history.iter().position(|item| item.id == item_id) else {
+            return false;
+        };
+
+        self.history.remove(index);
+        true
+    }
+
+    fn dismiss_history(&mut self) {
+        self.history.clear();
+    }
+
     fn has_auto_processable_item(&self) -> bool {
         self.pending
             .front()
@@ -445,7 +473,7 @@ pub fn clear_speech_queue(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), Stri
         .speech_queue
         .lock()
         .map_err(|error| error.to_string())?;
-    queue.pending.clear();
+    queue.clear_pending();
     emit_queue_snapshot(app, &queue, None);
     Ok(())
 }
@@ -482,13 +510,34 @@ pub fn remove_queue_item(app: &tauri::AppHandle<tauri::Wry>, item_id: &str) -> R
         .speech_queue
         .lock()
         .map_err(|error| error.to_string())?;
-    if let Some(index) = queue.pending.iter().position(|item| item.id == item_id) {
-        let mut item = queue.pending.remove(index).expect("queue index checked");
-        item.status = SpeechQueueItemStatus::Skipped;
-        push_history(&mut queue, item);
-    } else if let Some(index) = queue.history.iter().position(|item| item.id == item_id) {
-        queue.history.remove(index);
-    }
+    queue.remove_pending_item(item_id);
+    emit_queue_snapshot(app, &queue, None);
+    Ok(())
+}
+
+#[cfg(feature = "app")]
+pub fn dismiss_queue_history_item(
+    app: &tauri::AppHandle<tauri::Wry>,
+    item_id: &str,
+) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut queue = state
+        .speech_queue
+        .lock()
+        .map_err(|error| error.to_string())?;
+    queue.dismiss_history_item(item_id);
+    emit_queue_snapshot(app, &queue, None);
+    Ok(())
+}
+
+#[cfg(feature = "app")]
+pub fn dismiss_queue_history(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut queue = state
+        .speech_queue
+        .lock()
+        .map_err(|error| error.to_string())?;
+    queue.dismiss_history();
     emit_queue_snapshot(app, &queue, None);
     Ok(())
 }
@@ -506,6 +555,21 @@ pub fn speech_queue_remove(
     item_id: String,
 ) -> Result<(), String> {
     remove_queue_item(&app, &item_id)
+}
+
+#[cfg(feature = "app")]
+#[tauri::command]
+pub fn speech_queue_dismiss(
+    app: tauri::AppHandle<tauri::Wry>,
+    item_id: String,
+) -> Result<(), String> {
+    dismiss_queue_history_item(&app, &item_id)
+}
+
+#[cfg(feature = "app")]
+#[tauri::command]
+pub fn speech_queue_dismiss_history(app: tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
+    dismiss_queue_history(&app)
 }
 
 #[cfg(feature = "app")]
@@ -857,6 +921,68 @@ mod tests {
             retry_count: 0,
             delivery_state: SpeechQueueDeliveryState::Ready,
         }
+    }
+
+    fn history_item(id: &str, status: SpeechQueueItemStatus) -> SpeechQueueItem {
+        SpeechQueueItem {
+            id: id.to_string(),
+            source_message_id: None,
+            user_display_name: "viewer".to_string(),
+            text: "こんにちは".to_string(),
+            status,
+            retry_count: 0,
+            delivery_state: SpeechQueueDeliveryState::Ready,
+        }
+    }
+
+    #[test]
+    fn removing_a_queued_item_only_cancels_pending_speech() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("queued"));
+        queue
+            .history
+            .push_back(history_item("blocked", SpeechQueueItemStatus::Blocked));
+
+        assert!(queue.remove_pending_item("queued"));
+        assert!(queue.pending.is_empty());
+        assert_eq!(queue.history[0].id, "queued");
+        assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Skipped);
+        assert_eq!(queue.history[1].id, "blocked");
+        assert!(!queue.remove_pending_item("blocked"));
+    }
+
+    #[test]
+    fn dismissing_history_removes_error_and_blocked_items_without_touching_pending_speech() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("queued"));
+        queue
+            .history
+            .push_back(history_item("error", SpeechQueueItemStatus::Error));
+        queue
+            .history
+            .push_back(history_item("blocked", SpeechQueueItemStatus::Blocked));
+
+        assert!(queue.dismiss_history_item("error"));
+        assert!(queue.dismiss_history_item("blocked"));
+        assert!(queue.history.is_empty());
+        assert_eq!(queue.pending[0].id, "queued");
+    }
+
+    #[test]
+    fn clearing_history_removes_error_and_blocked_items_without_clearing_pending_speech() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("queued"));
+        queue
+            .history
+            .push_back(history_item("error", SpeechQueueItemStatus::Error));
+        queue
+            .history
+            .push_back(history_item("blocked", SpeechQueueItemStatus::Blocked));
+
+        queue.dismiss_history();
+
+        assert!(queue.history.is_empty());
+        assert_eq!(queue.pending[0].id, "queued");
     }
 
     fn exhaust_front_item(queue: &mut SpeechQueueState) {
