@@ -26,21 +26,26 @@ export function SettingsSection({
 export function FloatingSaveButton({
   visible,
   disabled,
+  disabledReason,
   onClick,
 }: {
   visible: boolean;
   disabled: boolean;
+  disabledReason?: string;
   onClick: () => void;
 }) {
   if (!visible) {
     return null;
   }
 
+  const disabledReasonId = "settings-save-disabled-reason";
+
   return (
     <div className="absolute bottom-4 right-4 z-10 transition-all duration-200 ease-out translate-x-0 translate-y-0 opacity-100">
       <button
         type="button"
         aria-label="設定を保存"
+        aria-describedby={disabled && disabledReason ? disabledReasonId : undefined}
         title="設定を保存"
         disabled={disabled}
         onClick={onClick}
@@ -49,7 +54,20 @@ export function FloatingSaveButton({
         <Save className="h-4 w-4" />
         保存
       </button>
+      {disabled && disabledReason && (
+        <p id={disabledReasonId} className="mt-2 max-w-72 text-right text-xs text-rose-400" role="status">
+          {disabledReason}
+        </p>
+      )}
     </div>
+  );
+}
+
+export function FieldError({ id, message }: { id: string; message: string }) {
+  return (
+    <p id={`${id}-error`} className="mt-1 text-xs text-rose-400" role="alert">
+      {message}
+    </p>
   );
 }
 
@@ -104,9 +122,11 @@ export function NumberRuleRow({
           inputMode="numeric"
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          aria-invalid={!valid}
+          aria-describedby={!valid ? `${id}-error` : undefined}
           className={`h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
         />
-        {!valid && <p className="mt-1 text-xs text-rose-400">{error}</p>}
+        {!valid && <FieldError id={id} message={error} />}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { Network, PlugZap, Volume2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
+  FieldError,
   FloatingSaveButton,
   RangeRow,
   SettingsSection,
@@ -85,6 +86,16 @@ export function SettingsView({
   const isPortValid = isValidPort(port);
   const isVoiceValid = isValidBouyomiVoice(voice);
   const isHostValid = isValidBouyomiHost(host);
+  const hostError = host.trim().length === 0
+    ? "棒読みちゃんのホストを入力してください。"
+    : "IPv4、DNS名、または角括弧なしのIPv6アドレスを入力してください。";
+  const portError = "棒読みちゃんのポートは 1 から 65535 の範囲で入力してください。";
+  const voiceError = "棒読みちゃんの声質は 0 から 30000 の範囲で入力してください。";
+  const saveDisabledReason = [
+    !isHostValid ? hostError : undefined,
+    !isPortValid ? portError : undefined,
+    !isVoiceValid ? voiceError : undefined,
+  ].filter((message): message is string => Boolean(message)).join(" ");
   const isDirty =
     host.trim() !== speechSettings.bouyomiHost ||
     numericPort !== speechSettings.bouyomiPort ||
@@ -213,17 +224,21 @@ export function SettingsView({
           </SettingsSection>
 
           <SettingsSection id="bouyomi-connection" title="棒読みちゃん接続">
-            <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-b border-zinc-800 py-3">
-              <label className="text-sm text-zinc-400" htmlFor="bouyomi-host">
+            <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
+              <label className="pt-2 text-sm text-zinc-400" htmlFor="bouyomi-host">
                 ホスト
               </label>
-              <input
-                id="bouyomi-host"
-                value={host}
-                onChange={(event) => setHost(event.target.value)}
-                className={`h-9 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
-              />
-              {!isHostValid && <p className="mt-1 text-xs text-rose-400">IPv4、DNS名、または角括弧なしのIPv6アドレスを入力してください。</p>}
+              <div>
+                <input
+                  id="bouyomi-host"
+                  value={host}
+                  onChange={(event) => setHost(event.target.value)}
+                  aria-invalid={!isHostValid}
+                  aria-describedby={!isHostValid ? "bouyomi-host-error" : undefined}
+                  className={`h-9 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
+                />
+                {!isHostValid && <FieldError id="bouyomi-host" message={hostError} />}
+              </div>
             </div>
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-b border-zinc-800 py-3">
               <label className="text-sm text-zinc-400" htmlFor="bouyomi-port">
@@ -235,9 +250,11 @@ export function SettingsView({
                   inputMode="numeric"
                   value={port}
                   onChange={(event) => setPort(event.target.value)}
+                  aria-invalid={!isPortValid}
+                  aria-describedby={!isPortValid ? "bouyomi-port-error" : undefined}
                   className={`h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
                 />
-                {!isPortValid && <p className="mt-1 text-xs text-rose-400">1 から 65535 の範囲で入力してください。</p>}
+                {!isPortValid && <FieldError id="bouyomi-port" message={portError} />}
               </div>
             </div>
           </SettingsSection>
@@ -282,9 +299,11 @@ export function SettingsView({
                   inputMode="numeric"
                   value={voice}
                   onChange={(event) => setVoice(event.target.value)}
+                  aria-invalid={!isVoiceValid}
+                  aria-describedby={!isVoiceValid ? "bouyomi-voice-error" : undefined}
                   className={`h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
                 />
-                {!isVoiceValid && <p className="mt-1 text-xs text-rose-400">0 から 30000 の範囲で入力してください。</p>}
+                {!isVoiceValid && <FieldError id="bouyomi-voice" message={voiceError} />}
               </div>
             </div>
           </SettingsSection>
@@ -346,6 +365,7 @@ export function SettingsView({
       <FloatingSaveButton
         visible={isDirty}
         disabled={!isHostValid || !isPortValid || !isVoiceValid}
+        disabledReason={saveDisabledReason}
         onClick={saveBouyomiSettings}
       />
     </main>
