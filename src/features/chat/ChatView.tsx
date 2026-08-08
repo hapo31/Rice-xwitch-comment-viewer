@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { getStartupGuideMessages, type StartupGuideMessage } from "../../presentation/startupGuide";
 import type { AppState } from "../../stores/appStore";
 import type { ChatMessage } from "../../types";
+import { ChatBadges } from "./ChatBadges";
 import { CHAT_GRID_TEMPLATE } from "./chatLayout";
 
 export function ChatView({ state, showStartupGuide }: { state: AppState; showStartupGuide: boolean }) {
@@ -105,7 +106,10 @@ function ChatRow({ message }: { message: ChatMessage | StartupGuideMessage }) {
       style={{ gridTemplateColumns: CHAT_GRID_TEMPLATE }}
     >
       <span className="font-mono text-xs text-zinc-400">{time}</span>
-      <span className="truncate pr-3 font-medium text-sky-300">{message.userDisplayName}</span>
+      <span className="flex min-w-0 items-center gap-1 pr-3 font-medium text-sky-300">
+        <ChatBadges badges={"badges" in message ? message.badges : undefined} />
+        <span className="truncate">{message.userDisplayName}</span>
+      </span>
       <span className="line-clamp-2 text-zinc-200">
         {"action" in message && message.action === "login" && (
           <Link
