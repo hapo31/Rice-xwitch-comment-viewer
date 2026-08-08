@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef } from "react";
+import { createContext, useContext, useEffect, useRef, type MutableRefObject } from "react";
 
 export interface UnsavedChange {
   isDirty: boolean;
@@ -12,6 +12,25 @@ interface UnsavedChangesRegistry {
 }
 
 export const UnsavedChangesContext = createContext<UnsavedChangesRegistry | undefined>(undefined);
+
+type CloseRequestedEvent = { preventDefault: () => void };
+
+/**
+ * Keeps the native close listener stable for the life of the app while still
+ * consulting the latest registered draft. Tauri registers the listener
+ * asynchronously, so replacing it whenever a draft changes leaves a window
+ * where an Alt+F4 request can bypass the confirmation dialog.
+ */
+export function createNativeCloseHandler(
+  activeChangeRef: MutableRefObject<UnsavedChange | undefined>,
+  requestConfirmation: () => void,
+) {
+  return (event: CloseRequestedEvent) => {
+    if (!activeChangeRef.current) return;
+    event.preventDefault();
+    requestConfirmation();
+  };
+}
 
 /** Registers a screen-local draft with the app-wide navigation and close guard. */
 export function useUnsavedChanges(id: string, change: UnsavedChange) {

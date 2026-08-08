@@ -15,7 +15,12 @@ import { claimStartupGuideForSession } from "./presentation/startupGuide";
 import { autoConnectTimelineEvent, speechRecoveryTimelineEvent, SystemTimelineRouter, timelineEventFromTwitchStatus } from "./presentation/systemTimeline";
 import { restoreAndValidateStartupAuth } from "./startupAuth";
 import { appReducer, initialAppState } from "./stores/appStore";
-import { UnsavedChangesContext, UnsavedChangesDialog, type UnsavedChange } from "./unsavedChanges";
+import {
+  createNativeCloseHandler,
+  UnsavedChangesContext,
+  UnsavedChangesDialog,
+  type UnsavedChange,
+} from "./unsavedChanges";
 import {
   appExit,
   appOpenExternalUrl,
@@ -62,6 +67,7 @@ export function App() {
   const startupAuthAttempted = useRef(false);
   const systemTimelineRouter = useRef(new SystemTimelineRouter());
   const unsavedChanges = useRef(new Map<string, UnsavedChange>());
+  const activeUnsavedChangeRef = useRef<UnsavedChange>();
   const [, setUnsavedChangesVersion] = useState(0);
   const [closeRequested, setCloseRequested] = useState(false);
 
@@ -76,6 +82,7 @@ export function App() {
     },
   }), []);
   const activeUnsavedChange = [...unsavedChanges.current.values()].find((change) => change.isDirty);
+  activeUnsavedChangeRef.current = activeUnsavedChange;
   const blocker = useBlocker(Boolean(activeUnsavedChange));
 
   const requestWindowClose = useCallback(() => {
@@ -90,15 +97,13 @@ export function App() {
     if (!isDesktopRuntime()) return;
 
     let unlisten: (() => void) | undefined;
-    getCurrentWindow().onCloseRequested((event) => {
-      if (!activeUnsavedChange) return;
-      event.preventDefault();
+    getCurrentWindow().onCloseRequested(createNativeCloseHandler(activeUnsavedChangeRef, () => {
       setCloseRequested(true);
-    }).then((dispose) => {
+    })).then((dispose) => {
       unlisten = dispose;
     }).catch(() => undefined);
     return () => unlisten?.();
-  }, [activeUnsavedChange]);
+  }, []);
 
   useEffect(() => {
     const preventUnload = (event: BeforeUnloadEvent) => {
