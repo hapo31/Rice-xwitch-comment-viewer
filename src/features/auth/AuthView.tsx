@@ -5,7 +5,6 @@ import { routeHeadingId } from "../../routeAccessibility";
 import type { AppState } from "../../stores/appStore";
 import type { AppSettings } from "../../types";
 import { isValidTwitchChannelLogin } from "../../validation";
-import { focusIndicatorClass } from "../../presentation/focus";
 import { defaultTwitchSettings } from "../settings/defaults";
 import { formatDeviceAuthRemainingTime, getDeviceAuthRemainingSeconds } from "./deviceAuthExpiry";
 

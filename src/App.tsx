@@ -479,7 +479,7 @@ export function App() {
     try {
       await speechQueueDismiss(itemId);
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -491,7 +491,7 @@ export function App() {
     try {
       await speechQueueDismissHistory();
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
