@@ -1,6 +1,7 @@
 #[cfg(feature = "app")]
 use crate::app_events::{
-    emit_app_log, emit_twitch_chat_message, emit_twitch_status, AppLogLevel, TwitchStatus,
+    emit_app_log, emit_twitch_auth_required, emit_twitch_chat_message, emit_twitch_status,
+    AppLogLevel, TwitchAuthRequiredReason, TwitchStatus,
 };
 #[cfg(feature = "app")]
 use crate::settings::{default_twitch_client_id, AppState};
@@ -33,6 +34,7 @@ const TWITCH_EVENTSUB_SUBSCRIPTIONS_URL: &str =
 #[cfg(feature = "app")]
 const TWITCH_EVENTSUB_WS_URL: &str = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=30";
 const CHAT_READ_SCOPE: &str = "user:read:chat";
+const REQUIRED_TWITCH_SCOPES: &[&str] = &[CHAT_READ_SCOPE];
 const KEYRING_SERVICE: &str = "rice.twitch.oauth";
 const KEYRING_ACCOUNT: &str = "default";
 const CHANNEL_CHAT_MESSAGE_TYPE: &str = "channel.chat.message";
@@ -354,21 +356,23 @@ impl TwitchAuthState {
         self.profile.clone()
     }
 
-    fn restore(stored: StoredTwitchAuth) -> Self {
+    fn restore(stored: StoredTwitchAuth) -> anyhow::Result<Self> {
         let mut profile = stored.profile;
         if profile.client_id.trim().is_empty() {
             profile.client_id = stored.client_id.clone();
         }
-        Self {
+        let scopes = token_scopes(stored.scopes, &profile);
+        ensure_required_twitch_scopes(&scopes)?;
+        Ok(Self {
             pending: None,
             token: Some(TwitchToken {
                 access_token: stored.access_token,
                 refresh_token: stored.refresh_token,
-                scopes: stored.scopes,
+                scopes,
                 expires_in: stored.expires_in,
             }),
             profile: Some(profile),
-        }
+        })
     }
 
     fn stored_auth(&self) -> Option<StoredTwitchAuth> {
@@ -404,6 +408,8 @@ impl TwitchAuthState {
                 "Twitch Client ID が見つかりません。再ログインしてください。"
             ));
         }
+
+        ensure_required_twitch_scopes(&profile.scopes)?;
 
         Ok(EventSubAuthCredentials {
             client_id,
@@ -666,7 +672,7 @@ impl AuthSecretStore for LegacyAuthStore {
 fn restore_stored_auth(secret: &str) -> anyhow::Result<TwitchAuthState> {
     serde_json::from_str::<StoredTwitchAuth>(secret)
         .map(TwitchAuthState::restore)
-        .map_err(anyhow::Error::from)
+        .map_err(anyhow::Error::from)?
 }
 
 #[cfg(all(feature = "app", target_os = "linux"))]
@@ -811,6 +817,25 @@ pub async fn twitch_poll_auth(
                 .await
                 .map_err(to_twitch_user_message)?;
             let profile = TwitchUserProfile::from(profile);
+            if let Err(error) = ensure_required_twitch_scopes(&profile.scopes) {
+                let message = error.to_string();
+                {
+                    let mut auth = state
+                        .twitch_auth
+                        .lock()
+                        .map_err(|error| error.to_string())?;
+                    auth.pending = None;
+                    auth.token = None;
+                    auth.profile = None;
+                }
+                emit_twitch_auth_required(
+                    &app,
+                    TwitchAuthRequiredReason::MissingRequiredScope,
+                    message.clone(),
+                );
+                emit_app_log(&app, AppLogLevel::Warning, message.clone());
+                return Err(message);
+            }
 
             {
                 let mut auth = state
@@ -944,7 +969,15 @@ pub async fn twitch_validate_auth(
     };
 
     let profile = match validate_access_token(&access_token).await {
-        Ok(validate) => TwitchUserProfile::from(validate),
+        Ok(validate) => {
+            let profile = TwitchUserProfile::from(validate);
+            if let Err(error) = ensure_required_twitch_scopes(&profile.scopes) {
+                let message = error.to_string();
+                clear_missing_scope_twitch_auth(&state, &app, &message)?;
+                return Err(message);
+            }
+            profile
+        }
         Err(validate_error) => {
             let token = match refresh_access_token(&client_id, &refresh_token).await {
                 Ok(token) => token,
@@ -957,7 +990,15 @@ pub async fn twitch_validate_auth(
                 }
             };
             let profile = match validate_access_token(&token.access_token).await {
-                Ok(validate) => TwitchUserProfile::from(validate),
+                Ok(validate) => {
+                    let profile = TwitchUserProfile::from(validate);
+                    if let Err(error) = ensure_required_twitch_scopes(&profile.scopes) {
+                        let message = error.to_string();
+                        clear_missing_scope_twitch_auth(&state, &app, &message)?;
+                        return Err(message);
+                    }
+                    profile
+                }
                 Err(error) => {
                     let message = to_twitch_user_message(error);
                     clear_invalid_twitch_auth(&state, &app, &message)?;
@@ -1036,7 +1077,7 @@ pub async fn twitch_connect(
         .trim_start_matches('@')
         .to_ascii_lowercase();
 
-    let (access_token, client_id, user_id, own_login) = {
+    let (access_token, client_id, user_id, own_login, scopes) = {
         let auth = state
             .twitch_auth
             .lock()
@@ -1053,8 +1094,15 @@ pub async fn twitch_connect(
             profile.client_id.clone(),
             profile.user_id.clone(),
             profile.login.clone(),
+            profile.scopes.clone(),
         )
     };
+
+    if let Err(error) = ensure_required_twitch_scopes(&scopes) {
+        let message = error.to_string();
+        clear_missing_scope_twitch_auth(&state, &app, &message)?;
+        return Err(message);
+    }
 
     let channel_login = if channel_login.is_empty() {
         own_login
@@ -1152,6 +1200,22 @@ fn clear_invalid_twitch_auth(
     let message = format!("Twitch 認証が無効なため、認証状態を解除しました: {error_message}");
     emit_twitch_status(app, TwitchStatus::AuthRequired, Some(message.clone()));
     emit_app_log(app, AppLogLevel::Warning, message);
+    Ok(())
+}
+
+#[cfg(feature = "app")]
+fn clear_missing_scope_twitch_auth(
+    state: &tauri::State<'_, AppState>,
+    app: &tauri::AppHandle<tauri::Wry>,
+    error_message: &str,
+) -> Result<(), String> {
+    clear_twitch_auth_state(state)?;
+    emit_twitch_auth_required(
+        app,
+        TwitchAuthRequiredReason::MissingRequiredScope,
+        error_message,
+    );
+    emit_app_log(app, AppLogLevel::Warning, error_message);
     Ok(())
 }
 
@@ -1826,6 +1890,24 @@ fn token_scopes(scopes: Vec<String>, profile: &TwitchUserProfile) -> Vec<String>
     }
 }
 
+fn ensure_required_twitch_scopes(scopes: &[String]) -> anyhow::Result<()> {
+    let missing_scopes = REQUIRED_TWITCH_SCOPES
+        .iter()
+        .filter(|required_scope| !scopes.iter().any(|scope| scope == **required_scope))
+        .copied()
+        .collect::<Vec<_>>();
+
+    if missing_scopes.is_empty() {
+        return Ok(());
+    }
+
+    Err(anyhow::anyhow!(
+        "Twitch 認証に必要な権限がありません: {}。Login から再ログインし、{} を許可してください。",
+        missing_scopes.join(", "),
+        missing_scopes.join(", "),
+    ))
+}
+
 enum PollAuthError {
     Pending,
     SlowDown,
@@ -1837,12 +1919,15 @@ enum PollAuthError {
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_chat_message, oauth_error_code, retry_backoff_seconds, AuthSecretStore,
-        AuthStorage, EventSubEnvelope, MessageDedupe, OAuthErrorResponse, StoredTwitchAuth,
-        TwitchAuthState, TwitchToken, TwitchUserProfile,
+        ensure_required_twitch_scopes, normalize_chat_message, oauth_error_code,
+        retry_backoff_seconds, EventSubEnvelope, MessageDedupe, OAuthErrorResponse,
     };
     #[cfg(feature = "app")]
-    use super::{retry_eventsub_subscription, SubscriptionRequestError, TokenResponse};
+    use super::{
+        restore_stored_auth, retry_eventsub_subscription, AuthSecretStore, AuthStorage,
+        StoredTwitchAuth, SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchToken,
+        TwitchUserProfile,
+    };
     use std::{
         cell::RefCell,
         time::{Duration, Instant},
@@ -1927,6 +2012,60 @@ mod tests {
                 expires_in: 3600,
             }),
         }
+    }
+
+    fn scopes_without_chat_read() -> Vec<String> {
+        vec!["user:read:email".to_string()]
+    }
+
+    #[test]
+    fn initial_authorization_requires_chat_read_scope() {
+        let error = ensure_required_twitch_scopes(&scopes_without_chat_read()).unwrap_err();
+
+        assert!(error.to_string().contains("user:read:chat"));
+        assert!(error.to_string().contains("再ログイン"));
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn stored_auth_without_chat_read_scope_is_not_restored() {
+        let secret = serde_json::to_string(&StoredTwitchAuth {
+            client_id: "client-id".to_string(),
+            access_token: "access-token".to_string(),
+            refresh_token: "refresh-token".to_string(),
+            scopes: scopes_without_chat_read(),
+            expires_in: 3600,
+            profile: TwitchUserProfile {
+                user_id: "user-id".to_string(),
+                login: "viewer".to_string(),
+                client_id: "client-id".to_string(),
+                scopes: scopes_without_chat_read(),
+                expires_in: 3600,
+            },
+        })
+        .unwrap();
+
+        let error = restore_stored_auth(&secret).unwrap_err();
+
+        assert!(error.to_string().contains("user:read:chat"));
+    }
+
+    #[test]
+    fn refreshed_authorization_requires_chat_read_scope() {
+        let error = ensure_required_twitch_scopes(&scopes_without_chat_read()).unwrap_err();
+
+        assert!(error.to_string().contains("user:read:chat"));
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn eventsub_credentials_reject_missing_chat_read_scope_before_subscription() {
+        let mut auth = twitch_auth_state();
+        auth.profile.as_mut().unwrap().scopes = scopes_without_chat_read();
+
+        let error = auth.eventsub_credentials().unwrap_err();
+
+        assert!(error.to_string().contains("user:read:chat"));
     }
 
     fn process_session(

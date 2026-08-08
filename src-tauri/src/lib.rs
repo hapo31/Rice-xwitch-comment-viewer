@@ -6,7 +6,8 @@ mod twitch;
 
 #[cfg(feature = "app")]
 use app_events::{
-    emit_app_log, emit_speech_status, emit_twitch_status, AppLogLevel, SpeechStatus, TwitchStatus,
+    emit_app_log, emit_speech_status, emit_twitch_auth_required, emit_twitch_status, AppLogLevel,
+    SpeechStatus, TwitchAuthRequiredReason, TwitchStatus,
 };
 #[cfg(feature = "app")]
 use launcher::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
@@ -157,15 +158,24 @@ pub fn run() {
             }
             if let Some(warning) = restored_auth.storage_warning {
                 emit_app_log(app.handle(), AppLogLevel::Warning, warning.clone());
-                emit_twitch_status(
-                    app.handle(),
-                    if has_restored_auth {
-                        TwitchStatus::Connected
-                    } else {
-                        TwitchStatus::AuthRequired
-                    },
-                    Some(warning),
-                );
+                if !has_restored_auth && warning.contains("Twitch 認証に必要な権限がありません")
+                {
+                    emit_twitch_auth_required(
+                        app.handle(),
+                        TwitchAuthRequiredReason::MissingRequiredScope,
+                        warning,
+                    );
+                } else {
+                    emit_twitch_status(
+                        app.handle(),
+                        if has_restored_auth {
+                            TwitchStatus::Connected
+                        } else {
+                            TwitchStatus::AuthRequired
+                        },
+                        Some(warning),
+                    );
+                }
             }
             Ok(())
         })
