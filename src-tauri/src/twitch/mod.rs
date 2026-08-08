@@ -1642,9 +1642,17 @@ async fn refresh_eventsub_access_token(
     };
     if let Err(error) = ensure_required_twitch_scopes(&refreshed_profile.scopes) {
         let message = error.to_string();
-        let state = app.state::<AppState>();
-        clear_missing_scope_twitch_auth(&state, app, &message)
-            .map_err(|error| anyhow::anyhow!(error))?;
+        if let Some(access_token) = clear_eventsub_auth_for_missing_scope_if_current(
+            app,
+            &credentials.refresh_token,
+            &message,
+        )? {
+            // Another EventSub re-subscription refreshed and rotated the credentials
+            // while this request was validating its now-stale refresh result.  Its
+            // access token is authoritative, so leave that newer authentication in
+            // place and retry the subscription with it.
+            return Ok(access_token);
+        }
         return Err(anyhow::anyhow!(message));
     }
 
@@ -1684,6 +1692,74 @@ fn clear_eventsub_auth(
 ) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
     clear_invalid_twitch_auth(&state, app, error_message).map_err(|error| anyhow::anyhow!(error))
+}
+
+/// Clears an EventSub authentication only when it still belongs to the refresh
+/// request that found a missing required scope.  Concurrent EventSub retries can
+/// rotate a refresh token while an older request is awaiting `/validate`; clearing
+/// unconditionally would discard the newer, valid authentication.
+///
+/// Returns the newer access token when the credentials have already rotated.
+#[cfg(feature = "app")]
+fn clear_eventsub_auth_for_missing_scope_if_current(
+    app: &tauri::AppHandle<tauri::Wry>,
+    expected_refresh_token: &str,
+    error_message: &str,
+) -> anyhow::Result<Option<String>> {
+    let state = app.state::<AppState>();
+    let connection_handle = {
+        // Keep the same lock ordering as `clear_twitch_auth_state`: connection,
+        // then authentication.  The comparison and clearing are one critical
+        // section so a rotating refresh cannot be cleared after the comparison.
+        let mut connection = state
+            .twitch_connection
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        let mut auth = state
+            .twitch_auth
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+
+        if let Some(access_token) =
+            clear_auth_for_eventsub_missing_scope_if_current(&mut auth, expected_refresh_token)?
+        {
+            return Ok(Some(access_token));
+        }
+
+        // Persist the clear while the token lock is held.  Otherwise a concurrent
+        // refresh could save a new token and this stale request could erase it.
+        TwitchAuthStore::clear()
+            .map_err(to_secure_store_user_message)
+            .map_err(|error| anyhow::anyhow!(error))?;
+        connection.take()
+    };
+
+    if let Some(handle) = connection_handle {
+        handle.abort();
+    }
+    emit_twitch_auth_required(
+        app,
+        TwitchAuthRequiredReason::MissingRequiredScope,
+        error_message,
+    );
+    emit_app_log(app, AppLogLevel::Warning, error_message);
+    Ok(None)
+}
+
+#[cfg(feature = "app")]
+fn clear_auth_for_eventsub_missing_scope_if_current(
+    auth: &mut TwitchAuthState,
+    expected_refresh_token: &str,
+) -> anyhow::Result<Option<String>> {
+    let current_credentials = auth.eventsub_credentials()?;
+    if current_credentials.refresh_token != expected_refresh_token {
+        return Ok(Some(current_credentials.access_token));
+    }
+
+    auth.pending = None;
+    auth.token = None;
+    auth.profile = None;
+    Ok(None)
 }
 
 #[cfg(feature = "app")]
@@ -1938,15 +2014,15 @@ enum PollAuthError {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "app")]
+    use super::{
+        clear_auth_for_eventsub_missing_scope_if_current, restore_stored_auth,
+        retry_eventsub_subscription, AuthSecretStore, AuthStorage, StoredTwitchAuth,
+        SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchToken, TwitchUserProfile,
+    };
     use super::{
         ensure_required_twitch_scopes, normalize_chat_message, oauth_error_code,
         retry_backoff_seconds, EventSubEnvelope, MessageDedupe, OAuthErrorResponse,
-    };
-    #[cfg(feature = "app")]
-    use super::{
-        restore_stored_auth, retry_eventsub_subscription, AuthSecretStore, AuthStorage,
-        StoredTwitchAuth, SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchToken,
-        TwitchUserProfile,
     };
     use std::{
         cell::RefCell,
@@ -2334,6 +2410,41 @@ mod tests {
             auth.eventsub_credentials().unwrap().access_token,
             "access-token"
         );
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn stale_eventsub_scope_failure_keeps_rotated_authentication() {
+        let mut auth = twitch_auth_state();
+        let stale_refresh_token = auth.eventsub_credentials().unwrap().refresh_token;
+
+        // Simulate a second EventSub re-subscription completing its refresh while
+        // the first one is awaiting validation of a scope-deficient token.
+        auth.replace_token(
+            TokenResponse {
+                access_token: "newer-access-token".to_string(),
+                refresh_token: "newer-refresh-token".to_string(),
+                scope: vec!["user:read:chat".to_string()],
+                expires_in: 7200,
+            },
+            TwitchUserProfile {
+                user_id: "user-id".to_string(),
+                login: "viewer".to_string(),
+                client_id: "client-id".to_string(),
+                scopes: vec!["user:read:chat".to_string()],
+                expires_in: 7200,
+            },
+        )
+        .unwrap();
+
+        let access_token =
+            clear_auth_for_eventsub_missing_scope_if_current(&mut auth, &stale_refresh_token)
+                .unwrap();
+
+        assert_eq!(access_token.as_deref(), Some("newer-access-token"));
+        let current = auth.eventsub_credentials().unwrap();
+        assert_eq!(current.access_token, "newer-access-token");
+        assert_eq!(current.refresh_token, "newer-refresh-token");
     }
 
     #[test]
