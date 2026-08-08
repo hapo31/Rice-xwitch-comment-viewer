@@ -2,6 +2,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { AppWindow, Ellipsis, ExternalLink, Layers3, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { subscribeLauncherDragDrop, type LauncherDragDropHandlers } from "./dragDropListener";
 import {
   launcherLaunchSummary,
   launcherTileColor,
@@ -74,6 +75,13 @@ export function LauncherView({
   const menuTriggers = useRef(new Map<string, HTMLButtonElement>());
   const focusMenuOnOpen = useRef(false);
   const orderedItems = useMemo(() => sortLauncherItems(items), [items]);
+  const isReadyRef = useRef(isReady);
+  const itemsCountRef = useRef(items.length);
+  const onAddRef = useRef(onAdd);
+
+  isReadyRef.current = isReady;
+  itemsCountRef.current = items.length;
+  onAddRef.current = onAdd;
 
   const openMenu = useCallback((itemId: string, shouldFocusMenu = true) => {
     focusMenuOnOpen.current = shouldFocusMenu;
@@ -100,7 +108,7 @@ export function LauncherView({
   }, [openMenuId]);
 
   const addPaths = useCallback(async (paths: string[]) => {
-    if (!isReady) {
+    if (!isReadyRef.current) {
       setNotice("設定を読み込んでいます。少し待ってからもう一度お試しください。");
       return;
     }
@@ -113,8 +121,8 @@ export function LauncherView({
 
     setBusyAction("add");
     try {
-      const nextItems = await onAdd(accepted);
-      const addedCount = Math.max(0, nextItems.length - items.length);
+      const nextItems = await onAddRef.current(accepted);
+      const addedCount = Math.max(0, nextItems.length - itemsCountRef.current);
       const rejectedNote = rejected.length > 0 ? `（未対応の ${rejected.length} 件は除外）` : "";
       setNotice(`${addedCount} 件を登録しました。${rejectedNote}`);
       if (addedCount === 0) {
@@ -125,45 +133,40 @@ export function LauncherView({
     } finally {
       setBusyAction(undefined);
     }
-  }, [isReady, items.length, onAdd]);
+  }, []);
+
+  const dragDropHandlersRef = useRef<LauncherDragDropHandlers>({
+    onEnter: () => undefined,
+    onOver: () => undefined,
+    onLeave: () => undefined,
+    onDrop: () => undefined,
+  });
+  dragDropHandlersRef.current = {
+    onEnter: () => {
+      setNotice("アプリをここにドロップして追加します。");
+      setIsDragActive(true);
+    },
+    onOver: () => setIsDragActive(true),
+    onLeave: () => {
+      setIsDragActive(false);
+      setNotice(defaultLauncherNotice);
+    },
+    onDrop: (paths) => {
+      setIsDragActive(false);
+      void addPaths(paths);
+    },
+  };
 
   useEffect(() => {
     if (!isDesktopRuntime()) {
       return;
     }
 
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void getCurrentWebview().onDragDropEvent((event) => {
-      if (event.payload.type === "enter") {
-        setNotice("アプリをここにドロップして追加します。");
-        setIsDragActive(true);
-        return;
-      }
-      if (event.payload.type === "over") {
-        setIsDragActive(true);
-        return;
-      }
-      setIsDragActive(false);
-      if (event.payload.type === "leave") {
-        setNotice(defaultLauncherNotice);
-      }
-      if (event.payload.type === "drop") {
-        void addPaths(event.payload.paths);
-      }
-    }).then((dispose) => {
-      if (disposed) {
-        dispose();
-      } else {
-        unlisten = dispose;
-      }
-    });
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [addPaths]);
+    return subscribeLauncherDragDrop(
+      (listener) => getCurrentWebview().onDragDropEvent(listener),
+      dragDropHandlersRef,
+    );
+  }, []);
 
   useEffect(() => {
     if (!openMenuId) {
