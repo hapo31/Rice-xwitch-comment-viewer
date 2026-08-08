@@ -24,6 +24,8 @@ import {
   subscribeTwitchStatusEvents,
   speechConnectionDiagnostics,
   speechControl,
+  speechQueueDismiss,
+  speechQueueDismissHistory,
   speechHealthCheck,
   speechHealthProbe,
   speechQueueReload,
@@ -404,7 +406,7 @@ export function App() {
   }
 
   async function handleSpeechControl(command: "pause" | "resume" | "skip" | "clear") {
-    if (command === "clear" && !window.confirm("読み上げキューをクリアしますか？")) {
+    if (command === "clear" && !window.confirm("待機中の読み上げをクリアしますか？")) {
       return;
     }
 
@@ -428,6 +430,26 @@ export function App() {
   async function handleQueueRemove(itemId: string) {
     try {
       await speechQueueRemove(itemId);
+    } catch (error) {
+      dispatch({ type: "warning.added", warning: String(error) });
+    }
+  }
+
+  async function handleQueueDismiss(itemId: string) {
+    try {
+      await speechQueueDismiss(itemId);
+    } catch (error) {
+      dispatch({ type: "warning.added", warning: String(error) });
+    }
+  }
+
+  async function handleQueueDismissHistory() {
+    if (!window.confirm("表示中の読み上げ履歴をクリアしますか？")) {
+      return;
+    }
+
+    try {
+      await speechQueueDismissHistory();
     } catch (error) {
       dispatch({ type: "warning.added", warning: String(error) });
     }
@@ -513,6 +535,8 @@ export function App() {
         onSpeechControl={handleSpeechControl}
         onQueueReload={handleQueueReload}
         onQueueRemove={handleQueueRemove}
+        onQueueDismiss={handleQueueDismiss}
+        onQueueDismissHistory={handleQueueDismissHistory}
         onQueueRetry={handleQueueRetry}
         onLauncherAdd={handleLauncherAdd}
         onLauncherRemove={handleLauncherRemove}

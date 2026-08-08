@@ -23,6 +23,10 @@
 
 - Tauri の最小幅は 900px だが、Chat の内容には `min-w-[640px]` があり、Activity Bar と Side Panel を除いた 572px の Main View を必ず超過していた。UI 倍率ではシェルも拡大するため、同じ最小幅で Chat に残る幅は 100%/125%/150% で 572/490/408px となる。
 - 固定最小幅を削除し、時刻・ユーザーは下限を持つ可変列、本文は残り幅の列へ変更した。Chat のスクロール領域は縦方向だけを許可し、狭幅時は既存の省略表示と2行制限で主要情報を維持する。境界幅の TypeScript テストで3倍率の本文列が正の幅を保つことを確認した。Windows の実機で各倍率の見た目と操作性を確認する必要がある。
+## 2026-08-08: Issue #52 フィルターで除外された Queue 項目の dismiss
+
+- Queue view は `blocked` を表示対象にしていた一方、削除操作は `queued`/`error` に限られ、読み上げ側の clear は pending だけを消していた。待機中の読み上げをキャンセルする `speech_queue_remove` と、表示履歴を消す `speech_queue_dismiss` / `speech_queue_dismiss_history` を分離した。blocked と error は履歴 dismiss の対象で、読み上げ中の項目は従来どおり削除できない。
+- UI は確認付きの「待機中の読み上げをクリア」と「表示履歴をクリア」を別操作として表示する。Rust で queued のキャンセル、error/blocked の個別 dismiss と一括 clear が pending に影響しないことを、React の静的レンダリングで blocked の削除操作と両方の clear の表示を検証した。`cargo test`（59件）、`pnpm test`（36件）、`pnpm build`、`git diff --check` が成功。Twitch と棒読みちゃんを接続した実機での UI 操作確認は残る。
 
 ## 2026-08-07: Issue #78 正規化後に空となる読み上げ本文
 

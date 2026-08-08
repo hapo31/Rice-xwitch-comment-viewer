@@ -19,7 +19,10 @@ use speech::bouyomi::{
     speech_pause, speech_resume, speech_skip, speech_test,
 };
 #[cfg(feature = "app")]
-use speech::{speech_queue_reload, speech_queue_remove, speech_queue_retry};
+use speech::{
+    speech_queue_dismiss, speech_queue_dismiss_history, speech_queue_reload, speech_queue_remove,
+    speech_queue_retry,
+};
 #[cfg(feature = "app")]
 use std::process::Command;
 use std::sync::Mutex;
@@ -94,6 +97,8 @@ pub fn run() {
             speech_clear,
             speech_queue_reload,
             speech_queue_remove,
+            speech_queue_dismiss,
+            speech_queue_dismiss_history,
             speech_queue_retry,
             twitch_start_auth,
             twitch_poll_auth,

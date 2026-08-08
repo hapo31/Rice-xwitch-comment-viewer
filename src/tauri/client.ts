@@ -218,6 +218,22 @@ export async function speechQueueRemove(itemId: string): Promise<void> {
   return invoke<void>("speech_queue_remove", { itemId });
 }
 
+export async function speechQueueDismiss(itemId: string): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("speech_queue_dismiss", { itemId });
+}
+
+export async function speechQueueDismissHistory(): Promise<void> {
+  if (!isTauriRuntime) {
+    return;
+  }
+
+  return invoke<void>("speech_queue_dismiss_history");
+}
+
 export async function speechQueueRetry(itemId: string): Promise<void> {
   if (!isTauriRuntime) {
     return;
