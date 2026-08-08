@@ -5,7 +5,7 @@ import { claimStartupGuideForSession, getStartupGuideMessages } from "./startupG
 
 const receivedAt = "2026-07-11T12:00:00.000Z";
 const settings: AppSettings = {
-  twitch: { channelLogin: "rice_channel", autoConnect: false, confirmBeforeStopChat: true },
+  twitch: { channelLogin: "rice_channel", autoConnect: false, confirmBeforeStopChat: true, liveChatAnnouncements: true },
   speech: {
     adapter: "bouyomi",
     bouyomiHost: "127.0.0.1",

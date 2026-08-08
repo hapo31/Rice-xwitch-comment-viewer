@@ -10,6 +10,7 @@ export interface AppSettings {
     channelLogin: string;
     autoConnect: boolean;
     confirmBeforeStopChat: boolean;
+    liveChatAnnouncements: boolean;
   };
   speech: {
     adapter: "bouyomi";

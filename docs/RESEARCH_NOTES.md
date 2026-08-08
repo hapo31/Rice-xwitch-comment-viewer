@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-08-08: Issue #36 Chat の制御可能なライブ通知
+
+- 仮想スクロールされた Chat 行をそのまま live region にすると、再レンダーや起動案内も通知対象になり得る。そこで Chat リストは識別可能な `role="log"` のまま live 通知を停止し、Twitch 由来の新着だけを 500ms 単位で `role="status"` へ「新しいチャットが N 件届きました。」と集約する構成にした。通知領域はフォーカスを移動せず、system の起動案内は対象外にする。
+- Settings の Twitch 設定に既定 ON の `liveChatAnnouncements` を追加した。OFF 中に受信したチャットは既読として記録して再有効化後に遡及通知せず、既存 `settings.json` にフィールドがない場合も serde の既定値で ON を維持する。起動済みチャット、連投集約、重複/system チャット、抑制中の既読化と Rust 設定互換を自動テストした。Windows のスクリーンリーダーで連投時の読み上げ密度と ON/OFF の実動作は手動確認として残る。
+
 ## 2026-08-08: Issue #16 非同期状態の支援技術への通知
 
 - Side Panel の警告と Status Bar は同じ store を表示するため、両方へ live region を付けると一つの接続イベントを二重に読み上げる。`LiveStatusAnnouncer` を App に一つだけ置き、前回の認証・Twitch 接続・読み上げ状態と最新警告を比較して、状態変化がない再描画では通知しないようにした。
