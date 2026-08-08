@@ -56,17 +56,54 @@ export function formatBouyomiAddress(host: string, port: number): string {
   return normalizedHost.includes(":") ? `[${normalizedHost}]:${port}` : `${normalizedHost}:${port}`;
 }
 
-export function parseRuleList(value: string): string[] {
-  return Array.from(
-    new Set(
-      value
-        .split(/\r?\n|,/)
-        .map((item) => item.trim())
-        .filter(Boolean),
-    ),
-  ).slice(0, 200);
+export const RULE_LIST_LIMIT = 200;
+
+export type RuleListParseResult = {
+  items: string[];
+  duplicateCount: number;
+  overflowCount: number;
+};
+
+export function parseBlockedUserList(value: string): RuleListParseResult {
+  return parseRuleList(value, (item) => item.replace(/^@+/, ""));
+}
+
+export function parseBlockedWordList(value: string): RuleListParseResult {
+  return parseRuleList(value, (item) => item);
+}
+
+function parseRuleList(value: string, normalizeItem: (item: string) => string): RuleListParseResult {
+  const seen = new Set<string>();
+  const items: string[] = [];
+  let duplicateCount = 0;
+
+  for (const rawItem of value.split(/\r?\n|,/)) {
+    const item = normalizeItem(rawItem.trim());
+    if (!item) {
+      continue;
+    }
+
+    const key = asciiLowercase(item);
+    if (seen.has(key)) {
+      duplicateCount += 1;
+      continue;
+    }
+
+    seen.add(key);
+    items.push(item);
+  }
+
+  return {
+    items,
+    duplicateCount,
+    overflowCount: Math.max(0, items.length - RULE_LIST_LIMIT),
+  };
 }
 
 export function formatRuleList(items: string[] | undefined): string {
   return (items ?? []).join("\n");
+}
+
+function asciiLowercase(value: string): string {
+  return value.replace(/[A-Z]/g, (character) => character.toLowerCase());
 }

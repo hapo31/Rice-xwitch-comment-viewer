@@ -6,7 +6,7 @@ import {
   SettingsSection,
 } from "../../components/SettingsFormControls";
 import type { AppSettings } from "../../types";
-import { formatRuleList, parseRuleList } from "../../validation";
+import { formatRuleList, parseBlockedUserList, parseBlockedWordList } from "../../validation";
 import { focusIndicatorClass } from "../../presentation/focus";
 import { defaultSpeechSettings } from "../settings/defaults";
 
@@ -45,15 +45,18 @@ export function FilterView({
   const numericRepeatSeconds = Number(repeatSeconds);
   const isMaxLengthValid = Number.isInteger(numericMaxLength) && numericMaxLength >= 1 && numericMaxLength <= 500;
   const isRepeatSecondsValid = Number.isInteger(numericRepeatSeconds) && numericRepeatSeconds >= 0 && numericRepeatSeconds <= 30;
+  const blockedUserRules = parseBlockedUserList(blockedUsers);
+  const blockedWordRules = parseBlockedWordList(blockedWords);
+  const areRuleListsValid = blockedUserRules.overflowCount === 0 && blockedWordRules.overflowCount === 0;
   const isDirty =
     numericMaxLength !== speechSettings.maxCommentLength ||
     numericRepeatSeconds !== speechSettings.repeatSuppressionSeconds ||
     urlHandling !== speechSettings.urlHandling ||
-    !stringArrayEqual(parseRuleList(blockedUsers), speechSettings.blockedUsers) ||
-    !stringArrayEqual(parseRuleList(blockedWords), speechSettings.blockedWords);
+    !stringArrayEqual(blockedUserRules.items, speechSettings.blockedUsers) ||
+    !stringArrayEqual(blockedWordRules.items, speechSettings.blockedWords);
 
   function saveFilter() {
-    if (!isMaxLengthValid || !isRepeatSecondsValid) {
+    if (!isMaxLengthValid || !isRepeatSecondsValid || !areRuleListsValid) {
       return;
     }
 
@@ -62,8 +65,8 @@ export function FilterView({
         ...speechSettings,
         maxCommentLength: numericMaxLength,
         repeatSuppressionSeconds: numericRepeatSeconds,
-        blockedUsers: parseRuleList(blockedUsers),
-        blockedWords: parseRuleList(blockedWords),
+        blockedUsers: blockedUserRules.items,
+        blockedWords: blockedWordRules.items,
         urlHandling,
       },
     });
@@ -115,14 +118,26 @@ export function FilterView({
           </SettingsSection>
 
           <SettingsSection id="blocked-rules" title="除外リスト">
-            <RuleTextArea label="NG ユーザー" value={blockedUsers} onChange={setBlockedUsers} />
-            <RuleTextArea label="NG ワード" value={blockedWords} onChange={setBlockedWords} />
+            <RuleTextArea
+              label="NG ユーザー"
+              value={blockedUsers}
+              onChange={setBlockedUsers}
+              itemCount={blockedUserRules.items.length}
+              overflowCount={blockedUserRules.overflowCount}
+            />
+            <RuleTextArea
+              label="NG ワード"
+              value={blockedWords}
+              onChange={setBlockedWords}
+              itemCount={blockedWordRules.items.length}
+              overflowCount={blockedWordRules.overflowCount}
+            />
           </SettingsSection>
         </div>
       </div>
       <FloatingSaveButton
         visible={isDirty}
-        disabled={!isMaxLengthValid || !isRepeatSecondsValid}
+        disabled={!isMaxLengthValid || !isRepeatSecondsValid || !areRuleListsValid}
         onClick={saveFilter}
       />
     </main>

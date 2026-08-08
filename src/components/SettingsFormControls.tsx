@@ -116,20 +116,39 @@ export function RuleTextArea({
   label,
   value,
   onChange,
+  itemCount,
+  overflowCount,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  itemCount: number;
+  overflowCount: number;
 }) {
+  const id = `rule-${label.replace(/\s+/g, "-")}`;
+  const isValid = overflowCount === 0;
+
   return (
     <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3 last:border-b-0">
-      <label className="pt-2 text-sm text-zinc-400">{label}</label>
-      <textarea
-        value={value}
-        rows={5}
-        onChange={(event) => onChange(event.target.value)}
-        className={`resize-y border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 ${focusIndicatorClass}`}
-      />
+      <label className="pt-2 text-sm text-zinc-400" htmlFor={id}>
+        {label}
+      </label>
+      <div>
+        <textarea
+          id={id}
+          value={value}
+          rows={5}
+          aria-invalid={!isValid}
+          aria-describedby={`${id}-status`}
+          onChange={(event) => onChange(event.target.value)}
+          className={`resize-y border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 ${focusIndicatorClass}`}
+        />
+        <p id={`${id}-status`} className={`mt-1 text-xs ${isValid ? "text-zinc-400" : "text-rose-400"}`}>
+          {isValid
+            ? `${itemCount}/200 件`
+            : `${itemCount}/200 件（${overflowCount} 件超過）。上限を超えているため保存できません。`}
+        </p>
+      </div>
     </div>
   );
 }

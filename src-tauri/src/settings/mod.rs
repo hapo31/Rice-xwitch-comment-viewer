@@ -7,6 +7,7 @@ use crate::twitch::TwitchAuthState;
 use crate::twitch::TwitchConnectionHandle;
 use crate::SharedSettings;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -607,10 +608,10 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
             settings.speech.repeat_suppression_seconds = seconds.min(30);
         }
         if let Some(blocked_users) = speech.blocked_users {
-            settings.speech.blocked_users = normalize_rule_list(blocked_users);
+            settings.speech.blocked_users = normalize_rule_list(blocked_users, RuleListKind::User)?;
         }
         if let Some(blocked_words) = speech.blocked_words {
-            settings.speech.blocked_words = normalize_rule_list(blocked_words);
+            settings.speech.blocked_words = normalize_rule_list(blocked_words, RuleListKind::Word)?;
         }
         if let Some(url_handling) = speech.url_handling {
             settings.speech.url_handling = url_handling;
@@ -636,16 +637,45 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
     Ok(())
 }
 
-fn normalize_rule_list(items: Vec<String>) -> Vec<String> {
-    let mut normalized = items
-        .into_iter()
-        .map(|item| item.trim().to_string())
-        .filter(|item| !item.is_empty())
-        .collect::<Vec<_>>();
-    normalized.sort();
-    normalized.dedup();
-    normalized.truncate(200);
-    normalized
+const RULE_LIST_LIMIT: usize = 200;
+
+#[derive(Clone, Copy)]
+enum RuleListKind {
+    User,
+    Word,
+}
+
+fn normalize_rule_list(items: Vec<String>, kind: RuleListKind) -> Result<Vec<String>, String> {
+    let mut seen = HashSet::new();
+    let mut normalized = Vec::new();
+
+    for item in items {
+        let item = item.trim();
+        let item = match kind {
+            RuleListKind::User => item.trim_start_matches('@'),
+            RuleListKind::Word => item,
+        };
+        if item.is_empty() {
+            continue;
+        }
+
+        if seen.insert(item.to_ascii_lowercase()) {
+            normalized.push(item.to_string());
+        }
+    }
+
+    if normalized.len() > RULE_LIST_LIMIT {
+        return Err(format!(
+            "NG {}は最大 {RULE_LIST_LIMIT} 件です。{} 件超過しているため保存できません。",
+            match kind {
+                RuleListKind::User => "ユーザー",
+                RuleListKind::Word => "ワード",
+            },
+            normalized.len() - RULE_LIST_LIMIT
+        ));
+    }
+
+    Ok(normalized)
 }
 
 fn validate_range(value: i16, min: i16, max: i16, label: &str) -> Result<i16, String> {
@@ -854,6 +884,51 @@ mod tests {
             original_disk
         );
         cleanup(&path);
+    }
+
+    #[test]
+    fn rule_lists_accept_199_and_200_items_but_reject_201_items() {
+        for count in [199, 200] {
+            let mut settings = AppSettings::default();
+            let patch: SettingsPatch = serde_json::from_value(serde_json::json!({
+                "speech": {
+                    "blockedWords": (0..count).map(|index| format!("word-{index}")).collect::<Vec<_>>()
+                }
+            }))
+            .expect("deserialize patch");
+
+            apply_patch(&mut settings, patch).expect("rule list within the limit");
+            assert_eq!(settings.speech.blocked_words.len(), count);
+        }
+
+        let mut settings = AppSettings::default();
+        let patch: SettingsPatch = serde_json::from_value(serde_json::json!({
+            "speech": {
+                "blockedWords": (0..201).map(|index| format!("word-{index}")).collect::<Vec<_>>()
+            }
+        }))
+        .expect("deserialize patch");
+
+        let error = apply_patch(&mut settings, patch).expect_err("201 rules must be rejected");
+        assert!(error.contains("1 件超過"));
+        assert!(settings.speech.blocked_words.is_empty());
+    }
+
+    #[test]
+    fn rule_lists_deduplicate_case_variants_using_speech_matching_semantics() {
+        let mut settings = AppSettings::default();
+        let patch: SettingsPatch = serde_json::from_value(serde_json::json!({
+            "speech": {
+                "blockedUsers": ["@Alice", "alice", "Bob"],
+                "blockedWords": ["BadWord", "badword", "Other"]
+            }
+        }))
+        .expect("deserialize patch");
+
+        apply_patch(&mut settings, patch).expect("apply rule patch");
+
+        assert_eq!(settings.speech.blocked_users, ["Alice", "Bob"]);
+        assert_eq!(settings.speech.blocked_words, ["BadWord", "Other"]);
     }
 
     #[test]
