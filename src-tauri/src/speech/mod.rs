@@ -686,13 +686,11 @@ async fn speak_request_from_settings(
     request: SpeechRequest,
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let (addr, defaults) = {
+    let (host, port, defaults) = {
         let settings = state.settings.lock().map_err(|error| error.to_string())?;
         (
-            format!(
-                "{}:{}",
-                settings.speech.bouyomi_host, settings.speech.bouyomi_port
-            ),
+            settings.speech.bouyomi_host.clone(),
+            settings.speech.bouyomi_port,
             bouyomi::BouyomiTalkConfig {
                 speed: settings.speech.bouyomi_speed,
                 tone: settings.speech.bouyomi_tone,
@@ -703,7 +701,7 @@ async fn speak_request_from_settings(
         )
     };
 
-    let adapter = bouyomi::BouyomiAdapter::new(addr, defaults);
+    let adapter = bouyomi::BouyomiAdapter::new(&host, port, defaults)?;
     SpeechAdapter::speak(&adapter, request)
         .await
         .map(|_| ())

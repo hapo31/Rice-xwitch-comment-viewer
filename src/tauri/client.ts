@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { formatBouyomiAddress } from "../validation";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppLogEvent,
@@ -162,10 +163,10 @@ export async function speechHealthProbe(): Promise<string> {
 export async function speechConnectionDiagnostics(): Promise<BouyomiConnectionDiagnostics> {
   if (!isTauriRuntime) {
     return {
-      configuredAddr: `${fallbackSettings.speech.bouyomiHost}:${fallbackSettings.speech.bouyomiPort}`,
+      configuredAddr: formatBouyomiAddress(fallbackSettings.speech.bouyomiHost, fallbackSettings.speech.bouyomiPort),
       attempted: [
         {
-          addr: `${fallbackSettings.speech.bouyomiHost}:${fallbackSettings.speech.bouyomiPort}`,
+          addr: formatBouyomiAddress(fallbackSettings.speech.bouyomiHost, fallbackSettings.speech.bouyomiPort),
           status: "failed",
           message: "ブラウザプレビューでは接続診断をスキップします。",
           elapsedMs: 0,

@@ -32,6 +32,10 @@
 ## 2026-08-07: Issue #45 UI 状態ラベルのローカライズ
 
 - Speech/Queue の enum 値が Side Panel、Status Bar、Queue アイコンの tooltip/accessible name に直接渡されていた。presentation mapping を表示専用の日本語ラベルへ統一し、Queue 行では隣接する可視状態テキストだけを支援技術に公開するため、装飾アイコンを `aria-hidden` にした。全 Speech/Queue 状態を対象に日本語ラベルと色を検証する TypeScript テストを追加し、`pnpm test`（31件）、`pnpm build`、`git diff --check` が成功した。
+## 2026-08-07: Issue #80 棒読みちゃん IPv6 接続先
+
+- 従来の `"{host}:{port}"` 連結は `::1:50001` を作り、IPv6のhost/port境界を失っていた。`BouyomiAddress` にhostとportを分離して保持し、TCP接続は `(host, port)` の `ToSocketAddrs` を使うよう統一した。これによりqueue、health、test、control、diagnosticsが同じ検証・接続経路を使う。
+- hostはIPv4、DNS名、または角括弧なしのIPv6を受け付け、portを含むhostや角括弧付きIPv6などは設定保存時とadapter構築時に日本語エラーで拒否する。IPv6 zone identifierは今回の初期実装では受け付けない。diagnosticsとStatus BarはIPv6を `[::1]:50001` と曖昧さなく表示する。Rust/TypeScriptのunit testでIPv4・DNS・IPv6・不正値を確認する。
 
 ## 2026-08-06: Issue #23 EventSub 再購読時の認証更新
 
