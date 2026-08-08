@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { countIncompleteQueueItems } from "../presentation/queue";
 import { speechStatusLabel } from "../presentation/chat";
 import { getRouteLabel } from "../routes";
-import type { AppState } from "../stores/appStore";
+import { warningNotifications, type AppState } from "../stores/appStore";
 
 interface SidePanelProps {
   state: AppState;
@@ -26,6 +26,7 @@ export function SidePanel({
   }
   const channel = state.settings?.twitch.channelLogin || "未設定";
   const queueCount = countIncompleteQueueItems(state.queueItems);
+  const warnings = warningNotifications(state.notifications);
   const twitchAuthLabel = {
     unauthenticated: "未認証",
     authenticated: "ログイン済み",
@@ -100,20 +101,20 @@ export function SidePanel({
               type="button"
               aria-label="警告をクリア"
               title="警告をクリア"
-              disabled={state.warnings.length === 0}
+              disabled={warnings.length === 0}
               onClick={onWarningsClear}
               className="flex h-7 w-7 items-center justify-center border border-zinc-800 bg-zinc-850 text-zinc-400 hover:border-zinc-600 hover:text-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-700"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           </div>
-          {state.warnings.length === 0 ? (
+          {warnings.length === 0 ? (
             <p className="text-xs text-zinc-400">現在の警告はありません。</p>
           ) : (
             <div className="max-h-full space-y-2 overflow-y-auto pr-1">
-              {state.warnings.map((warning, index) => (
-                <p key={`${index}-${warning}`} className="border-l-2 border-amber-400 bg-zinc-850 px-2 py-1 text-xs text-amber-200">
-                  {warning}
+              {warnings.map((warning) => (
+                <p key={warning.id} className="border-l-2 border-amber-400 bg-zinc-850 px-2 py-1 text-xs text-amber-200">
+                  {warning.message}
                 </p>
               ))}
             </div>

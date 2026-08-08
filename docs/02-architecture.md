@@ -126,6 +126,10 @@ Events:
 - `speech://status`
 - `app://log`: `id` は Logs view の React key に使う表示用 ID として一意にする。受信時に ID が欠ける、または既存 ID と重複する場合は、frontend store が連番 suffix を付ける。ログ本文の重複排除は行わない。
 
+### フロントエンド通知
+
+対処が必要な通知は `{ id, severity, source, message, occurredAtMs, correlationId? }` として保持する。`severity` は `info` / `success` / `warning` / `error`、`source` は command / event / log / system を区別する。Side Panel と Status Bar の Warnings は warning / error のみを最新 5 件まで表示するため、成功通知で実警告を押し出さない。`correlationId` がある通知はその値で重複排除し、ID がない既存イベントは本文と 5 秒の受信時間で重複排除する。重複経路で severity が異なるときは、より重大な値を残す。info / success は Logs と system Chat に残す。
+
 ## 永続化
 
 - 一般設定: Tauriのapp data配下にJSON保存。同一ディレクトリの一時ファイルへ書き込み・`sync_all` した後、OSごとの atomic replace で `settings.json` を更新する。直前の正常版は `settings.json.bak` 1世代だけ保持する。
