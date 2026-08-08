@@ -76,6 +76,7 @@ pub struct BouyomiTalkConfig {
 - host欄はIPv4、DNS名、または角括弧なしのIPv6アドレスを受け付ける。portをhost欄へ含めず、IPv6 zone identifierは初期実装では受け付けない。表示・diagnosticsではIPv6を `[::1]:50001` のように角括弧付きで表記する。
 - hostの妥当性検証とaddress構築はアダプタの一箇所に集約し、設定保存、queue、health、test、control、diagnosticsから共通して利用する。
 - 接続失敗は読み上げキューを破棄せず、UIに「未接続」と出す。
+- 接続拒否・timeout の backend エラーは、画面名や route を含めず［診断］という復旧操作だけを案内する。frontend は `appRoutes` の Settings 定義を使い、読み上げが `Disconnected` / `Error` のとき Side Panel から Settings の［診断］へ1操作で移動できるようにする。
 - ヘルスチェックは空の TCP 接続だけで終えず、設定に応じて短い接続確認メッセージを読み上げコマンドとして送る。接続成功時の読み上げが OFF の場合は、無音の状態取得コマンドを送信できた時点で接続成功として扱う。
 - 長文、URL、改行、制御文字は送信前に整形する。
 - 正規化（制御文字・空白・emote 除外など）の後に本文が空なら、ユーザー名読み上げの ON/OFF にかかわらず理由 `読み上げる本文がありません。` で `Blocked` とする。空の talk packet やユーザー名だけの読み上げは送信しない。

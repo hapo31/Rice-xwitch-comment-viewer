@@ -61,7 +61,7 @@ host: 127.0.0.1
 port: 50001
 ```
 
-If it cannot connect, confirm that BouyomiChan is running, TCP integration is enabled, it is listening on `127.0.0.1:50001` (or `0.0.0.0:50001`), and Windows Firewall permits the connection. Apply profile changes with a Rebuild.
+If it cannot connect, confirm that BouyomiChan is running, TCP integration is enabled, it is listening on `127.0.0.1:50001` (or `0.0.0.0:50001`), and Windows Firewall permits the connection. In the app, open **Settings** and select **診断** to see the configured address and the connection result. Apply profile changes with a Rebuild.
 
 ## Local Windows release artifacts
 

@@ -109,7 +109,9 @@ src-tauri/
 - 基本構成は Activity Bar、Side Panel、Main View、Status Bar です。
 - 初期画面は Chat view にします。
 - Activity Bar は 48px 程度の縦ナビゲーションで、アイコン中心、hover tooltip ありにしてください。
-- 画面は Chat、Queue、Rules、Voices、Settings、Logs を想定します。
+- 正式画面は Chat (`/chat`)、Launcher (`/launcher`)、Queue (`/queue`)、Filter (`/filter`)、Settings (`/settings`)、Login (`/auth`)、Logs (`/logs`) です。Activity Bar には Logs を除く各画面を表示します。
+- `/rules` は Filter、`/voices` は Settings へ移動するための legacy redirect です。新規の表示名・導線・文書には使わないでください。
+- Settings は棒読みちゃんの接続設定、接続確認、［診断］、テスト読み上げと声質・自動読み上げ設定を扱います。接続エラーの復旧導線は frontend の route 定義を使い、backend のエラー文に画面名や route を埋め込まないでください。
 - カードを乱用せず、パネルと行ベースで構成してください。
 - ボタンはアイコンボタン中心にし、主要操作だけテキスト付きにします。
 - 接続状態はステータスバーと小さなドットで表現してください。
