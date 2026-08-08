@@ -2,6 +2,7 @@ import { RotateCcw, SkipForward, Trash2 } from "lucide-react";
 import { getQueueStatusPresentation, queueStatusLabel } from "../../presentation/chat";
 import { countIncompleteQueueItems, selectQueueItemsForDisplay } from "../../presentation/queue";
 import type { AppState } from "../../stores/appStore";
+import { routeHeadingId } from "../../routeAccessibility";
 import type { QueueDisplayState } from "../../types";
 
 export function QueueView({
@@ -28,7 +29,7 @@ export function QueueView({
     <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold text-zinc-100">Queue</h1>
+          <h1 id={routeHeadingId} tabIndex={-1} className="truncate text-sm font-semibold text-zinc-100">Queue</h1>
           <p className="truncate text-xs text-zinc-400">読み上げ待ち、エラー、フィルターで読み飛ばしたチャットを確認します</p>
         </div>
         <div className="flex items-center gap-1">

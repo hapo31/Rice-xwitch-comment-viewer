@@ -1,5 +1,7 @@
 import { CheckCircle2, Link2, LoaderCircle, LogOut, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
+import { focusIndicatorClass } from "../../presentation/focus";
+import { routeHeadingId } from "../../routeAccessibility";
 import type { AppState } from "../../stores/appStore";
 import type { AppSettings } from "../../types";
 import { isValidTwitchChannelLogin } from "../../validation";
@@ -95,7 +97,7 @@ export function AuthView({
     <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold text-zinc-100">Login</h1>
+          <h1 id={routeHeadingId} tabIndex={-1} className="truncate text-sm font-semibold text-zinc-100">Login</h1>
           <p className="truncate text-xs text-zinc-400">Twitch 認証と接続先チャンネルを管理します</p>
         </div>
         <div className="flex items-center gap-2 text-xs text-zinc-400">

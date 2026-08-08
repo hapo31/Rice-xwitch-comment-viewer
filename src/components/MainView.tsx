@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useNavigationType } from "react-router-dom";
+import { useEffect } from "react";
 import { AuthView } from "../features/auth/AuthView";
 import { ChatView } from "../features/chat/ChatView";
 import { FilterView } from "../features/filter/FilterView";
@@ -13,6 +14,7 @@ import type {
   LauncherItem,
   LauncherLaunchResult,
 } from "../types";
+import { getRouteDocumentTitle, routeHeadingId, shouldFocusRouteHeading } from "../routeAccessibility";
 
 interface MainViewProps {
   state: AppState;
@@ -61,6 +63,17 @@ export function MainView({
   onTwitchDisconnect,
   onOpenExternalUrl,
 }: MainViewProps) {
+  const location = useLocation();
+  const navigationType = useNavigationType();
+
+  useEffect(() => {
+    document.title = getRouteDocumentTitle(location.pathname);
+
+    if (shouldFocusRouteHeading(navigationType)) {
+      document.getElementById(routeHeadingId)?.focus();
+    }
+  }, [location.pathname, navigationType]);
+
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/chat" replace />} />

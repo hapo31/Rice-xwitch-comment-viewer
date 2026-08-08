@@ -10,6 +10,7 @@ import {
 } from "../../presentation/launcher";
 import { isDesktopRuntime } from "../../tauri/client";
 import type { LauncherItem, LauncherLaunchResult } from "../../types";
+import { routeHeadingId } from "../../routeAccessibility";
 
 interface LauncherViewProps {
   items: LauncherItem[];
@@ -184,7 +185,7 @@ export function LauncherView({
     <main className="relative col-span-2 col-start-2 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-5">
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold text-zinc-100">Launcher</h1>
+          <h1 id={routeHeadingId} tabIndex={-1} className="truncate text-sm font-semibold text-zinc-100">Launcher</h1>
           <p className="truncate text-xs text-zinc-400">よく使うアプリを登録して、ここからすばやく起動します</p>
         </div>
         <button

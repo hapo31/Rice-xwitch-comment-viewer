@@ -27,6 +27,10 @@
 
 - Queue view は `blocked` を表示対象にしていた一方、削除操作は `queued`/`error` に限られ、読み上げ側の clear は pending だけを消していた。待機中の読み上げをキャンセルする `speech_queue_remove` と、表示履歴を消す `speech_queue_dismiss` / `speech_queue_dismiss_history` を分離した。blocked と error は履歴 dismiss の対象で、読み上げ中の項目は従来どおり削除できない。
 - UI は確認付きの「待機中の読み上げをクリア」と「表示履歴をクリア」を別操作として表示する。Rust で queued のキャンセル、error/blocked の個別 dismiss と一括 clear が pending に影響しないことを、React の静的レンダリングで blocked の削除操作と両方の clear の表示を検証した。`cargo test`（59件）、`pnpm test`（36件）、`pnpm build`、`git diff --check` が成功。Twitch と棒読みちゃんを接続した実機での UI 操作確認は残る。
+## 2026-08-08: Issue #49 SPA 画面遷移時の title / focus
+
+- route ごとの document title は `Rice - {画面名}` に統一した。履歴操作を含めて title は常に更新し、ユーザー操作で作られる `PUSH` 遷移だけは、新しい Main View の `h1`（`tabIndex={-1}`）へフォーカスを移して画面名とコンテンツ開始位置を通知する。戻る/進むの `POP` と旧 route からのリダイレクトの `REPLACE` ではフォーカスを保持し、ブラウザの履歴復元を壊さない。
+- route 別 title と PUSH/POP/REPLACE のフォーカス方針を TypeScript テストで検証した。`pnpm exec tsc --noEmit`、`pnpm test`（13 files / 37 tests）、`pnpm build`、`git diff --check` は成功した。Windows WebView とスクリーンリーダーで Activity Bar 操作後の読み上げ・戻る/進む時のフォーカス保持を手動確認として残す。
 
 ## 2026-08-07: Issue #78 正規化後に空となる読み上げ本文
 
