@@ -32,12 +32,12 @@ export function FloatingSaveButton({
   disabled: boolean;
   onClick: () => void;
 }) {
+  if (!visible) {
+    return null;
+  }
+
   return (
-    <div
-      className={`absolute bottom-4 right-4 z-10 transition-all duration-200 ease-out ${
-        visible ? "translate-x-0 translate-y-0 opacity-100" : "pointer-events-none translate-x-6 translate-y-3 opacity-0"
-      }`}
-    >
+    <div className="absolute bottom-4 right-4 z-10 transition-all duration-200 ease-out translate-x-0 translate-y-0 opacity-100">
       <button
         type="button"
         aria-label="設定を保存"
