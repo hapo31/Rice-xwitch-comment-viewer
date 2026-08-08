@@ -269,9 +269,9 @@ export function SettingsView({
           )}
 
           <SettingsSection id="voice-settings" title="声質">
-            <RangeRow label="速度" value={speed} min={-1} max={300} onChange={setSpeed} />
-            <RangeRow label="音程" value={tone} min={-1} max={200} onChange={setTone} />
-            <RangeRow label="音量" value={volume} min={-1} max={100} onChange={setVolume} />
+            <RangeRow id="bouyomi-speed" label="速度" value={speed} min={-1} max={300} onChange={setSpeed} />
+            <RangeRow id="bouyomi-tone" label="音程" value={tone} min={-1} max={200} onChange={setTone} />
+            <RangeRow id="bouyomi-volume" label="音量" value={volume} min={-1} max={100} onChange={setVolume} />
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-t border-zinc-800 py-3">
               <label className="text-sm text-zinc-400" htmlFor="bouyomi-voice">
                 声質

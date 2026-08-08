@@ -113,19 +113,20 @@ export function NumberRuleRow({
 }
 
 export function RuleTextArea({
+  id,
   label,
   value,
   onChange,
   itemCount,
   overflowCount,
 }: {
+  id: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
   itemCount: number;
   overflowCount: number;
 }) {
-  const id = `rule-${label.replace(/\s+/g, "-")}`;
   const isValid = overflowCount === 0;
 
   return (
@@ -154,12 +155,14 @@ export function RuleTextArea({
 }
 
 export function RangeRow({
+  id,
   label,
   value,
   min,
   max,
   onChange,
 }: {
+  id: string;
   label: string;
   value: number;
   min: number;
@@ -168,12 +171,16 @@ export function RangeRow({
 }) {
   return (
     <div className="grid grid-cols-[180px_minmax(0,1fr)_64px] items-center border-b border-zinc-800 py-3 last:border-b-0">
-      <label className="text-sm text-zinc-400">{label}</label>
+      <label className="text-sm text-zinc-400" htmlFor={id}>
+        {label}
+      </label>
       <input
+        id={id}
         type="range"
         min={min}
         max={max}
         value={value}
+        aria-valuetext={value === -1 ? "既定" : String(value)}
         onChange={(event) => onChange(Number(event.target.value))}
         className="w-full accent-sky-400"
       />
