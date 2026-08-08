@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-08-08: Issue #17 配信向けキーボードショートカット
+
+- UI 設計の `Space`、`S`、`Cmd/Ctrl+,` は未配線だったため、document の keydown を集約する `useStreamHotkeys` を追加した。Space は speech status が `paused` の場合だけ resume、それ以外は pause、S は skip、Cmd/Ctrl+, は Settings route へ遷移する。Cmd/Ctrl+K は設計どおり MVP 後の対象として追加していない。
+- input、textarea、select、contenteditable、標準 button、IME 変換、キーリピート、および別の修飾キーを使うショートカットを除外する。Windows の Ctrl+, と macOS の Cmd+,、Space/S と抑止条件を TypeScript テストで検証した。`pnpm test`、`pnpm build`、`git diff --check` は成功。実機で日本語 IME 変換中とブラウザ標準 button の操作を確認する。
+
 ## 2026-08-08: Issue #14 警告キューの成功通知・重複排除
 
 - `warning.added` が文字列 5 件だけを保持していたため、棒読みちゃんの確認、テスト読み上げ、Twitch 認証・接続の成功通知が対処中の障害を押し出していた。通知を severity/source/correlation を持つ構造化モデルへ変更し、Warnings は warning / error だけを最新 5 件表示する。成功・情報は Logs と system Chat へ残す。
