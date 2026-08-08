@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-08-08: Issue #7 入力エラーのフィールド関連付け
+
+- 共通の数値入力、Login の Twitch チャンネル、Settings の棒読みちゃんホスト・ポート・声質は、エラー表示があっても対象 input と支援技術上の関係を持っていなかった。共通 `FieldError` で一意なエラー ID と `role="alert"` を統一し、無効な input に `aria-invalid` と `aria-describedby` を付与した。
+- ホスト空欄では「棒読みちゃんのホストを入力してください。」を表示し、無効な形式では許容するアドレス形式を示す。保存ボタンが無効な場合も、エラーの要約を `aria-describedby` で関連付けた。server-rendered markup の自動テストでホスト、ポート、声質、Twitch チャンネル、保存不能理由の関連付けを検証する。
+
 ## 2026-08-08: Issue #17 配信向けキーボードショートカット
 
 - UI 設計の `Space`、`S`、`Cmd/Ctrl+,` は未配線だったため、document の keydown を集約する `useStreamHotkeys` を追加した。Space は speech status が `paused` の場合だけ resume、それ以外は pause、S は skip、Cmd/Ctrl+, は Settings route へ遷移する。Cmd/Ctrl+K は設計どおり MVP 後の対象として追加していない。

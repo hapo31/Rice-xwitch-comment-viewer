@@ -6,6 +6,7 @@ import type { AppState } from "../../stores/appStore";
 import type { AppSettings } from "../../types";
 import { isValidTwitchChannelLogin } from "../../validation";
 import { defaultTwitchSettings } from "../settings/defaults";
+import { FieldError } from "../../components/SettingsFormControls";
 import { formatDeviceAuthRemainingTime, getDeviceAuthRemainingSeconds } from "./deviceAuthExpiry";
 
 export function AuthView({
@@ -34,6 +35,7 @@ export function AuthView({
   const [authValidationNotice, setAuthValidationNotice] = useState<string>();
   const [nowMs, setNowMs] = useState(Date.now());
   const isChannelValid = isValidTwitchChannelLogin(channelLogin);
+  const channelError = "Twitch チャンネル名は 3 から 25 文字の英数字またはアンダースコアで入力してください。";
   const isAuthenticated = state.twitchAuthStatus === "authenticated";
 
   useEffect(() => {
@@ -118,9 +120,11 @@ export function AuthView({
                   value={channelLogin}
                   onChange={(event) => setChannelLogin(event.target.value)}
                   onBlur={saveChannelLogin}
+                  aria-invalid={!isChannelValid}
+                  aria-describedby={!isChannelValid ? "twitch-channel-error" : undefined}
                   className={`h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
                 />
-                {!isChannelValid && <p className="mt-1 text-xs text-rose-400">Twitch のログイン名を 3 から 25 文字で入力してください。</p>}
+                {!isChannelValid && <FieldError id="twitch-channel" message={channelError} />}
               </div>
             </div>
           </section>
