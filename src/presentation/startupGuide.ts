@@ -18,6 +18,7 @@ export function claimStartupGuideForSession(storage: StartupGuideSessionStorage)
 export type StartupGuideAction = "login";
 
 export interface StartupGuideMessage {
+  kind: "system";
   id: string;
   receivedAt: string;
   userDisplayName: "system";
@@ -55,5 +56,5 @@ function message(
   text: string,
   action?: StartupGuideAction,
 ): StartupGuideMessage {
-  return { id, receivedAt, userDisplayName: "system", text, action };
+  return { kind: "system", id, receivedAt, userDisplayName: "system", text, action };
 }

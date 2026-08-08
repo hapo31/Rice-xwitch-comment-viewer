@@ -33,7 +33,7 @@ export class ChatLiveAnnouncementController {
 
   private remember(messages: readonly ChatMessage[], queueNew = false) {
     for (const message of messages) {
-      if (message.platform !== "twitch" || this.announcedMessageIds.has(message.id)) {
+      if (message.kind !== "user" || message.platform !== "twitch" || this.announcedMessageIds.has(message.id)) {
         continue;
       }
 

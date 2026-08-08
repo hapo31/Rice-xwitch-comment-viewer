@@ -3,6 +3,7 @@ import { KeyRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChatLiveAnnouncementController } from "../../presentation/chatLiveAnnouncements";
+import { getChatMessagePresentation } from "../../presentation/chat";
 import { getStartupGuideMessages, type StartupGuideMessage } from "../../presentation/startupGuide";
 import { routeHeadingId } from "../../routeAccessibility";
 import type { AppState } from "../../stores/appStore";
@@ -149,6 +150,7 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
 }
 
 function ChatRow({ message }: { message: ChatMessage | StartupGuideMessage }) {
+  const presentation = getChatMessagePresentation(message);
   const time = new Intl.DateTimeFormat("ja-JP", {
     hour: "2-digit",
     minute: "2-digit",
@@ -161,11 +163,11 @@ function ChatRow({ message }: { message: ChatMessage | StartupGuideMessage }) {
       style={{ gridTemplateColumns: CHAT_GRID_TEMPLATE }}
     >
       <span className="font-mono text-xs text-zinc-400">{time}</span>
-      <span className="flex min-w-0 items-center gap-1 pr-3 font-medium text-sky-300">
+      <span className={`flex min-w-0 items-center gap-1 pr-3 font-medium ${presentation.userNameClassName}`}>
         <ChatBadges badges={"badges" in message ? message.badges : undefined} />
         <span className="truncate">{message.userDisplayName}</span>
       </span>
-      <span className="line-clamp-2 text-zinc-200">
+      <span className={`line-clamp-2 ${presentation.textClassName}`}>
         {"action" in message && message.action === "login" && (
           <Link
             to="/auth"
