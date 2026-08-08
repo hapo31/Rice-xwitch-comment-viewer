@@ -12,14 +12,14 @@ describe("Settings and Filter section headings", () => {
     const settingsHeadings = headingList(
       renderToStaticMarkup(
         <SettingsView
-          onSettingsUpdate={() => undefined}
+          onSettingsUpdate={async () => true}
           onSpeechHealthCheck={() => undefined}
           onSpeechDiagnostics={async () => ({ configuredAddr: "127.0.0.1:50001", attempted: [], recommendation: "" })}
           onSpeechTest={() => undefined}
         />,
       ),
     );
-    const filterHeadings = headingList(renderToStaticMarkup(<FilterView onSettingsUpdate={() => undefined} />));
+    const filterHeadings = headingList(renderToStaticMarkup(<FilterView onSettingsUpdate={async () => true} />));
 
     expect(settingsHeadings).toEqual([
       { level: "1", text: "Settings" },
