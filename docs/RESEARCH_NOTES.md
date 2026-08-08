@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-08-08: Issue #53 Chat 仮想スクロールの prepend アンカー
+
+- Chat は新着を先頭へ追加するため、過去ログを読んでいると同じ `scrollTop` が別の行を指す状態だった。更新直前に最初の可視メッセージ ID とコンテナ先頭からの相対 offset を記録し、prepend 後はその ID へ仮想スクロールして offset を戻す。先頭閲覧時は offset 0 を維持して新着を即時表示する。
+- 過去ログ閲覧中の新着は件数ボタンとして重ねて表示し、操作時のみ先頭へ戻す。pure helper の回帰テストで、2件 prepend 後も最初の可視 ID と 8px の相対 offset が保持されることを確認した。`pnpm test -- src/features/chat/scrollAnchor.test.ts` と `pnpm build` は成功。実 Twitch の連続受信中に可変高行をまたぐ操作確認は手動確認として残る。
+
 ## 2026-08-08: Issue #7 入力エラーのフィールド関連付け
 
 - 共通の数値入力、Login の Twitch チャンネル、Settings の棒読みちゃんホスト・ポート・声質は、エラー表示があっても対象 input と支援技術上の関係を持っていなかった。共通 `FieldError` で一意なエラー ID と `role="alert"` を統一し、無効な input に `aria-invalid` と `aria-describedby` を付与した。
