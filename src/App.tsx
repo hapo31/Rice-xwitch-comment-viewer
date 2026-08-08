@@ -3,6 +3,7 @@ import { ActivityBar } from "./components/ActivityBar";
 import { MainView } from "./components/MainView";
 import { SidePanel } from "./components/SidePanel";
 import { StatusBar } from "./components/StatusBar";
+import { LiveStatusAnnouncer } from "./components/LiveStatusAnnouncer";
 import { ResizeHandles, TitleBar } from "./components/TitleBar";
 import { useDisplayScale } from "./hooks/useDisplayScale";
 import { getDeviceAuthRemainingSeconds } from "./features/auth/deviceAuthExpiry";
@@ -549,6 +550,7 @@ export function App() {
         onOpenExternalUrl={handleOpenExternalUrl}
       />
       <StatusBar state={state} />
+      <LiveStatusAnnouncer state={state} />
       <ResizeHandles />
     </div>
   );
