@@ -10,13 +10,14 @@ import { focusIndicatorClass } from "../../presentation/focus";
 import { routeHeadingId } from "../../routeAccessibility";
 import { formatRuleList, parseBlockedUserList, parseBlockedWordList } from "../../validation";
 import { defaultSpeechSettings } from "../settings/defaults";
+import { useUnsavedChanges } from "../../unsavedChanges";
 
 export function FilterView({
   settings,
   onSettingsUpdate,
 }: {
   settings?: AppSettings;
-  onSettingsUpdate: (patch: Partial<AppSettings>) => void;
+  onSettingsUpdate: (patch: Partial<AppSettings>) => Promise<boolean>;
 }) {
   const speechSettings = {
     ...defaultSpeechSettings,
@@ -56,12 +57,12 @@ export function FilterView({
     !stringArrayEqual(blockedUserRules.items, speechSettings.blockedUsers) ||
     !stringArrayEqual(blockedWordRules.items, speechSettings.blockedWords);
 
-  function saveFilter() {
+  async function saveFilter(): Promise<boolean> {
     if (!isMaxLengthValid || !isRepeatSecondsValid || !areRuleListsValid) {
-      return;
+      return false;
     }
 
-    onSettingsUpdate({
+    return onSettingsUpdate({
       speech: {
         ...speechSettings,
         maxCommentLength: numericMaxLength,
@@ -72,6 +73,16 @@ export function FilterView({
       },
     });
   }
+
+  function discardFilter() {
+    setBlockedUsers(formatRuleList(speechSettings.blockedUsers));
+    setBlockedWords(formatRuleList(speechSettings.blockedWords));
+    setUrlHandling(speechSettings.urlHandling);
+    setMaxLength(String(speechSettings.maxCommentLength));
+    setRepeatSeconds(String(speechSettings.repeatSuppressionSeconds));
+  }
+
+  useUnsavedChanges("filter", { isDirty, save: saveFilter, discard: discardFilter });
 
   return (
     <main className="relative col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
@@ -141,7 +152,7 @@ export function FilterView({
       <FloatingSaveButton
         visible={isDirty}
         disabled={!isMaxLengthValid || !isRepeatSecondsValid || !areRuleListsValid}
-        onClick={saveFilter}
+        onClick={() => void saveFilter()}
       />
     </main>
   );

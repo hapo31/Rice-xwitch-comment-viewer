@@ -11,6 +11,7 @@ interface TitleBarProps {
   scale: number;
   scaleMode: UiScaleMode;
   onScaleModeChange: (mode: UiScaleMode) => void;
+  onClose?: () => void;
 }
 
 const scaleOptions: { mode: UiScaleMode; label: string }[] = [
@@ -20,7 +21,7 @@ const scaleOptions: { mode: UiScaleMode; label: string }[] = [
   { mode: "1.5", label: "150%" },
 ];
 
-export function TitleBar({ scale, scaleMode, onScaleModeChange }: TitleBarProps) {
+export function TitleBar({ scale, scaleMode, onScaleModeChange, onClose }: TitleBarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
@@ -68,6 +69,10 @@ export function TitleBar({ scale, scaleMode, onScaleModeChange }: TitleBarProps)
   }
 
   async function closeWindow() {
+    if (onClose) {
+      onClose();
+      return;
+    }
     await appExit();
   }
 

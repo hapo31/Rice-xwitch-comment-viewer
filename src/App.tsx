@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useBlocker, useNavigate } from "react-router-dom";
 import { ActivityBar } from "./components/ActivityBar";
 import { MainView } from "./components/MainView";
 import { SidePanel } from "./components/SidePanel";
@@ -15,6 +16,13 @@ import { autoConnectTimelineEvent, speechRecoveryTimelineEvent, SystemTimelineRo
 import { restoreAndValidateStartupAuth } from "./startupAuth";
 import { appReducer, initialAppState } from "./stores/appStore";
 import {
+  createNativeCloseHandler,
+  UnsavedChangesContext,
+  UnsavedChangesDialog,
+  type UnsavedChange,
+} from "./unsavedChanges";
+import {
+  appExit,
   appOpenExternalUrl,
   getSettings,
   launcherAdd,
@@ -45,6 +53,7 @@ import {
   twitchStopChat,
   twitchValidateAuth,
   updateSettings,
+  isDesktopRuntime,
 } from "./tauri/client";
 import type { AppSettings, BouyomiConnectionDiagnostics, LauncherLaunchResult, NotificationSeverity, NotificationSource } from "./types";
 
@@ -57,6 +66,54 @@ export function App() {
   const autoConnectAttempted = useRef(false);
   const startupAuthAttempted = useRef(false);
   const systemTimelineRouter = useRef(new SystemTimelineRouter());
+  const unsavedChanges = useRef(new Map<string, UnsavedChange>());
+  const activeUnsavedChangeRef = useRef<UnsavedChange>();
+  const [, setUnsavedChangesVersion] = useState(0);
+  const [closeRequested, setCloseRequested] = useState(false);
+
+  const unsavedChangesRegistry = useMemo(() => ({
+    register(id: string, change: UnsavedChange) {
+      unsavedChanges.current.set(id, change);
+      setUnsavedChangesVersion((version) => version + 1);
+    },
+    unregister(id: string) {
+      unsavedChanges.current.delete(id);
+      setUnsavedChangesVersion((version) => version + 1);
+    },
+  }), []);
+  const activeUnsavedChange = [...unsavedChanges.current.values()].find((change) => change.isDirty);
+  activeUnsavedChangeRef.current = activeUnsavedChange;
+  const blocker = useBlocker(Boolean(activeUnsavedChange));
+
+  const requestWindowClose = useCallback(() => {
+    if (activeUnsavedChange) {
+      setCloseRequested(true);
+      return;
+    }
+    void appExit();
+  }, [activeUnsavedChange]);
+
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow().onCloseRequested(createNativeCloseHandler(activeUnsavedChangeRef, () => {
+      setCloseRequested(true);
+    })).then((dispose) => {
+      unlisten = dispose;
+    }).catch(() => undefined);
+    return () => unlisten?.();
+  }, []);
+
+  useEffect(() => {
+    const preventUnload = (event: BeforeUnloadEvent) => {
+      if (!activeUnsavedChange) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", preventUnload);
+    return () => window.removeEventListener("beforeunload", preventUnload);
+  }, [activeUnsavedChange]);
 
   useEffect(() => {
     Promise.all([getSettings(), takeSettingsRecoveryNotice()])
@@ -292,12 +349,14 @@ export function App() {
     }
   }
 
-  async function handleSettingsUpdate(patch: Partial<AppSettings>) {
+  async function handleSettingsUpdate(patch: Partial<AppSettings>): Promise<boolean> {
     try {
       const settings = await updateSettings(patch);
       dispatch({ type: "settings.loaded", settings });
+      return true;
     } catch (error) {
       reportError(error);
+      return false;
     }
   }
 
@@ -565,8 +624,9 @@ export function App() {
   }
 
   return (
+    <UnsavedChangesContext.Provider value={unsavedChangesRegistry}>
     <div className={APP_SHELL_CLASS_NAME}>
-      <TitleBar scale={displayScale.scale} scaleMode={displayScale.mode} onScaleModeChange={displayScale.setMode} />
+      <TitleBar scale={displayScale.scale} scaleMode={displayScale.mode} onScaleModeChange={displayScale.setMode} onClose={requestWindowClose} />
       <ActivityBar />
       <SidePanel
         state={state}
@@ -601,6 +661,35 @@ export function App() {
       <StatusBar state={state} />
       <LiveStatusAnnouncer state={state} />
       <ResizeHandles />
+      {(blocker.state === "blocked" || closeRequested) && activeUnsavedChange && (
+        <UnsavedChangesDialog
+          onCancel={() => {
+            if (blocker.state === "blocked") blocker.reset();
+            setCloseRequested(false);
+          }}
+          onDiscard={() => {
+            activeUnsavedChange.discard();
+            if (closeRequested) {
+              setCloseRequested(false);
+              void appExit();
+            } else if (blocker.state === "blocked") {
+              blocker.proceed();
+            }
+          }}
+          onSave={() => {
+            void activeUnsavedChange.save().then((saved) => {
+              if (!saved) return;
+              if (closeRequested) {
+                setCloseRequested(false);
+                void appExit();
+              } else if (blocker.state === "blocked") {
+                blocker.proceed();
+              }
+            });
+          }}
+        />
+      )}
     </div>
+    </UnsavedChangesContext.Provider>
   );
 }

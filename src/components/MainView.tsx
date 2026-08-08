@@ -18,7 +18,7 @@ import { getRouteDocumentTitle, routeHeadingId, shouldFocusRouteHeading } from "
 
 interface MainViewProps {
   state: AppState;
-  onSettingsUpdate: (patch: Partial<AppSettings>) => void;
+  onSettingsUpdate: (patch: Partial<AppSettings>) => Promise<boolean>;
   onSpeechHealthCheck: () => void;
   onSpeechDiagnostics: () => Promise<BouyomiConnectionDiagnostics>;
   onSpeechTest: (text?: string) => void;

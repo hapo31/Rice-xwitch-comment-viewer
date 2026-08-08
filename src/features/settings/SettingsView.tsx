@@ -12,6 +12,7 @@ import { focusIndicatorClass } from "../../presentation/focus";
 import { routeHeadingId } from "../../routeAccessibility";
 import { isValidBouyomiHost, isValidBouyomiVoice, isValidPort } from "../../validation";
 import { defaultSpeechSettings, defaultTwitchSettings } from "./defaults";
+import { useUnsavedChanges } from "../../unsavedChanges";
 
 const defaultConnectionSuccessMessage = "棒読みちゃんと接続しました";
 
@@ -23,7 +24,7 @@ export function SettingsView({
   onSpeechTest,
 }: {
   settings?: AppSettings;
-  onSettingsUpdate: (patch: Partial<AppSettings>) => void;
+  onSettingsUpdate: (patch: Partial<AppSettings>) => Promise<boolean>;
   onSpeechHealthCheck: () => void;
   onSpeechDiagnostics: () => Promise<BouyomiConnectionDiagnostics>;
   onSpeechTest: (text?: string) => void;
@@ -109,12 +110,12 @@ export function SettingsView({
     connectionSuccessSpeechEnabled !== speechSettings.connectionSuccessSpeechEnabled ||
     connectionSuccessSpeechText !== speechSettings.connectionSuccessSpeechText;
 
-  function saveBouyomiSettings() {
+  async function saveBouyomiSettings(): Promise<boolean> {
     if (!isHostValid || !isPortValid || !isVoiceValid) {
-      return;
+      return false;
     }
 
-    onSettingsUpdate({
+    return onSettingsUpdate({
       speech: {
         ...speechSettings,
         adapter: "bouyomi",
@@ -132,6 +133,22 @@ export function SettingsView({
       },
     });
   }
+
+  function discardBouyomiSettings() {
+    setHost(speechSettings.bouyomiHost);
+    setPort(String(speechSettings.bouyomiPort));
+    setSpeed(speechSettings.bouyomiSpeed);
+    setTone(speechSettings.bouyomiTone);
+    setVolume(speechSettings.bouyomiVolume);
+    setVoice(String(speechSettings.bouyomiVoice));
+    setAutoSpeak(speechSettings.autoSpeak);
+    setReadUserName(speechSettings.readUserName);
+    setReadEmotes(speechSettings.readEmotes);
+    setConnectionSuccessSpeechEnabled(speechSettings.connectionSuccessSpeechEnabled);
+    setConnectionSuccessSpeechText(speechSettings.connectionSuccessSpeechText);
+  }
+
+  useUnsavedChanges("settings", { isDirty, save: saveBouyomiSettings, discard: discardBouyomiSettings });
 
   function updateAutoConnect(enabled: boolean) {
     onSettingsUpdate({
@@ -366,7 +383,7 @@ export function SettingsView({
         visible={isDirty}
         disabled={!isHostValid || !isPortValid || !isVoiceValid}
         disabledReason={saveDisabledReason}
-        onClick={saveBouyomiSettings}
+        onClick={() => void saveBouyomiSettings()}
       />
     </main>
   );
