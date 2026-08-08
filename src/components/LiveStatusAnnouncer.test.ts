@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getLiveStatusAnnouncement, type LiveStatusSnapshot } from "./LiveStatusAnnouncer";
+import { initialAppState } from "../stores/appStore";
+import { getLiveStatusAnnouncement, toLiveStatusSnapshot, type LiveStatusSnapshot } from "./LiveStatusAnnouncer";
 
 const initial: LiveStatusSnapshot = {
   twitchAuthStatus: "authenticated",
@@ -8,6 +9,18 @@ const initial: LiveStatusSnapshot = {
 };
 
 describe("getLiveStatusAnnouncement", () => {
+  it("uses the latest warning notification from the structured notification store", () => {
+    const snapshot = toLiveStatusSnapshot({
+      ...initialAppState,
+      notifications: [
+        { id: "error", severity: "error", source: "command", message: "読み上げに失敗しました。", occurredAtMs: 2 },
+        { id: "warning", severity: "warning", source: "event", message: "再接続を試行します。", occurredAtMs: 1 },
+      ],
+    });
+
+    expect(snapshot.latestWarning).toBe("再接続を試行します。");
+  });
+
   it("announces a connection error once at alert priority", () => {
     const connectionError = { ...initial, twitchConnectionStatus: "error" as const };
 

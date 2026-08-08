@@ -38,7 +38,7 @@ export function toLiveStatusSnapshot(state: AppState): LiveStatusSnapshot {
     twitchAuthStatus: state.twitchAuthStatus,
     twitchConnectionStatus: state.twitchConnectionStatus,
     speechStatus: state.speechStatus,
-    latestWarning: state.warnings[0],
+    latestWarning: state.notifications.find((notification) => notification.severity === "warning")?.message,
   };
 }
 

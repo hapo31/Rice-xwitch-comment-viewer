@@ -1,4 +1,5 @@
 import { useEffect, useReducer, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { ActivityBar } from "./components/ActivityBar";
 import { MainView } from "./components/MainView";
 import { SidePanel } from "./components/SidePanel";
@@ -6,6 +7,7 @@ import { StatusBar } from "./components/StatusBar";
 import { LiveStatusAnnouncer } from "./components/LiveStatusAnnouncer";
 import { ResizeHandles, TitleBar } from "./components/TitleBar";
 import { useDisplayScale } from "./hooks/useDisplayScale";
+import { useStreamHotkeys } from "./hooks/useStreamHotkeys";
 import { getDeviceAuthRemainingSeconds } from "./features/auth/deviceAuthExpiry";
 import { APP_SHELL_CLASS_NAME } from "./layout/appShell";
 import { claimStartupGuideForSession } from "./presentation/startupGuide";
@@ -49,6 +51,7 @@ const showStartupGuideForSession = claimStartupGuideForSession(window.sessionSto
 
 export function App() {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
+  const navigate = useNavigate();
   const displayScale = useDisplayScale();
   const autoConnectAttempted = useRef(false);
   const startupAuthAttempted = useRef(false);
@@ -446,6 +449,16 @@ export function App() {
     }
   }
 
+  useStreamHotkeys({
+    onToggleSpeech: () => {
+      void handleSpeechControl(state.speechStatus === "paused" ? "resume" : "pause");
+    },
+    onSkipSpeech: () => {
+      void handleSpeechControl("skip");
+    },
+    onOpenSettings: () => navigate("/settings"),
+  });
+
   async function handleQueueReload() {
     try {
       await speechQueueReload();
@@ -466,7 +479,7 @@ export function App() {
     try {
       await speechQueueDismiss(itemId);
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -478,7 +491,7 @@ export function App() {
     try {
       await speechQueueDismissHistory();
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 

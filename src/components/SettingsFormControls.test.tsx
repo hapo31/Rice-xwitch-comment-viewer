@@ -31,7 +31,14 @@ describe("FloatingSaveButton accessibility", () => {
 
   it("associates rule textarea labels with stable control IDs", () => {
     const markup = renderToStaticMarkup(
-      <RuleTextArea id="rule-blocked-users" label="NG ユーザー" value="" onChange={() => undefined} />,
+      <RuleTextArea
+        id="rule-blocked-users"
+        label="NG ユーザー"
+        value=""
+        onChange={() => undefined}
+        itemCount={0}
+        overflowCount={0}
+      />,
     );
 
     expect(markup).toContain('<label class="pt-2 text-sm text-zinc-400" for="rule-blocked-users">NG ユーザー</label>');
