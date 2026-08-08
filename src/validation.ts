@@ -20,7 +20,22 @@ export function isValidBouyomiHost(value: string): boolean {
   }
 
   if (host.includes(":")) {
-    const sections = host.split("::");
+    const lastColon = host.lastIndexOf(":");
+    const ipv4Tail = host.slice(lastColon + 1);
+    const ipv4Octets = ipv4Tail.split(".");
+    if (
+      ipv4Tail.includes(".") &&
+      (ipv4Octets.length !== 4 ||
+        ipv4Octets.some((octet) => !/^\d+$/.test(octet) || Number(octet) > 255))
+    ) {
+      return false;
+    }
+
+    const normalizedHost = ipv4Tail.includes(".")
+      ? `${host.slice(0, lastColon + 1)}${((Number(ipv4Octets[0]) << 8) | Number(ipv4Octets[1])).toString(16)}:${((Number(ipv4Octets[2]) << 8) | Number(ipv4Octets[3])).toString(16)}`
+      : host;
+
+    const sections = normalizedHost.split("::");
     if (sections.length > 2) {
       return false;
     }

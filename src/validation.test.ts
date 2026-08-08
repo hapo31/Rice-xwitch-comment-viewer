@@ -21,7 +21,9 @@ describe("settings validation", () => {
     expect(isValidBouyomiHost("127.0.0.1")).toBe(true);
     expect(isValidBouyomiHost("localhost")).toBe(true);
     expect(isValidBouyomiHost("::1")).toBe(true);
+    expect(isValidBouyomiHost("::ffff:127.0.0.1")).toBe(true);
     expect(isValidBouyomiHost("[::1]")).toBe(false);
+    expect(isValidBouyomiHost("::ffff:127.0.0.999")).toBe(false);
     expect(isValidBouyomiHost("::1:50001")).toBe(false);
     expect(formatBouyomiAddress("::1", 50001)).toBe("[::1]:50001");
   });
