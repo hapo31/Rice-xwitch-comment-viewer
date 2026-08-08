@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { countIncompleteQueueItems } from "../presentation/queue";
 import { speechStatusLabel } from "../presentation/chat";
-import type { AppState } from "../stores/appStore";
+import { warningNotifications, type AppState } from "../stores/appStore";
 import { getAppBuildInfo, type AppBuildInfo } from "../tauri/client";
 import { formatBouyomiAddress } from "../validation";
 
@@ -19,6 +19,7 @@ export function StatusBar({ state }: StatusBarProps) {
   const host = state.settings?.speech.bouyomiHost ?? "127.0.0.1";
   const port = state.settings?.speech.bouyomiPort ?? 50001;
   const queuedCount = countIncompleteQueueItems(state.queueItems);
+  const warningCount = warningNotifications(state.notifications).length;
   const twitchAuthLabel = {
     unauthenticated: "未認証",
     authenticated: "ログイン済み",
@@ -40,7 +41,7 @@ export function StatusBar({ state }: StatusBarProps) {
         <StatusItem label="Twitch" value={`${twitchAuthLabel} / ${twitchConnectionLabel}`} />
         <StatusItem label="棒読みちゃん" value={`${speechStatusLabel(state.speechStatus)} ${formatBouyomiAddress(host, port)}`} />
         <StatusItem label="キュー" value={String(queuedCount)} />
-        <StatusItem label="Warnings" value={String(state.warnings.length)} tone={state.warnings.length > 0 ? "warning" : "default"} />
+        <StatusItem label="Warnings" value={String(warningCount)} tone={warningCount > 0 ? "warning" : "default"} />
       </div>
       <div className="text-zinc-400">{buildInfo ? formatBuildLabel(buildInfo) : "Rice"}</div>
     </footer>

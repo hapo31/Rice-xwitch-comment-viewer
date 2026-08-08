@@ -43,7 +43,7 @@ import {
   twitchValidateAuth,
   updateSettings,
 } from "./tauri/client";
-import type { AppSettings, BouyomiConnectionDiagnostics, LauncherLaunchResult } from "./types";
+import type { AppSettings, BouyomiConnectionDiagnostics, LauncherLaunchResult, NotificationSeverity, NotificationSource } from "./types";
 
 const showStartupGuideForSession = claimStartupGuideForSession(window.sessionStorage);
 
@@ -67,10 +67,10 @@ export function App() {
               occurredAtMs: Date.now(),
             },
           });
-          dispatch({ type: "warning.added", warning: recoveryNotice.message });
+          reportNotification("warning", "system", recoveryNotice.message);
         }
       })
-      .catch(() => dispatch({ type: "warning.added", warning: "設定の読み込みに失敗しました。" }));
+      .catch(() => reportNotification("error", "command", "設定の読み込みに失敗しました。"));
 
     if (startupAuthAttempted.current) {
       return;
@@ -87,7 +87,7 @@ export function App() {
         dispatch({ type: "twitch.authStatus", status: "authenticated" });
         dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
         if (auth.result.storageWarning) {
-          dispatch({ type: "warning.added", warning: auth.result.storageWarning });
+          reportNotification("warning", "system", auth.result.storageWarning);
           addSystemChatMessage(auth.result.storageWarning);
         }
         return;
@@ -97,7 +97,7 @@ export function App() {
         dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
         dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
         dispatch({ type: "twitch.profile", profile: undefined });
-        dispatch({ type: "warning.added", warning: auth.error });
+        reportNotification("error", "command", auth.error);
       }
     });
   }, []);
@@ -115,6 +115,28 @@ export function App() {
     });
   }
 
+  function reportNotification(
+    severity: NotificationSeverity,
+    source: NotificationSource,
+    message: string,
+    correlationId?: string,
+  ) {
+    dispatch({
+      type: "notification.added",
+      notification: { severity, source, message, occurredAtMs: Date.now(), correlationId },
+    });
+  }
+
+  function reportError(error: unknown, source: NotificationSource = "command", correlationId?: string) {
+    reportNotification("error", source, String(error), correlationId);
+  }
+
+  function reportInfo(message: string, source: NotificationSource = "command") {
+    reportNotification("success", source, message);
+    dispatch({ type: "log.added", log: { level: "info", message, occurredAtMs: Date.now() } });
+    addSystemChatMessage(message);
+  }
+
   useEffect(() => {
     const unlisten: Array<() => void> = [];
 
@@ -122,7 +144,7 @@ export function App() {
       subscribeAppLogEvents((event) => {
         dispatch({ type: "log.added", log: event });
         if (event.level !== "info") {
-          dispatch({ type: "warning.added", warning: event.message });
+          reportNotification(event.level, "log", event.message, event.id);
         }
       }),
       subscribeTwitchStatusEvents((event) => {
@@ -138,7 +160,7 @@ export function App() {
           dispatch({ type: "twitch.authStatus", status: "expired" });
         }
         if (event.message && (event.status === "authRequired" || event.status === "error")) {
-          dispatch({ type: "warning.added", warning: event.message });
+          reportNotification("error", "event", event.message);
         }
       }),
       subscribeTwitchChatMessageEvents((message) => {
@@ -153,13 +175,13 @@ export function App() {
       subscribeSpeechStatusEvents((event) => {
         dispatch({ type: "speech.status", status: event.status });
         if (event.message && (event.status === "disconnected" || event.status === "error")) {
-          dispatch({ type: "warning.added", warning: event.message });
+          reportNotification("error", "event", event.message);
         }
       }),
       subscribeSpeechQueueUpdatedEvents((event) => {
         dispatch({ type: "queue.changed", items: event.items ?? [] });
         if (event.warning) {
-          dispatch({ type: "warning.added", warning: event.warning });
+          reportNotification("warning", "event", event.warning);
         }
       }),
     ]).then((listeners) => {
@@ -204,7 +226,7 @@ export function App() {
           return;
         }
         dispatch({ type: "speech.status", status: "idle" });
-        dispatch({ type: "warning.added", warning: message });
+        reportInfo(message, "event");
       } catch {
         // Keep the existing error visible while waiting for BouyomiChan to become reachable.
       }
@@ -227,10 +249,10 @@ export function App() {
       dispatch({ type: "speech.status", status: "speaking" });
       await speechTest(speechText);
       dispatch({ type: "speech.status", status: "idle" });
-      dispatch({ type: "warning.added", warning: "テスト読み上げを送信しました。" });
+      reportInfo("テスト読み上げを送信しました。");
     } catch (error) {
       dispatch({ type: "speech.status", status: "error" });
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -238,20 +260,20 @@ export function App() {
     try {
       const message = await speechHealthCheck();
       dispatch({ type: "speech.status", status: "idle" });
-      dispatch({ type: "warning.added", warning: message });
+      reportInfo(message);
     } catch (error) {
       dispatch({ type: "speech.status", status: "disconnected" });
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
   async function handleSpeechDiagnostics(): Promise<BouyomiConnectionDiagnostics> {
     try {
       const diagnostics = await speechConnectionDiagnostics();
-      dispatch({ type: "warning.added", warning: diagnostics.recommendation });
+      reportInfo(diagnostics.recommendation);
       return diagnostics;
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
       throw error;
     }
   }
@@ -261,7 +283,7 @@ export function App() {
       const settings = await updateSettings(patch);
       dispatch({ type: "settings.loaded", settings });
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -271,10 +293,10 @@ export function App() {
       dispatch({ type: "twitch.authPrompt", prompt });
       dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
-      dispatch({ type: "warning.added", warning: "Twitch の認証コードを発行しました。" });
+      reportInfo("Twitch の認証コードを発行しました。");
     } catch (error) {
       dispatch({ type: "twitch.authStatus", status: "error" });
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -305,9 +327,9 @@ export function App() {
         dispatch({ type: "twitch.authPrompt", prompt: undefined });
         dispatch({ type: "twitch.profile", profile: result.profile });
         dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
-        dispatch({ type: "warning.added", warning: `Twitch に ${result.profile.login} としてログインしました。` });
+        reportInfo(`Twitch に ${result.profile.login} としてログインしました。`);
         if (result.storageWarning) {
-          dispatch({ type: "warning.added", warning: result.storageWarning });
+          reportNotification("warning", "system", result.storageWarning);
           addSystemChatMessage(result.storageWarning);
         }
       } else {
@@ -321,7 +343,11 @@ export function App() {
           });
         }
         if (!options.quietWaiting || (result.status !== "pending" && result.status !== "slowDown")) {
-          dispatch({ type: "warning.added", warning: result.message });
+          if (result.status === "pending" || result.status === "slowDown") {
+            reportInfo(result.message, "event");
+          } else {
+            reportNotification(result.status === "denied" || result.status === "expired" ? "warning" : "info", "event", result.message);
+          }
         }
         if (result.status === "expired" || result.status === "denied") {
           dispatch({ type: "twitch.authPrompt", prompt: undefined });
@@ -329,7 +355,7 @@ export function App() {
       }
     } catch (error) {
       dispatch({ type: "twitch.authStatus", status: "error" });
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -339,9 +365,9 @@ export function App() {
       dispatch({ type: "twitch.authStatus", status: "authenticated" });
       dispatch({ type: "twitch.profile", profile: result.profile });
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
-      dispatch({ type: "warning.added", warning: "Twitch 認証は有効です。" });
+      reportInfo("Twitch 認証は有効です。");
       if (result.storageWarning) {
-        dispatch({ type: "warning.added", warning: result.storageWarning });
+        reportNotification("warning", "system", result.storageWarning);
         addSystemChatMessage(result.storageWarning);
       }
       return true;
@@ -350,7 +376,7 @@ export function App() {
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       dispatch({ type: "twitch.authPrompt", prompt: undefined });
       dispatch({ type: "twitch.profile", profile: undefined });
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
       return false;
     }
   }
@@ -360,10 +386,10 @@ export function App() {
       const channelLogin = state.settings?.twitch.channelLogin;
       dispatch({ type: "twitch.connectionStatus", status: "connecting" });
       await twitchConnect(channelLogin);
-      dispatch({ type: "warning.added", warning: "Twitch チャット接続を開始しました。" });
+      reportInfo("Twitch チャット接続を開始しました。");
     } catch (error) {
       dispatch({ type: "twitch.connectionStatus", status: "error" });
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -378,7 +404,7 @@ export function App() {
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
     } catch (error) {
       dispatch({ type: "twitch.connectionStatus", status: "error" });
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -394,7 +420,7 @@ export function App() {
       dispatch({ type: "twitch.authPrompt", prompt: undefined });
       dispatch({ type: "twitch.profile", profile: undefined });
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -402,7 +428,7 @@ export function App() {
     try {
       await appOpenExternalUrl(url);
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -416,7 +442,7 @@ export function App() {
       dispatch({ type: "speech.status", status: command === "pause" ? "paused" : "idle" });
     } catch (error) {
       dispatch({ type: "speech.status", status: "error" });
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -424,7 +450,7 @@ export function App() {
     try {
       await speechQueueReload();
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -432,7 +458,7 @@ export function App() {
     try {
       await speechQueueRemove(itemId);
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -460,7 +486,7 @@ export function App() {
     try {
       await speechQueueRetry(itemId);
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
     }
   }
 
@@ -470,7 +496,7 @@ export function App() {
       dispatch({ type: "launcher.changed", items });
       return items;
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
       throw error;
     }
   }
@@ -481,7 +507,7 @@ export function App() {
       dispatch({ type: "launcher.changed", items });
       return items;
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
       throw error;
     }
   }
@@ -489,10 +515,7 @@ export function App() {
   async function reportLauncherResult(result: LauncherLaunchResult) {
     if (result.failures.length > 0) {
       const firstFailure = result.failures[0];
-      dispatch({
-        type: "warning.added",
-        warning: `${firstFailure.displayName} を起動できませんでした: ${firstFailure.message}`,
-      });
+      reportNotification("error", "command", `${firstFailure.displayName} を起動できませんでした: ${firstFailure.message}`);
     }
     return result;
   }
@@ -501,7 +524,7 @@ export function App() {
     try {
       return reportLauncherResult(await launcherLaunch(itemId));
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
       throw error;
     }
   }
@@ -510,7 +533,7 @@ export function App() {
     try {
       return reportLauncherResult(await launcherLaunchAll());
     } catch (error) {
-      dispatch({ type: "warning.added", warning: String(error) });
+      reportError(error);
       throw error;
     }
   }

@@ -48,7 +48,7 @@ Chat:
 - Twitch接続状態
 - 接続チャンネル
 - 読み上げON/OFF
-- 最近の警告
+- 最近の警告（warning / error のみ。成功・情報通知は Logs / system Chat で確認する）
 
 Queue:
 

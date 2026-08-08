@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-08-08: Issue #14 警告キューの成功通知・重複排除
+
+- `warning.added` が文字列 5 件だけを保持していたため、棒読みちゃんの確認、テスト読み上げ、Twitch 認証・接続の成功通知が対処中の障害を押し出していた。通知を severity/source/correlation を持つ構造化モデルへ変更し、Warnings は warning / error だけを最新 5 件表示する。成功・情報は Logs と system Chat へ残す。
+- backend の同一障害は `app://log`、status event、command reject から同文で届くことがある。`correlationId` があればそれを、なければ本文と 5 秒の到着時間を使って重複排除し、経路ごとに severity が異なる場合は error を優先する。reducer テストで severity 別の表示上限と log/event/command の統合重複を検証した。`pnpm test`（36件）と `pnpm build` は成功。Windows の Tauri 実機で、棒読みちゃん接続失敗時に警告が 1 件だけ表示され、成功操作を繰り返しても残ることは手動確認として残る。
+
 ## 2026-08-08: Issue #36 Chat の制御可能なライブ通知
 
 - 仮想スクロールされた Chat 行をそのまま live region にすると、再レンダーや起動案内も通知対象になり得る。そこで Chat リストは識別可能な `role="log"` のまま live 通知を停止し、Twitch 由来の新着だけを 500ms 単位で `role="status"` へ「新しいチャットが N 件届きました。」と集約する構成にした。通知領域はフォーカスを移動せず、system の起動案内は対象外にする。
@@ -42,7 +47,6 @@
 
 - route ごとの document title は `Rice - {画面名}` に統一した。履歴操作を含めて title は常に更新し、ユーザー操作で作られる `PUSH` 遷移だけは、新しい Main View の `h1`（`tabIndex={-1}`）へフォーカスを移して画面名とコンテンツ開始位置を通知する。戻る/進むの `POP` と旧 route からのリダイレクトの `REPLACE` ではフォーカスを保持し、ブラウザの履歴復元を壊さない。
 - route 別 title と PUSH/POP/REPLACE のフォーカス方針を TypeScript テストで検証した。`pnpm exec tsc --noEmit`、`pnpm test`（13 files / 37 tests）、`pnpm build`、`git diff --check` は成功した。Windows WebView とスクリーンリーダーで Activity Bar 操作後の読み上げ・戻る/進む時のフォーカス保持を手動確認として残す。
-
 ## 2026-08-07: Issue #78 正規化後に空となる読み上げ本文
 
 - `SpeechFormatter` は raw text の空判定だけでは BEL などの制御文字のみのチャットを通してしまい、名前読み上げ OFF では空の talk packet、ON ではユーザー名だけを送る可能性があった。制御文字/空白の正規化、URL・タグ処理、emote 除外の後に本文が空なら、設定にかかわらず `読み上げる本文がありません。` の理由で `Blocked` とする。既存の enqueue 経路はこの理由を Queue history と UI の警告へ渡す。

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appReducer, initialAppState } from "./appStore";
+import { appReducer, initialAppState, warningNotifications } from "./appStore";
 import type { AppSettings, ChatMessage, LauncherItem, QueueItem } from "../types";
 
 function chatMessage(id: string): ChatMessage {
@@ -69,23 +69,58 @@ describe("appReducer", () => {
     expect(state.settings?.twitch.channelLogin).toBe("rice");
   });
 
-  it("keeps only the latest five warnings", () => {
+  it("keeps only the latest five actionable notifications without discarding info or success", () => {
     const state = Array.from({ length: 8 }, (_, index) => index).reduce(
       (current, index) =>
         appReducer(current, {
-          type: "warning.added",
-          warning: `warning ${index}`,
+          type: "notification.added",
+          notification: {
+            severity: "warning",
+            source: "event",
+            message: `warning ${index}`,
+            occurredAtMs: index,
+          },
+        }),
+      appReducer(
+        appReducer(initialAppState, {
+          type: "notification.added",
+          notification: { severity: "info", source: "command", message: "接続しました", occurredAtMs: 10 },
+        }),
+        {
+          type: "notification.added",
+          notification: { severity: "success", source: "command", message: "認証しました", occurredAtMs: 11 },
+        },
+      ),
+    );
+
+    expect(warningNotifications(state.notifications).map((notification) => notification.message)).toEqual([
+      "warning 7", "warning 6", "warning 5", "warning 4", "warning 3",
+    ]);
+    expect(state.notifications.map((notification) => notification.severity)).toContain("info");
+    expect(state.notifications.map((notification) => notification.severity)).toContain("success");
+  });
+
+  it("deduplicates one backend failure received through log, status event, and command rejection", () => {
+    const failure = {
+      message: "棒読みちゃんに接続できませんでした。",
+      occurredAtMs: 1,
+      correlationId: "bouyomi-connect-42",
+    };
+    const state = [
+      { source: "log" as const, severity: "warning" as const },
+      { source: "event" as const, severity: "error" as const },
+      { source: "command" as const, severity: "error" as const },
+    ].reduce(
+      (current, source) =>
+        appReducer(current, {
+          type: "notification.added",
+          notification: { ...failure, ...source },
         }),
       initialAppState,
     );
 
-    expect(state.warnings).toEqual([
-      "warning 7",
-      "warning 6",
-      "warning 5",
-      "warning 4",
-      "warning 3",
-    ]);
+    expect(warningNotifications(state.notifications)).toHaveLength(1);
+    expect(warningNotifications(state.notifications)[0]).toMatchObject({ ...failure, severity: "error" });
   });
 
   it("stores application logs for the Logs view", () => {
@@ -103,6 +138,29 @@ describe("appReducer", () => {
       id: "1-warning-Twitch EventSub が切断されました。",
       level: "warning",
     });
+  });
+
+  it("stores OAuth waiting progress in Logs and system Chat", () => {
+    const message = "Twitch の認証を待っています。";
+    const state = appReducer(
+      appReducer(initialAppState, {
+        type: "log.added",
+        log: { level: "info", message, occurredAtMs: 1 },
+      }),
+      {
+        type: "chat.message",
+        message: {
+          id: "system-auth-waiting",
+          receivedAt: "2026-08-08T00:00:00Z",
+          userDisplayName: "system",
+          text: message,
+          status: "spoken",
+        },
+      },
+    );
+
+    expect(state.logs[0]).toMatchObject({ level: "info", message });
+    expect(state.chatMessages[0]).toMatchObject({ userDisplayName: "system", text: message });
   });
 
   it("assigns distinct IDs to consecutive identical application logs", () => {

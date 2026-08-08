@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   AppLogEvent,
+  AppNotification,
   AuthStatus,
   ChatMessage,
   QueueItem,
@@ -22,7 +23,7 @@ export interface AppState {
   chatMessages: ChatMessage[];
   queueItems: QueueItem[];
   logs: StoredAppLogEvent[];
-  warnings: string[];
+  notifications: AppNotification[];
 }
 
 export type AppAction =
@@ -36,7 +37,7 @@ export type AppAction =
   | { type: "queue.changed"; items: QueueItem[] }
   | { type: "launcher.changed"; items: AppSettings["launcher"]["items"] }
   | { type: "log.added"; log: AppLogEvent }
-  | { type: "warning.added"; warning: string }
+  | { type: "notification.added"; notification: Omit<AppNotification, "id"> & { id?: string } }
   | { type: "logs.cleared" }
   | { type: "warnings.cleared" };
 
@@ -47,7 +48,7 @@ export const initialAppState: AppState = {
   chatMessages: [],
   queueItems: [],
   logs: [],
-  warnings: [],
+  notifications: [],
 };
 
 export function appReducer(state: AppState, action: AppAction): AppState {
@@ -89,15 +90,62 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           ...state.logs,
         ].slice(0, 500),
       };
-    case "warning.added":
-      return { ...state, warnings: [action.warning, ...state.warnings].slice(0, 5) };
+    case "notification.added": {
+      const notification = {
+        ...action.notification,
+        id: action.notification.id ?? notificationId(action.notification),
+      };
+      const duplicateIndex = state.notifications.findIndex(
+        (existing) => isDuplicateNotification(existing, notification),
+      );
+      if (duplicateIndex >= 0) {
+        const existing = state.notifications[duplicateIndex];
+        if (notificationSeverityRank(notification.severity) <= notificationSeverityRank(existing.severity)) {
+          return state;
+        }
+        const notifications = [...state.notifications];
+        notifications[duplicateIndex] = { ...existing, severity: notification.severity };
+        return { ...state, notifications };
+      }
+      return { ...state, notifications: [notification, ...state.notifications].slice(0, 100) };
+    }
     case "logs.cleared":
       return { ...state, logs: [] };
     case "warnings.cleared":
-      return { ...state, warnings: [] };
+      return {
+        ...state,
+        notifications: state.notifications.filter(
+          (notification) => notification.severity !== "warning" && notification.severity !== "error",
+        ),
+      };
     default:
       return state;
   }
+}
+
+export function warningNotifications(notifications: AppNotification[]): AppNotification[] {
+  return notifications
+    .filter((notification) => notification.severity === "warning" || notification.severity === "error")
+    .slice(0, 5);
+}
+
+function notificationId(notification: Omit<AppNotification, "id">): string {
+  return `${notification.occurredAtMs}-${notification.severity}-${notification.source}-${notification.correlationId ?? notification.message}`;
+}
+
+function isDuplicateNotification(existing: AppNotification, incoming: AppNotification): boolean {
+  if (existing.correlationId && incoming.correlationId) {
+    return existing.correlationId === incoming.correlationId;
+  }
+
+  return (
+    existing.message === incoming.message &&
+    Math.abs(existing.occurredAtMs - incoming.occurredAtMs) <= 5_000
+  );
+}
+
+function notificationSeverityRank(severity: AppNotification["severity"]): number {
+  return { info: 0, success: 1, warning: 2, error: 3 }[severity];
 }
 
 function uniqueLogId(log: AppLogEvent, existingLogs: StoredAppLogEvent[]): string {

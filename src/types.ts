@@ -174,6 +174,18 @@ export interface AppLogEvent {
   occurredAtMs: number;
 }
 
+export type NotificationSeverity = "info" | "success" | "warning" | "error";
+export type NotificationSource = "command" | "event" | "log" | "system";
+
+export interface AppNotification {
+  id: string;
+  severity: NotificationSeverity;
+  source: NotificationSource;
+  message: string;
+  occurredAtMs: number;
+  correlationId?: string;
+}
+
 export type TwitchConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "authRequired" | "error";
 
 export type TwitchChatConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "authRequired" | "error";
