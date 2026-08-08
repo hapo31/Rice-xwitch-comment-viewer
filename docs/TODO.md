@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-08-07
+最終調査日: 2026-08-08
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
 
@@ -15,7 +15,7 @@
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring、session-only 保存失敗処理、旧 Linux 平文ファイルの移行/削除、Login 画面、起動時の保存済み認証の自動検証は実装済み。Device Code の絶対期限に基づく残り時間と期限切れ時の再発行導線も実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映、再購読時の最新 access token 取得と 401 時の一度だけの refresh/retry（Issue #23）を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。Issue #57 で失敗済み項目をエラー履歴へ隔離し、明示的な手動再試行のみで retry budget を復元するようにした。Issue #78 で正規化後に本文が空のチャットを理由付きで Blocked にした。Issue #52 で待機中の読み上げ制御と履歴 dismiss を分離し、blocked を含む履歴を個別・一括で削除可能にした。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
-| Phase 5: 配信運用向け仕上げ | 実装中 | Launcher、dev ビルド識別、設定破損時の復旧通知、設定更新 transaction、重要 Issue の並列修正スキル、ルート README と MIT License を実装。Issue #5 で変更のない保存ボタンを DOM から除外してフォーカス順とアクセシビリティツリーに残らないようにし、Issue #6 で NG 入力欄と声質スライダーのラベル・現在値を支援技術へ公開、Issue #7 で入力エラーを対象フィールドと関連付け、棒読みちゃんホスト空欄と保存不能理由を明示した。Issue #14 で通知を構造化して成功通知を Logs / system Chat に分離し、警告の重複を排除した。Issue #15 で通常文字を `zinc-400` に統一し、コントラストと低コントラスト文字の再導入を検査した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。Issue #17 で配信中の Space / S / Cmd/Ctrl+, ショートカットを入力中・IME・キーリピートを妨げない共通 hook として実装した。Issue #18 で Launcher 削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応した。Issue #21 で接続・認証・復旧を重複抑止付きの system Chat timeline へ集約した。Issue #24 で Launcher の DnD listener を mount 中の単一購読とし、最新の追加 handler を ref 経由で参照するようにした。Issue #26 で最小幅 900px の Chat レイアウトを 100/125/150% に対応させた。Issue #28 で未保存変更を画面遷移・履歴戻る・終了時に共通確認するようにした。Issue #36 で Chat 新着を重複なく集約したライブ通知と停止設定を追加した。Issue #37 で Chat 行の Twitch バッジを短縮ラベルと支援技術向け名称で表示した。Issue #39 で NG ルールの 200 件上限を frontend/backend ともに明示検証し、ASCII 大小文字を区別しない重複を除外した。Settings / Filter の設定群には統一した見出しを追加し、Issue #41 で同一内容の連続ログにも一意な表示 ID を割り当て、Issue #45 で Speech/Queue の内部状態値を日本語表示へ集約し、Queue 状態アイコンを支援技術から隠した。Issue #54 で Logs を仮想化し日時 formatter を再利用するようにした。Issue #51 で keyboard focus indicator と forced-colors fallback を追加した。release-rice は 3 manifest と tag の version を共通 script で照合し、StatusBar の動的 build info は source 更新対象から除外した。devcontainer bootstrap を固定・build 時検証へ移し、SSH agent/Docker/host network を明示 profile に分離した。Windows 実機確認と詳細な運用エラー整理は継続。 |
+| Phase 5: 配信運用向け仕上げ | 実装中 | Launcher、dev ビルド識別、設定破損時の復旧通知、設定更新 transaction、重要 Issue の並列修正スキル、ルート README と MIT License を実装。Issue #5 で変更のない保存ボタンを DOM から除外してフォーカス順とアクセシビリティツリーに残らないようにし、Issue #6 で NG 入力欄と声質スライダーのラベル・現在値を支援技術へ公開、Issue #7 で入力エラーを対象フィールドと関連付け、棒読みちゃんホスト空欄と保存不能理由を明示した。Issue #14 で通知を構造化して成功通知を Logs / system Chat に分離し、警告の重複を排除した。Issue #15 で通常文字を `zinc-400` に統一し、コントラストと低コントラスト文字の再導入を検査した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。Issue #17 で配信中の Space / S / Cmd/Ctrl+, ショートカットを入力中・IME・キーリピートを妨げない共通 hook として実装した。Issue #18 で Launcher 削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応した。Issue #21 で接続・認証・復旧を重複抑止付きの system Chat timeline へ集約した。Issue #24 で Launcher の DnD listener を mount 中の単一購読とし、最新の追加 handler を ref 経由で参照するようにした。Issue #26 で最小幅 900px の Chat レイアウトを 100/125/150% に対応させた。Issue #28 で未保存変更を画面遷移・履歴戻る・終了時に共通確認するようにした。Issue #36 で Chat 新着を重複なく集約したライブ通知と停止設定を追加した。Issue #37 で Chat 行の Twitch バッジを短縮ラベルと支援技術向け名称で表示した。Issue #39 で NG ルールの 200 件上限を frontend/backend ともに明示検証し、ASCII 大小文字を区別しない重複を除外した。Settings / Filter の設定群には統一した見出しを追加し、Issue #41 で同一内容の連続ログにも一意な表示 ID を割り当て、Issue #45 で Speech/Queue の内部状態値を日本語表示へ集約し、Queue 状態アイコンを支援技術から隠した。Issue #53 で Chat を遡っている場合の仮想スクロール可視アンカー保持と新着へ戻る導線を追加した。Issue #54 で Logs を仮想化し日時 formatter を再利用するようにした。Issue #51 で keyboard focus indicator と forced-colors fallback を追加した。release-rice は 3 manifest と tag の version を共通 script で照合し、StatusBar の動的 build info は source 更新対象から除外した。devcontainer bootstrap を固定・build 時検証へ移し、SSH agent/Docker/host network を明示 profile に分離した。Windows 実機確認と詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
 ## Phase 0: プロジェクト作成
@@ -188,6 +188,7 @@
 - [x] Twitch 文脈の「コメント」表記を「チャット」へ統一する。
 - [x] 配信者向け文言を「読み上げ」へ統一する。
 - [x] Chat view のチャットリストを仮想スクロール化する。
+- [x] Issue #53: Chat を遡っている間も prepend 後の可視アンカーを維持し、新着件数から先頭へ戻れるようにする。
 - [x] Queue view を読み上げ待ち・エラー・フィルターによる読み飛ばしだけに絞り、Chat view と同じ新着順にする。
 - [x] 起動時の仮チャットを設定状態に応じた system 操作案内へ置き換える。
 - [ ] 配信中に判断しやすい日本語エラー文言を整理する。
@@ -224,6 +225,7 @@
 - [x] TypeScript: Issue #47 の Device Code 期限境界を fake timer でテストする。
 - [x] TypeScript: Launcher の表示順、背景色、DnDパス判定、起動結果表示、削除メニューのキーボード操作のテストを追加する。
 - [x] TypeScript: 100/125/150% と自動倍率でアプリシェル寸法が一貫して拡大するレイアウト回帰テストを追加する。
+- [x] TypeScript: Issue #53 の仮想スクロール prepend 後の可視アンカー回帰テストを追加する。
 - [x] TypeScript: Issue #26 の最小幅 900px における Chat 主要列の 100/125/150% レイアウト回帰テストを追加する。
 - [x] TypeScript: Issue #36 の起動済みチャット除外、連投集約、重複・system チャット抑制、通知停止中の既読化をテストする。
 - [x] TypeScript: Issue #49 の route 別 document title と PUSH/POP/REPLACE ごとのフォーカス方針をテストする。

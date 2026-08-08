@@ -1,6 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { KeyRound } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChatLiveAnnouncementController } from "../../presentation/chatLiveAnnouncements";
 import { getChatMessagePresentation } from "../../presentation/chat";
@@ -10,16 +10,21 @@ import type { AppState } from "../../stores/appStore";
 import type { ChatMessage } from "../../types";
 import { ChatBadges } from "./ChatBadges";
 import { CHAT_GRID_TEMPLATE } from "./chatLayout";
+import { getPrependedMessageCount } from "./scrollAnchor";
 
 export function ChatView({ state, showStartupGuide }: { state: AppState; showStartupGuide: boolean }) {
   const startupReceivedAt = useRef(new Date().toISOString());
   const startupMessages = showStartupGuide ? getStartupGuideMessages(state, startupReceivedAt.current) : [];
   const messages: Array<ChatMessage | StartupGuideMessage> = [...state.chatMessages, ...startupMessages];
   const scrollParentRef = useRef<HTMLElement | null>(null);
+  const previousMessagesRef = useRef(messages);
+  const scrollAnchorRef = useRef<{ messageId: string; offset: number }>();
+  const isAtTopRef = useRef(true);
   const liveAnnouncementController = useRef<ChatLiveAnnouncementController>();
   const hasInitializedLiveAnnouncements = useRef(false);
   const liveAnnouncementTimer = useRef<number>();
   const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const [unseenMessageCount, setUnseenMessageCount] = useState(0);
   const liveChatAnnouncementsEnabled = state.settings?.twitch.liveChatAnnouncements ?? true;
   if (!liveAnnouncementController.current) {
     liveAnnouncementController.current = new ChatLiveAnnouncementController();
@@ -66,6 +71,68 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
     overscan: 12,
     getItemKey: (index) => messages[index]?.id ?? index,
   });
+
+  useLayoutEffect(() => {
+    const previousMessages = previousMessagesRef.current;
+    const prependedMessageCount = getPrependedMessageCount(previousMessages, messages);
+    const scrollParent = scrollParentRef.current;
+
+    if (prependedMessageCount > 0 && scrollParent) {
+      if (isAtTopRef.current) {
+        rowVirtualizer.scrollToOffset(0);
+      } else {
+        setUnseenMessageCount((count) => count + prependedMessageCount);
+
+        const anchor = scrollAnchorRef.current;
+        const anchorIndex = anchor && messages.findIndex((message) => message.id === anchor.messageId);
+        if (anchor && anchorIndex !== undefined && anchorIndex >= 0) {
+          rowVirtualizer.scrollToIndex(anchorIndex, { align: "start" });
+          scrollParent.scrollTop += anchor.offset;
+        }
+      }
+    }
+
+    previousMessagesRef.current = messages;
+
+    return () => {
+      const parent = scrollParentRef.current;
+      if (!parent || parent.scrollTop <= 1) {
+        isAtTopRef.current = true;
+        scrollAnchorRef.current = undefined;
+        return;
+      }
+
+      isAtTopRef.current = false;
+      const parentTop = parent.getBoundingClientRect().top;
+      const anchorRow = Array.from(parent.querySelectorAll<HTMLElement>("[data-chat-message-id]")).find(
+        (row) => row.getBoundingClientRect().bottom > parentTop,
+      );
+
+      scrollAnchorRef.current = anchorRow?.dataset.chatMessageId
+        ? {
+            messageId: anchorRow.dataset.chatMessageId,
+            offset: anchorRow.getBoundingClientRect().top - parentTop,
+          }
+        : undefined;
+    };
+  }, [messages, rowVirtualizer]);
+
+  const handleScroll = () => {
+    const scrollParent = scrollParentRef.current;
+    if (!scrollParent) {
+      return;
+    }
+
+    isAtTopRef.current = scrollParent.scrollTop <= 1;
+    if (isAtTopRef.current) {
+      setUnseenMessageCount(0);
+    }
+  };
+
+  const returnToLatest = () => {
+    rowVirtualizer.scrollToOffset(0);
+    setUnseenMessageCount(0);
+  };
   const chatTarget = state.settings?.twitch.channelLogin || state.twitchProfile?.login || "未設定";
   const connectionLabel = {
     disconnected: "未接続",
@@ -108,8 +175,18 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
         aria-label="受信チャット"
         aria-live="off"
         aria-relevant="additions text"
-        className="h-[calc(100%-3rem)] overflow-x-hidden overflow-y-auto"
+        onScroll={handleScroll}
+        className="relative h-[calc(100%-3rem)] overflow-x-hidden overflow-y-auto"
       >
+        {unseenMessageCount > 0 && (
+          <button
+            type="button"
+            onClick={returnToLatest}
+            className="absolute left-1/2 top-2 z-20 -translate-x-1/2 rounded border border-sky-500/50 bg-zinc-800 px-3 py-1 text-xs font-medium text-sky-300 shadow hover:bg-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+          >
+            新着 {unseenMessageCount} 件を表示
+          </button>
+        )}
         <div className="min-w-0">
           <div
             className="sticky top-0 z-10 grid border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400"
@@ -133,6 +210,7 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
                   key={virtualRow.key}
                   ref={rowVirtualizer.measureElement}
                   data-index={virtualRow.index}
+                  data-chat-message-id={message?.id}
                   className="absolute left-0 top-0 w-full"
                   style={{
                     transform: `translateY(${virtualRow.start}px)`,
