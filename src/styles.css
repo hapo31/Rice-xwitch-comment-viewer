@@ -30,3 +30,16 @@ button,
 input {
   font: inherit;
 }
+
+/* Provides a focus fallback for every keyboard-focusable control; text-entry
+ * controls also add the shared ring from presentation/focus.ts. */
+:where(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  :where(button, input, select, textarea, [tabindex]):focus-visible {
+    outline-color: Highlight;
+  }
+}

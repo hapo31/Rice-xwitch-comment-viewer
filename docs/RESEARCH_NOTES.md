@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-08-07: Issue #51 focus indicator
+
+- `outline-none focus:border-sky-400` の入力は、色だけの 1px border 変化に依存していた。共通の `focusIndicatorClass` に `focus-visible` の 2px ring と 2px offset を集約し、マウス操作で ring を表示しないようにした。すべての keyboard-focusable control には CSS fallback を置き、Windows 高コントラストではシステムの `Highlight` 色による 2px outline を使う。
+- 共通クラスの keyboard-only ring / offset と forced-colors fallback を Vitest で回帰確認した。Windows の通常表示と高コントラスト表示で Tab 移動を確認する手動項目は残す。
+
 ## 2026-08-07: Issue #26 最小幅での Chat 横スクロール
 
 - Tauri の最小幅は 900px だが、Chat の内容には `min-w-[640px]` があり、Activity Bar と Side Panel を除いた 572px の Main View を必ず超過していた。UI 倍率ではシェルも拡大するため、同じ最小幅で Chat に残る幅は 100%/125%/150% で 572/490/408px となる。

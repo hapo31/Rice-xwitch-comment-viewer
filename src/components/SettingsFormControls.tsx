@@ -1,5 +1,6 @@
 import { Save } from "lucide-react";
 import type { ReactNode } from "react";
+import { focusIndicatorClass } from "../presentation/focus";
 
 export function SettingsSection({
   id,
@@ -103,7 +104,7 @@ export function NumberRuleRow({
           inputMode="numeric"
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
+          className={`h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
         />
         {!valid && <p className="mt-1 text-xs text-rose-400">{error}</p>}
       </div>
@@ -127,7 +128,7 @@ export function RuleTextArea({
         value={value}
         rows={5}
         onChange={(event) => onChange(event.target.value)}
-        className="resize-y border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-400"
+        className={`resize-y border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 ${focusIndicatorClass}`}
       />
     </div>
   );

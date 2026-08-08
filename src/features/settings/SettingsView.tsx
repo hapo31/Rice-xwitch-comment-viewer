@@ -8,6 +8,7 @@ import {
 } from "../../components/SettingsFormControls";
 import type { AppSettings, BouyomiConnectionDiagnostics } from "../../types";
 import { isValidBouyomiHost, isValidBouyomiVoice, isValidPort } from "../../validation";
+import { focusIndicatorClass } from "../../presentation/focus";
 import { defaultSpeechSettings, defaultTwitchSettings } from "./defaults";
 
 const defaultConnectionSuccessMessage = "棒読みちゃんと接続しました";
@@ -205,7 +206,7 @@ export function SettingsView({
                 id="bouyomi-host"
                 value={host}
                 onChange={(event) => setHost(event.target.value)}
-                className="h-9 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
+                className={`h-9 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
               />
               {!isHostValid && <p className="mt-1 text-xs text-rose-400">IPv4、DNS名、または角括弧なしのIPv6アドレスを入力してください。</p>}
             </div>
@@ -219,7 +220,7 @@ export function SettingsView({
                   inputMode="numeric"
                   value={port}
                   onChange={(event) => setPort(event.target.value)}
-                  className="h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
+                  className={`h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
                 />
                 {!isPortValid && <p className="mt-1 text-xs text-rose-400">1 から 65535 の範囲で入力してください。</p>}
               </div>
@@ -266,7 +267,7 @@ export function SettingsView({
                   inputMode="numeric"
                   value={voice}
                   onChange={(event) => setVoice(event.target.value)}
-                  className="h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
+                  className={`h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
                 />
                 {!isVoiceValid && <p className="mt-1 text-xs text-rose-400">0 から 30000 の範囲で入力してください。</p>}
               </div>
@@ -291,7 +292,7 @@ export function SettingsView({
                   disabled={!connectionSuccessSpeechEnabled}
                   placeholder={defaultConnectionSuccessMessage}
                   onChange={(event) => setConnectionSuccessSpeechText(event.target.value)}
-                  className="h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-400 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-950 disabled:text-zinc-600"
+                  className={`h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-950 disabled:text-zinc-600 ${focusIndicatorClass}`}
                 />
                 <div className="text-right text-xs text-zinc-500">{connectionSuccessSpeechText.length}/120</div>
               </div>
@@ -309,7 +310,7 @@ export function SettingsView({
                   value={testText}
                   maxLength={120}
                   onChange={(event) => setTestText(event.target.value)}
-                  className="h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
+                  className={`h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
                 />
                 <div className="flex items-center justify-between text-xs text-zinc-500">
                   <span>{testText.length}/120</span>

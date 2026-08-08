@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { AppState } from "../../stores/appStore";
 import type { AppSettings } from "../../types";
 import { isValidTwitchChannelLogin } from "../../validation";
+import { focusIndicatorClass } from "../../presentation/focus";
 import { defaultTwitchSettings } from "../settings/defaults";
 import { formatDeviceAuthRemainingTime, getDeviceAuthRemainingSeconds } from "./deviceAuthExpiry";
 
@@ -116,7 +117,7 @@ export function AuthView({
                   value={channelLogin}
                   onChange={(event) => setChannelLogin(event.target.value)}
                   onBlur={saveChannelLogin}
-                  className="h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-sky-400"
+                  className={`h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
                 />
                 {!isChannelValid && <p className="mt-1 text-xs text-rose-400">Twitch のログイン名を 3 から 25 文字で入力してください。</p>}
               </div>
