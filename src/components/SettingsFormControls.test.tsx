@@ -6,10 +6,10 @@ import { FloatingSaveButton, RangeRow, RuleTextArea } from "./SettingsFormContro
 
 describe("FloatingSaveButton accessibility", () => {
   it("removes the unchanged Filter and Settings save controls from the keyboard and accessibility tree", () => {
-    const filterMarkup = renderToStaticMarkup(<FilterView onSettingsUpdate={() => undefined} />);
+    const filterMarkup = renderToStaticMarkup(<FilterView onSettingsUpdate={async () => true} />);
     const settingsMarkup = renderToStaticMarkup(
       <SettingsView
-        onSettingsUpdate={() => undefined}
+        onSettingsUpdate={async () => true}
         onSpeechHealthCheck={() => undefined}
         onSpeechDiagnostics={async () => ({ configuredAddr: "127.0.0.1:50001", attempted: [], recommendation: "" })}
         onSpeechTest={() => undefined}

@@ -23,7 +23,7 @@ describe("field validation errors", () => {
     const markup = renderToStaticMarkup(
       <SettingsView
         settings={invalidSettings}
-        onSettingsUpdate={() => undefined}
+        onSettingsUpdate={async () => true}
         onSpeechHealthCheck={() => undefined}
         onSpeechDiagnostics={async () => ({ configuredAddr: "127.0.0.1:50001", attempted: [], recommendation: "" })}
         onSpeechTest={() => undefined}
