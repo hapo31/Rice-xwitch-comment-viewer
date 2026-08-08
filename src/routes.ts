@@ -10,6 +10,8 @@ export const appRoutes = [
 
 export type AppRoutePath = (typeof appRoutes)[number]["path"];
 
+export const settingsRoute = appRoutes.find((route) => route.path === "/settings")!;
+
 export function getRouteLabel(pathname: string): string {
   return appRoutes.find((route) => route.path === pathname)?.label ?? "Chat";
 }

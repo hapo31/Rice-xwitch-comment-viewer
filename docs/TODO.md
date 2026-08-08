@@ -11,7 +11,7 @@
 | Phase | 状態 | メモ |
 | --- | --- | --- |
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込、原子的保存、破損時のbackup/既定値復旧を確認した。Issue #50 で UI 倍率を名前付き radio group にし、現在の選択状態と表示倍率を支援技術へ公開した。Issue #49 で route ごとの document title 更新と、PUSH 遷移後の画面見出しへのフォーカス移動を追加した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。 |
-| Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 読み上げ、制御、接続診断、Settings 画面は実装済み。接続先は host/port を構造化し、IPv4・DNS・IPv6を共通の接続経路で扱う。接続確認は設定に応じて確認読み上げまたは無音の状態取得を行う。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
+| Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 読み上げ、制御、接続診断、Settings 画面は実装済み。接続先は host/port を構造化し、IPv4・DNS・IPv6を共通の接続経路で扱う。接続確認は設定に応じて確認読み上げまたは無音の状態取得を行う。Issue #84 で接続エラーの復旧導線を Settings の［診断］へ統一し、backend から画面名を除去した。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring、session-only 保存失敗処理、旧 Linux 平文ファイルの移行/削除、Login 画面、起動時の保存済み認証の自動検証は実装済み。Device Code の絶対期限に基づく残り時間と期限切れ時の再発行導線も実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映、再購読時の最新 access token 取得と 401 時の一度だけの refresh/retry（Issue #23）を実装。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。Issue #57 で失敗済み項目をエラー履歴へ隔離し、明示的な手動再試行のみで retry budget を復元するようにした。Issue #78 で正規化後に本文が空のチャットを理由付きで Blocked にした。Issue #52 で待機中の読み上げ制御と履歴 dismiss を分離し、blocked を含む履歴を個別・一括で削除可能にした。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
@@ -44,6 +44,7 @@
 - [x] Issue #80: 棒読みちゃんの host/port を構造化して検証し、IPv4・DNS・IPv6 の接続先を全経路で同じ形式にする。
 - [x] 棒読みちゃん未起動時の日本語エラーを返す。
 - [x] Settings 画面から接続確認、診断、テスト読み上げ、ホスト/ポート/声質設定を操作できるようにする。
+- [x] Issue #84: 接続拒否・timeout の復旧案内を［診断］へ統一し、読み上げエラー時に Side Panel から Settings の［診断］を開けるようにする。正式画面名と legacy redirect の区別を文書・テストで維持する。
 - [x] 接続確認で空接続を送らず、「棒読みちゃんと接続しました」の確認読み上げを送る。
 - [x] 接続成功時の読み上げ ON/OFF と読み上げ文カスタマイズを設定できるようにする。
 - [ ] 実機の棒読みちゃんでテスト読み上げできることを確認する。

@@ -67,6 +67,11 @@
 
 - route ごとの document title は `Rice - {画面名}` に統一した。履歴操作を含めて title は常に更新し、ユーザー操作で作られる `PUSH` 遷移だけは、新しい Main View の `h1`（`tabIndex={-1}`）へフォーカスを移して画面名とコンテンツ開始位置を通知する。戻る/進むの `POP` と旧 route からのリダイレクトの `REPLACE` ではフォーカスを保持し、ブラウザの履歴復元を壊さない。
 - route 別 title と PUSH/POP/REPLACE のフォーカス方針を TypeScript テストで検証した。`pnpm exec tsc --noEmit`、`pnpm test`（13 files / 37 tests）、`pnpm build`、`git diff --check` は成功した。Windows WebView とスクリーンリーダーで Activity Bar 操作後の読み上げ・戻る/進む時のフォーカス保持を手動確認として残す。
+## 2026-08-08: Issue #84 棒読みちゃん接続エラーの診断導線
+
+- 現行の正式画面は `src/routes.ts` の Chat / Launcher / Queue / Filter / Settings / Login / Logs であり、`/rules` と `/voices` は redirect 専用だった。一方、棒読みちゃんの接続拒否・timeout は backend の文字列で存在しない Voices 画面を案内していた。
+- backend は route 名を含めず［診断］操作だけを案内し、読み上げが `Disconnected` / `Error` のとき Side Panel の行を `appRoutes` の Settings 定義から作るリンクにした。これにより route の改名では backend 文言が陳腐化しない。接続拒否・timeout の復旧文言、Settings 診断リンク、正式画面名と legacy redirect の契約を自動テストで確認する。Windows 側の棒読みちゃん停止・timeout を使った実機確認は残る。
+
 ## 2026-08-07: Issue #78 正規化後に空となる読み上げ本文
 
 - `SpeechFormatter` は raw text の空判定だけでは BEL などの制御文字のみのチャットを通してしまい、名前読み上げ OFF では空の talk packet、ON ではユーザー名だけを送る可能性があった。制御文字/空白の正規化、URL・タグ処理、emote 除外の後に本文が空なら、設定にかかわらず `読み上げる本文がありません。` の理由で `Blocked` とする。既存の enqueue 経路はこの理由を Queue history と UI の警告へ渡す。

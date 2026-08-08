@@ -539,10 +539,10 @@ pub(crate) fn to_user_message(error: anyhow::Error) -> String {
         || message.contains("os error 111")
         || message.contains("os error 10061")
     {
-        "棒読みちゃんに接続できません。棒読みちゃんが起動中で、アプリ連携/TCP受付が有効か確認してください。Voices 画面の診断で詳細を確認できます。"
+        "棒読みちゃんに接続できません。棒読みちゃんが起動中で、アプリ連携/TCP受付が有効か確認してください。続けて［診断］を実行すると接続先と原因を確認できます。"
             .to_string()
     } else if message.contains("timed out") || message.contains("elapsed") {
-        "棒読みちゃんへの接続がタイムアウトしました。ポート番号とセキュリティソフトの設定を確認してください。Voices 画面の診断で詳細を確認できます。".to_string()
+        "棒読みちゃんへの接続がタイムアウトしました。ポート番号とセキュリティソフトの設定を確認してください。続けて［診断］を実行すると接続先と原因を確認できます。".to_string()
     } else {
         format!("棒読みちゃん連携でエラーが発生しました: {message}")
     }
@@ -688,5 +688,23 @@ mod tests {
 
         assert!(recommendation.contains("棒読みちゃんが起動"));
         assert!(recommendation.contains("ホストとポート番号"));
+    }
+
+    #[test]
+    fn connection_refused_recovery_mentions_the_diagnostic_action_without_a_route_name() {
+        let message = to_user_message(anyhow::anyhow!("Connection refused (os error 111)"));
+
+        assert!(message.contains("［診断］"));
+        assert!(!message.contains("Voices"));
+        assert!(!message.contains("Settings"));
+    }
+
+    #[test]
+    fn timeout_recovery_mentions_the_diagnostic_action_without_a_route_name() {
+        let message = to_user_message(anyhow::anyhow!("operation timed out"));
+
+        assert!(message.contains("［診断］"));
+        assert!(!message.contains("Voices"));
+        assert!(!message.contains("Settings"));
     }
 }
