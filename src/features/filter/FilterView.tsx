@@ -6,8 +6,9 @@ import {
   SettingsSection,
 } from "../../components/SettingsFormControls";
 import type { AppSettings } from "../../types";
-import { formatRuleList, parseBlockedUserList, parseBlockedWordList } from "../../validation";
 import { focusIndicatorClass } from "../../presentation/focus";
+import { routeHeadingId } from "../../routeAccessibility";
+import { formatRuleList, parseBlockedUserList, parseBlockedWordList } from "../../validation";
 import { defaultSpeechSettings } from "../settings/defaults";
 
 export function FilterView({
@@ -76,7 +77,7 @@ export function FilterView({
     <main className="relative col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold text-zinc-100">Filter</h1>
+          <h1 id={routeHeadingId} tabIndex={-1} className="truncate text-sm font-semibold text-zinc-100">Filter</h1>
           <p className="truncate text-xs text-zinc-400">読み上げるチャットの種類と、除外・省略する条件を設定します</p>
         </div>
       </header>

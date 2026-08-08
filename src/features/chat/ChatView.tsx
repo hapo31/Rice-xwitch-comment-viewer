@@ -3,6 +3,7 @@ import { KeyRound } from "lucide-react";
 import { useRef } from "react";
 import { Link } from "react-router-dom";
 import { getStartupGuideMessages, type StartupGuideMessage } from "../../presentation/startupGuide";
+import { routeHeadingId } from "../../routeAccessibility";
 import type { AppState } from "../../stores/appStore";
 import type { ChatMessage } from "../../types";
 import { ChatBadges } from "./ChatBadges";
@@ -42,7 +43,7 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
     <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold text-zinc-100">Chat</h1>
+          <h1 id={routeHeadingId} tabIndex={-1} className="truncate text-sm font-semibold text-zinc-100">Chat</h1>
           <p className="truncate text-xs text-zinc-400">Twitch チャットの受信状況と読み上げ状態を確認します</p>
         </div>
         <div className="flex items-center gap-3 text-xs text-zinc-400">

@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { formatLogTime } from "../../presentation/logs";
 import type { AppState } from "../../stores/appStore";
 import type { AppLogLevel } from "../../types";
+import { routeHeadingId } from "../../routeAccessibility";
 
 export function LogsView({ state }: { state: AppState }) {
   const scrollParentRef = useRef<HTMLElement | null>(null);
@@ -18,7 +19,7 @@ export function LogsView({ state }: { state: AppState }) {
     <main className="col-start-3 row-start-2 flex min-w-0 flex-col overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold text-zinc-100">Logs</h1>
+          <h1 id={routeHeadingId} tabIndex={-1} className="truncate text-sm font-semibold text-zinc-100">Logs</h1>
           <p className="truncate text-xs text-zinc-400">認証、チャット受信、読み上げ連携の動作ログを確認します</p>
         </div>
         <div className="text-xs text-zinc-400">{state.logs.length} events</div>
