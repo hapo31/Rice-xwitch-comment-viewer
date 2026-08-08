@@ -71,6 +71,10 @@ Settings:
 - emote 読み上げ
 - テスト読み上げ
 
+### 動的な状態通知
+
+接続、認証、読み上げの非同期状態変化と新しい警告は、アプリ全体で一つの視覚的に隠した live region から通知する。通常の状態変化と警告は `role="status"`、即時の復旧判断が必要な認証・接続・読み上げエラーは `role="alert"` を使う。Side Panel と Status Bar の表示要素をそれぞれ live region にせず、同じイベントの二重通知を防ぐ。高頻度のログ追加は live region の対象外とする。
+
 ### Main View
 
 主要な作業領域。
