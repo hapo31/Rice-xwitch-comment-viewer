@@ -77,6 +77,10 @@
 
 調査や作業中に分かった補足情報を記録するファイルです。日付が新しいものほど上に追記してください。
 
+## 2026-08-07
+
+- StatusBar は version literal を持たず、`app_build_info` が `CARGO_PKG_VERSION` を返して動的に表示する。Issue #89 では release-rice とリリース手順の旧 4 箇所更新を 3 manifest に訂正し、`scripts/verify-release-version.sh` で 3 manifest と release tag を照合するようにした。version bump 時は同 script の `--changed-from` で変更対象が 3 manifest だけであることも検証する。
+
 ## 2026-07-14
 
 - Queue view は読み上げ済み・手動スキップ済みの履歴を除外し、待機中・読み上げ中・エラー・フィルター設定による除外だけを表示する役割に整理した。キュー ID の連番で降順に並べ、Chat view と同じく新しい項目が上になる表示方向へ統一した。

@@ -25,10 +25,10 @@ description: Rice の新しいバージョンを非同期にリリースする�
 
 ## 3. バージョンを更新して検証する
 
-1. `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`、`src/components/StatusBar.tsx` を同じ `X.Y.Z` に更新する。
+1. `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` の 3 manifest を同じ `X.Y.Z` に更新する。`StatusBar.tsx` は `app_build_info` の Cargo version を動的表示するため、source の version literal を更新しない。
 2. `cargo check --manifest-path src-tauri/Cargo.toml` で `Cargo.lock` を同期する。
 3. `pnpm test`、`pnpm build`、`cargo test --manifest-path src-tauri/Cargo.toml` を実行する。可能なら `scripts/build-windows-docker.sh` も実行する。省略した検証と理由を報告する。
-4. 差分、4 箇所のバージョン、旧表示の残存、作業ツリーを確認する。
+4. `scripts/verify-release-version.sh "X.Y.Z" --changed-from HEAD` を実行し、version bump の変更対象が 3 manifest だけであることを確認する。差分と作業ツリーも確認する。
 5. バージョン変更だけを `chore: bump version to X.Y.Z` として commit する。ユーザーの別変更を混ぜない。
 6. `git push origin main` の直前に対象 commit を提示し、許可されたリリース作業として push する。push 後、`main...origin/main` が `0 0` であることを確認する。
 
@@ -58,7 +58,7 @@ description: Rice の新しいバージョンを非同期にリリースする�
 
 1. 同名タグが local/remote とも未使用で、`HEAD` と `origin/main` が一致することをもう一度確認する。
 2. `git tag -a "vX.Y.Z" --cleanup=verbatim -F "$notes_file"` で annotated tag を作る。`--cleanup=verbatim` で Markdown 見出しの `#` を保持する。`git tag vX.Y.Z` のような軽量タグは禁止する。
-3. `scripts/verify-release-tag.sh "vX.Y.Z"` を実行し、タグ object であること、対象 commit、annotation message 全文を確認する。
+3. `scripts/verify-release-tag.sh "vX.Y.Z"` と `scripts/verify-release-version.sh "X.Y.Z" --tag "vX.Y.Z"` を実行し、タグ object、対象 commit、annotation message、3 manifest と tag の version 一致を確認する。
 4. 一時ファイルを削除する。削除後も annotation message は Git tag object に保存される。
 5. tag push の直前にタグ名と対象 commit を提示し、許可されたリリース作業として `git push origin "vX.Y.Z"` を実行する。既存タグへの force push は行わない。
 6. GitHub Actions の完了を待たず終了する。タグ名、commit SHA、Actions の確認 URL または `gh run list --workflow release-windows.yml --branch "vX.Y.Z"`、失敗時は `gh run view RUN_ID --log-failed` を表示する。
