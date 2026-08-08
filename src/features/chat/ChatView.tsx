@@ -1,7 +1,8 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { KeyRound } from "lucide-react";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { ChatLiveAnnouncementController } from "../../presentation/chatLiveAnnouncements";
 import { getStartupGuideMessages, type StartupGuideMessage } from "../../presentation/startupGuide";
 import { routeHeadingId } from "../../routeAccessibility";
 import type { AppState } from "../../stores/appStore";
@@ -14,6 +15,49 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
   const startupMessages = showStartupGuide ? getStartupGuideMessages(state, startupReceivedAt.current) : [];
   const messages: Array<ChatMessage | StartupGuideMessage> = [...state.chatMessages, ...startupMessages];
   const scrollParentRef = useRef<HTMLElement | null>(null);
+  const liveAnnouncementController = useRef<ChatLiveAnnouncementController>();
+  const hasInitializedLiveAnnouncements = useRef(false);
+  const liveAnnouncementTimer = useRef<number>();
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const liveChatAnnouncementsEnabled = state.settings?.twitch.liveChatAnnouncements ?? true;
+  if (!liveAnnouncementController.current) {
+    liveAnnouncementController.current = new ChatLiveAnnouncementController();
+  }
+
+  useEffect(() => {
+    const controller = liveAnnouncementController.current!;
+    if (!hasInitializedLiveAnnouncements.current) {
+      controller.initialize(state.chatMessages);
+      hasInitializedLiveAnnouncements.current = true;
+      return;
+    }
+
+    if (!liveChatAnnouncementsEnabled) {
+      controller.suppress(state.chatMessages);
+      if (liveAnnouncementTimer.current !== undefined) {
+        window.clearTimeout(liveAnnouncementTimer.current);
+        liveAnnouncementTimer.current = undefined;
+      }
+      setLiveAnnouncement("");
+      return;
+    }
+
+    if (!controller.queueNewMessages(state.chatMessages) || liveAnnouncementTimer.current !== undefined) {
+      return;
+    }
+
+    setLiveAnnouncement("");
+    liveAnnouncementTimer.current = window.setTimeout(() => {
+      liveAnnouncementTimer.current = undefined;
+      setLiveAnnouncement(controller.takeSummary() ?? "");
+    }, 500);
+  }, [liveChatAnnouncementsEnabled, state.chatMessages]);
+
+  useEffect(() => () => {
+    if (liveAnnouncementTimer.current !== undefined) {
+      window.clearTimeout(liveAnnouncementTimer.current);
+    }
+  }, []);
   const rowVirtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => scrollParentRef.current,
@@ -54,7 +98,17 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
         </div>
       </header>
 
-      <section ref={scrollParentRef} className="h-[calc(100%-3rem)] overflow-x-hidden overflow-y-auto">
+      <p className="sr-only" role="status" aria-atomic="true">
+        {liveAnnouncement}
+      </p>
+      <section
+        ref={scrollParentRef}
+        role="log"
+        aria-label="受信チャット"
+        aria-live="off"
+        aria-relevant="additions text"
+        className="h-[calc(100%-3rem)] overflow-x-hidden overflow-y-auto"
+      >
         <div className="min-w-0">
           <div
             className="sticky top-0 z-10 grid border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400"

@@ -23,6 +23,7 @@ const fallbackSettings: AppSettings = {
     channelLogin: "",
     autoConnect: false,
     confirmBeforeStopChat: true,
+    liveChatAnnouncements: true,
   },
   speech: {
     adapter: "bouyomi",

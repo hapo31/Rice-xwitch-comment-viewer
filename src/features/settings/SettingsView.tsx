@@ -140,6 +140,15 @@ export function SettingsView({
     });
   }
 
+  function updateLiveChatAnnouncements(enabled: boolean) {
+    onSettingsUpdate({
+      twitch: {
+        ...twitchSettings,
+        liveChatAnnouncements: enabled,
+      },
+    });
+  }
+
   async function runDiagnostics() {
     setIsDiagnosing(true);
     try {
@@ -189,6 +198,11 @@ export function SettingsView({
               label="チャット受信停止時に確認する"
               checked={twitchSettings.confirmBeforeStopChat}
               onChange={updateConfirmBeforeStopChat}
+            />
+            <ToggleRow
+              label="新着チャットを支援技術へ通知する"
+              checked={twitchSettings.liveChatAnnouncements}
+              onChange={updateLiveChatAnnouncements}
             />
           </SettingsSection>
 

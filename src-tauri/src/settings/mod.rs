@@ -33,6 +33,8 @@ pub struct TwitchSettings {
     pub auto_connect: bool,
     #[serde(default = "default_confirm_before_stop_chat")]
     pub confirm_before_stop_chat: bool,
+    #[serde(default = "default_live_chat_announcements")]
+    pub live_chat_announcements: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +99,10 @@ fn default_confirm_before_stop_chat() -> bool {
     true
 }
 
+fn default_live_chat_announcements() -> bool {
+    true
+}
+
 fn default_url_handling() -> UrlHandling {
     UrlHandling::Replace
 }
@@ -153,6 +159,7 @@ impl Default for AppSettings {
                 channel_login: String::new(),
                 auto_connect: false,
                 confirm_before_stop_chat: true,
+                live_chat_announcements: true,
             },
             speech: SpeechSettings {
                 adapter: SpeechAdapterKind::Bouyomi,
@@ -192,6 +199,7 @@ pub struct TwitchSettingsPatch {
     pub channel_login: Option<String>,
     pub auto_connect: Option<bool>,
     pub confirm_before_stop_chat: Option<bool>,
+    pub live_chat_announcements: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -568,6 +576,9 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
         if let Some(confirm_before_stop_chat) = twitch.confirm_before_stop_chat {
             settings.twitch.confirm_before_stop_chat = confirm_before_stop_chat;
         }
+        if let Some(live_chat_announcements) = twitch.live_chat_announcements {
+            settings.twitch.live_chat_announcements = live_chat_announcements;
+        }
     }
 
     if let Some(speech) = patch.speech {
@@ -740,6 +751,34 @@ mod tests {
             serde_json::from_value(value).expect("deserialize legacy settings");
 
         assert!(restored.launcher.items.is_empty());
+    }
+
+    #[test]
+    fn legacy_settings_without_live_chat_announcements_enable_it_by_default() {
+        let settings = AppSettings::default();
+        let mut value = serde_json::to_value(settings).expect("serialize default settings");
+        value["twitch"]
+            .as_object_mut()
+            .expect("twitch settings must be an object")
+            .remove("liveChatAnnouncements");
+
+        let restored: AppSettings =
+            serde_json::from_value(value).expect("deserialize legacy settings");
+
+        assert!(restored.twitch.live_chat_announcements);
+    }
+
+    #[test]
+    fn live_chat_announcement_setting_can_be_disabled() {
+        let mut settings = AppSettings::default();
+        let patch: SettingsPatch = serde_json::from_value(serde_json::json!({
+            "twitch": { "liveChatAnnouncements": false }
+        }))
+        .expect("deserialize patch");
+
+        apply_patch(&mut settings, patch).expect("apply patch");
+
+        assert!(!settings.twitch.live_chat_announcements);
     }
 
     #[test]

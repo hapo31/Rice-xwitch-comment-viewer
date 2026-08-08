@@ -4,6 +4,7 @@ export const defaultTwitchSettings: AppSettings["twitch"] = {
   channelLogin: "",
   autoConnect: false,
   confirmBeforeStopChat: true,
+  liveChatAnnouncements: true,
 };
 
 export const defaultSpeechSettings: AppSettings["speech"] = {
