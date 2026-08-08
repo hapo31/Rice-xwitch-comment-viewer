@@ -1,7 +1,7 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { AppWindow, Ellipsis, ExternalLink, Layers3, Plus, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   launcherLaunchSummary,
   launcherTileColor,
@@ -23,6 +23,42 @@ interface LauncherViewProps {
 
 const defaultLauncherNotice = "四角い ＋ ボタン、またはドラッグ＆ドロップでアプリを登録できます。";
 
+export function launcherMenuItemIndex(
+  key: string,
+  currentIndex: number,
+  itemCount: number,
+): number | undefined {
+  if (itemCount === 0) {
+    return undefined;
+  }
+
+  switch (key) {
+    case "ArrowDown":
+      return (currentIndex + 1 + itemCount) % itemCount;
+    case "ArrowUp":
+      return (currentIndex - 1 + itemCount) % itemCount;
+    case "Home":
+      return 0;
+    case "End":
+      return itemCount - 1;
+    default:
+      return undefined;
+  }
+}
+
+export function launcherMenuKeyAction(key: string): "move-focus" | "close" | "close-and-focus-trigger" | undefined {
+  if (["ArrowDown", "ArrowUp", "Home", "End"].includes(key)) {
+    return "move-focus";
+  }
+  if (key === "Escape") {
+    return "close-and-focus-trigger";
+  }
+  if (key === "Tab") {
+    return "close";
+  }
+  return undefined;
+}
+
 export function LauncherView({
   items,
   isReady,
@@ -35,7 +71,33 @@ export function LauncherView({
   const [busyAction, setBusyAction] = useState<string>();
   const [isDragActive, setIsDragActive] = useState(false);
   const [notice, setNotice] = useState(defaultLauncherNotice);
+  const menuTriggers = useRef(new Map<string, HTMLButtonElement>());
+  const focusMenuOnOpen = useRef(false);
   const orderedItems = useMemo(() => sortLauncherItems(items), [items]);
+
+  const openMenu = useCallback((itemId: string, shouldFocusMenu = true) => {
+    focusMenuOnOpen.current = shouldFocusMenu;
+    setOpenMenuId(itemId);
+  }, []);
+
+  const closeMenu = useCallback((shouldRestoreFocus = false) => {
+    const menuId = openMenuId;
+    setOpenMenuId(undefined);
+    if (shouldRestoreFocus && menuId) {
+      menuTriggers.current.get(menuId)?.focus();
+    }
+  }, [openMenuId]);
+
+  useEffect(() => {
+    if (!openMenuId || !focusMenuOnOpen.current) {
+      return;
+    }
+    const firstMenuItem = document
+      .getElementById(`launcher-menu-${openMenuId}`)
+      ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+    firstMenuItem?.focus();
+    focusMenuOnOpen.current = false;
+  }, [openMenuId]);
 
   const addPaths = useCallback(async (paths: string[]) => {
     if (!isReady) {
@@ -107,19 +169,12 @@ export function LauncherView({
     if (!openMenuId) {
       return;
     }
-    const closeMenu = () => setOpenMenuId(undefined);
-    const closeMenuWithEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeMenu();
-      }
-    };
-    document.addEventListener("pointerdown", closeMenu);
-    document.addEventListener("keydown", closeMenuWithEscape);
+    const closeMenuFromOutside = () => closeMenu();
+    document.addEventListener("pointerdown", closeMenuFromOutside);
     return () => {
-      document.removeEventListener("pointerdown", closeMenu);
-      document.removeEventListener("keydown", closeMenuWithEscape);
+      document.removeEventListener("pointerdown", closeMenuFromOutside);
     };
-  }, [openMenuId]);
+  }, [closeMenu, openMenuId]);
 
   async function selectApplications() {
     if (!isDesktopRuntime()) {
@@ -143,7 +198,7 @@ export function LauncherView({
   }
 
   async function launchItem(item: LauncherItem) {
-    setOpenMenuId(undefined);
+    closeMenu();
     setBusyAction(`launch:${item.id}`);
     try {
       const result = await onLaunch(item.id);
@@ -169,7 +224,7 @@ export function LauncherView({
   }
 
   async function removeItem(item: LauncherItem) {
-    setOpenMenuId(undefined);
+    closeMenu();
     setBusyAction(`remove:${item.id}`);
     try {
       await onRemove(item.id);
@@ -236,10 +291,36 @@ export function LauncherView({
                     aria-expanded={isMenuOpen}
                     aria-controls={`launcher-menu-${item.id}`}
                     disabled={Boolean(busyAction)}
+                    ref={(element) => {
+                      if (element) {
+                        menuTriggers.current.set(item.id, element);
+                      } else {
+                        menuTriggers.current.delete(item.id);
+                      }
+                    }}
                     onPointerDown={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => {
+                      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                        event.preventDefault();
+                        openMenu(item.id);
+                        return;
+                      }
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        if (isMenuOpen) {
+                          closeMenu(true);
+                        } else {
+                          openMenu(item.id);
+                        }
+                      }
+                    }}
                     onClick={(event) => {
                       event.stopPropagation();
-                      setOpenMenuId((current) => current === item.id ? undefined : item.id);
+                      if (isMenuOpen) {
+                        closeMenu(true);
+                      } else {
+                        openMenu(item.id);
+                      }
                     }}
                     className="absolute bottom-0 right-0 z-10 flex h-9 w-9 items-center justify-center text-white/80 hover:bg-black/25 hover:text-white disabled:opacity-50"
                   >
@@ -252,6 +333,26 @@ export function LauncherView({
                       role="menu"
                       aria-label={`${item.displayName} の操作`}
                       onPointerDown={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => {
+                        const action = launcherMenuKeyAction(event.key);
+                        const menuItems = [...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                          '[role="menuitem"]:not(:disabled)',
+                        )];
+                        const currentIndex = menuItems.indexOf(document.activeElement as HTMLButtonElement);
+                        const nextIndex = launcherMenuItemIndex(event.key, currentIndex, menuItems.length);
+                        if (action === "move-focus" && nextIndex !== undefined) {
+                          event.preventDefault();
+                          menuItems[nextIndex]?.focus();
+                          return;
+                        }
+                        if (action === "close-and-focus-trigger") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          closeMenu(true);
+                        } else if (action === "close") {
+                          closeMenu();
+                        }
+                      }}
                       className="absolute bottom-8 right-1 z-30 min-w-32 border border-zinc-700 bg-zinc-850 py-1 text-zinc-100 shadow-xl"
                     >
                       <button
