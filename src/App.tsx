@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { ActivityBar } from "./components/ActivityBar";
 import { MainView } from "./components/MainView";
@@ -516,7 +516,7 @@ export function App() {
     }
   }
 
-  async function handleLauncherAdd(paths: string[]) {
+  const handleLauncherAdd = useCallback(async (paths: string[]) => {
     try {
       const items = await launcherAdd(paths);
       dispatch({ type: "launcher.changed", items });
@@ -525,7 +525,7 @@ export function App() {
       reportError(error);
       throw error;
     }
-  }
+  }, []);
 
   async function handleLauncherRemove(itemId: string) {
     try {
