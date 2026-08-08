@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "pnpm run typecheck",
     "preview": "vite preview",
     "tauri": "tauri"
   },

@@ -868,10 +868,10 @@ pub async fn twitch_poll_auth(
                     AppLogLevel::Info,
                     format!("Twitch に {} としてログインしました。", profile.login),
                 );
-                return Ok(TwitchAuthPollResult::Authorized {
+                Ok(TwitchAuthPollResult::Authorized {
                     profile,
                     storage_warning,
-                });
+                })
             }
         }
         Err(PollAuthError::Pending) => Ok(TwitchAuthPollResult::Pending {
