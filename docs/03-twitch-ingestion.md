@@ -44,6 +44,7 @@ Device Code Flowの利点:
 
 - refresh tokenは使い回し不可の前提で、更新に成功したら保存済みrefresh tokenを必ず差し替える。
 - `/validate` でトークン有効性を確認する。
+- `/validate` の `scopes` に必須の `user:read:chat` が含まれることを、初回認証・保存済み認証の復元・refresh 後のすべてで確認する。不足時は `authRequired` の machine-readable な理由を `missingRequiredScope` とし、不足 scope 名と Login から再ログインして許可する手順を UI に表示する。scope 不足の認証状態では EventSub 接続 task を開始しない。
 - 認可取り消しや401時はUIに再ログインを促す。
 - access tokenとrefresh tokenはOS keyringに保存し、設定JSONには含めない。
 - keyring保存に失敗した場合は OS を問わずログイン状態をメモリ上で継続する。ただし access token と refresh token の平文ファイルや設定JSONは作成せず、UIへ「今回の起動中だけ有効」「再起動後は再ログインが必要」と警告する。

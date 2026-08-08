@@ -199,10 +199,13 @@ export interface AppNotification {
 
 export type TwitchConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "authRequired" | "error";
 
+export type TwitchAuthRequiredReason = "missingRequiredScope";
+
 export type TwitchChatConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "authRequired" | "error";
 
 export interface TwitchStatusEvent {
   status: TwitchConnectionStatus;
+  reason?: TwitchAuthRequiredReason;
   message?: string;
   occurredAtMs: number;
 }
