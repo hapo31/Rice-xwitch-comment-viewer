@@ -418,13 +418,16 @@ impl TwitchAuthState {
         })
     }
 
-    fn replace_token(&mut self, token: TokenResponse) -> anyhow::Result<String> {
-        let scopes = token_scopes(
-            token.scope,
-            self.profile.as_ref().ok_or_else(|| {
-                anyhow::anyhow!("Twitch のユーザー情報がありません。認証を確認してください。")
-            })?,
-        );
+    fn replace_token(
+        &mut self,
+        token: TokenResponse,
+        profile: TwitchUserProfile,
+    ) -> anyhow::Result<String> {
+        // A refresh response can omit `scope`.  The profile obtained by validating the
+        // newly-issued access token is therefore the authoritative source here; do
+        // not retain the scopes of the token that was just rejected by EventSub.
+        ensure_required_twitch_scopes(&profile.scopes)?;
+        let scopes = token_scopes(token.scope, &profile);
         let access_token = token.access_token.clone();
         self.token = Some(TwitchToken {
             access_token,
@@ -432,6 +435,7 @@ impl TwitchAuthState {
             scopes,
             expires_in: token.expires_in,
         });
+        self.profile = Some(profile);
         Ok(token.access_token)
     }
 }
@@ -1628,6 +1632,22 @@ async fn refresh_eventsub_access_token(
             }
         };
 
+    let refreshed_profile = match validate_access_token(&refreshed.access_token).await {
+        Ok(validate) => TwitchUserProfile::from(validate),
+        Err(error) => {
+            let message = to_twitch_user_message(error);
+            clear_eventsub_auth(app, &message)?;
+            return Err(anyhow::anyhow!(message));
+        }
+    };
+    if let Err(error) = ensure_required_twitch_scopes(&refreshed_profile.scopes) {
+        let message = error.to_string();
+        let state = app.state::<AppState>();
+        clear_missing_scope_twitch_auth(&state, app, &message)
+            .map_err(|error| anyhow::anyhow!(error))?;
+        return Err(anyhow::anyhow!(message));
+    }
+
     let (access_token, storage_warning, did_refresh) = {
         let state = app.state::<AppState>();
         let mut auth = state
@@ -1638,7 +1658,7 @@ async fn refresh_eventsub_access_token(
         if current_credentials.refresh_token != credentials.refresh_token {
             (current_credentials.access_token, None, false)
         } else {
-            let access_token = auth.replace_token(refreshed)?;
+            let access_token = auth.replace_token(refreshed, refreshed_profile)?;
             let storage_warning = save_or_storage_warning(&auth);
             (access_token, storage_warning, true)
         }
@@ -2246,12 +2266,21 @@ mod tests {
             "access-token"
         );
 
-        auth.replace_token(TokenResponse {
-            access_token: "refreshed-access-token".to_string(),
-            refresh_token: "rotated-refresh-token".to_string(),
-            scope: vec!["user:read:chat".to_string()],
-            expires_in: 7200,
-        })
+        auth.replace_token(
+            TokenResponse {
+                access_token: "refreshed-access-token".to_string(),
+                refresh_token: "rotated-refresh-token".to_string(),
+                scope: vec!["user:read:chat".to_string()],
+                expires_in: 7200,
+            },
+            TwitchUserProfile {
+                user_id: "user-id".to_string(),
+                login: "viewer".to_string(),
+                client_id: "client-id".to_string(),
+                scopes: vec!["user:read:chat".to_string()],
+                expires_in: 7200,
+            },
+        )
         .unwrap();
 
         let stored = auth.stored_auth().unwrap();
@@ -2274,6 +2303,37 @@ mod tests {
             serde_json::from_str::<StoredTwitchAuth>(secure.secret.borrow().as_deref().unwrap())
                 .unwrap();
         assert_eq!(persisted.refresh_token, "rotated-refresh-token");
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn eventsub_refresh_rejects_a_new_token_without_chat_read_scope() {
+        let mut auth = twitch_auth_state();
+        let error = auth
+            .replace_token(
+                TokenResponse {
+                    access_token: "refreshed-access-token".to_string(),
+                    refresh_token: "rotated-refresh-token".to_string(),
+                    // Twitch can omit scope from a refresh response, so this must not
+                    // fall back to the previously stored profile's scopes.
+                    scope: Vec::new(),
+                    expires_in: 7200,
+                },
+                TwitchUserProfile {
+                    user_id: "user-id".to_string(),
+                    login: "viewer".to_string(),
+                    client_id: "client-id".to_string(),
+                    scopes: scopes_without_chat_read(),
+                    expires_in: 7200,
+                },
+            )
+            .unwrap_err();
+
+        assert!(error.to_string().contains("user:read:chat"));
+        assert_eq!(
+            auth.eventsub_credentials().unwrap().access_token,
+            "access-token"
+        );
     }
 
     #[test]
