@@ -4,22 +4,12 @@ on:
   pull_request:
     paths:
       - ".devcontainer/**"
-      - "scripts/verify-devcontainer-bootstrap.sh"
       - ".github/workflows/devcontainer-bootstrap.yml"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "src-tauri/Cargo.toml"
-      - "src-tauri/Cargo.lock"
   push:
     branches: [main]
     paths:
       - ".devcontainer/**"
-      - "scripts/verify-devcontainer-bootstrap.sh"
       - ".github/workflows/devcontainer-bootstrap.yml"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "src-tauri/Cargo.toml"
-      - "src-tauri/Cargo.lock"
   workflow_dispatch:
 
 permissions:

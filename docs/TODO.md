@@ -120,6 +120,7 @@
 
 - [x] `main` 向け PR で frontend/Rust の unit test と lint を並列実行する read-only GitHub Actions workflow を追加する。
 - [x] PR 作成時と手動 dispatch 時だけ dev build を実行し、結果を job summary へ出す workflow を追加する。
+- [x] devcontainer bootstrap 検証は `.devcontainer/**` または workflow 自体を変更したときだけ実行する。
 - [ ] GitHub の `main` branch protection / ruleset で「PR quality / Frontend unit tests」「PR quality / Rust unit tests」「PR quality / Frontend typecheck」「PR quality / Rust format and clippy」「PR dev build / Dev build」を required status checks に登録する（リポジトリ管理権限が必要）。
 - [x] Issue #16: 接続・認証・読み上げの非同期状態変化を、重複を抑制した live region で支援技術へ通知する。
 - [x] Issue #17: Space / S / Cmd/Ctrl+, による配信向け読み上げ操作と Settings 遷移を追加し、入力中・IME 変換中・キーリピート時は無効化する。
