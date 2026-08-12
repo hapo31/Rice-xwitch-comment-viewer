@@ -5,6 +5,7 @@ import type {
   AuthStatus,
   ChatMessage,
   QueueItem,
+  QueueDisplayState,
   SpeechStatus,
   TwitchChatConnectionStatus,
   TwitchDeviceAuthStart,
@@ -68,10 +69,14 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "chat.message":
       return {
         ...state,
-        chatMessages: [action.message, ...state.chatMessages].slice(0, 200),
+        chatMessages: [syncChatMessageStatus(action.message, state.queueItems), ...state.chatMessages].slice(0, 200),
       };
     case "queue.changed":
-      return { ...state, queueItems: action.items };
+      return {
+        ...state,
+        queueItems: action.items,
+        chatMessages: syncChatMessageStatuses(state.chatMessages, action.items),
+      };
     case "launcher.changed":
       return state.settings
         ? {
@@ -121,6 +126,44 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     default:
       return state;
   }
+}
+
+export function chatStatusFromQueueStatus(status: QueueDisplayState): Extract<ChatMessage, { kind: "user" }>["status"] {
+  return status === "speaking" ? "queued" : status;
+}
+
+function syncChatMessageStatuses(messages: ChatMessage[], queueItems: QueueItem[]): ChatMessage[] {
+  const statusByMessageId = queueStatusByMessageId(queueItems);
+  let changed = false;
+  const updatedMessages = messages.map((message) => {
+    if (message.kind !== "user") {
+      return message;
+    }
+    const status = statusByMessageId.get(message.id);
+    if (!status || status === message.status) {
+      return message;
+    }
+    changed = true;
+    return { ...message, status };
+  });
+
+  return changed ? updatedMessages : messages;
+}
+
+function syncChatMessageStatus(message: ChatMessage, queueItems: QueueItem[]): ChatMessage {
+  if (message.kind !== "user") {
+    return message;
+  }
+  const status = queueStatusByMessageId(queueItems).get(message.id);
+  return status && status !== message.status ? { ...message, status } : message;
+}
+
+function queueStatusByMessageId(queueItems: QueueItem[]) {
+  return new Map(
+    queueItems.flatMap((item) =>
+      item.sourceMessageId ? [[item.sourceMessageId, chatStatusFromQueueStatus(item.status)] as const] : [],
+    ),
+  );
 }
 
 export function warningNotifications(notifications: AppNotification[]): AppNotification[] {

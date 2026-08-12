@@ -50,6 +50,67 @@ describe("appReducer", () => {
     expect(state.queueItems).toEqual(items);
   });
 
+  it("synchronizes queue results to their source chat messages without changing system rows", () => {
+    const state = {
+      ...initialAppState,
+      chatMessages: [
+        chatMessage("queued"),
+        chatMessage("spoken"),
+        chatMessage("skipped"),
+        chatMessage("blocked"),
+        chatMessage("error"),
+        { kind: "system" as const, id: "system", receivedAt: "2026-05-23T00:00:00Z", userDisplayName: "system" as const, text: "接続しました" },
+      ],
+    };
+    const items: QueueItem[] = [
+      { id: "1", sourceMessageId: "queued", userDisplayName: "viewer", text: "", status: "speaking" },
+      { id: "2", sourceMessageId: "spoken", userDisplayName: "viewer", text: "", status: "spoken" },
+      { id: "3", sourceMessageId: "skipped", userDisplayName: "viewer", text: "", status: "skipped" },
+      { id: "4", sourceMessageId: "blocked", userDisplayName: "viewer", text: "", status: "blocked" },
+      { id: "5", sourceMessageId: "error", userDisplayName: "viewer", text: "", status: "error" },
+    ];
+
+    const updated = appReducer(state, { type: "queue.changed", items });
+
+    expect(updated.chatMessages.slice(0, 5).map((message) => message.kind === "user" && message.status)).toEqual([
+      "queued", "spoken", "skipped", "blocked", "error",
+    ]);
+    expect(updated.chatMessages[5]).toEqual(state.chatMessages[5]);
+  });
+
+  it("uses a previously received queue snapshot when its source chat message arrives later", () => {
+    const queued = appReducer(initialAppState, {
+      type: "queue.changed",
+      items: [{ id: "speech", sourceMessageId: "blocked", userDisplayName: "viewer", text: "", status: "blocked" }],
+    });
+
+    const updated = appReducer(queued, { type: "chat.message", message: chatMessage("blocked") });
+
+    expect(updated.chatMessages[0]).toMatchObject({ id: "blocked", status: "blocked" });
+  });
+
+  it("keeps skipped queue history synchronized after a queue clear snapshot", () => {
+    const messageIds = Array.from({ length: 200 }, (_, index) => `cleared-${index}`);
+    const withQueuedMessages = messageIds.reduce(
+      (state, id) => appReducer(state, { type: "chat.message", message: chatMessage(id) }),
+      initialAppState,
+    );
+
+    const updated = appReducer(withQueuedMessages, {
+      type: "queue.changed",
+      items: messageIds.map((sourceMessageId, index) => ({
+        id: `speech-${index}`,
+        sourceMessageId,
+        userDisplayName: "viewer",
+        text: "",
+        status: "skipped" as const,
+      })),
+    });
+
+    expect(updated.chatMessages).toHaveLength(200);
+    expect(updated.chatMessages.every((message) => message.kind === "user" && message.status === "skipped")).toBe(true);
+  });
+
   it("replaces launcher items without changing the other settings", () => {
     const settings = {
       twitch: { channelLogin: "rice", autoConnect: false, confirmBeforeStopChat: true },

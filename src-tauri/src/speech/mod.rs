@@ -57,7 +57,10 @@ pub trait SpeechAdapter: Send + Sync {
 }
 
 const DEFAULT_QUEUE_LIMIT: usize = 200;
-const DEFAULT_HISTORY_LIMIT: usize = 50;
+// Keep one full queue worth of terminal states. This preserves the status of every
+// item after a user clears the maximum-sized pending queue, so the Chat timeline
+// cannot continue to show removed items as waiting.
+const DEFAULT_HISTORY_LIMIT: usize = DEFAULT_QUEUE_LIMIT;
 const DEFAULT_MAX_COMMENT_LENGTH: usize = 120;
 const DEFAULT_REPEAT_SUPPRESSION_SECONDS: u64 = 2;
 const RETRY_DELAY: Duration = Duration::from_millis(700);
@@ -114,7 +117,10 @@ enum SpeechQueueFailureTransition {
 
 impl SpeechQueueState {
     fn clear_pending(&mut self) {
-        self.pending.clear();
+        while let Some(mut item) = self.pending.pop_front() {
+            item.status = SpeechQueueItemStatus::Skipped;
+            push_history(self, item);
+        }
     }
 
     fn remove_pending_item(&mut self, item_id: &str) -> bool {
@@ -949,6 +955,22 @@ mod tests {
         assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Skipped);
         assert_eq!(queue.history[1].id, "blocked");
         assert!(!queue.remove_pending_item("blocked"));
+    }
+
+    #[test]
+    fn clearing_pending_items_preserves_skipped_history_for_status_consumers() {
+        let mut queue = SpeechQueueState::default();
+        for index in 0..DEFAULT_QUEUE_LIMIT {
+            queue.pending.push_back(queued_item(&format!("item-{index}")));
+        }
+
+        queue.clear_pending();
+
+        assert!(queue.pending.is_empty());
+        assert_eq!(queue.history.len(), DEFAULT_QUEUE_LIMIT);
+        assert!(queue.history.iter().all(|item| item.status == SpeechQueueItemStatus::Skipped));
+        assert_eq!(queue.history[0].id, "item-199");
+        assert_eq!(queue.history[DEFAULT_QUEUE_LIMIT - 1].id, "item-0");
     }
 
     #[test]
