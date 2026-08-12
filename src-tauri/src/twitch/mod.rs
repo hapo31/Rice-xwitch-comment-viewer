@@ -361,13 +361,6 @@ impl TwitchAuthState {
         self.generation
     }
 
-    fn begin_generation(&mut self) -> u64 {
-        self.invalidate_operations();
-        self.token = None;
-        self.profile = None;
-        self.generation
-    }
-
     fn pending_is_current(&self, generation: u64) -> bool {
         self.generation == generation && self.pending.is_some()
     }
@@ -2321,7 +2314,9 @@ mod tests {
         });
         let stale_generation = auth.generation;
 
-        let current_generation = auth.begin_generation();
+        let current_generation = auth.invalidate_operations();
+        auth.token = None;
+        auth.profile = None;
 
         assert_ne!(stale_generation, current_generation);
         assert!(!auth.pending_is_current(stale_generation));

@@ -370,6 +370,7 @@ export function App() {
       if (!authOperations.current.isCurrent(operation)) return;
       dispatch({ type: "twitch.authPrompt", prompt });
       dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
+      dispatch({ type: "twitch.profile", profile: undefined });
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       reportInfo("Twitch の認証コードを発行しました。");
     } catch (error) {
