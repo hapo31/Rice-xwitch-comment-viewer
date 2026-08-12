@@ -11,7 +11,7 @@ describe("system timeline routing", () => {
 
   it("uses the event domain rather than localized message text", () => {
     expect(timelineEventFromTwitchStatus({ domain: "auth", status: "connected", message: "ログイン完了", occurredAtMs: 1 })).toMatchObject({ source: "twitch-auth" });
-    expect(timelineEventFromTwitchStatus({ domain: "chat", status: "connected", message: "受信を開始しました", occurredAtMs: 1 })).toBeUndefined();
+    expect(timelineEventFromTwitchStatus({ domain: "chat", status: "connected", message: "受信を開始しました", occurredAtMs: 1 })).toMatchObject({ source: "twitch-connection", transition: "connected" });
   });
 
   it("deduplicates an unchanged transition and records recovery after a change", () => {

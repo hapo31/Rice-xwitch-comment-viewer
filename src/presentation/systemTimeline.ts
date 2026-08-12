@@ -22,10 +22,7 @@ export function timelineEventFromTwitchStatus(event: TwitchStatusEvent): SystemT
   if (!message || /keepalive/i.test(message)) return undefined;
 
   const source = event.domain === "auth" ? "twitch-auth" : "twitch-connection";
-  const isOperational = source === "twitch-auth" || /EventSub|チャット受信|Twitch チャンネル|チャンネル .*接続/.test(message);
-  return isOperational
-    ? { source, transition: source === "twitch-auth" ? `${event.status}:${message}` : event.status, message }
-    : undefined;
+  return { source, transition: source === "twitch-auth" ? `${event.status}:${message}` : event.status, message };
 }
 
 export function speechRecoveryTimelineEvent(message: string, status: SpeechStatus): SystemTimelineEvent {

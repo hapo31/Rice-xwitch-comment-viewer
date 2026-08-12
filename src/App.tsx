@@ -219,7 +219,7 @@ export function App() {
         if (event.domain === "chat") {
           dispatch({ type: "twitch.connectionStatus", status: event.status });
         }
-        if (event.domain === "auth" && event.status === "authRequired") {
+        if (event.status === "authRequired") {
           dispatch({ type: "twitch.authStatus", status: "expired" });
         }
         if (event.message && (event.status === "authRequired" || event.status === "error")) {

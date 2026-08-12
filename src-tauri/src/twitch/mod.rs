@@ -1536,6 +1536,14 @@ async fn run_eventsub_session(
                                 "Twitch EventSub 購読が取り消されました。再ログインしてください: {reason}"
                             )),
                         );
+                        emit_twitch_status(
+                            app,
+                            TwitchStatusDomain::Auth,
+                            TwitchStatus::AuthRequired,
+                            Some(format!(
+                                "Twitch EventSub 購読が取り消されたため、再ログインしてください: {reason}"
+                            )),
+                        );
                         return Err(anyhow::anyhow!(
                             "Twitch EventSub 購読が取り消されました: {reason}"
                         ));

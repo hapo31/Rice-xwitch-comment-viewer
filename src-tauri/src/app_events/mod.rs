@@ -201,3 +201,29 @@ fn current_timestamp_ms() -> u64 {
         Err(_) => 0,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serializes_twitch_status_domain_as_camel_case() {
+        let auth = TwitchStatusEvent {
+            domain: TwitchStatusDomain::Auth,
+            status: TwitchStatus::Connected,
+            reason: None,
+            message: None,
+            occurred_at_ms: 1,
+        };
+        let chat = TwitchStatusEvent {
+            domain: TwitchStatusDomain::Chat,
+            status: TwitchStatus::Reconnecting,
+            reason: None,
+            message: None,
+            occurred_at_ms: 1,
+        };
+
+        assert_eq!(serde_json::to_value(auth).unwrap()["domain"], "auth");
+        assert_eq!(serde_json::to_value(chat).unwrap()["domain"], "chat");
+    }
+}
