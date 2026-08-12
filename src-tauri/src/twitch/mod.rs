@@ -355,9 +355,14 @@ impl From<ValidateResponse> for TwitchUserProfile {
 }
 
 impl TwitchAuthState {
-    fn begin_generation(&mut self) -> u64 {
+    fn invalidate_operations(&mut self) -> u64 {
         self.generation = self.generation.wrapping_add(1);
         self.pending = None;
+        self.generation
+    }
+
+    fn begin_generation(&mut self) -> u64 {
+        self.invalidate_operations();
         self.token = None;
         self.profile = None;
         self.generation
@@ -784,7 +789,7 @@ pub async fn twitch_start_auth(
             .twitch_auth
             .lock()
             .map_err(|error| error.to_string())?;
-        auth.begin_generation()
+        auth.invalidate_operations()
     };
 
     let response = request_device_code(&client_id)
@@ -811,6 +816,8 @@ pub async fn twitch_start_auth(
             "新しい Twitch 認証操作が開始されたため、古い認証コードを破棄しました。".to_string(),
         );
     }
+    auth.token = None;
+    auth.profile = None;
     auth.pending = Some(PendingDeviceAuth {
         generation,
         poll_in_flight: false,
