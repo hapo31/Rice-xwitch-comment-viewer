@@ -216,12 +216,7 @@ export function App() {
       }),
       () =>
       subscribeTwitchStatusEvents((event) => {
-        const message = event.message ?? "";
-        const isChatConnectionEvent =
-          message.includes("チャンネル") ||
-          message.includes("チャット受信") ||
-          message.includes("EventSub");
-        if (isChatConnectionEvent) {
+        if (event.domain === "chat") {
           dispatch({ type: "twitch.connectionStatus", status: event.status });
         }
         if (event.status === "authRequired") {

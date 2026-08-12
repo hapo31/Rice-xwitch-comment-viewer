@@ -200,10 +200,12 @@ export interface AppNotification {
 export type TwitchConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "authRequired" | "error";
 
 export type TwitchAuthRequiredReason = "missingRequiredScope";
+export type TwitchStatusDomain = "auth" | "chat";
 
 export type TwitchChatConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "authRequired" | "error";
 
 export interface TwitchStatusEvent {
+  domain: TwitchStatusDomain;
   status: TwitchConnectionStatus;
   reason?: TwitchAuthRequiredReason;
   message?: string;

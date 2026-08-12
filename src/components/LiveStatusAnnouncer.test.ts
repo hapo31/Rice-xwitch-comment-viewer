@@ -51,4 +51,15 @@ describe("getLiveStatusAnnouncement", () => {
       }),
     ).toEqual({ message: "Twitch 接続: 接続エラー", priority: "alert" });
   });
+
+  it("announces authentication expiry once when a chat subscription is revoked", () => {
+    const chatRevoked = { ...initial, twitchConnectionStatus: "authRequired" as const };
+    const authRevoked = { ...chatRevoked, twitchAuthStatus: "expired" as const };
+
+    expect(getLiveStatusAnnouncement(initial, chatRevoked)).toBeUndefined();
+    expect(getLiveStatusAnnouncement(chatRevoked, authRevoked)).toEqual({
+      message: "Twitch 認証: 再ログイン必要",
+      priority: "alert",
+    });
+  });
 });

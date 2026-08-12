@@ -34,6 +34,27 @@ describe("appReducer", () => {
     expect(state.chatMessages[0]).toMatchObject({ kind: "system", userDisplayName: "system" });
   });
 
+  it("keeps authentication and chat connection transitions independent", () => {
+    const authenticated = appReducer(initialAppState, { type: "twitch.authStatus", status: "authenticated" });
+    const chatConnected = appReducer(authenticated, { type: "twitch.connectionStatus", status: "connected" });
+    const authExpired = appReducer(chatConnected, { type: "twitch.authStatus", status: "expired" });
+
+    expect(chatConnected).toMatchObject({ twitchAuthStatus: "authenticated", twitchConnectionStatus: "connected" });
+    expect(authExpired).toMatchObject({ twitchAuthStatus: "expired", twitchConnectionStatus: "connected" });
+  });
+
+  it("represents an EventSub revocation as both a chat and authentication failure", () => {
+    const connected = {
+      ...initialAppState,
+      twitchAuthStatus: "authenticated" as const,
+      twitchConnectionStatus: "connected" as const,
+    };
+    const chatRevoked = appReducer(connected, { type: "twitch.connectionStatus", status: "authRequired" });
+    const authRevoked = appReducer(chatRevoked, { type: "twitch.authStatus", status: "expired" });
+
+    expect(authRevoked).toMatchObject({ twitchAuthStatus: "expired", twitchConnectionStatus: "authRequired" });
+  });
+
   it("replaces queue items from speech queue events", () => {
     const items: QueueItem[] = [
       {

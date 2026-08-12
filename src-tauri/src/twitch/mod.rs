@@ -1,7 +1,7 @@
 #[cfg(feature = "app")]
 use crate::app_events::{
     emit_app_log, emit_twitch_auth_required, emit_twitch_chat_message, emit_twitch_status,
-    AppLogLevel, TwitchAuthRequiredReason, TwitchStatus,
+    AppLogLevel, TwitchAuthRequiredReason, TwitchStatus, TwitchStatusDomain,
 };
 #[cfg(feature = "app")]
 use crate::settings::{default_twitch_client_id, AppState};
@@ -792,6 +792,7 @@ pub async fn twitch_start_auth(
     auth.profile = None;
     emit_twitch_status(
         &app,
+        TwitchStatusDomain::Auth,
         TwitchStatus::AuthRequired,
         Some("Twitch 認証コードを発行しました。".to_string()),
     );
@@ -857,6 +858,7 @@ pub async fn twitch_poll_auth(
                 let storage_warning = save_or_storage_warning(&auth);
                 emit_twitch_status(
                     &app,
+                    TwitchStatusDomain::Auth,
                     TwitchStatus::Connected,
                     Some(format!(
                         "Twitch に {} としてログインしました。",
@@ -878,6 +880,7 @@ pub async fn twitch_poll_auth(
             message: {
                 emit_twitch_status(
                     &app,
+                    TwitchStatusDomain::Auth,
                     TwitchStatus::Connecting,
                     Some("Twitch の認可完了を待っています。".to_string()),
                 );
@@ -896,6 +899,7 @@ pub async fn twitch_poll_auth(
             }
             emit_twitch_status(
                 &app,
+                TwitchStatusDomain::Auth,
                 TwitchStatus::Connecting,
                 Some("Twitch 認証の確認間隔を延長しました。".to_string()),
             );
@@ -908,6 +912,7 @@ pub async fn twitch_poll_auth(
             message: {
                 emit_twitch_status(
                     &app,
+                    TwitchStatusDomain::Auth,
                     TwitchStatus::AuthRequired,
                     Some("Twitch 認証がキャンセルされました。".to_string()),
                 );
@@ -923,6 +928,7 @@ pub async fn twitch_poll_auth(
             message: {
                 emit_twitch_status(
                     &app,
+                    TwitchStatusDomain::Auth,
                     TwitchStatus::AuthRequired,
                     Some("Twitch 認証コードの期限が切れました。".to_string()),
                 );
@@ -936,7 +942,12 @@ pub async fn twitch_poll_auth(
         }),
         Err(PollAuthError::Other(error)) => {
             let message = to_twitch_user_message(error);
-            emit_twitch_status(&app, TwitchStatus::Error, Some(message.clone()));
+            emit_twitch_status(
+                &app,
+                TwitchStatusDomain::Auth,
+                TwitchStatus::Error,
+                Some(message.clone()),
+            );
             emit_app_log(&app, AppLogLevel::Error, message.clone());
             Err(message)
         }
@@ -1023,6 +1034,7 @@ pub async fn twitch_validate_auth(
             let storage_warning = save_or_storage_warning(&auth);
             emit_twitch_status(
                 &app,
+                TwitchStatusDomain::Auth,
                 TwitchStatus::Connected,
                 Some("Twitch 認証を更新しました。".to_string()),
             );
@@ -1042,6 +1054,7 @@ pub async fn twitch_validate_auth(
     let storage_warning = save_or_storage_warning(&auth);
     emit_twitch_status(
         &app,
+        TwitchStatusDomain::Auth,
         TwitchStatus::Connected,
         Some("Twitch 認証は有効です。".to_string()),
     );
@@ -1140,6 +1153,7 @@ pub async fn twitch_connect(
 
     emit_twitch_status(
         &app,
+        TwitchStatusDomain::Chat,
         TwitchStatus::Connecting,
         Some(format!(
             "Twitch チャンネル {} に接続しています。",
@@ -1166,6 +1180,7 @@ pub fn twitch_disconnect(
     clear_twitch_auth_state(&state)?;
     emit_twitch_status(
         &app,
+        TwitchStatusDomain::Auth,
         TwitchStatus::Disconnected,
         Some("Twitch 連携を解除しました。".to_string()),
     );
@@ -1202,7 +1217,12 @@ fn clear_invalid_twitch_auth(
 ) -> Result<(), String> {
     clear_twitch_auth_state(state)?;
     let message = format!("Twitch 認証が無効なため、認証状態を解除しました: {error_message}");
-    emit_twitch_status(app, TwitchStatus::AuthRequired, Some(message.clone()));
+    emit_twitch_status(
+        app,
+        TwitchStatusDomain::Auth,
+        TwitchStatus::AuthRequired,
+        Some(message.clone()),
+    );
     emit_app_log(app, AppLogLevel::Warning, message);
     Ok(())
 }
@@ -1241,6 +1261,7 @@ pub fn twitch_stop_chat(
 
     emit_twitch_status(
         &app,
+        TwitchStatusDomain::Chat,
         TwitchStatus::Disconnected,
         Some(if stopped {
             "Twitch チャット受信を停止しました。".to_string()
@@ -1392,6 +1413,7 @@ async fn run_eventsub_connection(
                 subscribe_on_welcome = false;
                 emit_twitch_status(
                     &app,
+                    TwitchStatusDomain::Chat,
                     TwitchStatus::Reconnecting,
                     Some("Twitch から再接続要求を受け取りました。".to_string()),
                 );
@@ -1404,7 +1426,10 @@ async fn run_eventsub_connection(
             Err(error) => {
                 let error_message = error.to_string();
                 if error_message.contains("購読が取り消されました") {
-                    emit_app_log(&app, AppLogLevel::Error, error_message);
+                    // The accompanying authRequired status carries the single user-facing
+                    // recovery notification. Keep the terminal detail in Logs without
+                    // producing a second warning in the renderer.
+                    emit_app_log(&app, AppLogLevel::Info, error_message);
                     break;
                 }
                 retry_attempt = retry_attempt.saturating_add(1);
@@ -1413,7 +1438,12 @@ async fn run_eventsub_connection(
                     "Twitch EventSub が切断されました。{} 秒後に再接続します: {error}",
                     wait_seconds
                 );
-                emit_twitch_status(&app, TwitchStatus::Reconnecting, Some(message.clone()));
+                emit_twitch_status(
+                    &app,
+                    TwitchStatusDomain::Chat,
+                    TwitchStatus::Reconnecting,
+                    Some(message.clone()),
+                );
                 emit_app_log(&app, AppLogLevel::Warning, message);
                 tokio::time::sleep(Duration::from_secs(wait_seconds)).await;
                 url = TWITCH_EVENTSUB_WS_URL.to_string();
@@ -1433,6 +1463,7 @@ async fn run_eventsub_session(
 ) -> anyhow::Result<EventSubSessionExit> {
     emit_twitch_status(
         app,
+        TwitchStatusDomain::Chat,
         TwitchStatus::Connecting,
         Some(format!(
             "Twitch チャンネル {} に接続しています。",
@@ -1468,6 +1499,7 @@ async fn run_eventsub_session(
                         }
                         emit_twitch_status(
                             app,
+                            TwitchStatusDomain::Chat,
                             TwitchStatus::Connected,
                             Some(format!(
                                 "Twitch チャンネル {} に接続しました。",
@@ -1516,9 +1548,16 @@ async fn run_eventsub_session(
                             .unwrap_or_else(|| "理由不明".to_string());
                         emit_twitch_status(
                             app,
+                            TwitchStatusDomain::Chat,
+                            TwitchStatus::AuthRequired,
+                            None,
+                        );
+                        emit_twitch_status(
+                            app,
+                            TwitchStatusDomain::Auth,
                             TwitchStatus::AuthRequired,
                             Some(format!(
-                                "Twitch EventSub 購読が取り消されました。再ログインしてください: {reason}"
+                                "Twitch EventSub 購読が取り消されたため、再ログインしてください: {reason}"
                             )),
                         );
                         return Err(anyhow::anyhow!(
