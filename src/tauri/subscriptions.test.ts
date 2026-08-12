@@ -70,4 +70,13 @@ describe("subscribeWithCleanup", () => {
 
     expect(onError).toHaveBeenCalledOnce();
   });
+
+  it("cleans every registration even when they return the same unlisten function", async () => {
+    const unlisten = vi.fn();
+    const dispose = subscribeWithCleanup([async () => unlisten, async () => unlisten]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    dispose();
+
+    expect(unlisten).toHaveBeenCalledTimes(2);
+  });
 });

@@ -26,36 +26,24 @@ type DragDropSubscribe = (
 export function subscribeLauncherDragDrop(
   subscribe: DragDropSubscribe,
   handlersRef: MutableRef<LauncherDragDropHandlers>,
+  onError?: (error: unknown) => void,
 ): () => void {
-  let disposed = false;
-  let unlisten: (() => void) | undefined;
-
-  void subscribe((event) => {
-    const handlers = handlersRef.current;
-    switch (event.payload.type) {
-      case "enter":
-        handlers.onEnter();
-        break;
-      case "over":
-        handlers.onOver();
-        break;
-      case "leave":
-        handlers.onLeave();
-        break;
-      case "drop":
-        handlers.onDrop(event.payload.paths ?? []);
-        break;
-    }
-  }).then((dispose) => {
-    if (disposed) {
-      dispose();
-    } else {
-      unlisten = dispose;
-    }
-  });
-
-  return () => {
-    disposed = true;
-    unlisten?.();
-  };
+  return subscribeWithCleanup([() => subscribe((event) => {
+      const handlers = handlersRef.current;
+      switch (event.payload.type) {
+        case "enter":
+          handlers.onEnter();
+          break;
+        case "over":
+          handlers.onOver();
+          break;
+        case "leave":
+          handlers.onLeave();
+          break;
+        case "drop":
+          handlers.onDrop(event.payload.paths ?? []);
+          break;
+      }
+    })], onError);
 }
+import { subscribeWithCleanup } from "../../tauri/subscriptions";

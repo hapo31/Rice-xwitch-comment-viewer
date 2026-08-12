@@ -165,6 +165,7 @@ export function LauncherView({
     return subscribeLauncherDragDrop(
       (listener) => getCurrentWebview().onDragDropEvent(listener),
       dragDropHandlersRef,
+      () => setNotice("ドラッグ＆ドロップの監視に失敗しました。画面を再読み込みしてください。"),
     );
   }, []);
 

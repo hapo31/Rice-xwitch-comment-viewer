@@ -11,7 +11,7 @@ export function subscribeWithCleanup(
   onError: (error: unknown) => void = () => undefined,
 ): Unlisten {
   let disposed = false;
-  const active = new Set<Unlisten>();
+  const active: Unlisten[] = [];
 
   const reportError = (error: unknown) => {
     try {
@@ -35,7 +35,7 @@ export function subscribeWithCleanup(
         if (disposed) {
           safelyUnlisten(unlisten);
         } else {
-          active.add(unlisten);
+          active.push(unlisten);
         }
       },
       reportError,
@@ -47,6 +47,6 @@ export function subscribeWithCleanup(
     for (const unlisten of active) {
       safelyUnlisten(unlisten);
     }
-    active.clear();
+    active.length = 0;
   };
 }

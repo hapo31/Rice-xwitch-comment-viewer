@@ -97,13 +97,14 @@ export function App() {
   useEffect(() => {
     if (!isDesktopRuntime()) return;
 
-    let unlisten: (() => void) | undefined;
-    getCurrentWindow().onCloseRequested(createNativeCloseHandler(activeUnsavedChangeRef, () => {
+    return subscribeWithCleanup([() => getCurrentWindow().onCloseRequested(createNativeCloseHandler(activeUnsavedChangeRef, () => {
       setCloseRequested(true);
-    })).then((dispose) => {
-      unlisten = dispose;
-    }).catch(() => undefined);
-    return () => unlisten?.();
+    }))], () => reportNotification(
+      "warning",
+      "event",
+      "終了確認の監視に失敗しました。未保存の変更を確認してから終了してください。",
+      "app-close-subscription",
+    ));
   }, []);
 
   useEffect(() => {
