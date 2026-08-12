@@ -90,14 +90,25 @@ describe("appReducer", () => {
   });
 
   it("keeps skipped queue history synchronized after a queue clear snapshot", () => {
-    const withQueuedMessage = appReducer(initialAppState, { type: "chat.message", message: chatMessage("cleared") });
+    const messageIds = Array.from({ length: 200 }, (_, index) => `cleared-${index}`);
+    const withQueuedMessages = messageIds.reduce(
+      (state, id) => appReducer(state, { type: "chat.message", message: chatMessage(id) }),
+      initialAppState,
+    );
 
-    const updated = appReducer(withQueuedMessage, {
+    const updated = appReducer(withQueuedMessages, {
       type: "queue.changed",
-      items: [{ id: "speech", sourceMessageId: "cleared", userDisplayName: "viewer", text: "", status: "skipped" }],
+      items: messageIds.map((sourceMessageId, index) => ({
+        id: `speech-${index}`,
+        sourceMessageId,
+        userDisplayName: "viewer",
+        text: "",
+        status: "skipped" as const,
+      })),
     });
 
-    expect(updated.chatMessages[0]).toMatchObject({ id: "cleared", status: "skipped" });
+    expect(updated.chatMessages).toHaveLength(200);
+    expect(updated.chatMessages.every((message) => message.kind === "user" && message.status === "skipped")).toBe(true);
   });
 
   it("replaces launcher items without changing the other settings", () => {
