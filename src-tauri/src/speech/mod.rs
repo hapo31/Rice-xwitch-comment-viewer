@@ -114,7 +114,10 @@ enum SpeechQueueFailureTransition {
 
 impl SpeechQueueState {
     fn clear_pending(&mut self) {
-        self.pending.clear();
+        while let Some(mut item) = self.pending.pop_front() {
+            item.status = SpeechQueueItemStatus::Skipped;
+            push_history(self, item);
+        }
     }
 
     fn remove_pending_item(&mut self, item_id: &str) -> bool {
@@ -949,6 +952,21 @@ mod tests {
         assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Skipped);
         assert_eq!(queue.history[1].id, "blocked");
         assert!(!queue.remove_pending_item("blocked"));
+    }
+
+    #[test]
+    fn clearing_pending_items_preserves_skipped_history_for_status_consumers() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("first"));
+        queue.pending.push_back(queued_item("second"));
+
+        queue.clear_pending();
+
+        assert!(queue.pending.is_empty());
+        assert_eq!(queue.history.len(), 2);
+        assert!(queue.history.iter().all(|item| item.status == SpeechQueueItemStatus::Skipped));
+        assert_eq!(queue.history[0].id, "second");
+        assert_eq!(queue.history[1].id, "first");
     }
 
     #[test]

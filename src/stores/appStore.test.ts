@@ -78,6 +78,28 @@ describe("appReducer", () => {
     expect(updated.chatMessages[5]).toEqual(state.chatMessages[5]);
   });
 
+  it("uses a previously received queue snapshot when its source chat message arrives later", () => {
+    const queued = appReducer(initialAppState, {
+      type: "queue.changed",
+      items: [{ id: "speech", sourceMessageId: "blocked", userDisplayName: "viewer", text: "", status: "blocked" }],
+    });
+
+    const updated = appReducer(queued, { type: "chat.message", message: chatMessage("blocked") });
+
+    expect(updated.chatMessages[0]).toMatchObject({ id: "blocked", status: "blocked" });
+  });
+
+  it("keeps skipped queue history synchronized after a queue clear snapshot", () => {
+    const withQueuedMessage = appReducer(initialAppState, { type: "chat.message", message: chatMessage("cleared") });
+
+    const updated = appReducer(withQueuedMessage, {
+      type: "queue.changed",
+      items: [{ id: "speech", sourceMessageId: "cleared", userDisplayName: "viewer", text: "", status: "skipped" }],
+    });
+
+    expect(updated.chatMessages[0]).toMatchObject({ id: "cleared", status: "skipped" });
+  });
+
   it("replaces launcher items without changing the other settings", () => {
     const settings = {
       twitch: { channelLogin: "rice", autoConnect: false, confirmBeforeStopChat: true },

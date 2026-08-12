@@ -69,7 +69,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "chat.message":
       return {
         ...state,
-        chatMessages: [action.message, ...state.chatMessages].slice(0, 200),
+        chatMessages: [syncChatMessageStatus(action.message, state.queueItems), ...state.chatMessages].slice(0, 200),
       };
     case "queue.changed":
       return {
@@ -133,11 +133,7 @@ export function chatStatusFromQueueStatus(status: QueueDisplayState): Extract<Ch
 }
 
 function syncChatMessageStatuses(messages: ChatMessage[], queueItems: QueueItem[]): ChatMessage[] {
-  const statusByMessageId = new Map(
-    queueItems.flatMap((item) =>
-      item.sourceMessageId ? [[item.sourceMessageId, chatStatusFromQueueStatus(item.status)] as const] : [],
-    ),
-  );
+  const statusByMessageId = queueStatusByMessageId(queueItems);
   let changed = false;
   const updatedMessages = messages.map((message) => {
     if (message.kind !== "user") {
@@ -152,6 +148,22 @@ function syncChatMessageStatuses(messages: ChatMessage[], queueItems: QueueItem[
   });
 
   return changed ? updatedMessages : messages;
+}
+
+function syncChatMessageStatus(message: ChatMessage, queueItems: QueueItem[]): ChatMessage {
+  if (message.kind !== "user") {
+    return message;
+  }
+  const status = queueStatusByMessageId(queueItems).get(message.id);
+  return status && status !== message.status ? { ...message, status } : message;
+}
+
+function queueStatusByMessageId(queueItems: QueueItem[]) {
+  return new Map(
+    queueItems.flatMap((item) =>
+      item.sourceMessageId ? [[item.sourceMessageId, chatStatusFromQueueStatus(item.status)] as const] : [],
+    ),
+  );
 }
 
 export function warningNotifications(notifications: AppNotification[]): AppNotification[] {
