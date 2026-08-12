@@ -22,8 +22,12 @@ export function StatusBar({ state }: StatusBarProps) {
   const warningCount = warningNotifications(state.notifications).length;
   const twitchAuthLabel = {
     unauthenticated: "未認証",
+    authorizing: "認証開始中",
+    polling: "認証確認中",
+    checking: "認証確認中",
     authenticated: "ログイン済み",
     expired: "再ログイン必要",
+    disconnecting: "認証解除中",
     error: "認証エラー",
   }[state.twitchAuthStatus];
   const twitchConnectionLabel = {

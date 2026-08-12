@@ -53,6 +53,7 @@
 
 ## Phase 2: Twitch 認証
 
+- [x] Issue #8: frontend/backend の認証操作に generation を導入し、認証開始・解除後の遅延 poll/validate 結果と資格情報保存を破棄する。Device Code poll は同一セッションで一件だけ実行し、denied/expired 後に pending を終了する。
 - [x] Issue #4: Twitch の認証・チャット接続 status event を domain で識別し、frontend が表示文言で状態を判定しないようにする。
 - [x] Twitch Client ID を `.env` / build env から内部既定値として読み込む。
 - [x] Twitch Client ID を Settings UI と設定 JSON の公開項目から外す。
