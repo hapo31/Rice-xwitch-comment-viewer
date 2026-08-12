@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type React from "react";
 import type { UiScaleMode } from "../hooks/useDisplayScale";
 import { appExit } from "../tauri/client";
+import { subscribeWithCleanup } from "../tauri/subscriptions";
 
 type ResizeDirection = "East" | "North" | "NorthEast" | "NorthWest" | "South" | "SouthEast" | "SouthWest" | "West";
 
@@ -27,7 +28,6 @@ export function TitleBar({ scale, scaleMode, onScaleModeChange, onClose }: Title
   useEffect(() => {
     const appWindow = getCurrentWindow();
     let isMounted = true;
-    let unlistenResized: (() => void) | undefined;
 
     async function syncMaximized() {
       try {
@@ -41,20 +41,13 @@ export function TitleBar({ scale, scaleMode, onScaleModeChange, onClose }: Title
     }
 
     syncMaximized();
-    appWindow
-      .onResized(() => {
+    const dispose = subscribeWithCleanup([() => appWindow.onResized(() => {
         void syncMaximized();
-      })
-      .then((unlisten) => {
-        unlistenResized = unlisten;
-      })
-      .catch(() => {
-        unlistenResized = undefined;
-      });
+      })]);
 
     return () => {
       isMounted = false;
-      unlistenResized?.();
+      dispose();
     };
   }, []);
 

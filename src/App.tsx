@@ -15,6 +15,7 @@ import { claimStartupGuideForSession } from "./presentation/startupGuide";
 import { autoConnectTimelineEvent, speechRecoveryTimelineEvent, SystemTimelineRouter, timelineEventFromTwitchStatus } from "./presentation/systemTimeline";
 import { restoreAndValidateStartupAuth } from "./startupAuth";
 import { appReducer, initialAppState } from "./stores/appStore";
+import { subscribeWithCleanup } from "./tauri/subscriptions";
 import {
   createNativeCloseHandler,
   UnsavedChangesContext,
@@ -204,15 +205,15 @@ export function App() {
   }
 
   useEffect(() => {
-    const unlisten: Array<() => void> = [];
-
-    void Promise.all([
+    return subscribeWithCleanup([
+      () =>
       subscribeAppLogEvents((event) => {
         dispatch({ type: "log.added", log: event });
         if (event.level !== "info") {
           reportNotification(event.level, "log", event.message, event.id);
         }
       }),
+      () =>
       subscribeTwitchStatusEvents((event) => {
         const message = event.message ?? "";
         const isChatConnectionEvent =
@@ -231,6 +232,7 @@ export function App() {
         const timelineEvent = timelineEventFromTwitchStatus(event);
         if (timelineEvent) routeSystemTimelineEvent(timelineEvent);
       }),
+      () =>
       subscribeTwitchChatMessageEvents((message) => {
         dispatch({
           type: "chat.message",
@@ -241,6 +243,7 @@ export function App() {
           },
         });
       }),
+      () =>
       subscribeSpeechStatusEvents((event) => {
         dispatch({ type: "speech.status", status: event.status });
         if (event.message && (event.status === "disconnected" || event.status === "error")) {
@@ -248,21 +251,14 @@ export function App() {
           routeSystemTimelineEvent(speechRecoveryTimelineEvent(event.message, event.status));
         }
       }),
+      () =>
       subscribeSpeechQueueUpdatedEvents((event) => {
         dispatch({ type: "queue.changed", items: event.items ?? [] });
         if (event.warning) {
           reportNotification("warning", "event", event.warning);
         }
       }),
-    ]).then((listeners) => {
-      unlisten.push(...listeners);
-    });
-
-    return () => {
-      for (const dispose of unlisten) {
-        dispose();
-      }
-    };
+    ], () => reportNotification("warning", "event", "アプリ内イベントの購読に失敗しました。画面を再読み込みしてください。"));
   }, []);
 
   useEffect(() => {
