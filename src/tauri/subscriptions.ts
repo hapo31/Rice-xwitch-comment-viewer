@@ -38,7 +38,11 @@ export function subscribeWithCleanup(
           active.push(unlisten);
         }
       },
-      reportError,
+      (error) => {
+        if (!disposed) {
+          reportError(error);
+        }
+      },
     );
   }
 

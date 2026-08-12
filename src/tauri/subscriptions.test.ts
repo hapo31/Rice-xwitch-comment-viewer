@@ -71,6 +71,19 @@ describe("subscribeWithCleanup", () => {
     expect(onError).toHaveBeenCalledOnce();
   });
 
+  it("does not notify an unmounted consumer when delayed registration fails", async () => {
+    let reject!: (error: Error) => void;
+    const delayed = new Promise<() => void>((_resolve, nextReject) => { reject = nextReject; });
+    const onError = vi.fn();
+    const dispose = subscribeWithCleanup([() => delayed], onError);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    dispose();
+    reject(new Error("late registration failed"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it("cleans every registration even when they return the same unlisten function", async () => {
     const unlisten = vi.fn();
     const dispose = subscribeWithCleanup([async () => unlisten, async () => unlisten]);
