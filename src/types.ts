@@ -1,4 +1,12 @@
-export type AuthStatus = "unauthenticated" | "authenticated" | "expired" | "error";
+export type AuthStatus =
+  | "unauthenticated"
+  | "authorizing"
+  | "polling"
+  | "checking"
+  | "authenticated"
+  | "expired"
+  | "disconnecting"
+  | "error";
 
 export type SpeechStatus = "idle" | "speaking" | "paused" | "disconnected" | "error";
 

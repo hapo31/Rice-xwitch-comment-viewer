@@ -19,8 +19,12 @@ export interface LiveStatusAnnouncement {
 
 const twitchAuthLabels: Record<AuthStatus, string> = {
   unauthenticated: "未認証",
+  authorizing: "認証コードを発行中",
+  polling: "認証を確認中",
+  checking: "有効性を確認中",
   authenticated: "ログイン済み",
   expired: "再ログイン必要",
+  disconnecting: "認証を解除中",
   error: "認証エラー",
 };
 

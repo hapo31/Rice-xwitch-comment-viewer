@@ -14,6 +14,7 @@ import { APP_SHELL_CLASS_NAME } from "./layout/appShell";
 import { claimStartupGuideForSession } from "./presentation/startupGuide";
 import { autoConnectTimelineEvent, speechRecoveryTimelineEvent, SystemTimelineRouter, timelineEventFromTwitchStatus } from "./presentation/systemTimeline";
 import { restoreAndValidateStartupAuth } from "./startupAuth";
+import { AuthOperationController } from "./authOperation";
 import { appReducer, initialAppState } from "./stores/appStore";
 import { subscribeWithCleanup } from "./tauri/subscriptions";
 import {
@@ -66,6 +67,7 @@ export function App() {
   const displayScale = useDisplayScale();
   const autoConnectAttempted = useRef(false);
   const startupAuthAttempted = useRef(false);
+  const authOperations = useRef(new AuthOperationController());
   const systemTimelineRouter = useRef(new SystemTimelineRouter());
   const unsavedChanges = useRef(new Map<string, UnsavedChange>());
   const activeUnsavedChangeRef = useRef<UnsavedChange>();
@@ -141,11 +143,14 @@ export function App() {
     }
     startupAuthAttempted.current = true;
 
+    const operation = authOperations.current.begin();
+    dispatch({ type: "twitch.authStatus", status: "checking" });
     void restoreAndValidateStartupAuth({
       getStoredAuth: twitchGetStoredAuth,
       validateAuth: twitchValidateAuth,
       reportSystemMessage: addSystemChatMessage,
     }).then((auth) => {
+      if (!authOperations.current.isCurrent(operation)) return;
       if (auth.status === "authenticated") {
         dispatch({ type: "twitch.profile", profile: auth.result.profile });
         dispatch({ type: "twitch.authStatus", status: "authenticated" });
@@ -358,13 +363,17 @@ export function App() {
   }
 
   async function handleTwitchStartAuth() {
+    const operation = authOperations.current.begin();
+    dispatch({ type: "twitch.authStatus", status: "authorizing" });
     try {
       const prompt = await twitchStartAuth();
+      if (!authOperations.current.isCurrent(operation)) return;
       dispatch({ type: "twitch.authPrompt", prompt });
       dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       reportInfo("Twitch の認証コードを発行しました。");
     } catch (error) {
+      if (!authOperations.current.isCurrent(operation)) return;
       dispatch({ type: "twitch.authStatus", status: "error" });
       reportError(error);
     }
@@ -390,8 +399,12 @@ export function App() {
   }, [state.twitchAuthPrompt]);
 
   async function handleTwitchPollAuth(options: { quietWaiting?: boolean } = {}) {
+    const operation = authOperations.current.tryBeginPoll();
+    if (operation === undefined) return;
+    dispatch({ type: "twitch.authStatus", status: "polling" });
     try {
       const result = await twitchPollAuth();
+      if (!authOperations.current.isCurrent(operation)) return;
       if (result.status === "authorized") {
         dispatch({ type: "twitch.authStatus", status: "authenticated" });
         dispatch({ type: "twitch.authPrompt", prompt: undefined });
@@ -403,6 +416,7 @@ export function App() {
           addSystemChatMessage(result.storageWarning);
         }
       } else {
+        dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
         if (state.twitchAuthPrompt && (result.status === "pending" || result.status === "slowDown")) {
           dispatch({
             type: "twitch.authPrompt",
@@ -424,14 +438,20 @@ export function App() {
         }
       }
     } catch (error) {
+      if (!authOperations.current.isCurrent(operation)) return;
       dispatch({ type: "twitch.authStatus", status: "error" });
       reportError(error);
+    } finally {
+      authOperations.current.finishPoll(operation);
     }
   }
 
   async function handleTwitchValidateAuth() {
+    const operation = authOperations.current.begin();
+    dispatch({ type: "twitch.authStatus", status: "checking" });
     try {
       const result = await twitchValidateAuth();
+      if (!authOperations.current.isCurrent(operation)) return false;
       dispatch({ type: "twitch.authStatus", status: "authenticated" });
       dispatch({ type: "twitch.profile", profile: result.profile });
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
@@ -442,6 +462,7 @@ export function App() {
       }
       return true;
     } catch (error) {
+      if (!authOperations.current.isCurrent(operation)) return false;
       dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       dispatch({ type: "twitch.authPrompt", prompt: undefined });
@@ -485,13 +506,17 @@ export function App() {
       return;
     }
 
+    const operation = authOperations.current.begin();
+    dispatch({ type: "twitch.authStatus", status: "disconnecting" });
     try {
       await twitchDisconnect();
+      if (!authOperations.current.isCurrent(operation)) return;
       dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       dispatch({ type: "twitch.authPrompt", prompt: undefined });
       dispatch({ type: "twitch.profile", profile: undefined });
     } catch (error) {
+      if (!authOperations.current.isCurrent(operation)) return;
       reportError(error);
     }
   }

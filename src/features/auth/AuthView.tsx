@@ -37,6 +37,8 @@ export function AuthView({
   const isChannelValid = isValidTwitchChannelLogin(channelLogin);
   const channelError = "Twitch チャンネル名は 3 から 25 文字の英数字またはアンダースコアで入力してください。";
   const isAuthenticated = state.twitchAuthStatus === "authenticated";
+  const canDisconnect = Boolean(state.twitchProfile) && state.twitchAuthStatus !== "authorizing" && state.twitchAuthStatus !== "disconnecting";
+  const isAuthOperationInProgress = ["authorizing", "polling", "checking", "disconnecting"].includes(state.twitchAuthStatus);
 
   useEffect(() => {
     setChannelLogin(twitchSettings.channelLogin);
@@ -165,7 +167,7 @@ export function AuthView({
                 <button
                   type="button"
                   onClick={onTwitchPollAuth}
-                  disabled={isAuthPromptExpired}
+                  disabled={isAuthPromptExpired || isAuthOperationInProgress}
                   className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <ShieldCheck className="h-4 w-4" />
@@ -176,7 +178,7 @@ export function AuthView({
                 <button
                   type="button"
                   onClick={() => void validateAuth()}
-                  disabled={isValidatingAuth}
+                  disabled={isValidatingAuth || isAuthOperationInProgress}
                   className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400 disabled:cursor-wait disabled:opacity-60"
                 >
                   {isValidatingAuth ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -185,13 +187,14 @@ export function AuthView({
               )}
               <button
                 type="button"
-                onClick={isAuthenticated ? onTwitchDisconnect : onTwitchStartAuth}
+                onClick={canDisconnect ? onTwitchDisconnect : onTwitchStartAuth}
+                disabled={state.twitchAuthStatus === "authorizing" || state.twitchAuthStatus === "disconnecting"}
                 className={`flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 ${
-                  isAuthenticated ? "hover:border-rose-400" : "hover:border-sky-400"
+                  canDisconnect ? "hover:border-rose-400" : "hover:border-sky-400"
                 }`}
               >
-                {isAuthenticated ? <LogOut className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
-                {isAuthenticated ? "認証解除" : state.twitchAuthPrompt ? "認証をやり直す" : "認証開始"}
+                {canDisconnect ? <LogOut className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
+                {canDisconnect ? "認証解除" : state.twitchAuthPrompt ? "認証をやり直す" : "認証開始"}
               </button>
             </div>
             {authValidationNotice && isAuthenticated && (
