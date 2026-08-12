@@ -14,6 +14,16 @@ describe("system timeline routing", () => {
     expect(timelineEventFromTwitchStatus({ domain: "chat", status: "connected", message: "受信を開始しました", occurredAtMs: 1 })).toMatchObject({ source: "twitch-connection", transition: "connected" });
   });
 
+  it("records the auth recovery guidance once when chat state has no duplicate message", () => {
+    expect(timelineEventFromTwitchStatus({ domain: "chat", status: "authRequired", occurredAtMs: 1 })).toBeUndefined();
+    expect(timelineEventFromTwitchStatus({
+      domain: "auth",
+      status: "authRequired",
+      message: "Twitch EventSub 購読が取り消されたため、再ログインしてください: revoked",
+      occurredAtMs: 1,
+    })).toMatchObject({ source: "twitch-auth" });
+  });
+
   it("deduplicates an unchanged transition and records recovery after a change", () => {
     const router = new SystemTimelineRouter();
     const reconnecting = { source: "twitch-connection" as const, transition: "reconnecting", message: "再接続中" };

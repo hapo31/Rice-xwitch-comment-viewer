@@ -1532,9 +1532,7 @@ async fn run_eventsub_session(
                             app,
                             TwitchStatusDomain::Chat,
                             TwitchStatus::AuthRequired,
-                            Some(format!(
-                                "Twitch EventSub 購読が取り消されました。再ログインしてください: {reason}"
-                            )),
+                            None,
                         );
                         emit_twitch_status(
                             app,
