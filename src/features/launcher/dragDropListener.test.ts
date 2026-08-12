@@ -24,7 +24,7 @@ describe("subscribeLauncherDragDrop", () => {
     const handlersRef = { current: initialHandlers };
 
     const cleanup = subscribeLauncherDragDrop(subscribe, handlersRef);
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const updatedHandlers = handlers();
     handlersRef.current = updatedHandlers;
 
@@ -46,9 +46,10 @@ describe("subscribeLauncherDragDrop", () => {
     }));
 
     const cleanup = subscribeLauncherDragDrop(subscribe, { current: handlers() });
+    await new Promise((resolve) => setTimeout(resolve, 0));
     cleanup();
     resolveSubscription?.(unlisten);
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(unlisten).toHaveBeenCalledTimes(1);
   });
