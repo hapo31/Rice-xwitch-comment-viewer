@@ -355,6 +355,17 @@ impl From<ValidateResponse> for TwitchUserProfile {
 }
 
 impl TwitchAuthState {
+    fn begin_generation(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.pending = None;
+        self.token = None;
+        self.profile = None;
+        self.generation
+    }
+
+    fn pending_is_current(&self, generation: u64) -> bool {
+        self.generation == generation && self.pending.is_some()
+    }
     fn profile(&self) -> Option<TwitchUserProfile> {
         self.profile.clone()
     }
@@ -773,11 +784,7 @@ pub async fn twitch_start_auth(
             .twitch_auth
             .lock()
             .map_err(|error| error.to_string())?;
-        auth.generation = auth.generation.wrapping_add(1);
-        auth.pending = None;
-        auth.token = None;
-        auth.profile = None;
-        auth.generation
+        auth.begin_generation()
     };
 
     let response = request_device_code(&client_id)
@@ -847,9 +854,13 @@ pub async fn twitch_poll_auth(
     match poll_device_token(&pending).await {
         Ok(token) => {
             ensure_pending_auth_is_current(&state, pending.generation)?;
-            let profile = validate_access_token(&token.access_token)
-                .await
-                .map_err(to_twitch_user_message)?;
+            let profile = match validate_access_token(&token.access_token).await {
+                Ok(profile) => profile,
+                Err(error) => {
+                    clear_poll_in_flight_if_current(&state, pending.generation)?;
+                    return Err(to_twitch_user_message(error));
+                }
+            };
             let profile = TwitchUserProfile::from(profile);
             if let Err(error) = ensure_required_twitch_scopes(&profile.scopes) {
                 let message = error.to_string();
@@ -919,6 +930,7 @@ pub async fn twitch_poll_auth(
         }
         Err(PollAuthError::Pending) => Ok(TwitchAuthPollResult::Pending {
             message: {
+                ensure_pending_auth_is_current(&state, pending.generation)?;
                 clear_poll_in_flight_if_current(&state, pending.generation)?;
                 emit_twitch_status(
                     &app,
@@ -936,11 +948,15 @@ pub async fn twitch_poll_auth(
                 .twitch_auth
                 .lock()
                 .map_err(|error| error.to_string())?;
-            if auth.generation == pending.generation {
-                if let Some(stored) = &mut auth.pending {
-                    stored.interval = interval;
-                    stored.poll_in_flight = false;
-                }
+            if auth.generation != pending.generation {
+                return Err(
+                    "新しい Twitch 認証操作が開始されたため、古い確認結果を破棄しました。"
+                        .to_string(),
+                );
+            }
+            if let Some(stored) = &mut auth.pending {
+                stored.interval = interval;
+                stored.poll_in_flight = false;
             }
             emit_twitch_status(
                 &app,
@@ -954,6 +970,7 @@ pub async fn twitch_poll_auth(
             })
         }
         Err(PollAuthError::Denied) => {
+            ensure_pending_auth_is_current(&state, pending.generation)?;
             clear_pending_if_current(&state, pending.generation)?;
             Ok(TwitchAuthPollResult::Denied {
                 message: {
@@ -973,6 +990,7 @@ pub async fn twitch_poll_auth(
             })
         }
         Err(PollAuthError::Expired) => {
+            ensure_pending_auth_is_current(&state, pending.generation)?;
             clear_pending_if_current(&state, pending.generation)?;
             Ok(TwitchAuthPollResult::Expired {
                 message: {
@@ -992,6 +1010,7 @@ pub async fn twitch_poll_auth(
             })
         }
         Err(PollAuthError::Other(error)) => {
+            ensure_pending_auth_is_current(&state, pending.generation)?;
             clear_poll_in_flight_if_current(&state, pending.generation)?;
             let message = to_twitch_user_message(error);
             emit_twitch_status(
@@ -1287,7 +1306,7 @@ fn ensure_pending_auth_is_current(
         .twitch_auth
         .lock()
         .map_err(|error| error.to_string())?;
-    if auth.generation == generation && auth.pending.is_some() {
+    if auth.pending_is_current(generation) {
         Ok(())
     } else {
         Err("新しい Twitch 認証操作が開始されたため、古い確認結果を破棄しました。".to_string())
@@ -2281,6 +2300,27 @@ mod tests {
                 expires_in: 3600,
             }),
         }
+    }
+
+    #[test]
+    fn newer_auth_generation_invalidates_an_in_flight_poll_and_credentials() {
+        let mut auth = twitch_auth_state();
+        auth.pending = Some(super::PendingDeviceAuth {
+            generation: auth.generation,
+            poll_in_flight: true,
+            client_id: "client-id".to_string(),
+            device_code: "device-a".to_string(),
+            interval: 5,
+        });
+        let stale_generation = auth.generation;
+
+        let current_generation = auth.begin_generation();
+
+        assert_ne!(stale_generation, current_generation);
+        assert!(!auth.pending_is_current(stale_generation));
+        assert!(auth.pending.is_none());
+        assert!(auth.token.is_none());
+        assert!(auth.profile.is_none());
     }
 
     fn scopes_without_chat_read() -> Vec<String> {

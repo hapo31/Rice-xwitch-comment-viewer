@@ -31,4 +31,18 @@ describe("AuthOperationController", () => {
 
     expect(controller.tryBeginPoll()).toBeUndefined();
   });
+
+  it("rejects a deferred startup validation after a newer authentication starts", async () => {
+    const controller = new AuthOperationController();
+    const startup = controller.begin();
+    let resolveValidation!: () => void;
+    const validation = new Promise<void>((resolve) => { resolveValidation = resolve; });
+    const newAuthentication = controller.begin();
+
+    resolveValidation();
+    await validation;
+
+    expect(controller.isCurrent(startup)).toBe(false);
+    expect(controller.isCurrent(newAuthentication)).toBe(true);
+  });
 });
