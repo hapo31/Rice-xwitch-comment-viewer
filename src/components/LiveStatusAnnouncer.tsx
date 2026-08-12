@@ -54,6 +54,11 @@ export function getLiveStatusAnnouncement(
     previous.twitchConnectionStatus !== current.twitchConnectionStatus &&
     isConnectionError(current.twitchConnectionStatus)
   ) {
+    if (current.twitchConnectionStatus === "authRequired") {
+      // The auth status transition emits the recovery instruction. Avoid
+      // announcing the same revocation once as a connection failure first.
+      return undefined;
+    }
     return { message: `Twitch 接続: ${twitchConnectionLabels[current.twitchConnectionStatus]}`, priority: "alert" };
   }
 
@@ -70,6 +75,9 @@ export function getLiveStatusAnnouncement(
   }
 
   if (previous.twitchConnectionStatus !== current.twitchConnectionStatus) {
+    if (current.twitchConnectionStatus === "authRequired") {
+      return undefined;
+    }
     return { message: `Twitch 接続: ${twitchConnectionLabels[current.twitchConnectionStatus]}`, priority: "status" };
   }
 

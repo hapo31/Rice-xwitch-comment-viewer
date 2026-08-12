@@ -1426,7 +1426,10 @@ async fn run_eventsub_connection(
             Err(error) => {
                 let error_message = error.to_string();
                 if error_message.contains("購読が取り消されました") {
-                    emit_app_log(&app, AppLogLevel::Error, error_message);
+                    // The accompanying authRequired status carries the single user-facing
+                    // recovery notification. Keep the terminal detail in Logs without
+                    // producing a second warning in the renderer.
+                    emit_app_log(&app, AppLogLevel::Info, error_message);
                     break;
                 }
                 retry_attempt = retry_attempt.saturating_add(1);
