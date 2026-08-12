@@ -11,9 +11,8 @@ describe("ActivityBar", () => {
       </MemoryRouter>,
     );
 
-    expect(markup).toContain('href="/logs"');
-    expect(markup).toContain('aria-label="Logs"');
-    expect(markup).toContain('title="Logs"');
-    expect(markup).toContain('aria-current="page"');
+    expect(markup).toMatch(
+      /<a(?=[^>]*href="\/logs")(?=[^>]*aria-label="Logs")(?=[^>]*title="Logs")(?=[^>]*aria-current="page")[^>]*>/,
+    );
   });
 });
