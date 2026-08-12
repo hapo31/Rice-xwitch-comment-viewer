@@ -148,6 +148,10 @@
 
 調査や作業中に分かった補足情報を記録するファイルです。日付が新しいものほど上に追記してください。
 
+## 2026-08-12
+
+- Issue #1 の確認で、Logs は接続・認証・読み上げ障害から復旧するための正式画面である一方、2026-05-26 に Activity Bar の導線だけが削除されており、通常操作で到達不能になっていた。`docs/05-ui-ux.md` の全正式画面を並べる方針に合わせ、Activity Bar に Logs を戻した。`AGENTS.md` の「Logs を除く」はこの旧判断を残した不整合だったため、通常操作から 1 回で Logs へ到達できる方針に訂正した。
+
 ## 2026-08-07
 
 - StatusBar は version literal を持たず、`app_build_info` が `CARGO_PKG_VERSION` を返して動的に表示する。Issue #89 では release-rice とリリース手順の旧 4 箇所更新を 3 manifest に訂正し、`scripts/verify-release-version.sh` で 3 manifest と release tag を照合するようにした。version bump 時は同 script の `--changed-from` で変更対象が 3 manifest だけであることも検証する。
