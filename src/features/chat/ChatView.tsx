@@ -3,7 +3,7 @@ import { KeyRound } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChatLiveAnnouncementController } from "../../presentation/chatLiveAnnouncements";
-import { getChatMessagePresentation } from "../../presentation/chat";
+import { getChatMessagePresentation, getChatStatusPresentation } from "../../presentation/chat";
 import { getStartupGuideMessages, type StartupGuideMessage } from "../../presentation/startupGuide";
 import { routeHeadingId } from "../../routeAccessibility";
 import type { AppState } from "../../stores/appStore";
@@ -227,7 +227,7 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
   );
 }
 
-function ChatRow({ message }: { message: ChatMessage | StartupGuideMessage }) {
+export function ChatRow({ message }: { message: ChatMessage | StartupGuideMessage }) {
   const presentation = getChatMessagePresentation(message);
   const time = new Intl.DateTimeFormat("ja-JP", {
     hour: "2-digit",
@@ -244,6 +244,7 @@ function ChatRow({ message }: { message: ChatMessage | StartupGuideMessage }) {
       <span className={`flex min-w-0 items-center gap-1 pr-3 font-medium ${presentation.userNameClassName}`}>
         <ChatBadges badges={"badges" in message ? message.badges : undefined} />
         <span className="truncate">{message.userDisplayName}</span>
+        {message.kind === "user" && <ChatReadStatus status={message.status} />}
       </span>
       <span className={`line-clamp-2 ${presentation.textClassName}`}>
         {"action" in message && message.action === "login" && (
@@ -259,5 +260,17 @@ function ChatRow({ message }: { message: ChatMessage | StartupGuideMessage }) {
         {message.text}
       </span>
     </div>
+  );
+}
+
+function ChatReadStatus({ status }: { status: Extract<ChatMessage, { kind: "user" }>["status"] }) {
+  const presentation = getChatStatusPresentation(status);
+  const Icon = presentation.icon;
+
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1 text-xs ${presentation.className}`}>
+      <Icon aria-hidden="true" className="h-3.5 w-3.5" />
+      <span>{presentation.label}</span>
+    </span>
   );
 }

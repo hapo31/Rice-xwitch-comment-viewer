@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getQueueStatusPresentation, queueStatusLabel, speechStatusLabel } from "./chat";
+import { getChatStatusPresentation, getQueueStatusPresentation, queueStatusLabel, speechStatusLabel } from "./chat";
 
 describe("queue status presentation", () => {
   it("maps every queue display state to a Japanese label and tone", () => {
@@ -14,6 +14,14 @@ describe("queue status presentation", () => {
   it("maps queue states to Japanese labels", () => {
     expect(queueStatusLabel("speaking")).toBe("読み上げ中");
     expect(queueStatusLabel("skipped")).toBe("スキップ");
+  });
+
+  it("uses the same Japanese presentations for every Chat display state", () => {
+    expect(getChatStatusPresentation("queued").label).toBe("待機");
+    expect(getChatStatusPresentation("spoken").label).toBe("完了");
+    expect(getChatStatusPresentation("skipped").label).toBe("スキップ");
+    expect(getChatStatusPresentation("blocked").label).toBe("抑制");
+    expect(getChatStatusPresentation("error").label).toBe("エラー");
   });
 
   it("maps every speech state to a Japanese label", () => {

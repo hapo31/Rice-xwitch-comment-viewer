@@ -50,6 +50,34 @@ describe("appReducer", () => {
     expect(state.queueItems).toEqual(items);
   });
 
+  it("synchronizes queue results to their source chat messages without changing system rows", () => {
+    const state = {
+      ...initialAppState,
+      chatMessages: [
+        chatMessage("queued"),
+        chatMessage("spoken"),
+        chatMessage("skipped"),
+        chatMessage("blocked"),
+        chatMessage("error"),
+        { kind: "system" as const, id: "system", receivedAt: "2026-05-23T00:00:00Z", userDisplayName: "system" as const, text: "接続しました" },
+      ],
+    };
+    const items: QueueItem[] = [
+      { id: "1", sourceMessageId: "queued", userDisplayName: "viewer", text: "", status: "speaking" },
+      { id: "2", sourceMessageId: "spoken", userDisplayName: "viewer", text: "", status: "spoken" },
+      { id: "3", sourceMessageId: "skipped", userDisplayName: "viewer", text: "", status: "skipped" },
+      { id: "4", sourceMessageId: "blocked", userDisplayName: "viewer", text: "", status: "blocked" },
+      { id: "5", sourceMessageId: "error", userDisplayName: "viewer", text: "", status: "error" },
+    ];
+
+    const updated = appReducer(state, { type: "queue.changed", items });
+
+    expect(updated.chatMessages.slice(0, 5).map((message) => message.kind === "user" && message.status)).toEqual([
+      "queued", "spoken", "skipped", "blocked", "error",
+    ]);
+    expect(updated.chatMessages[5]).toEqual(state.chatMessages[5]);
+  });
+
   it("replaces launcher items without changing the other settings", () => {
     const settings = {
       twitch: { channelLogin: "rice", autoConnect: false, confirmBeforeStopChat: true },

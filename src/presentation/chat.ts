@@ -25,6 +25,10 @@ export function getQueueStatusPresentation(status: QueueDisplayState): StatusPre
   }[status];
 }
 
+export function getChatStatusPresentation(status: ChatDisplayState): StatusPresentation {
+  return getQueueStatusPresentation(status);
+}
+
 export function queueStatusLabel(status: QueueDisplayState): string {
   return getQueueStatusPresentation(status).label;
 }

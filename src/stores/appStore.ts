@@ -5,6 +5,7 @@ import type {
   AuthStatus,
   ChatMessage,
   QueueItem,
+  QueueDisplayState,
   SpeechStatus,
   TwitchChatConnectionStatus,
   TwitchDeviceAuthStart,
@@ -71,7 +72,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         chatMessages: [action.message, ...state.chatMessages].slice(0, 200),
       };
     case "queue.changed":
-      return { ...state, queueItems: action.items };
+      return {
+        ...state,
+        queueItems: action.items,
+        chatMessages: syncChatMessageStatuses(state.chatMessages, action.items),
+      };
     case "launcher.changed":
       return state.settings
         ? {
@@ -121,6 +126,32 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     default:
       return state;
   }
+}
+
+export function chatStatusFromQueueStatus(status: QueueDisplayState): Extract<ChatMessage, { kind: "user" }>["status"] {
+  return status === "speaking" ? "queued" : status;
+}
+
+function syncChatMessageStatuses(messages: ChatMessage[], queueItems: QueueItem[]): ChatMessage[] {
+  const statusByMessageId = new Map(
+    queueItems.flatMap((item) =>
+      item.sourceMessageId ? [[item.sourceMessageId, chatStatusFromQueueStatus(item.status)] as const] : [],
+    ),
+  );
+  let changed = false;
+  const updatedMessages = messages.map((message) => {
+    if (message.kind !== "user") {
+      return message;
+    }
+    const status = statusByMessageId.get(message.id);
+    if (!status || status === message.status) {
+      return message;
+    }
+    changed = true;
+    return { ...message, status };
+  });
+
+  return changed ? updatedMessages : messages;
 }
 
 export function warningNotifications(notifications: AppNotification[]): AppNotification[] {
