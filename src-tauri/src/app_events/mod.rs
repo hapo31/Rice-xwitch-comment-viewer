@@ -31,6 +31,7 @@ pub enum AppLogLevel {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TwitchStatusEvent {
+    pub domain: TwitchStatusDomain,
     pub status: TwitchStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<TwitchAuthRequiredReason>,
@@ -48,6 +49,13 @@ pub enum TwitchStatus {
     Reconnecting,
     AuthRequired,
     Error,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TwitchStatusDomain {
+    Auth,
+    Chat,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -121,10 +129,12 @@ pub fn emit_app_log<R: Runtime>(
 #[cfg(feature = "app")]
 pub fn emit_twitch_status<R: Runtime>(
     app: &AppHandle<R>,
+    domain: TwitchStatusDomain,
     status: TwitchStatus,
     message: Option<String>,
 ) {
     let payload = TwitchStatusEvent {
+        domain,
         status,
         reason: None,
         message,
@@ -140,6 +150,7 @@ pub fn emit_twitch_auth_required<R: Runtime>(
     message: impl Into<String>,
 ) {
     let payload = TwitchStatusEvent {
+        domain: TwitchStatusDomain::Auth,
         status: TwitchStatus::AuthRequired,
         reason: Some(reason),
         message: Some(message.into()),

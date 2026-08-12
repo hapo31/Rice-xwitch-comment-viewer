@@ -7,7 +7,7 @@ mod twitch;
 #[cfg(feature = "app")]
 use app_events::{
     emit_app_log, emit_speech_status, emit_twitch_auth_required, emit_twitch_status, AppLogLevel,
-    SpeechStatus, TwitchAuthRequiredReason, TwitchStatus,
+    SpeechStatus, TwitchAuthRequiredReason, TwitchStatus, TwitchStatusDomain,
 };
 #[cfg(feature = "app")]
 use launcher::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
@@ -130,6 +130,7 @@ pub fn run() {
             }
             emit_twitch_status(
                 app.handle(),
+                TwitchStatusDomain::Chat,
                 TwitchStatus::Disconnected,
                 Some("Twitch は未接続です。".to_string()),
             );
@@ -147,6 +148,7 @@ pub fn run() {
                     .expect("twitch auth mutex poisoned") = auth;
                 emit_twitch_status(
                     app.handle(),
+                    TwitchStatusDomain::Auth,
                     TwitchStatus::Connected,
                     Some("保存済みの Twitch 認証情報を復元しました。".to_string()),
                 );
@@ -168,6 +170,7 @@ pub fn run() {
                 } else {
                     emit_twitch_status(
                         app.handle(),
+                        TwitchStatusDomain::Auth,
                         if has_restored_auth {
                             TwitchStatus::Connected
                         } else {
