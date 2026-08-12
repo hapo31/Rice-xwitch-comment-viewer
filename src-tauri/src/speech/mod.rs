@@ -961,14 +961,19 @@ mod tests {
     fn clearing_pending_items_preserves_skipped_history_for_status_consumers() {
         let mut queue = SpeechQueueState::default();
         for index in 0..DEFAULT_QUEUE_LIMIT {
-            queue.pending.push_back(queued_item(&format!("item-{index}")));
+            queue
+                .pending
+                .push_back(queued_item(&format!("item-{index}")));
         }
 
         queue.clear_pending();
 
         assert!(queue.pending.is_empty());
         assert_eq!(queue.history.len(), DEFAULT_QUEUE_LIMIT);
-        assert!(queue.history.iter().all(|item| item.status == SpeechQueueItemStatus::Skipped));
+        assert!(queue
+            .history
+            .iter()
+            .all(|item| item.status == SpeechQueueItemStatus::Skipped));
         assert_eq!(queue.history[0].id, "item-199");
         assert_eq!(queue.history[DEFAULT_QUEUE_LIMIT - 1].id, "item-0");
     }

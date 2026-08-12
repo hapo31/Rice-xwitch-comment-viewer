@@ -942,7 +942,12 @@ pub async fn twitch_poll_auth(
         }),
         Err(PollAuthError::Other(error)) => {
             let message = to_twitch_user_message(error);
-            emit_twitch_status(&app, TwitchStatusDomain::Auth, TwitchStatus::Error, Some(message.clone()));
+            emit_twitch_status(
+                &app,
+                TwitchStatusDomain::Auth,
+                TwitchStatus::Error,
+                Some(message.clone()),
+            );
             emit_app_log(&app, AppLogLevel::Error, message.clone());
             Err(message)
         }
@@ -1212,7 +1217,12 @@ fn clear_invalid_twitch_auth(
 ) -> Result<(), String> {
     clear_twitch_auth_state(state)?;
     let message = format!("Twitch 認証が無効なため、認証状態を解除しました: {error_message}");
-    emit_twitch_status(app, TwitchStatusDomain::Auth, TwitchStatus::AuthRequired, Some(message.clone()));
+    emit_twitch_status(
+        app,
+        TwitchStatusDomain::Auth,
+        TwitchStatus::AuthRequired,
+        Some(message.clone()),
+    );
     emit_app_log(app, AppLogLevel::Warning, message);
     Ok(())
 }
@@ -1425,7 +1435,12 @@ async fn run_eventsub_connection(
                     "Twitch EventSub が切断されました。{} 秒後に再接続します: {error}",
                     wait_seconds
                 );
-                emit_twitch_status(&app, TwitchStatusDomain::Chat, TwitchStatus::Reconnecting, Some(message.clone()));
+                emit_twitch_status(
+                    &app,
+                    TwitchStatusDomain::Chat,
+                    TwitchStatus::Reconnecting,
+                    Some(message.clone()),
+                );
                 emit_app_log(&app, AppLogLevel::Warning, message);
                 tokio::time::sleep(Duration::from_secs(wait_seconds)).await;
                 url = TWITCH_EVENTSUB_WS_URL.to_string();
