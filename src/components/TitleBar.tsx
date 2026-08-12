@@ -36,7 +36,9 @@ export function TitleBar({ scale, scaleMode, onScaleModeChange, onClose }: Title
           setIsMaximized(maximized);
         }
       } catch {
-        setIsMaximized(false);
+        if (isMounted) {
+          setIsMaximized(false);
+        }
       }
     }
 

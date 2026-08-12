@@ -258,7 +258,12 @@ export function App() {
           reportNotification("warning", "event", event.warning);
         }
       }),
-    ], () => reportNotification("warning", "event", "アプリ内イベントの購読に失敗しました。画面を再読み込みしてください。"));
+    ], () => reportNotification(
+      "warning",
+      "event",
+      "アプリ内イベントの購読に失敗しました。画面を再読み込みしてください。",
+      "app-event-subscription",
+    ));
   }, []);
 
   useEffect(() => {

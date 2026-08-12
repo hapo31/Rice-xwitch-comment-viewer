@@ -13,23 +13,39 @@ export function subscribeWithCleanup(
   let disposed = false;
   const active = new Set<Unlisten>();
 
+  const reportError = (error: unknown) => {
+    try {
+      onError(error);
+    } catch {
+      // A notification handler must not prevent cleanup of native listeners.
+    }
+  };
+
+  const safelyUnlisten = (unlisten: Unlisten) => {
+    try {
+      unlisten();
+    } catch (error) {
+      reportError(error);
+    }
+  };
+
   for (const subscribe of subscriptions) {
-    void subscribe().then(
+    void Promise.resolve().then(subscribe).then(
       (unlisten) => {
         if (disposed) {
-          unlisten();
+          safelyUnlisten(unlisten);
         } else {
           active.add(unlisten);
         }
       },
-      (error) => onError(error),
+      reportError,
     );
   }
 
   return () => {
     disposed = true;
     for (const unlisten of active) {
-      unlisten();
+      safelyUnlisten(unlisten);
     }
     active.clear();
   };
