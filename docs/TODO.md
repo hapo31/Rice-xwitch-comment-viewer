@@ -116,6 +116,7 @@
 - [x] Queue view を実装し、スキップ、クリア、再読込、削除を操作できるようにする。
 - [x] Issue #52: 読み上げ待機の制御から履歴の dismiss を分離し、blocked を含む履歴を個別・一括で削除できるようにする。
 - [x] `SpeechFormatter` の NG/URL/長文処理テストを追加する。
+- [x] Issue #61: 日本語文中・括弧/引用符内の `http://`、`https://`、`www.` URL を空白に依存せず検出し、置換・遮断で同じ parser を使う。URL 前後の本文と末尾句読点を保持するテーブルテストを追加する。
 - [x] TypeScript の store reducer テストを追加する。
 
 ## Phase 5: 配信運用向け仕上げ
