@@ -65,7 +65,6 @@ const DEFAULT_QUEUE_LIMIT: usize = 200;
 // cannot continue to show removed items as waiting.
 const DEFAULT_HISTORY_LIMIT: usize = DEFAULT_QUEUE_LIMIT;
 const DEFAULT_MAX_COMMENT_LENGTH: usize = 120;
-const DEFAULT_REPEAT_SUPPRESSION_SECONDS: u64 = 2;
 const RETRY_DELAY: Duration = Duration::from_millis(700);
 
 #[derive(Debug)]
@@ -370,8 +369,7 @@ pub fn enqueue_chat_message_for_speech(
         }
         (
             SpeechFormatter::new(SpeechFormatterOptions::from(&settings.speech)),
-            u64::from(settings.speech.repeat_suppression_seconds)
-                .max(DEFAULT_REPEAT_SUPPRESSION_SECONDS),
+            u64::from(settings.speech.repeat_suppression_seconds),
         )
     };
 
@@ -383,26 +381,27 @@ pub fn enqueue_chat_message_for_speech(
             .lock()
             .map_err(|error| error.to_string())?;
         let now = Instant::now();
-        if let Some(last_seen) = queue.last_user_enqueue.get(&message.user_id) {
-            if now.duration_since(*last_seen) < Duration::from_secs(repeat_suppression_seconds) {
-                let warning_message =
-                    format!("{} の連投を抑制しました。", message.user_display_name);
-                let id = next_queue_id(&mut queue);
-                push_history(
-                    &mut queue,
-                    SpeechQueueItem {
-                        id,
-                        source_message_id: Some(message.id.clone()),
-                        user_display_name: message.user_display_name.clone(),
-                        text: message.text.clone(),
-                        status: SpeechQueueItemStatus::Blocked,
-                        retry_count: 0,
-                        delivery_state: SpeechQueueDeliveryState::Ready,
-                    },
-                );
-                emit_queue_snapshot(&app, &queue, Some(warning_message));
-                return Ok(());
-            }
+        if is_repeat_suppressed(
+            queue.last_user_enqueue.get(&message.user_id).copied(),
+            now,
+            repeat_suppression_seconds,
+        ) {
+            let warning_message = format!("{} の連投を抑制しました。", message.user_display_name);
+            let id = next_queue_id(&mut queue);
+            push_history(
+                &mut queue,
+                SpeechQueueItem {
+                    id,
+                    source_message_id: Some(message.id.clone()),
+                    user_display_name: message.user_display_name.clone(),
+                    text: message.text.clone(),
+                    status: SpeechQueueItemStatus::Blocked,
+                    retry_count: 0,
+                    delivery_state: SpeechQueueDeliveryState::Ready,
+                },
+            );
+            emit_queue_snapshot(&app, &queue, Some(warning_message));
+            return Ok(());
         }
 
         let formatted_text = match formatter.format_chat_message(&message) {
@@ -463,6 +462,17 @@ pub fn enqueue_chat_message_for_speech(
         tokio::spawn(process_speech_queue(app));
     }
     Ok(())
+}
+
+fn is_repeat_suppressed(
+    last_enqueue: Option<Instant>,
+    now: Instant,
+    repeat_suppression_seconds: u64,
+) -> bool {
+    repeat_suppression_seconds > 0
+        && last_enqueue.is_some_and(|last_enqueue| {
+            now.duration_since(last_enqueue) < Duration::from_secs(repeat_suppression_seconds)
+        })
 }
 
 #[cfg(feature = "app")]
@@ -1175,6 +1185,34 @@ mod tests {
             retry_count: 0,
             delivery_state: SpeechQueueDeliveryState::Ready,
         }
+    }
+
+    #[test]
+    fn repeat_suppression_honors_zero_one_and_two_second_boundaries() {
+        let now = Instant::now();
+
+        assert!(!is_repeat_suppressed(Some(now), now, 0));
+        assert!(is_repeat_suppressed(
+            Some(now - Duration::from_millis(999)),
+            now,
+            1,
+        ));
+        assert!(!is_repeat_suppressed(
+            Some(now - Duration::from_secs(1)),
+            now,
+            1,
+        ));
+        assert!(is_repeat_suppressed(
+            Some(now - Duration::from_millis(1_999)),
+            now,
+            2,
+        ));
+        assert!(!is_repeat_suppressed(
+            Some(now - Duration::from_secs(2)),
+            now,
+            2,
+        ));
+        assert!(!is_repeat_suppressed(None, now, 2));
     }
 
     #[test]

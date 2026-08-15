@@ -616,7 +616,10 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
             settings.speech.max_comment_length = max_length.clamp(1, 500);
         }
         if let Some(seconds) = speech.repeat_suppression_seconds {
-            settings.speech.repeat_suppression_seconds = seconds.min(30);
+            if seconds > 30 {
+                return Err("連投抑制秒は0から30の範囲で指定してください。".to_string());
+            }
+            settings.speech.repeat_suppression_seconds = seconds;
         }
         if let Some(blocked_users) = speech.blocked_users {
             settings.speech.blocked_users = normalize_rule_list(blocked_users, RuleListKind::User)?;
@@ -779,6 +782,36 @@ mod tests {
         apply_patch(&mut settings, patch).expect("apply patch");
 
         assert!(!settings.twitch.live_chat_announcements);
+    }
+
+    #[test]
+    fn repeat_suppression_boundaries_are_preserved_by_settings_patch() {
+        for seconds in [0, 1, 2, 30] {
+            let mut settings = AppSettings::default();
+            let patch: SettingsPatch = serde_json::from_value(serde_json::json!({
+                "speech": { "repeatSuppressionSeconds": seconds }
+            }))
+            .expect("deserialize patch");
+
+            apply_patch(&mut settings, patch).expect("apply patch");
+
+            assert_eq!(settings.speech.repeat_suppression_seconds, seconds);
+        }
+    }
+
+    #[test]
+    fn repeat_suppression_outside_the_frontend_range_is_rejected() {
+        let mut settings = AppSettings::default();
+        let patch: SettingsPatch = serde_json::from_value(serde_json::json!({
+            "speech": { "repeatSuppressionSeconds": 31 }
+        }))
+        .expect("deserialize patch");
+
+        assert_eq!(
+            apply_patch(&mut settings, patch),
+            Err("連投抑制秒は0から30の範囲で指定してください。".to_string())
+        );
+        assert_eq!(settings.speech.repeat_suppression_seconds, 2);
     }
 
     #[test]

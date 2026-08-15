@@ -45,6 +45,12 @@ describe("FloatingSaveButton accessibility", () => {
     expect(markup).toContain('<textarea id="rule-blocked-users"');
   });
 
+  it("explains the repeat-suppression contract in the Filter UI", () => {
+    const markup = renderToStaticMarkup(<FilterView onSettingsUpdate={async () => true} />);
+
+    expect(markup).toContain("連投抑制秒（0は無効、1〜30秒は指定間隔）");
+  });
+
   it("exposes the range label and its default value to assistive technology", () => {
     const markup = renderToStaticMarkup(
       <RangeRow id="bouyomi-speed" label="速度" value={-1} min={-1} max={300} onChange={() => undefined} />,

@@ -4,6 +4,7 @@ import {
   isValidBouyomiHost,
   isValidBouyomiVoice,
   isValidPort,
+  isValidRepeatSuppressionSeconds,
   isValidTwitchChannelLogin,
   parseBlockedUserList,
   parseBlockedWordList,
@@ -24,6 +25,17 @@ describe("settings validation", () => {
     expect(isValidPort("65536")).toBe(false);
     expect(isValidBouyomiVoice("10001")).toBe(true);
     expect(isValidBouyomiVoice("-1")).toBe(false);
+  });
+
+  it.each<[string, boolean]>([
+    ["0", true],
+    ["1", true],
+    ["2", true],
+    ["-1", false],
+    ["31", false],
+    ["1.5", false],
+  ])("validates repeat suppression boundary %s", (value, expected) => {
+    expect(isValidRepeatSuppressionSeconds(value)).toBe(expected);
   });
 
   it("validates and formats Bouyomi IPv4, DNS, and IPv6 hosts", () => {
