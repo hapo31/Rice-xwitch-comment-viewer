@@ -16,6 +16,7 @@ import { autoConnectTimelineEvent, speechRecoveryTimelineEvent, SystemTimelineRo
 import { restoreAndValidateStartupAuth } from "./startupAuth";
 import { AuthOperationController } from "./authOperation";
 import { appReducer, initialAppState } from "./stores/appStore";
+import { utcNow } from "./time";
 import { subscribeWithCleanup } from "./tauri/subscriptions";
 import {
   createNativeCloseHandler,
@@ -177,7 +178,7 @@ export function App() {
       message: {
         kind: "system",
         id: `system-${Date.now()}-${crypto.randomUUID()}`,
-        receivedAt: new Date().toISOString(),
+        receivedAt: utcNow(),
         userDisplayName: "system",
         text,
       },

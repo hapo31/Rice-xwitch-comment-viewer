@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { ChatLiveAnnouncementController } from "./chatLiveAnnouncements";
 import type { ChatMessage } from "../types";
+import { utcTimestamp } from "../time";
+
+const receivedAt = utcTimestamp("2026-08-08T00:00:00Z");
 
 function twitchMessage(id: string): ChatMessage {
   return {
     kind: "user",
     id,
-    receivedAt: "2026-08-08T00:00:00Z",
+    receivedAt,
     userDisplayName: "viewer",
     text: "こんにちは",
     status: "queued",
@@ -18,7 +21,7 @@ function systemMessage(id: string): ChatMessage {
   return {
     kind: "system",
     id,
-    receivedAt: "2026-08-08T00:00:00Z",
+    receivedAt,
     userDisplayName: "system",
     text: "起動ガイド",
   };

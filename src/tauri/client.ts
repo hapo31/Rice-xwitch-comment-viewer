@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { formatBouyomiAddress } from "../validation";
+import { normalizeUtcTimestamp, utcNow, type UtcTimestamp } from "../time";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppLogEvent,
@@ -362,7 +363,23 @@ export async function subscribeTwitchChatMessageEvents(
     return () => {};
   }
 
-  return listen<TwitchChatMessageEvent>("twitch://chat-message", (event) => handler(event.payload));
+  return listen<TwitchChatMessageWireEvent>("twitch://chat-message", (event) =>
+    handler(normalizeTwitchChatMessageEvent(event.payload)),
+  );
+}
+
+type TwitchChatMessageWireEvent = Omit<TwitchChatMessageEvent, "receivedAt"> & {
+  receivedAt?: unknown;
+};
+
+export function normalizeTwitchChatMessageEvent(
+  payload: TwitchChatMessageWireEvent,
+  fallbackReceivedAt: UtcTimestamp = utcNow(),
+): TwitchChatMessageEvent {
+  return {
+    ...payload,
+    receivedAt: normalizeUtcTimestamp(payload.receivedAt, fallbackReceivedAt),
+  };
 }
 
 export async function subscribeSpeechStatusEvents(

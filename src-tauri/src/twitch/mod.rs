@@ -7,7 +7,7 @@ use crate::app_events::{
 use crate::settings::{default_twitch_client_id, AppState};
 #[cfg(feature = "app")]
 use crate::speech::enqueue_chat_message_for_speech;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 #[cfg(feature = "app")]
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -61,7 +61,7 @@ pub struct ChatMessage {
     pub text: String,
     pub fragments: Vec<MessageFragment>,
     pub badges: Vec<ChatBadge>,
-    pub received_at: String,
+    pub received_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,7 +263,8 @@ struct EventSubEnvelope {
 struct EventSubMetadata {
     message_id: String,
     message_type: String,
-    message_timestamp: String,
+    #[serde(default)]
+    message_timestamp: Option<String>,
     subscription_type: Option<String>,
 }
 
@@ -1721,7 +1722,11 @@ async fn run_eventsub_session(
                         return Ok(EventSubSessionExit::Reconnect(reconnect_url));
                     }
                     "notification" => {
-                        if let Some(message) = normalize_chat_message(envelope)? {
+                        if let Some(normalized) = normalize_chat_message(envelope, Utc::now())? {
+                            if let Some(warning) = normalized.timestamp_warning {
+                                emit_app_log(app, AppLogLevel::Warning, warning);
+                            }
+                            let message = normalized.message;
                             let dedupe_id = message.id.clone();
                             if seen_message_ids.insert(dedupe_id) {
                                 emit_twitch_chat_message(app, message.clone());
@@ -2032,7 +2037,15 @@ async fn send_chat_message_subscription(
     Ok(())
 }
 
-fn normalize_chat_message(envelope: EventSubEnvelope) -> anyhow::Result<Option<ChatMessage>> {
+struct NormalizedChatMessage {
+    message: ChatMessage,
+    timestamp_warning: Option<String>,
+}
+
+fn normalize_chat_message(
+    envelope: EventSubEnvelope,
+    fallback_received_at: DateTime<Utc>,
+) -> anyhow::Result<Option<NormalizedChatMessage>> {
     if envelope.metadata.subscription_type.as_deref() != Some(CHANNEL_CHAT_MESSAGE_TYPE) {
         return Ok(None);
     }
@@ -2042,10 +2055,14 @@ fn normalize_chat_message(envelope: EventSubEnvelope) -> anyhow::Result<Option<C
         None => return Ok(None),
     };
     let event = serde_json::from_value::<EventSubChatMessageEvent>(event)?;
-    let received_at = if envelope.metadata.message_timestamp.is_empty() {
-        Utc::now().to_rfc3339()
-    } else {
-        envelope.metadata.message_timestamp
+    let (received_at, used_timestamp_fallback) = match envelope
+        .metadata
+        .message_timestamp
+        .as_deref()
+        .and_then(|timestamp| DateTime::parse_from_rfc3339(timestamp).ok())
+    {
+        Some(timestamp) => (timestamp.with_timezone(&Utc), false),
+        None => (fallback_received_at, true),
     };
     let id = if event.message_id.is_empty() {
         envelope.metadata.message_id
@@ -2053,18 +2070,25 @@ fn normalize_chat_message(envelope: EventSubEnvelope) -> anyhow::Result<Option<C
         event.message_id
     };
 
-    Ok(Some(ChatMessage {
-        id,
-        platform: Platform::Twitch,
-        channel_id: event.broadcaster_user_id,
-        channel_login: event.broadcaster_user_login,
-        user_id: event.chatter_user_id,
-        user_login: event.chatter_user_login,
-        user_display_name: event.chatter_user_name,
-        text: event.message.text,
-        fragments: event.message.fragments,
-        badges: event.badges,
-        received_at,
+    let timestamp_warning = used_timestamp_fallback.then(|| {
+        format!("Twitch チャット {id} の受信時刻が不正なため、WebSocket 受信時刻を使用しました。")
+    });
+
+    Ok(Some(NormalizedChatMessage {
+        message: ChatMessage {
+            id,
+            platform: Platform::Twitch,
+            channel_id: event.broadcaster_user_id,
+            channel_login: event.broadcaster_user_login,
+            user_id: event.chatter_user_id,
+            user_login: event.chatter_user_login,
+            user_display_name: event.chatter_user_name,
+            text: event.message.text,
+            fragments: event.message.fragments,
+            badges: event.badges,
+            received_at,
+        },
+        timestamp_warning,
     }))
 }
 
@@ -2259,6 +2283,7 @@ mod tests {
         ensure_required_twitch_scopes, normalize_chat_message, oauth_error_code,
         retry_backoff_seconds, EventSubEnvelope, MessageDedupe, OAuthErrorResponse,
     };
+    use chrono::{DateTime, Utc};
     use std::{
         cell::RefCell,
         time::{Duration, Instant},
@@ -2454,11 +2479,42 @@ mod tests {
         assert_eq!(oauth_error_code(&response), Some("slow_down"));
     }
 
+    fn utc_timestamp(value: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(value)
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
+    fn chat_fixture_with_timestamp(timestamp: Option<&str>) -> EventSubEnvelope {
+        let mut fixture = serde_json::from_str::<serde_json::Value>(include_str!(
+            "fixtures/channel_chat_message.json"
+        ))
+        .unwrap();
+        let metadata = fixture["metadata"].as_object_mut().unwrap();
+        match timestamp {
+            Some(timestamp) => {
+                metadata.insert(
+                    "message_timestamp".to_string(),
+                    serde_json::Value::String(timestamp.to_string()),
+                );
+            }
+            None => {
+                metadata.remove("message_timestamp");
+            }
+        }
+        serde_json::from_value(fixture).unwrap()
+    }
+
     #[test]
     fn parses_channel_chat_message_fixture() {
         let fixture = include_str!("fixtures/channel_chat_message.json");
         let envelope = serde_json::from_str::<EventSubEnvelope>(fixture).unwrap();
-        let message = normalize_chat_message(envelope).unwrap().unwrap();
+        let normalized =
+            normalize_chat_message(envelope, utc_timestamp("2026-08-15T12:34:56.789Z"))
+                .unwrap()
+                .unwrap();
+        assert!(normalized.timestamp_warning.is_none());
+        let message = normalized.message;
 
         assert_eq!(message.id, "cc106a89-1814-919d-454c-f4f2f970aae7");
         assert_eq!(message.channel_id, "1971641");
@@ -2471,7 +2527,59 @@ mod tests {
         assert_eq!(message.fragments[1].kind, "emote");
         assert_eq!(message.fragments[1].emote.as_ref().unwrap().id, "25");
         assert_eq!(message.badges[0].set_id, "broadcaster");
-        assert_eq!(message.received_at, "2023-11-06T18:11:47.492253549Z");
+        assert_eq!(
+            message.received_at,
+            utc_timestamp("2023-11-06T18:11:47.492253549Z")
+        );
+    }
+
+    #[test]
+    fn normalizes_offset_timestamp_to_utc_and_serializes_the_tauri_field_contract() {
+        let normalized = normalize_chat_message(
+            chat_fixture_with_timestamp(Some("2026-08-15T21:34:56.789123456+09:00")),
+            utc_timestamp("2026-08-15T00:00:00Z"),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(normalized.timestamp_warning.is_none());
+        assert_eq!(
+            normalized.message.received_at,
+            utc_timestamp("2026-08-15T12:34:56.789123456Z")
+        );
+        let serialized = serde_json::to_value(&normalized.message).unwrap();
+        assert_eq!(
+            serialized["receivedAt"],
+            serde_json::json!("2026-08-15T12:34:56.789123456Z")
+        );
+        assert!(serialized.get("received_at").is_none());
+    }
+
+    #[test]
+    fn falls_back_to_websocket_receive_time_for_missing_empty_naive_and_invalid_timestamps() {
+        let fallback = utc_timestamp("2026-08-15T12:34:56.789Z");
+        let cases = [
+            ("missing", None),
+            ("empty", Some("")),
+            ("naive", Some("2026-08-15T12:34:56")),
+            ("invalid", Some("invalid-timestamp")),
+        ];
+
+        for (case_name, timestamp) in cases {
+            let normalized =
+                normalize_chat_message(chat_fixture_with_timestamp(timestamp), fallback)
+                    .unwrap()
+                    .unwrap();
+
+            assert_eq!(normalized.message.received_at, fallback, "{case_name}");
+            assert!(
+                normalized
+                    .timestamp_warning
+                    .as_deref()
+                    .is_some_and(|warning| warning.contains("WebSocket 受信時刻")),
+                "{case_name}"
+            );
+        }
     }
 
     #[test]
