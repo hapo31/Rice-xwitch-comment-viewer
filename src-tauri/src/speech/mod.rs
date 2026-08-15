@@ -326,12 +326,13 @@ impl SpeechFormatter {
             return SpeechFormatDecision::Blocked("読み上げる本文がありません。".to_string());
         }
 
+        if self.options.read_user_name {
+            text = format!("{}。{}", message.user_display_name, text);
+        }
+
         let max_len = self.options.max_comment_length.max(1);
         if text.chars().count() > max_len {
             text = truncate_chars(&text, max_len);
-        }
-        if self.options.read_user_name {
-            text = format!("{}。{}", message.user_display_name, text);
         }
 
         SpeechFormatDecision::Speak(text)
@@ -1119,7 +1120,14 @@ fn collapse_spaces(text: &str) -> String {
 }
 
 fn truncate_chars(text: &str, max_len: usize) -> String {
-    let mut output = text.chars().take(max_len).collect::<String>();
+    if max_len == 0 {
+        return String::new();
+    }
+
+    let mut output = text
+        .chars()
+        .take(max_len.saturating_sub(1))
+        .collect::<String>();
     output.push('…');
     output
 }
@@ -1265,6 +1273,13 @@ mod tests {
             fragments: Vec::new(),
             badges: Vec::new(),
             received_at: "2026-05-23T00:00:00Z".to_string(),
+        }
+    }
+
+    fn chat_from(display_name: &str, text: &str) -> ChatMessage {
+        ChatMessage {
+            user_display_name: display_name.to_string(),
+            ..chat(text)
         }
     }
 
@@ -1492,7 +1507,128 @@ mod tests {
 
         assert_eq!(
             formatter.format_chat_message(&chat("123456789")),
-            SpeechFormatDecision::Speak("12345…".to_string())
+            SpeechFormatDecision::Speak("1234…".to_string())
+        );
+    }
+
+    #[test]
+    fn formatter_applies_max_length_to_final_utterance() {
+        let cases = [
+            ("minimum", 1, "viewer", "本文", "…"),
+            (
+                "multibyte boundary",
+                5,
+                "viewer",
+                "あいうえおか",
+                "あいうえ…",
+            ),
+            ("user name prefix", 10, "viewer", "hello", "viewer。he…"),
+            ("long display name", 5, "長い表示名", "本文", "長い表示…"),
+        ];
+
+        for (case_name, max_comment_length, display_name, body, expected) in cases {
+            let formatter = SpeechFormatter::new(SpeechFormatterOptions {
+                read_user_name: case_name != "multibyte boundary",
+                max_comment_length,
+                ..SpeechFormatterOptions::default()
+            });
+
+            let SpeechFormatDecision::Speak(text) =
+                formatter.format_chat_message(&chat_from(display_name, body))
+            else {
+                panic!("{case_name}: expected speak decision");
+            };
+            assert_eq!(text, expected, "{case_name}");
+            assert!(
+                text.chars().count() <= max_comment_length,
+                "{case_name}: final utterance exceeds its character budget"
+            );
+        }
+    }
+
+    #[test]
+    fn formatter_honors_default_and_maximum_length_boundaries() {
+        for max_comment_length in [DEFAULT_MAX_COMMENT_LENGTH, 500] {
+            let formatter = SpeechFormatter::new(SpeechFormatterOptions {
+                read_user_name: true,
+                max_comment_length,
+                ..SpeechFormatterOptions::default()
+            });
+            let body = "あ".repeat(max_comment_length + 10);
+
+            let SpeechFormatDecision::Speak(text) =
+                formatter.format_chat_message(&chat_from("配信視聴者", &body))
+            else {
+                panic!("expected speak decision for max length {max_comment_length}");
+            };
+            assert_eq!(text.chars().count(), max_comment_length);
+            assert!(text.ends_with('…'));
+        }
+    }
+
+    #[test]
+    fn formatter_applies_url_and_ng_rules_before_final_truncation() {
+        let replace_formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            read_user_name: false,
+            max_comment_length: 4,
+            ..SpeechFormatterOptions::default()
+        });
+        assert_eq!(
+            replace_formatter.format_chat_message(&chat("https://example.com/path")),
+            SpeechFormatDecision::Speak("URL…".to_string())
+        );
+
+        // Keep the embedded-URL behavior from Issue #61 while applying the
+        // final utterance limit afterwards. Truncating the source text first
+        // would leave a partial URL instead of the URL replacement.
+        let embedded_url_formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            read_user_name: false,
+            max_comment_length: 9,
+            escape_bouyomi_tags: false,
+            ..SpeechFormatterOptions::default()
+        });
+        assert_eq!(
+            embedded_url_formatter.format_chat_message(&chat(
+                "(https://example.com/path)と「www.example.com/path」"
+            )),
+            SpeechFormatDecision::Speak("(URL省略)と…".to_string())
+        );
+
+        let block_url_formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            read_user_name: false,
+            max_comment_length: 1,
+            replace_urls: false,
+            block_urls: true,
+            ..SpeechFormatterOptions::default()
+        });
+        assert_eq!(
+            block_url_formatter.format_chat_message(&chat("https://example.com/path")),
+            SpeechFormatDecision::Blocked("URL を含むため読み上げません。".to_string())
+        );
+
+        let block_formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            read_user_name: false,
+            max_comment_length: 4,
+            blocked_words: vec!["badword".to_string()],
+            ..SpeechFormatterOptions::default()
+        });
+        assert_eq!(
+            block_formatter.format_chat_message(&chat("safe prefix badword")),
+            SpeechFormatDecision::Blocked("NG ワードを含むため読み上げません: badword".to_string())
+        );
+    }
+
+    #[test]
+    fn formatter_still_blocks_empty_body_at_minimum_length() {
+        let formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            read_user_name: true,
+            max_comment_length: 1,
+            ..SpeechFormatterOptions::default()
+        });
+
+        assert_eq!(
+            formatter.format_chat_message(&chat("\u{0007}\n")),
+            SpeechFormatDecision::Blocked("読み上げる本文がありません。".to_string())
         );
     }
 
