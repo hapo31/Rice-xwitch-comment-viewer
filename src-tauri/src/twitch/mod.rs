@@ -33,6 +33,8 @@ const TWITCH_EVENTSUB_SUBSCRIPTIONS_URL: &str =
     "https://api.twitch.tv/helix/eventsub/subscriptions";
 #[cfg(feature = "app")]
 const TWITCH_EVENTSUB_WS_URL: &str = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=30";
+#[cfg(feature = "app")]
+const EVENTSUB_BACKOFF_RESET_STABLE_DURATION: Duration = Duration::from_secs(30);
 const CHAT_READ_SCOPE: &str = "user:read:chat";
 const REQUIRED_TWITCH_SCOPES: &[&str] = &[CHAT_READ_SCOPE];
 const KEYRING_SERVICE: &str = "rice.twitch.oauth";
@@ -340,6 +342,45 @@ enum SubscriptionRequestError {
 #[cfg(feature = "app")]
 enum EventSubSessionExit {
     Reconnect(String),
+}
+
+#[cfg(feature = "app")]
+#[derive(Debug, Default)]
+struct EventSubReconnectBackoff {
+    failed_attempts: u64,
+    established_at: Option<Instant>,
+}
+
+#[cfg(feature = "app")]
+impl EventSubReconnectBackoff {
+    fn record_session_established(&mut self) {
+        self.record_session_established_at(Instant::now());
+    }
+
+    fn record_session_established_at(&mut self, established_at: Instant) {
+        self.established_at = Some(established_at);
+    }
+
+    fn record_handover_started(&mut self) {
+        self.established_at = None;
+    }
+
+    fn next_delay_after_failure(&mut self) -> u64 {
+        self.next_delay_after_failure_at(Instant::now())
+    }
+
+    fn next_delay_after_failure_at(&mut self, failed_at: Instant) -> u64 {
+        if self.established_at.is_some_and(|established_at| {
+            failed_at.saturating_duration_since(established_at)
+                >= EVENTSUB_BACKOFF_RESET_STABLE_DURATION
+        }) {
+            self.failed_attempts = 0;
+        }
+
+        self.established_at = None;
+        self.failed_attempts = self.failed_attempts.saturating_add(1);
+        retry_backoff_seconds(self.failed_attempts)
+    }
 }
 
 impl From<ValidateResponse> for TwitchUserProfile {
@@ -1546,7 +1587,7 @@ async fn run_eventsub_connection(
 ) {
     let mut url = TWITCH_EVENTSUB_WS_URL.to_string();
     let mut subscribe_on_welcome = true;
-    let mut retry_attempt = 0u64;
+    let mut reconnect_backoff = EventSubReconnectBackoff::default();
     let mut seen_message_ids = MessageDedupe::new(DEDUPE_CACHE_LIMIT, DEDUPE_CACHE_TTL);
 
     loop {
@@ -1555,12 +1596,13 @@ async fn run_eventsub_connection(
             &params,
             &url,
             subscribe_on_welcome,
+            &mut reconnect_backoff,
             &mut seen_message_ids,
         )
         .await
         {
             Ok(EventSubSessionExit::Reconnect(reconnect_url)) => {
-                retry_attempt = 0;
+                reconnect_backoff.record_handover_started();
                 url = reconnect_url;
                 subscribe_on_welcome = false;
                 emit_twitch_status(
@@ -1584,8 +1626,7 @@ async fn run_eventsub_connection(
                     emit_app_log(&app, AppLogLevel::Info, error_message);
                     break;
                 }
-                retry_attempt = retry_attempt.saturating_add(1);
-                let wait_seconds = retry_backoff_seconds(retry_attempt);
+                let wait_seconds = reconnect_backoff.next_delay_after_failure();
                 let message = format!(
                     "Twitch EventSub が切断されました。{} 秒後に再接続します: {error}",
                     wait_seconds
@@ -1611,6 +1652,7 @@ async fn run_eventsub_session(
     params: &EventSubConnectionParams,
     url: &str,
     subscribe_on_welcome: bool,
+    reconnect_backoff: &mut EventSubReconnectBackoff,
     seen_message_ids: &mut MessageDedupe,
 ) -> anyhow::Result<EventSubSessionExit> {
     emit_twitch_status(
@@ -1649,6 +1691,7 @@ async fn run_eventsub_session(
                         if subscribe_on_welcome {
                             create_chat_message_subscription(app, params, &session.id).await?;
                         }
+                        reconnect_backoff.record_session_established();
                         emit_twitch_status(
                             app,
                             TwitchStatusDomain::Chat,
@@ -2208,8 +2251,9 @@ mod tests {
     #[cfg(feature = "app")]
     use super::{
         clear_auth_for_eventsub_missing_scope_if_current, restore_stored_auth,
-        retry_eventsub_subscription, AuthSecretStore, AuthStorage, StoredTwitchAuth,
-        SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchToken, TwitchUserProfile,
+        retry_eventsub_subscription, AuthSecretStore, AuthStorage, EventSubReconnectBackoff,
+        StoredTwitchAuth, SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchToken,
+        TwitchUserProfile, EVENTSUB_BACKOFF_RESET_STABLE_DURATION,
     };
     use super::{
         ensure_required_twitch_scopes, normalize_chat_message, oauth_error_code,
@@ -2493,6 +2537,112 @@ mod tests {
         assert_eq!(retry_backoff_seconds(3), 10);
         assert_eq!(retry_backoff_seconds(4), 30);
         assert_eq!(retry_backoff_seconds(10), 30);
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn eventsub_backoff_resets_only_after_a_stable_established_session() {
+        let started_at = Instant::now();
+        let mut backoff = EventSubReconnectBackoff::default();
+
+        assert_eq!(backoff.next_delay_after_failure_at(started_at), 2);
+        assert_eq!(
+            backoff.next_delay_after_failure_at(started_at + Duration::from_secs(2)),
+            5
+        );
+
+        // A welcome/subscription that immediately fails must preserve the
+        // accumulated delay, so a flaky endpoint cannot cause a retry storm.
+        let first_welcome_at = started_at + Duration::from_secs(3);
+        backoff.record_session_established_at(first_welcome_at);
+        assert_eq!(
+            backoff.next_delay_after_failure_at(first_welcome_at + Duration::from_secs(1)),
+            10
+        );
+
+        // Once a welcome (and, for a normal connection, its subscription) has
+        // remained healthy for the stability window, the next fault is a new
+        // failure sequence and returns to the shortest retry delay.
+        let stable_welcome_at = started_at + Duration::from_secs(10);
+        backoff.record_session_established_at(stable_welcome_at);
+        assert_eq!(
+            backoff.next_delay_after_failure_at(
+                stable_welcome_at + EVENTSUB_BACKOFF_RESET_STABLE_DURATION
+            ),
+            2
+        );
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn eventsub_backoff_keeps_growing_without_an_established_session() {
+        let started_at = Instant::now();
+        let mut backoff = EventSubReconnectBackoff::default();
+
+        assert_eq!(backoff.next_delay_after_failure_at(started_at), 2);
+        assert_eq!(
+            backoff.next_delay_after_failure_at(started_at + Duration::from_secs(2)),
+            5
+        );
+        assert_eq!(
+            backoff.next_delay_after_failure_at(started_at + Duration::from_secs(7)),
+            10
+        );
+        assert_eq!(
+            backoff.next_delay_after_failure_at(started_at + Duration::from_secs(17)),
+            30
+        );
+        assert_eq!(
+            backoff.next_delay_after_failure_at(started_at + Duration::from_secs(47)),
+            30
+        );
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn eventsub_handover_preserves_backoff_until_the_new_session_is_stable() {
+        let started_at = Instant::now();
+        let mut backoff = EventSubReconnectBackoff::default();
+
+        assert_eq!(backoff.next_delay_after_failure_at(started_at), 2);
+        assert_eq!(
+            backoff.next_delay_after_failure_at(started_at + Duration::from_secs(2)),
+            5
+        );
+
+        // A server-requested handover itself does not reset the retry budget.
+        // Its new welcome is the lifecycle point that can establish a session.
+        let handover_welcome_at = started_at + Duration::from_secs(7);
+        backoff.record_session_established_at(handover_welcome_at);
+        assert_eq!(
+            backoff.next_delay_after_failure_at(handover_welcome_at + Duration::from_secs(1)),
+            10
+        );
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn eventsub_handover_failure_before_new_welcome_ignores_the_old_stable_session() {
+        let started_at = Instant::now();
+        let mut backoff = EventSubReconnectBackoff::default();
+
+        assert_eq!(backoff.next_delay_after_failure_at(started_at), 2);
+        assert_eq!(
+            backoff.next_delay_after_failure_at(started_at + Duration::from_secs(2)),
+            5
+        );
+
+        let old_welcome_at = started_at + Duration::from_secs(3);
+        backoff.record_session_established_at(old_welcome_at);
+        let handover_started_at = old_welcome_at + EVENTSUB_BACKOFF_RESET_STABLE_DURATION;
+        backoff.record_handover_started();
+
+        // A handover connection failure before its welcome must continue the
+        // existing failure sequence, even when the old session was stable.
+        assert_eq!(
+            backoff.next_delay_after_failure_at(handover_started_at + Duration::from_secs(1)),
+            10
+        );
     }
 
     #[cfg(feature = "app")]
