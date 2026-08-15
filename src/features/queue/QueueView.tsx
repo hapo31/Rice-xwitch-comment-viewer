@@ -3,7 +3,9 @@ import { getQueueStatusPresentation, queueStatusLabel } from "../../presentation
 import { countIncompleteQueueItems, selectQueueItemsForDisplay } from "../../presentation/queue";
 import type { AppState } from "../../stores/appStore";
 import { routeHeadingId } from "../../routeAccessibility";
-import type { QueueDisplayState } from "../../types";
+import type { QueueDisplayState, QueueItem } from "../../types";
+
+const ACCESSIBLE_TEXT_SNIPPET_LENGTH = 24;
 
 export function QueueView({
   state,
@@ -102,7 +104,7 @@ export function QueueView({
                 {item.status === "error" && (
                   <button
                     type="button"
-                    aria-label={`${item.userDisplayName}の読み上げを再試行`}
+                    aria-label={queueRetryAccessibleName(item, index + 2)}
                     title="エラー項目を再試行"
                     onClick={() => onQueueRetry(item.id)}
                     className="mr-1 flex h-7 w-7 items-center justify-center border border-zinc-800 bg-zinc-850 text-zinc-400 hover:border-sky-400 hover:text-sky-200"
@@ -112,7 +114,7 @@ export function QueueView({
                 )}
                 <button
                   type="button"
-                  aria-label={`${item.userDisplayName}の${item.status === "queued" ? "待機中の読み上げ" : "履歴項目"}を削除`}
+                  aria-label={queueDeleteAccessibleName(item, index + 2)}
                   title={item.status === "queued" ? "待機中の読み上げを削除" : "履歴項目を削除"}
                   disabled={!["queued", "error", "blocked"].includes(item.status)}
                   onClick={() => (item.status === "queued" ? onQueueRemove(item.id) : onQueueDismiss(item.id))}
@@ -131,6 +133,33 @@ export function QueueView({
       </div>
     </main>
   );
+}
+
+function queueItemAccessibleTarget(item: QueueItem, rowIndex: number): string {
+  const normalizedText = item.text.replace(/\s+/g, " ").trim();
+  const textCharacters = Array.from(normalizedText);
+  const textSnippet = textCharacters.length > ACCESSIBLE_TEXT_SNIPPET_LENGTH
+    ? `${textCharacters.slice(0, ACCESSIBLE_TEXT_SNIPPET_LENGTH).join("")}…`
+    : normalizedText || "本文なし";
+
+  return `キュー${rowIndex}行目、${item.userDisplayName}の「${textSnippet}」`;
+}
+
+function queueRetryAccessibleName(item: QueueItem, rowIndex: number): string {
+  return `${queueItemAccessibleTarget(item, rowIndex)}を再試行`;
+}
+
+function queueDeleteAccessibleName(item: QueueItem, rowIndex: number): string {
+  const accessibleTarget = queueItemAccessibleTarget(item, rowIndex);
+
+  if (item.status === "queued") {
+    return `${accessibleTarget}を待機キューから削除`;
+  }
+  if (item.status === "error" || item.status === "blocked") {
+    return `${accessibleTarget}を履歴から削除`;
+  }
+
+  return `${accessibleTarget}は読み上げ中のため削除できません`;
 }
 
 function StatusIcon({ status }: { status: QueueDisplayState }) {

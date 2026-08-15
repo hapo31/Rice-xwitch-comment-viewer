@@ -136,7 +136,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Issue #17: Space / S / Cmd/Ctrl+, による配信向け読み上げ操作と Settings 遷移を追加し、入力中・IME 変換中・キーリピート時は無効化する。
 - [x] Issue #39: NG ユーザー/NG ワードを 200 件で明示的に検証し、大小文字を区別しない重複を除外して超過時の保存を防止する。
 - [x] Issue #15: 通常文字のコントラストを WCAG 1.4.3（4.5:1）以上へ引き上げ、主要画面のトークン利用を自動検査する。
-- [x] Issue #35: Chat・Queue・Logs の列表示へ table/row/header/cell セマンティクスを追加し、仮想行の論理位置・総行数と Queue 操作対象を支援技術へ公開する。
+- [x] Issue #35: Chat・Queue・Logs の列表示へ table/row/header/cell セマンティクスを追加し、仮想行の論理位置・総行数を View 経由で検証し、同一ユーザーの Queue 操作対象を論理行・本文付きラベルで区別する。
 - [x] Issue #37: Chat 行に Twitch バッジの簡易表示と支援技術向け名称を追加する。
 - [x] Issue #36: Chat の新着を重複なく集約して支援技術へ通知し、Settings でライブ通知を ON/OFF できるようにする。
 - [x] Issue #5: 変更のない Filter / Settings で非表示の保存ボタンをフォーカス順とアクセシビリティツリーから除外し、キーボード回帰テストを追加する。

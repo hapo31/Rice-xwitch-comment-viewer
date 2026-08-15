@@ -134,7 +134,7 @@ Tauri の最小ウィンドウ幅は 900px とする。Chat はこの最小幅�
 
 - カード乱用はしない。パネルと行ベースで構成する。
 - ボタンはアイコンボタン中心。ラベルが必要な主要操作だけテキスト付きにする。
-- Chat、Queue、Logs の列表示は読み取り中心のため ARIA `table` とし、`row`、`columnheader`、`cell` で列関係を公開する。セル単位の複合キーボード操作を持たないため `grid` は使わない。仮想化する Chat と Logs は、描画範囲外を含む `aria-rowcount` と各行の論理 `aria-rowindex` を公開する。
+- Chat、Queue、Logs の列表示は読み取り中心のため ARIA `table` とし、`row`、`columnheader`、`cell` で列関係を公開する。セル単位の複合キーボード操作を持たないため `grid` は使わない。仮想化する Chat と Logs は、描画範囲外を含む `aria-rowcount` と各行の論理 `aria-rowindex` を公開し、先頭追加後も同じ項目の論理位置が更新されることを View 経由で検査する。Queue の行内操作は、論理行、ユーザー、本文の短い抜粋を accessible name に含め、同一ユーザーの複数項目を区別する。
 - キーボードで操作できる部品には `focus-visible` で 2px の sky ring と 2px offset を表示する。マウス操作では表示せず、Windows 高コントラスト時はシステムの `Highlight` 色による 2px outline を表示する。
 - 接続状態はステータスバーと小さなドットで表示する。
 - チャット行は高さを安定させ、長文は折りたたみまたは2行までにする。

@@ -78,7 +78,7 @@ export function LogsView({ state }: { state: AppState }) {
   );
 }
 
-export function LogRow({ log, rowIndex }: { log: AppState["logs"][number]; rowIndex?: number }) {
+function LogRow({ log, rowIndex }: { log: AppState["logs"][number]; rowIndex?: number }) {
   return (
     <div role="row" aria-rowindex={rowIndex} className="grid min-h-10 grid-cols-[96px_88px_minmax(0,1fr)] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
       <span role="cell" aria-colindex={1} className="font-mono text-xs text-zinc-400">{formatLogTime(log.occurredAtMs)}</span>
