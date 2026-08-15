@@ -68,12 +68,14 @@
 - 起動時自動接続、自動読み上げON/OFFを追加する。
 - 配信で使うWindowsアプリを登録・起動できるランチャーを追加する。
 - 画面実装をfeature単位へ分割し、追加画面の責務をルーティング層から分離する。
+- production CSP、window 単位の capability、custom command ACL を有効化し、renderer の外部 resource と IPC 権限を利用機能だけに限定する。
 - エラー文言を配信中に判断しやすい日本語にする。
 
 完了条件:
 
 - MultiCommentViewer + 棒読みちゃんの代替として日常利用を試せる。
 - ランチャーから登録アプリを単体または一斉に起動できる。
+- bundled build が外部 script / frame / object / 未許可 connect・image を拒否し、開発 HMR の緩和が production policy に混入しない。
 
 ## Phase 6: VOICEROID2実験アダプタ
 

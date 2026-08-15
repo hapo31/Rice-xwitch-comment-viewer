@@ -2,7 +2,7 @@
 use crate::app_events::{emit_app_log, AppLogLevel};
 #[cfg(feature = "app")]
 use crate::settings::{update_settings_transaction, AppState, SettingsStore};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 const MAX_LAUNCHER_ITEMS: usize = 200;
+const LAUNCHER_ICON_DATA_URL_PREFIX: &str = "data:image/png;base64,";
+const PNG_BASE64_SIGNATURE_PREFIX: &str = "iVBORw0KGgo";
+const MAX_ICON_BASE64_LENGTH: usize = 2_000_000;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,7 +28,11 @@ pub struct LauncherItem {
     pub kind: LauncherItemKind,
     pub target: String,
     pub display_name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_launcher_icon_data_url",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub icon_data_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_color: Option<String>,
@@ -100,7 +107,7 @@ pub(crate) fn normalize_launcher_items(
 
         item.target = target.to_string_lossy().into_owned();
         item.display_name = normalize_display_name(&item.display_name, &target);
-        item.icon_data_url = normalize_optional_text(item.icon_data_url);
+        item.icon_data_url = normalize_launcher_icon_data_url(item.icon_data_url);
         item.background_color = normalize_optional_text(item.background_color);
         item.group_id = normalize_optional_text(item.group_id);
         normalized.push(item);
@@ -114,6 +121,33 @@ fn normalize_optional_text(value: Option<String>) -> Option<String> {
         let value = value.trim();
         (!value.is_empty()).then(|| value.to_string())
     })
+}
+
+fn deserialize_launcher_icon_data_url<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(normalize_launcher_icon_data_url)
+}
+
+fn normalize_launcher_icon_data_url(value: Option<String>) -> Option<String> {
+    let value = value?.trim().to_string();
+    let encoded = value.strip_prefix(LAUNCHER_ICON_DATA_URL_PREFIX)?;
+    if encoded.is_empty() || encoded.len() > MAX_ICON_BASE64_LENGTH || encoded.len() % 4 != 0 {
+        return None;
+    }
+    if !encoded.starts_with(PNG_BASE64_SIGNATURE_PREFIX) {
+        return None;
+    }
+
+    let padding_start = encoded.find('=').unwrap_or(encoded.len());
+    let (data, padding) = encoded.split_at(padding_start);
+    let data_is_base64 = data
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/');
+    let padding_is_valid = padding.len() <= 2 && padding.bytes().all(|byte| byte == b'=');
+
+    (data_is_base64 && padding_is_valid).then_some(value)
 }
 
 fn normalize_display_name(value: &str, target: &Path) -> String {
@@ -280,7 +314,6 @@ fn extract_icon_data_url(target: &Path) -> Option<String> {
     use std::os::windows::process::CommandExt;
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    const MAX_ICON_BASE64_LENGTH: usize = 2_000_000;
     const EXTRACT_ICON_SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -337,7 +370,7 @@ try {
     if encoded.is_empty() || encoded.len() > MAX_ICON_BASE64_LENGTH {
         return None;
     }
-    Some(format!("data:image/png;base64,{encoded}"))
+    Some(format!("{LAUNCHER_ICON_DATA_URL_PREFIX}{encoded}"))
 }
 
 #[cfg(any(not(feature = "app"), not(target_os = "windows")))]
@@ -583,7 +616,8 @@ fn log_launch_result(app: &tauri::AppHandle<tauri::Wry>, result: &LauncherLaunch
 mod tests {
     use super::{
         build_new_items, derive_display_name, is_supported_application_path, next_order,
-        normalize_launcher_items, path_identity_key, LauncherItem, LauncherItemKind,
+        normalize_launcher_icon_data_url, normalize_launcher_items, path_identity_key,
+        LauncherItem, LauncherItemKind,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -631,6 +665,47 @@ mod tests {
         assert!(is_supported_application_path(Path::new("shortcut.LnK")));
         assert!(!is_supported_application_path(Path::new("script.bat")));
         assert!(!is_supported_application_path(Path::new("app.exe.txt")));
+    }
+
+    #[test]
+    fn launcher_icons_only_allow_base64_png_data_urls() {
+        assert_eq!(
+            normalize_launcher_icon_data_url(Some(
+                " data:image/png;base64,iVBORw0KGgo= ".to_string()
+            )),
+            Some("data:image/png;base64,iVBORw0KGgo=".to_string())
+        );
+        assert_eq!(
+            normalize_launcher_icon_data_url(Some("https://example.com/icon.png".to_string())),
+            None
+        );
+        assert_eq!(
+            normalize_launcher_icon_data_url(Some(
+                "data:image/svg+xml;base64,PHN2Zz4=".to_string()
+            )),
+            None
+        );
+        assert_eq!(
+            normalize_launcher_icon_data_url(Some(
+                "data:image/png;base64,iVBORw0KGgo!".to_string()
+            )),
+            None
+        );
+    }
+
+    #[test]
+    fn deserialization_drops_untrusted_launcher_icon_sources() {
+        let item = serde_json::from_value::<LauncherItem>(serde_json::json!({
+            "id": "item-1",
+            "kind": "application",
+            "target": "C:\\Apps\\app.exe",
+            "displayName": "App",
+            "iconDataUrl": "https://example.com/tracking.png",
+            "order": 0
+        }))
+        .expect("deserialize launcher item");
+
+        assert_eq!(item.icon_data_url, None);
     }
 
     #[test]

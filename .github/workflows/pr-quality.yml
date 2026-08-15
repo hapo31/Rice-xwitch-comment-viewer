@@ -68,6 +68,8 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Typecheck frontend
         run: pnpm run lint
+      - name: Check Tauri renderer security boundary
+        run: pnpm run check:security
 
   rust-lint:
     name: Rust format and clippy

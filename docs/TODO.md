@@ -121,6 +121,7 @@
 
 ## Phase 5: 配信運用向け仕上げ
 
+- [x] Issue #73: production CSP を有効化し、Tauri capability / custom command ACL と Launcher icon の renderer 権限境界を最小化する。
 - [x] Issue #3: 非同期イベント購読を遅延 cleanup と部分失敗に安全な共通 helper へ統一する。
 - [x] Issue #2: Chat 行へ読み上げ状態を表示し、キュー更新時に `sourceMessageId` で状態を同期する。
 - [x] Issue #1: Activity Bar から Logs view を開ける導線を追加し、リンク名・現在地表現を回帰テストする。
@@ -244,6 +245,7 @@
 - [x] TypeScript: Issue #36 の起動済みチャット除外、連投集約、重複・system チャット抑制、通知停止中の既読化をテストする。
 - [x] TypeScript: Issue #49 の route 別 document title と PUSH/POP/REPLACE ごとのフォーカス方針をテストする。
  - [x] TypeScript: Issue #17 の Space / S / Cmd/Ctrl+, と入力中・IME・キーリピート・Shift 修飾時のショートカット抑止をテストする。
+- [x] Security: production CSP、dev override、main capability、custom command ACL、bundled asset source を自動検査する。
 - [ ] 手動: 棒読みちゃん未起動/起動中/ポート競合を確認する。
 - [ ] 手動: Twitch トークン期限切れ/認可取り消しを確認する。
 - [ ] 手動: 配信中チャット連投を確認する。
@@ -251,6 +253,7 @@
 - [ ] 手動: Windows 10/11 で `.exe` / `.lnk` の選択・DnD登録、実アイコン、単体/一斉起動、削除、再起動後の復元を確認する。
 - [ ] 手動: 空白・日本語・`&` を含むアプリパスと、移動済みアプリを含む一斉起動の部分失敗表示を確認する。
 - [ ] 手動: マウス操作では不要な focus ring が出ず、Tab 操作では各入力・ボタンの位置を確認できること、および Windows 高コントラストで focus indicator を確認する（Issue #51）。
+- [ ] 手動: Windows release package の DevTools で CSP violation がないことと、Tauri event/invoke、タイトルバー、Dialog、Launcher icon、主要 API 操作を確認する（Issue #73）。
 
 ## 調査メモ
 

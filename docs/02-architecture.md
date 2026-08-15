@@ -126,6 +126,18 @@ Events:
 - `speech://status`
 - `app://log`: `id` は Logs view の React key に使う表示用 ID として一意にする。受信時に ID が欠ける、または既存 ID と重複する場合は、frontend store が連番 suffix を付ける。ログ本文の重複排除は行わない。
 
+## Renderer のセキュリティ境界
+
+production の bundled window は `default-src 'self'` を起点とする CSP を使う。script は bundled asset と Tauri が build 時に付与する hash / nonce、通信は Tauri IPC の `ipc:` / `http://ipc.localhost`、画像は bundled asset と検証済みの PNG data URL だけを許可する。frame、object、worker、media、base、form は使用しないため拒否する。Twitch HTTP / WebSocket と棒読みちゃん TCP は Rust 側で処理し、renderer の `connect-src` へ外部 origin を追加しない。
+
+React の仮想スクロール、ウィンドウ倍率、Launcher tile は動的な style 属性を使うため、`style-src-attr 'unsafe-inline'` だけを例外とする。script の inline handler は `script-src-attr 'none'` で拒否する。Vite dev server / HMR は production の許可元へ含めず、`devCsp: null` の明示的な開発時 override へ分離する。Tauri の `csp` は `devCsp` が未指定だと開発時にも適用されるため、override を省略しない。
+
+capability は `main` window の `default` だけを設定から明示的に有効化する。core API は event の listen/unlisten、現在の window の状態確認・移動・resize・native close 完了、Dialog の open に限定する。custom command は `tauri_build::AppManifest` へ列挙し、同じ main capability に明示した command だけを許可する。新しい window / capability / command を追加するときは、既存の default set を広げず、その利用箇所と permission を同じ変更で追加する。CSP や capability は backend の入力検証を代替しないため、外部 URL、Launcher path、設定値の Rust 側検証は維持する。
+
+Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、PNG signature、payload 上限、base64 形式を検証し、不正値は表示モデルへ渡さない。`assetProtocol` は有効化せず、任意ファイル path や remote image を renderer から読める境界は設けない。
+
+判断根拠は Tauri v2 公式の [Content Security Policy](https://v2.tauri.app/security/csp/)、[Capabilities](https://v2.tauri.app/security/capabilities/)、[configuration schema](https://v2.tauri.app/reference/config/#securityconfig) に従う。
+
 ### フロントエンド通知
 
 対処が必要な通知は `{ id, severity, source, message, occurredAtMs, correlationId? }` として保持する。`severity` は `info` / `success` / `warning` / `error`、`source` は command / event / log / system を区別する。Side Panel と Status Bar の Warnings は warning / error のみを最新 5 件まで表示するため、成功通知で実警告を押し出さない。`correlationId` がある通知はその値で重複排除し、ID がない既存イベントは本文と 5 秒の受信時間で重複排除する。重複経路で severity が異なるときは、より重大な値を残す。info / success は Logs と system Chat に残す。
