@@ -919,12 +919,29 @@ fn url_range_at(text: &str, start: usize) -> Option<Range<usize>> {
     while end < text.len() && is_url_ascii_byte(text.as_bytes()[end]) {
         end += 1;
     }
-    end = trim_url_suffix(text, start, start + prefix_len, end);
 
-    // Do not classify an incomplete prefix (for example, `https://` or `www.`)
-    // or malformed authority (for example, `https://[`) as a URL.
-    (end > start + prefix_len && is_valid_url_candidate(&text[start..end], scheme_less))
-        .then_some(start..end)
+    // ASCII opening delimiters can immediately follow a URL before prose. Try
+    // the complete candidate first so balanced path delimiters remain part of
+    // the URL, then backtrack only to delimiter boundaries. Backtracking every
+    // byte could turn an invalid authority such as port 65536 into a different,
+    // apparently valid URL by dropping its final digit.
+    end = trim_url_suffix(text, start + prefix_len, end);
+    if end > start + prefix_len && is_valid_url_candidate(&text[start..end], scheme_less) {
+        return Some(start..end);
+    }
+
+    while let Some(delimiter_offset) = text[start + prefix_len..end]
+        .bytes()
+        .rposition(is_ascii_opening_delimiter)
+    {
+        end = start + prefix_len + delimiter_offset;
+        end = trim_url_suffix(text, start + prefix_len, end);
+        if end > start + prefix_len && is_valid_url_candidate(&text[start..end], scheme_less) {
+            return Some(start..end);
+        }
+    }
+
+    None
 }
 
 fn starts_with_ascii_case_insensitive(value: &[u8], prefix: &[u8]) -> bool {
@@ -946,7 +963,32 @@ fn is_valid_url_candidate(candidate: &str, scheme_less: bool) -> bool {
         reqwest::Url::parse(candidate)
     };
 
-    parsed.is_ok_and(|url| url.host_str().is_some())
+    parsed.is_ok_and(|url| url.host_str().is_some_and(is_valid_url_host))
+}
+
+fn is_valid_url_host(host: &str) -> bool {
+    let unbracketed = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
+    if unbracketed.parse::<std::net::IpAddr>().is_ok() {
+        return true;
+    }
+
+    unbracketed.split('.').all(|label| {
+        !label.is_empty()
+            && label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            && label
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric)
+            && label
+                .as_bytes()
+                .last()
+                .is_some_and(u8::is_ascii_alphanumeric)
+    })
 }
 
 fn is_url_ascii_byte(byte: u8) -> bool {
@@ -978,13 +1020,16 @@ fn is_url_ascii_byte(byte: u8) -> bool {
         )
 }
 
-fn trim_url_suffix(text: &str, url_start: usize, content_start: usize, mut end: usize) -> usize {
-    let has_opening_ascii_single_quote = text[..url_start].ends_with('\'');
+fn is_ascii_opening_delimiter(byte: u8) -> bool {
+    matches!(byte, b'(' | b'[' | b'\'')
+}
+
+fn trim_url_suffix(text: &str, content_start: usize, mut end: usize) -> usize {
     let mut trimmed_closing_ascii_single_quote = false;
 
     while end > content_start {
         let byte = text.as_bytes()[end - 1];
-        if byte == b'\'' && has_opening_ascii_single_quote && !trimmed_closing_ascii_single_quote {
+        if byte == b'\'' && !trimmed_closing_ascii_single_quote {
             end -= 1;
             trimmed_closing_ascii_single_quote = true;
             continue;
@@ -1015,6 +1060,34 @@ fn trim_url_suffix(text: &str, url_start: usize, content_start: usize, mut end: 
                 .filter(|byte| *byte == b'[')
                 .count()
                 < text[content_start..end]
+                    .bytes()
+                    .filter(|byte| *byte == b']')
+                    .count()
+        {
+            end -= 1;
+            continue;
+        }
+
+        if byte == b'('
+            && text[content_start..end]
+                .bytes()
+                .filter(|byte| *byte == b'(')
+                .count()
+                > text[content_start..end]
+                    .bytes()
+                    .filter(|byte| *byte == b')')
+                    .count()
+        {
+            end -= 1;
+            continue;
+        }
+
+        if byte == b'['
+            && text[content_start..end]
+                .bytes()
+                .filter(|byte| *byte == b'[')
+                .count()
+                > text[content_start..end]
                     .bytes()
                     .filter(|byte| *byte == b']')
                     .count()
@@ -1238,6 +1311,36 @@ mod tests {
                 "(URL省略)です",
             ),
             (
+                "balanced path and query parentheses",
+                "https://example.com/a_(b)?q=(c)",
+                "URL省略",
+            ),
+            (
+                "opening parenthesis after URL",
+                "https://example.com(続き)",
+                "URL省略(続き)",
+            ),
+            (
+                "opening bracket after URL",
+                "https://example.com[続き]",
+                "URL省略[続き]",
+            ),
+            (
+                "ASCII parenthesized prose after URL",
+                "https://example.com(note)",
+                "URL省略(note)",
+            ),
+            (
+                "ASCII bracketed prose after URL",
+                "https://example.com[notes]",
+                "URL省略[notes]",
+            ),
+            (
+                "opening quote after URL",
+                "https://example.com'続き'",
+                "URL省略'続き'",
+            ),
+            (
                 "valid bracketed IPv6 authority",
                 "https://[2001:db8::1]/path",
                 "URL省略",
@@ -1302,6 +1405,7 @@ mod tests {
             ("incomplete bracketed IPv6", "https://[ を確認"),
             ("empty bracketed IPv6", "https://[] を確認"),
             ("invalid bracketed IPv6", "https://[oops] を確認"),
+            ("invalid port", "https://example.com:65536 を確認"),
             (
                 "www domain inside email",
                 "連絡先 user@www.example.com です",
