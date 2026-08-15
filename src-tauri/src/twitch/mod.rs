@@ -361,6 +361,10 @@ impl EventSubReconnectBackoff {
         self.established_at = Some(established_at);
     }
 
+    fn record_handover_started(&mut self) {
+        self.established_at = None;
+    }
+
     fn next_delay_after_failure(&mut self) -> u64 {
         self.next_delay_after_failure_at(Instant::now())
     }
@@ -1598,6 +1602,7 @@ async fn run_eventsub_connection(
         .await
         {
             Ok(EventSubSessionExit::Reconnect(reconnect_url)) => {
+                reconnect_backoff.record_handover_started();
                 url = reconnect_url;
                 subscribe_on_welcome = false;
                 emit_twitch_status(
@@ -2611,6 +2616,31 @@ mod tests {
         backoff.record_session_established_at(handover_welcome_at);
         assert_eq!(
             backoff.next_delay_after_failure_at(handover_welcome_at + Duration::from_secs(1)),
+            10
+        );
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn eventsub_handover_failure_before_new_welcome_ignores_the_old_stable_session() {
+        let started_at = Instant::now();
+        let mut backoff = EventSubReconnectBackoff::default();
+
+        assert_eq!(backoff.next_delay_after_failure_at(started_at), 2);
+        assert_eq!(
+            backoff.next_delay_after_failure_at(started_at + Duration::from_secs(2)),
+            5
+        );
+
+        let old_welcome_at = started_at + Duration::from_secs(3);
+        backoff.record_session_established_at(old_welcome_at);
+        let handover_started_at = old_welcome_at + EVENTSUB_BACKOFF_RESET_STABLE_DURATION;
+        backoff.record_handover_started();
+
+        // A handover connection failure before its welcome must continue the
+        // existing failure sequence, even when the old session was stable.
+        assert_eq!(
+            backoff.next_delay_after_failure_at(handover_started_at + Duration::from_secs(1)),
             10
         );
     }

@@ -73,7 +73,7 @@ Twitch EventSub WebSocketでは、最初に `session_welcome` が届き、その
 - 通常再接続で再購読する際は、接続開始時の token を保持せず、認証状態からその時点の access token を取得する。購読が 401 の場合だけ refresh token を用いて一度更新・安全な保存を行い、新しい access token で一度だけ再試行する。更新や再試行が失敗した場合は認証状態を解除し、UI に再ログインを案内する。
 - 通知は少なくとも一回配送のため、`metadata.message_id` または `event.message_id` で重複排除する。
 - WebSocket切断中の通知は再送されないため、再接続は指数バックオフしつつ最初の数回は短い間隔にする。
-- backoff は通常接続では `session_welcome` と購読成功後、Twitch 指定の handover では新しい `session_welcome` 後に「確立済み」と記録する。ただし確立直後の切断で待機時間が毎回最短に戻る retry storm を避けるため、30 秒以上安定していた session の次の障害時にだけ失敗回数を reset する。確立前・30 秒未満の失敗は従来の 2 / 5 / 10 / 30 秒バックオフを継続する。
+- backoff は通常接続では `session_welcome` と購読成功後、Twitch 指定の handover では新しい `session_welcome` 後に「確立済み」と記録する。handover 開始時には旧 session の確立時刻を失効させ、新しい welcome 前の接続失敗で旧 session の安定実績を使って reset しない。ただし確立直後の切断で待機時間が毎回最短に戻る retry storm を避けるため、30 秒以上安定していた session の次の障害時にだけ失敗回数を reset する。確立前・30 秒未満の失敗は従来の 2 / 5 / 10 / 30 秒バックオフを継続する。
 
 ## 正規化
 
