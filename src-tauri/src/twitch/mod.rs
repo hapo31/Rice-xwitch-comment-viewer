@@ -7,7 +7,7 @@ use crate::app_events::{
 use crate::settings::{default_twitch_client_id, AppState};
 #[cfg(feature = "app")]
 use crate::speech::enqueue_chat_message_for_speech;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Timelike, Utc};
 #[cfg(feature = "app")]
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -264,7 +264,7 @@ struct EventSubMetadata {
     message_id: String,
     message_type: String,
     #[serde(default)]
-    message_timestamp: Option<String>,
+    message_timestamp: Option<serde_json::Value>,
     subscription_type: Option<String>,
 }
 
@@ -1677,6 +1677,7 @@ async fn run_eventsub_session(
                     anyhow::anyhow!("Twitch から keepalive または通知が届きませんでした。")
                 })?
                 .ok_or_else(|| anyhow::anyhow!("Twitch EventSub WebSocket が閉じられました。"))??;
+        let frame_received_at = Utc::now();
 
         match next_message {
             Message::Text(text) => {
@@ -1722,7 +1723,9 @@ async fn run_eventsub_session(
                         return Ok(EventSubSessionExit::Reconnect(reconnect_url));
                     }
                     "notification" => {
-                        if let Some(normalized) = normalize_chat_message(envelope, Utc::now())? {
+                        if let Some(normalized) =
+                            normalize_chat_message(envelope, frame_received_at)?
+                        {
                             if let Some(warning) = normalized.timestamp_warning {
                                 emit_app_log(app, AppLogLevel::Warning, warning);
                             }
@@ -2058,10 +2061,11 @@ fn normalize_chat_message(
     let (received_at, used_timestamp_fallback) = match envelope
         .metadata
         .message_timestamp
-        .as_deref()
-        .and_then(|timestamp| DateTime::parse_from_rfc3339(timestamp).ok())
+        .as_ref()
+        .and_then(serde_json::Value::as_str)
+        .and_then(parse_chat_timestamp)
     {
-        Some(timestamp) => (timestamp.with_timezone(&Utc), false),
+        Some(timestamp) => (timestamp, false),
         None => (fallback_received_at, true),
     };
     let id = if event.message_id.is_empty() {
@@ -2090,6 +2094,18 @@ fn normalize_chat_message(
         },
         timestamp_warning,
     }))
+}
+
+fn parse_chat_timestamp(timestamp: &str) -> Option<DateTime<Utc>> {
+    let timestamp = DateTime::parse_from_rfc3339(timestamp).ok()?;
+
+    // JavaScript Date/Intl cannot represent RFC 3339 leap seconds. Reject them
+    // at the backend boundary so Rust and the renderer use the same fallback.
+    if timestamp.nanosecond() >= 1_000_000_000 {
+        return None;
+    }
+
+    Some(timestamp.with_timezone(&Utc))
 }
 
 fn retry_backoff_seconds(attempt: u64) -> u64 {
@@ -2485,7 +2501,7 @@ mod tests {
             .with_timezone(&Utc)
     }
 
-    fn chat_fixture_with_timestamp(timestamp: Option<&str>) -> EventSubEnvelope {
+    fn chat_fixture_with_timestamp(timestamp: Option<serde_json::Value>) -> EventSubEnvelope {
         let mut fixture = serde_json::from_str::<serde_json::Value>(include_str!(
             "fixtures/channel_chat_message.json"
         ))
@@ -2493,10 +2509,7 @@ mod tests {
         let metadata = fixture["metadata"].as_object_mut().unwrap();
         match timestamp {
             Some(timestamp) => {
-                metadata.insert(
-                    "message_timestamp".to_string(),
-                    serde_json::Value::String(timestamp.to_string()),
-                );
+                metadata.insert("message_timestamp".to_string(), timestamp);
             }
             None => {
                 metadata.remove("message_timestamp");
@@ -2536,7 +2549,9 @@ mod tests {
     #[test]
     fn normalizes_offset_timestamp_to_utc_and_serializes_the_tauri_field_contract() {
         let normalized = normalize_chat_message(
-            chat_fixture_with_timestamp(Some("2026-08-15T21:34:56.789123456+09:00")),
+            chat_fixture_with_timestamp(Some(serde_json::json!(
+                "2026-08-15T21:34:56.789123456+09:00"
+            ))),
             utc_timestamp("2026-08-15T00:00:00Z"),
         )
         .unwrap()
@@ -2556,13 +2571,18 @@ mod tests {
     }
 
     #[test]
-    fn falls_back_to_websocket_receive_time_for_missing_empty_naive_and_invalid_timestamps() {
+    fn falls_back_to_websocket_receive_time_for_unsupported_timestamps() {
         let fallback = utc_timestamp("2026-08-15T12:34:56.789Z");
         let cases = [
             ("missing", None),
-            ("empty", Some("")),
-            ("naive", Some("2026-08-15T12:34:56")),
-            ("invalid", Some("invalid-timestamp")),
+            ("empty", Some(serde_json::json!(""))),
+            ("naive", Some(serde_json::json!("2026-08-15T12:34:56"))),
+            ("invalid", Some(serde_json::json!("invalid-timestamp"))),
+            ("non-string", Some(serde_json::json!({ "seconds": 1 }))),
+            (
+                "leap second",
+                Some(serde_json::json!("2016-12-31T23:59:60Z")),
+            ),
         ];
 
         for (case_name, timestamp) in cases {

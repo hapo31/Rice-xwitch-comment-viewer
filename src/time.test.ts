@@ -22,6 +22,7 @@ describe("UTC timestamp contract", () => {
     ["naive", "2026-08-15T12:34:56"],
     ["invalid calendar date", "2026-02-30T12:34:56Z"],
     ["invalid offset", "2026-08-15T12:34:56+24:00"],
+    ["unsupported leap second", "2016-12-31T23:59:60Z"],
     ["unparseable", "invalid-timestamp"],
   ])("rejects %s input", (_caseName, value) => {
     expect(parseUtcTimestamp(value)).toBeUndefined();

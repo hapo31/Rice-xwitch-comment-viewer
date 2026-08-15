@@ -31,6 +31,8 @@ describe("Twitch chat timestamp bridge", () => {
     ["empty", ""],
     ["naive", "2026-08-15T12:34:56"],
     ["invalid", "invalid-timestamp"],
+    ["non-string", { seconds: 1 }],
+    ["leap second", "2016-12-31T23:59:60Z"],
   ])("uses the receive-time fallback for %s input", (_caseName, receivedAt) => {
     const fallback = utcTimestamp("2026-08-15T12:34:56.789Z");
     const message = normalizeTwitchChatMessageEvent(
