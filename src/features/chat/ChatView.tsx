@@ -7,13 +7,14 @@ import { getChatMessagePresentation, getChatStatusPresentation } from "../../pre
 import { getStartupGuideMessages, type StartupGuideMessage } from "../../presentation/startupGuide";
 import { routeHeadingId } from "../../routeAccessibility";
 import type { AppState } from "../../stores/appStore";
+import { formatLocalChatTime, utcNow } from "../../time";
 import type { ChatMessage } from "../../types";
 import { ChatBadges } from "./ChatBadges";
 import { CHAT_GRID_TEMPLATE } from "./chatLayout";
 import { getPrependedMessageCount } from "./scrollAnchor";
 
 export function ChatView({ state, showStartupGuide }: { state: AppState; showStartupGuide: boolean }) {
-  const startupReceivedAt = useRef(new Date().toISOString());
+  const startupReceivedAt = useRef(utcNow());
   const startupMessages = showStartupGuide ? getStartupGuideMessages(state, startupReceivedAt.current) : [];
   const messages: Array<ChatMessage | StartupGuideMessage> = [...state.chatMessages, ...startupMessages];
   const scrollParentRef = useRef<HTMLElement | null>(null);
@@ -247,11 +248,7 @@ export function ChatRow({
   rowIndex?: number;
 }) {
   const presentation = getChatMessagePresentation(message);
-  const time = new Intl.DateTimeFormat("ja-JP", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(message.receivedAt));
+  const time = formatLocalChatTime(message.receivedAt);
 
   return (
     <div

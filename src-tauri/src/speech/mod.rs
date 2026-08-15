@@ -10,6 +10,8 @@ use crate::settings::AppState;
 #[cfg(feature = "app")]
 use crate::settings::UrlHandling;
 use crate::twitch::{ChatMessage, MessageFragment};
+#[cfg(test)]
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
@@ -1272,7 +1274,9 @@ mod tests {
             text: text.to_string(),
             fragments: Vec::new(),
             badges: Vec::new(),
-            received_at: "2026-05-23T00:00:00Z".to_string(),
+            received_at: DateTime::parse_from_rfc3339("2026-05-23T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
         }
     }
 

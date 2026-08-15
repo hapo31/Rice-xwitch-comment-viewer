@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { initialAppState, type AppState } from "../stores/appStore";
 import type { AppSettings } from "../types";
+import { utcTimestamp } from "../time";
 import { claimStartupGuideForSession, getStartupGuideMessages } from "./startupGuide";
 
-const receivedAt = "2026-07-11T12:00:00.000Z";
+const receivedAt = utcTimestamp("2026-07-11T12:00:00.000Z");
 const settings: AppSettings = {
   twitch: { channelLogin: "rice_channel", autoConnect: false, confirmBeforeStopChat: true, liveChatAnnouncements: true },
   speech: {

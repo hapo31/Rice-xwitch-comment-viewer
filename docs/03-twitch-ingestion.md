@@ -86,7 +86,10 @@ event.chatter_user_name -> user_display_name
 event.chatter_user_login -> user_login
 event.badges -> badges
 event.message_id -> id
+metadata.message_timestamp -> received_at (DateTime<Utc>)
 ```
+
+`metadata.message_timestamp` は RFC 3339 として解析し、明示された offset を同じ instant の UTC へ正規化する。小数秒は nanosecond 精度まで保持し、Tauri event の `receivedAt` は末尾 `Z` の UTC RFC 3339 とする。timestamp が欠落、空文字、タイムゾーンなし、非文字列を含む不正値の場合も chat notification 自体は破棄せず、その WebSocket frame を取り出した時刻を使って warning log を残す。RFC 3339 の leap second は Chrono が受理しても JavaScript の `Date` / `Intl` が表現できないため、backend で同じ fallback と warning を適用する。frontend は bridge で同じ形式を検証してから store へ渡し、Chat view でのみ利用者のローカルタイムゾーンへ変換して表示する。
 
 読み上げ本文の初期フォーマット:
 

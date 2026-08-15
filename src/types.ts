@@ -1,3 +1,5 @@
+import type { UtcTimestamp } from "./time";
+
 export type AuthStatus =
   | "unauthenticated"
   | "authorizing"
@@ -81,7 +83,7 @@ export interface LauncherLaunchResult {
 export interface UserChatMessage {
   kind: "user";
   id: string;
-  receivedAt: string;
+  receivedAt: UtcTimestamp;
   userDisplayName: string;
   text: string;
   status: ChatDisplayState;
@@ -97,7 +99,7 @@ export interface UserChatMessage {
 export interface SystemChatMessage {
   kind: "system";
   id: string;
-  receivedAt: string;
+  receivedAt: UtcTimestamp;
   userDisplayName: "system";
   text: string;
 }
@@ -115,7 +117,7 @@ export interface TwitchChatMessageEvent {
   text: string;
   fragments: TwitchMessageFragment[];
   badges: TwitchChatBadge[];
-  receivedAt: string;
+  receivedAt: UtcTimestamp;
 }
 
 export interface TwitchMessageFragment {

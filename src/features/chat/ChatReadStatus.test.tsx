@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatRow, ChatView } from "./ChatView";
 import { initialAppState } from "../../stores/appStore";
 import type { ChatDisplayState, UserChatMessage } from "../../types";
+import { utcTimestamp } from "../../time";
 
 const virtualizerState = vi.hoisted(() => ({ indexes: [0], totalSize: 44 }));
 
@@ -24,7 +25,7 @@ function chatMessage(status: ChatDisplayState, id: string = status): UserChatMes
   return {
     kind: "user",
     id,
-    receivedAt: "2026-08-12T00:00:00Z",
+    receivedAt: utcTimestamp("2026-08-12T00:00:00Z"),
     userDisplayName: "viewer",
     text: "こんにちは",
     status,

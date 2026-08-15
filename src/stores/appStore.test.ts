@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { appReducer, initialAppState, warningNotifications } from "./appStore";
 import type { AppSettings, ChatMessage, LauncherItem, QueueItem } from "../types";
+import { utcTimestamp } from "../time";
+
+const receivedAt = utcTimestamp("2026-05-23T00:00:00Z");
+const augustReceivedAt = utcTimestamp("2026-08-08T00:00:00Z");
 
 function chatMessage(id: string): ChatMessage {
   return {
     kind: "user",
     id,
-    receivedAt: "2026-05-23T00:00:00Z",
+    receivedAt,
     userDisplayName: "viewer",
     text: `comment ${id}`,
     status: "queued",
@@ -30,7 +34,7 @@ describe("appReducer", () => {
   });
 
   it("keeps system messages distinct from viewer chat", () => {
-    const state = appReducer(initialAppState, { type: "chat.message", message: { kind: "system", id: "system-1", receivedAt: "2026-05-23T00:00:00Z", userDisplayName: "system", text: "Twitch EventSub を再接続しました。" } });
+    const state = appReducer(initialAppState, { type: "chat.message", message: { kind: "system", id: "system-1", receivedAt, userDisplayName: "system", text: "Twitch EventSub を再接続しました。" } });
     expect(state.chatMessages[0]).toMatchObject({ kind: "system", userDisplayName: "system" });
   });
 
@@ -80,7 +84,7 @@ describe("appReducer", () => {
         chatMessage("skipped"),
         chatMessage("blocked"),
         chatMessage("error"),
-        { kind: "system" as const, id: "system", receivedAt: "2026-05-23T00:00:00Z", userDisplayName: "system" as const, text: "接続しました" },
+        { kind: "system" as const, id: "system", receivedAt, userDisplayName: "system" as const, text: "接続しました" },
       ],
     };
     const items: QueueItem[] = [
@@ -240,7 +244,7 @@ describe("appReducer", () => {
         message: {
           kind: "system",
           id: "system-auth-waiting",
-          receivedAt: "2026-08-08T00:00:00Z",
+          receivedAt: augustReceivedAt,
           userDisplayName: "system",
           text: message,
         },

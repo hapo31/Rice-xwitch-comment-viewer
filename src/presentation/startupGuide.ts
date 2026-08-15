@@ -1,4 +1,5 @@
 import type { AppState } from "../stores/appStore";
+import type { UtcTimestamp } from "../time";
 
 const startupGuideSessionKey = "rice.startup-guide-shown";
 
@@ -20,13 +21,13 @@ export type StartupGuideAction = "login";
 export interface StartupGuideMessage {
   kind: "system";
   id: string;
-  receivedAt: string;
+  receivedAt: UtcTimestamp;
   userDisplayName: "system";
   text: string;
   action?: StartupGuideAction;
 }
 
-export function getStartupGuideMessages(state: AppState, receivedAt: string): StartupGuideMessage[] {
+export function getStartupGuideMessages(state: AppState, receivedAt: UtcTimestamp): StartupGuideMessage[] {
   const isAuthenticated = state.twitchAuthStatus === "authenticated";
   const channelLogin = state.settings?.twitch.channelLogin.trim() ?? "";
   const isBouyomiConnected = ["idle", "speaking", "paused"].includes(state.speechStatus);
@@ -52,7 +53,7 @@ export function getStartupGuideMessages(state: AppState, receivedAt: string): St
 
 function message(
   id: string,
-  receivedAt: string,
+  receivedAt: UtcTimestamp,
   text: string,
   action?: StartupGuideAction,
 ): StartupGuideMessage {
