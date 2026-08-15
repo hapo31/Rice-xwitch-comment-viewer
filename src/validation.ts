@@ -13,6 +13,14 @@ export function isValidBouyomiVoice(value: string | number): boolean {
   return Number.isInteger(voice) && voice >= 0 && voice <= 30000;
 }
 
+export function isValidRepeatSuppressionSeconds(value: string | number): boolean {
+  if (typeof value === "string" && value.trim().length === 0) {
+    return false;
+  }
+  const seconds = Number(value);
+  return Number.isInteger(seconds) && seconds >= 0 && seconds <= 30;
+}
+
 export function isValidBouyomiHost(value: string): boolean {
   const host = value.trim();
   if (!host || /[\s\[\]]/.test(host)) {

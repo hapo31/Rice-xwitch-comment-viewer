@@ -238,6 +238,21 @@ pub struct LoadedSettings {
     pub recovery_notice: Option<SettingsRecoveryNotice>,
 }
 
+fn validate_repeat_suppression_seconds(seconds: u16) -> Result<(), String> {
+    if seconds <= 30 {
+        Ok(())
+    } else {
+        Err("連投抑制秒は0から30の範囲で指定してください。".to_string())
+    }
+}
+
+fn deserialize_settings(text: &str) -> Result<AppSettings, String> {
+    let settings: AppSettings =
+        serde_json::from_str(text).map_err(|_| "設定JSONを読み取れません。".to_string())?;
+    validate_repeat_suppression_seconds(settings.speech.repeat_suppression_seconds)?;
+    Ok(settings)
+}
+
 impl SettingsStore {
     #[cfg(feature = "app")]
     pub fn load<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyhow::Result<LoadedSettings> {
@@ -256,12 +271,12 @@ impl SettingsStore {
         }
 
         let text = fs::read_to_string(path)?;
-        match serde_json::from_str(&text) {
+        match deserialize_settings(&text) {
             Ok(settings) => Ok(LoadedSettings {
                 settings,
                 recovery_notice: None,
             }),
-            Err(_) => Self::recover_from_invalid_primary(path),
+            Err(reason) => Self::recover_from_invalid_primary(path, &reason),
         }
     }
 
@@ -296,7 +311,7 @@ impl SettingsStore {
         let result = (|| {
             if path.exists() {
                 let previous = fs::read_to_string(path)?;
-                serde_json::from_str::<AppSettings>(&previous).map_err(|error| {
+                deserialize_settings(&previous).map_err(|error| {
                     anyhow::anyhow!("既存の設定をバックアップできませんでした: {error}")
                 })?;
                 atomic_write(&backup_path(path), previous.as_bytes(), SaveFault::None)?;
@@ -312,25 +327,30 @@ impl SettingsStore {
         result
     }
 
-    fn recover_from_invalid_primary(path: &Path) -> anyhow::Result<LoadedSettings> {
+    fn recover_from_invalid_primary(
+        path: &Path,
+        primary_reason: &str,
+    ) -> anyhow::Result<LoadedSettings> {
         let corrupted_primary = quarantine_file(path)?;
         let backup = backup_path(path);
 
         if backup.exists() {
             let backup_text = fs::read_to_string(&backup)?;
-            if let Ok(settings) = serde_json::from_str::<AppSettings>(&backup_text) {
-                atomic_write(path, backup_text.as_bytes(), SaveFault::None)?;
-                return Ok(LoadedSettings {
-                    settings,
-                    recovery_notice: Some(SettingsRecoveryNotice {
-                        message: format!(
-                            "設定ファイルが破損していたため、バックアップから復旧しました。破損ファイル: {}",
-                            corrupted_primary.display()
-                        ),
-                    }),
-                });
-            }
-
+            let backup_reason = match deserialize_settings(&backup_text) {
+                Ok(settings) => {
+                    atomic_write(path, backup_text.as_bytes(), SaveFault::None)?;
+                    return Ok(LoadedSettings {
+                        settings,
+                        recovery_notice: Some(SettingsRecoveryNotice {
+                            message: format!(
+                                "設定ファイルの内容が無効（{primary_reason}）だったため、バックアップから復旧しました。退避先: {}",
+                                corrupted_primary.display()
+                            ),
+                        }),
+                    });
+                }
+                Err(reason) => reason,
+            };
             let corrupted_backup = quarantine_file(&backup)?;
             let settings = AppSettings::default();
             Self::save_to_path(path, &settings)?;
@@ -338,7 +358,7 @@ impl SettingsStore {
                 settings,
                 recovery_notice: Some(SettingsRecoveryNotice {
                     message: format!(
-                        "設定ファイルとバックアップが破損していたため、既定値で起動しました。退避先: {}, {}",
+                        "設定ファイルとバックアップの内容が無効だったため、既定値で起動しました。原因: {primary_reason} / {backup_reason} 退避先: {}, {}",
                         corrupted_primary.display(),
                         corrupted_backup.display()
                     ),
@@ -352,7 +372,7 @@ impl SettingsStore {
             settings,
             recovery_notice: Some(SettingsRecoveryNotice {
                 message: format!(
-                    "設定ファイルが破損していたため、既定値で起動しました。破損ファイル: {}",
+                    "設定ファイルの内容が無効（{primary_reason}）だったため、既定値で起動しました。退避先: {}",
                     corrupted_primary.display()
                 ),
             }),
@@ -616,7 +636,8 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
             settings.speech.max_comment_length = max_length.clamp(1, 500);
         }
         if let Some(seconds) = speech.repeat_suppression_seconds {
-            settings.speech.repeat_suppression_seconds = seconds.min(30);
+            validate_repeat_suppression_seconds(seconds)?;
+            settings.speech.repeat_suppression_seconds = seconds;
         }
         if let Some(blocked_users) = speech.blocked_users {
             settings.speech.blocked_users = normalize_rule_list(blocked_users, RuleListKind::User)?;
@@ -779,6 +800,83 @@ mod tests {
         apply_patch(&mut settings, patch).expect("apply patch");
 
         assert!(!settings.twitch.live_chat_announcements);
+    }
+
+    #[test]
+    fn repeat_suppression_boundaries_are_preserved_by_settings_patch() {
+        for seconds in [0, 1, 2, 30] {
+            let mut settings = AppSettings::default();
+            let patch: SettingsPatch = serde_json::from_value(serde_json::json!({
+                "speech": { "repeatSuppressionSeconds": seconds }
+            }))
+            .expect("deserialize patch");
+
+            apply_patch(&mut settings, patch).expect("apply patch");
+
+            assert_eq!(settings.speech.repeat_suppression_seconds, seconds);
+        }
+    }
+
+    #[test]
+    fn repeat_suppression_outside_the_frontend_range_is_rejected() {
+        let mut settings = AppSettings::default();
+        let patch: SettingsPatch = serde_json::from_value(serde_json::json!({
+            "speech": { "repeatSuppressionSeconds": 31 }
+        }))
+        .expect("deserialize patch");
+
+        assert_eq!(
+            apply_patch(&mut settings, patch),
+            Err("連投抑制秒は0から30の範囲で指定してください。".to_string())
+        );
+        assert_eq!(settings.speech.repeat_suppression_seconds, 2);
+    }
+
+    #[test]
+    fn repeat_suppression_boundaries_are_preserved_when_loading_settings() {
+        for seconds in [0, 1, 2, 30] {
+            let path = settings_path_for_test(&format!("load-repeat-{seconds}"));
+            let mut settings = AppSettings::default();
+            settings.speech.repeat_suppression_seconds = seconds;
+            fs::write(
+                &path,
+                serde_json::to_string(&settings).expect("serialize settings"),
+            )
+            .expect("write settings");
+
+            let loaded = SettingsStore::load_from_path(&path).expect("load valid settings");
+
+            assert_eq!(loaded.settings.speech.repeat_suppression_seconds, seconds);
+            assert!(loaded.recovery_notice.is_none());
+            cleanup(&path);
+        }
+    }
+
+    #[test]
+    fn invalid_repeat_suppression_recovers_from_a_valid_backup() {
+        let path = settings_path_for_test("recover-invalid-repeat");
+        let mut invalid = AppSettings::default();
+        invalid.speech.repeat_suppression_seconds = 31;
+        let mut backup = AppSettings::default();
+        backup.speech.repeat_suppression_seconds = 1;
+        fs::write(
+            &path,
+            serde_json::to_string(&invalid).expect("serialize invalid settings"),
+        )
+        .expect("write invalid settings");
+        fs::write(
+            backup_path(&path),
+            serde_json::to_string(&backup).expect("serialize backup"),
+        )
+        .expect("write backup");
+
+        let loaded = SettingsStore::load_from_path(&path).expect("recover from backup");
+
+        assert_eq!(loaded.settings.speech.repeat_suppression_seconds, 1);
+        let notice = loaded.recovery_notice.expect("recovery notice").message;
+        assert!(notice.contains("連投抑制秒は0から30の範囲"));
+        assert!(notice.contains("バックアップから復旧"));
+        cleanup(&path);
     }
 
     #[test]

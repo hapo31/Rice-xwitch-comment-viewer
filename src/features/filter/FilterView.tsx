@@ -8,7 +8,12 @@ import {
 import type { AppSettings } from "../../types";
 import { focusIndicatorClass } from "../../presentation/focus";
 import { routeHeadingId } from "../../routeAccessibility";
-import { formatRuleList, parseBlockedUserList, parseBlockedWordList } from "../../validation";
+import {
+  formatRuleList,
+  isValidRepeatSuppressionSeconds,
+  parseBlockedUserList,
+  parseBlockedWordList,
+} from "../../validation";
 import { defaultSpeechSettings } from "../settings/defaults";
 import { useUnsavedChanges } from "../../unsavedChanges";
 
@@ -46,7 +51,7 @@ export function FilterView({
   const numericMaxLength = Number(maxLength);
   const numericRepeatSeconds = Number(repeatSeconds);
   const isMaxLengthValid = Number.isInteger(numericMaxLength) && numericMaxLength >= 1 && numericMaxLength <= 500;
-  const isRepeatSecondsValid = Number.isInteger(numericRepeatSeconds) && numericRepeatSeconds >= 0 && numericRepeatSeconds <= 30;
+  const isRepeatSecondsValid = isValidRepeatSuppressionSeconds(repeatSeconds);
   const blockedUserRules = parseBlockedUserList(blockedUsers);
   const blockedWordRules = parseBlockedWordList(blockedWords);
   const areRuleListsValid = blockedUserRules.overflowCount === 0 && blockedWordRules.overflowCount === 0;
@@ -121,11 +126,11 @@ export function FilterView({
             />
             <NumberRuleRow
               id="rule-repeat-seconds"
-              label="連投抑制秒"
+              label="連投抑制秒（0は無効、1〜30秒は指定間隔）"
               value={repeatSeconds}
               onChange={setRepeatSeconds}
               valid={isRepeatSecondsValid}
-              error="0 から 30 の範囲で入力してください。"
+              error="0（無効）または 1 から 30 の範囲で入力してください。"
             />
           </SettingsSection>
 
