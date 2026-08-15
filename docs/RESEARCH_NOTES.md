@@ -150,9 +150,9 @@
 
 ## 2026-08-15
 
-- Issue #73: Tauri v2 の `csp` は production HTML へ注入され、bundled script/style の hash / nonce は build 時に Tauri が補う。`devCsp` が未指定の場合は同じ CSP が development にも適用されるため、Vite HMR を production policy へ許可せず `devCsp: null` で明示的に分離した。renderer は外部 API へ直接接続しないので、`connect-src` は公式 IPC source の `ipc:` / `http://ipc.localhost` だけでよい。動的 style 属性は仮想スクロール、倍率、tile 色に必要なため `style-src-attr 'unsafe-inline'` に限定して残した。
+- Issue #73: Tauri v2 の `csp` は production HTML へ注入され、bundled script/style の hash / nonce は build 時に Tauri が補う。`devCsp` が `null` または未指定の場合は production `csp` へ fallback するため、Vite HMR を production policy へ許可せず、development policy だけに `ws://localhost:1420` と Vite style injection を明示した。renderer は外部 API へ直接接続しないので、production の `connect-src` は公式 IPC source の `ipc:` / `http://ipc.localhost` だけでよい。動的 style 属性は仮想スクロール、倍率、tile 色に必要なため `style-src-attr 'unsafe-inline'` に限定して残した。
 - capability directory の全ファイルは設定未指定時に自動有効化されるため、`tauri.conf.json` から `default` だけを明示した。`core:default`、event/window の default set は未使用 command を含むので個別 permission へ縮小した。custom command は app manifest がない local renderer では暗黙許可されるため、`tauri_build::AppManifest` で invoke handler と同じ command 一覧を ACL 化し、main capability へ明示した。
-- Launcher icon は保存済み JSON を直接 deserialize する経路でも remote URL が表示され得た。`data:image/png;base64,`、PNG signature、2,000,000文字上限、base64 alphabet/padding を deserialize と更新の両方で検証し、違反値は `None` に落として汎用アイコンへ戻す。CSP の `img-src 'self' data:` と合わせ、remote image request と SVG active content を許可しない。
+- Launcher icon は保存済み JSON を直接 deserialize する経路でも remote URL が表示され得た。`data:image/png;base64,`、encoded/decoded 上限、base64 decode、PNG chunk/checksum/IEND、単一 frame、最大 512 x 512 px を deserialize と更新の両方で検証し、違反値は `None` に落として汎用アイコンへ戻す。CSP の `img-src 'self' data:` と合わせ、remote image request、SVG active content、署名だけを模した壊れた PNG を許可しない。
 
 ## 2026-08-12
 

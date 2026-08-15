@@ -33,13 +33,37 @@ const expectedCsp = {
   "base-uri": "'none'",
   "form-action": "'none'",
 };
+const expectedDevCsp = {
+  "default-src": "'self'",
+  "script-src": "'self'",
+  "script-src-attr": "'none'",
+  "style-src": "'self' 'unsafe-inline'",
+  "style-src-attr": "'unsafe-inline'",
+  "connect-src": "'self' ipc: http://ipc.localhost ws://localhost:1420",
+  "img-src": "'self' data:",
+  "font-src": "'self'",
+  "object-src": "'none'",
+  "frame-src": "'none'",
+  "worker-src": "'none'",
+  "media-src": "'none'",
+  "base-uri": "'none'",
+  "form-action": "'none'",
+};
 const security = config.app?.security;
 if (!security || typeof security !== "object") {
   fail("app.security is missing");
 }
 expectEqual(security.csp, expectedCsp, "production CSP");
-expectEqual(security.devCsp, null, "development CSP override");
+expectEqual(security.devCsp, expectedDevCsp, "development CSP override");
 expectEqual(security.capabilities, ["default"], "enabled capabilities");
+for (const forbiddenDevelopmentSource of ["ws://localhost:1420", "http://localhost:1420"]) {
+  if (JSON.stringify(security.csp).includes(forbiddenDevelopmentSource)) {
+    fail(`production CSP must not contain development source ${forbiddenDevelopmentSource}`);
+  }
+}
+if (security.csp["style-src"].includes("'unsafe-inline'")) {
+  fail("production style-src must not allow Vite's inline style injection");
+}
 if (security.assetProtocol?.enable === true) {
   fail("asset protocol must remain disabled while launcher icons use validated data URLs");
 }

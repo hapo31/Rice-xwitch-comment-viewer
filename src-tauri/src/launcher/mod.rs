@@ -2,17 +2,21 @@
 use crate::app_events::{emit_app_log, AppLogLevel};
 #[cfg(feature = "app")]
 use crate::settings::{update_settings_transaction, AppState, SettingsStore};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 #[cfg(all(feature = "app", target_os = "windows"))]
 use std::process::{Command, Stdio};
 
 const MAX_LAUNCHER_ITEMS: usize = 200;
 const LAUNCHER_ICON_DATA_URL_PREFIX: &str = "data:image/png;base64,";
-const PNG_BASE64_SIGNATURE_PREFIX: &str = "iVBORw0KGgo";
 const MAX_ICON_BASE64_LENGTH: usize = 2_000_000;
+const MAX_ICON_FILE_BYTES: usize = 1_500_000;
+const MAX_ICON_DIMENSION: u32 = 512;
+const MAX_ICON_DECODED_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -136,18 +140,48 @@ fn normalize_launcher_icon_data_url(value: Option<String>) -> Option<String> {
     if encoded.is_empty() || encoded.len() > MAX_ICON_BASE64_LENGTH || encoded.len() % 4 != 0 {
         return None;
     }
-    if !encoded.starts_with(PNG_BASE64_SIGNATURE_PREFIX) {
+
+    let decoded = BASE64_STANDARD.decode(encoded).ok()?;
+    if decoded.is_empty() || decoded.len() > MAX_ICON_FILE_BYTES || !is_valid_launcher_png(&decoded)
+    {
         return None;
     }
 
-    let padding_start = encoded.find('=').unwrap_or(encoded.len());
-    let (data, padding) = encoded.split_at(padding_start);
-    let data_is_base64 = data
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'+' || byte == b'/');
-    let padding_is_valid = padding.len() <= 2 && padding.bytes().all(|byte| byte == b'=');
+    Some(value)
+}
 
-    (data_is_base64 && padding_is_valid).then_some(value)
+fn is_valid_launcher_png(bytes: &[u8]) -> bool {
+    let mut options = png::DecodeOptions::default();
+    options.set_ignore_adler32(false);
+    options.set_ignore_crc(false);
+    options.set_ignore_text_chunk(true);
+    options.set_ignore_iccp_chunk(true);
+    options.set_skip_ancillary_crc_failures(false);
+
+    let mut decoder = png::Decoder::new_with_options(Cursor::new(bytes), options);
+    decoder.set_limits(png::Limits {
+        bytes: MAX_ICON_DECODED_BYTES,
+    });
+    let mut reader = match decoder.read_info() {
+        Ok(reader) => reader,
+        Err(_) => return false,
+    };
+    let info = reader.info();
+    if info.width == 0
+        || info.height == 0
+        || info.width > MAX_ICON_DIMENSION
+        || info.height > MAX_ICON_DIMENSION
+        || info.animation_control.is_some()
+    {
+        return false;
+    }
+
+    let output_size = reader.output_buffer_size();
+    if output_size == 0 || output_size > MAX_ICON_DECODED_BYTES {
+        return false;
+    }
+    let mut output = vec![0; output_size];
+    reader.next_frame(&mut output).is_ok() && reader.finish().is_ok()
 }
 
 fn normalize_display_name(value: &str, target: &Path) -> String {
@@ -619,6 +653,7 @@ mod tests {
         normalize_launcher_icon_data_url, normalize_launcher_items, path_identity_key,
         LauncherItem, LauncherItemKind,
     };
+    use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -658,6 +693,24 @@ mod tests {
         }
     }
 
+    fn png_bytes(width: u32, height: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, width, height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().expect("write PNG header");
+            writer
+                .write_image_data(&vec![0; width as usize * height as usize * 4])
+                .expect("write PNG pixels");
+        }
+        bytes
+    }
+
+    fn png_data_url(bytes: &[u8]) -> String {
+        format!("data:image/png;base64,{}", BASE64_STANDARD.encode(bytes))
+    }
+
     #[test]
     fn recognizes_supported_extensions_without_case_sensitivity() {
         assert!(is_supported_application_path(Path::new("app.exe")));
@@ -669,11 +722,10 @@ mod tests {
 
     #[test]
     fn launcher_icons_only_allow_base64_png_data_urls() {
+        let valid = png_data_url(&png_bytes(1, 1));
         assert_eq!(
-            normalize_launcher_icon_data_url(Some(
-                " data:image/png;base64,iVBORw0KGgo= ".to_string()
-            )),
-            Some("data:image/png;base64,iVBORw0KGgo=".to_string())
+            normalize_launcher_icon_data_url(Some(format!(" {valid} "))),
+            Some(valid)
         );
         assert_eq!(
             normalize_launcher_icon_data_url(Some("https://example.com/icon.png".to_string())),
@@ -689,6 +741,38 @@ mod tests {
             normalize_launcher_icon_data_url(Some(
                 "data:image/png;base64,iVBORw0KGgo!".to_string()
             )),
+            None
+        );
+        assert_eq!(
+            normalize_launcher_icon_data_url(Some(
+                "data:image/png;base64,iVBORw0KGgo=".to_string()
+            )),
+            None
+        );
+    }
+
+    #[test]
+    fn launcher_icons_reject_incomplete_or_corrupt_pngs() {
+        let complete = png_bytes(1, 1);
+
+        let without_iend = &complete[..complete.len() - 12];
+        assert_eq!(
+            normalize_launcher_icon_data_url(Some(png_data_url(without_iend))),
+            None
+        );
+
+        let mut corrupt_ihdr = complete;
+        corrupt_ihdr[16] ^= 1;
+        assert_eq!(
+            normalize_launcher_icon_data_url(Some(png_data_url(&corrupt_ihdr))),
+            None
+        );
+    }
+
+    #[test]
+    fn launcher_icons_reject_dimensions_above_the_display_limit() {
+        assert_eq!(
+            normalize_launcher_icon_data_url(Some(png_data_url(&png_bytes(513, 1)))),
             None
         );
     }
