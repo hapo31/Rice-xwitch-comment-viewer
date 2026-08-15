@@ -900,13 +900,17 @@ fn find_url_ranges(text: &str) -> Vec<Range<usize>> {
 }
 
 fn url_range_at(text: &str, start: usize) -> Option<Range<usize>> {
+    if !is_url_start_boundary(text, start) {
+        return None;
+    }
+
     let remaining = &text.as_bytes()[start..];
-    let prefix_len = if starts_with_ascii_case_insensitive(remaining, b"https://") {
-        b"https://".len()
+    let (prefix_len, scheme_less) = if starts_with_ascii_case_insensitive(remaining, b"https://") {
+        (b"https://".len(), false)
     } else if starts_with_ascii_case_insensitive(remaining, b"http://") {
-        b"http://".len()
+        (b"http://".len(), false)
     } else if starts_with_ascii_case_insensitive(remaining, b"www.") {
-        b"www.".len()
+        (b"www.".len(), true)
     } else {
         return None;
     };
@@ -915,16 +919,34 @@ fn url_range_at(text: &str, start: usize) -> Option<Range<usize>> {
     while end < text.len() && is_url_ascii_byte(text.as_bytes()[end]) {
         end += 1;
     }
-    end = trim_url_suffix(text, start + prefix_len, end);
+    end = trim_url_suffix(text, start, start + prefix_len, end);
 
     // Do not classify an incomplete prefix (for example, `https://` or `www.`)
-    // as a URL. A hostname starts immediately after the recognized prefix.
-    (end > start + prefix_len && is_hostname_start(text.as_bytes()[start + prefix_len]))
+    // or malformed authority (for example, `https://[`) as a URL.
+    (end > start + prefix_len && is_valid_url_candidate(&text[start..end], scheme_less))
         .then_some(start..end)
 }
 
 fn starts_with_ascii_case_insensitive(value: &[u8], prefix: &[u8]) -> bool {
     value.len() >= prefix.len() && value[..prefix.len()].eq_ignore_ascii_case(prefix)
+}
+
+fn is_url_start_boundary(text: &str, start: usize) -> bool {
+    let Some(previous) = text[..start].chars().next_back() else {
+        return true;
+    };
+
+    !previous.is_ascii_alphanumeric() && !matches!(previous, '@' | '.' | '_' | '-')
+}
+
+fn is_valid_url_candidate(candidate: &str, scheme_less: bool) -> bool {
+    let parsed = if scheme_less {
+        reqwest::Url::parse(&format!("http://{candidate}"))
+    } else {
+        reqwest::Url::parse(candidate)
+    };
+
+    parsed.is_ok_and(|url| url.host_str().is_some())
 }
 
 fn is_url_ascii_byte(byte: u8) -> bool {
@@ -956,13 +978,18 @@ fn is_url_ascii_byte(byte: u8) -> bool {
         )
 }
 
-fn is_hostname_start(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || byte == b'['
-}
+fn trim_url_suffix(text: &str, url_start: usize, content_start: usize, mut end: usize) -> usize {
+    let has_opening_ascii_single_quote = text[..url_start].ends_with('\'');
+    let mut trimmed_closing_ascii_single_quote = false;
 
-fn trim_url_suffix(text: &str, content_start: usize, mut end: usize) -> usize {
     while end > content_start {
         let byte = text.as_bytes()[end - 1];
+        if byte == b'\'' && has_opening_ascii_single_quote && !trimmed_closing_ascii_single_quote {
+            end -= 1;
+            trimmed_closing_ascii_single_quote = true;
+            continue;
+        }
+
         if matches!(byte, b'.' | b',' | b'!' | b'?' | b';' | b':') {
             end -= 1;
             continue;
@@ -1186,6 +1213,11 @@ mod tests {
         let cases = [
             ("standalone", "https://example.com/path", "URL省略"),
             (
+                "uppercase HTTP and punycode",
+                "HTTP://XN--R8JZ45G.XN--ZCKZAH/path",
+                "URL省略",
+            ),
+            (
                 "Japanese text before URL",
                 "詳しくはhttps://example.com/pathです",
                 "詳しくはURL省略です",
@@ -1194,6 +1226,21 @@ mod tests {
                 "parentheses and Japanese quotes",
                 "(https://example.com)と「www.example.com/path」",
                 "(URL省略)と「URL省略」",
+            ),
+            (
+                "ASCII quotes",
+                "\"https://example.com\" と'www.example.com/path'",
+                "\"URL省略\" と'URL省略'",
+            ),
+            (
+                "balanced path parentheses",
+                "(https://example.com/a_(b))です",
+                "(URL省略)です",
+            ),
+            (
+                "valid bracketed IPv6 authority",
+                "https://[2001:db8::1]/path",
+                "URL省略",
             ),
             (
                 "sentence punctuation",
@@ -1236,21 +1283,41 @@ mod tests {
 
     #[test]
     fn formatter_does_not_detect_incomplete_or_unrelated_url_like_text() {
-        let formatter = SpeechFormatter::new(SpeechFormatterOptions {
+        let replace_formatter = SpeechFormatter::new(SpeechFormatterOptions {
             read_user_name: false,
+            escape_bouyomi_tags: false,
+            ..SpeechFormatterOptions::default()
+        });
+        let block_formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            read_user_name: false,
+            replace_urls: false,
             block_urls: true,
+            escape_bouyomi_tags: false,
             ..SpeechFormatterOptions::default()
         });
 
         for (case_name, input) in [
             ("incomplete http prefix", "https:// を確認"),
             ("incomplete www prefix", "www. を確認"),
+            ("incomplete bracketed IPv6", "https://[ を確認"),
+            ("empty bracketed IPv6", "https://[] を確認"),
+            ("invalid bracketed IPv6", "https://[oops] を確認"),
+            (
+                "www domain inside email",
+                "連絡先 user@www.example.com です",
+            ),
+            ("scheme inside ASCII identifier", "abchttps://example.com"),
             ("ordinary text", "httpとwwwだけです"),
         ] {
             assert_eq!(
-                formatter.format_chat_message(&chat(input)),
+                replace_formatter.format_chat_message(&chat(input)),
                 SpeechFormatDecision::Speak(input.to_string()),
-                "{case_name}"
+                "replace: {case_name}"
+            );
+            assert_eq!(
+                block_formatter.format_chat_message(&chat(input)),
+                SpeechFormatDecision::Speak(input.to_string()),
+                "block: {case_name}"
             );
         }
     }
