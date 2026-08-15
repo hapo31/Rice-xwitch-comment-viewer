@@ -12,6 +12,7 @@ use crate::settings::UrlHandling;
 use crate::twitch::{ChatMessage, MessageFragment};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
+use std::ops::Range;
 use std::time::{Duration, Instant};
 #[cfg(feature = "app")]
 use tauri::Manager;
@@ -850,29 +851,254 @@ fn normalize_control_chars(text: &str) -> String {
 }
 
 fn replace_urls(text: &str) -> String {
-    text.split_whitespace()
-        .map(|part| {
-            let lowered = part.to_ascii_lowercase();
-            if lowered.starts_with("http://")
-                || lowered.starts_with("https://")
-                || lowered.starts_with("www.")
-            {
-                "URL省略"
-            } else {
-                part
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+    let ranges = find_url_ranges(text);
+    if ranges.is_empty() {
+        return text.to_string();
+    }
+
+    let mut replaced = String::with_capacity(text.len());
+    let mut cursor = 0;
+    for range in ranges {
+        replaced.push_str(&text[cursor..range.start]);
+        replaced.push_str("URL省略");
+        cursor = range.end;
+    }
+    replaced.push_str(&text[cursor..]);
+    replaced
 }
 
 fn contains_url(text: &str) -> bool {
-    text.split_whitespace().any(|part| {
-        let lowered = part.to_ascii_lowercase();
-        lowered.starts_with("http://")
-            || lowered.starts_with("https://")
-            || lowered.starts_with("www.")
+    !find_url_ranges(text).is_empty()
+}
+
+/// Finds the byte ranges of ASCII URLs that are safe to omit from spoken chat.
+///
+/// This intentionally recognizes only the formats exposed by the filter UI:
+/// `http://`, `https://`, and scheme-less `www.` URLs (case-insensitively).
+/// URLs may be adjacent to Japanese text or opening punctuation. Matching stops
+/// before whitespace, non-ASCII text, or quotes, and removes trailing sentence
+/// punctuation and unmatched closing brackets from the returned range.
+fn find_url_ranges(text: &str) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut index = 0;
+
+    while index < text.len() {
+        if let Some(range) = url_range_at(text, index) {
+            index = range.end;
+            ranges.push(range);
+            continue;
+        }
+
+        index += text[index..]
+            .chars()
+            .next()
+            .expect("index is within UTF-8 text")
+            .len_utf8();
+    }
+
+    ranges
+}
+
+fn url_range_at(text: &str, start: usize) -> Option<Range<usize>> {
+    if !is_url_start_boundary(text, start) {
+        return None;
+    }
+
+    let remaining = &text.as_bytes()[start..];
+    let (prefix_len, scheme_less) = if starts_with_ascii_case_insensitive(remaining, b"https://") {
+        (b"https://".len(), false)
+    } else if starts_with_ascii_case_insensitive(remaining, b"http://") {
+        (b"http://".len(), false)
+    } else if starts_with_ascii_case_insensitive(remaining, b"www.") {
+        (b"www.".len(), true)
+    } else {
+        return None;
+    };
+
+    let mut end = start + prefix_len;
+    while end < text.len() && is_url_ascii_byte(text.as_bytes()[end]) {
+        end += 1;
+    }
+
+    // ASCII opening delimiters can immediately follow a URL before prose. Try
+    // the complete candidate first so balanced path delimiters remain part of
+    // the URL, then backtrack only to delimiter boundaries. Backtracking every
+    // byte could turn an invalid authority such as port 65536 into a different,
+    // apparently valid URL by dropping its final digit.
+    end = trim_url_suffix(text, start + prefix_len, end);
+    if end > start + prefix_len && is_valid_url_candidate(&text[start..end], scheme_less) {
+        return Some(start..end);
+    }
+
+    while let Some(delimiter_offset) = text[start + prefix_len..end]
+        .bytes()
+        .rposition(is_ascii_opening_delimiter)
+    {
+        end = start + prefix_len + delimiter_offset;
+        end = trim_url_suffix(text, start + prefix_len, end);
+        if end > start + prefix_len && is_valid_url_candidate(&text[start..end], scheme_less) {
+            return Some(start..end);
+        }
+    }
+
+    None
+}
+
+fn starts_with_ascii_case_insensitive(value: &[u8], prefix: &[u8]) -> bool {
+    value.len() >= prefix.len() && value[..prefix.len()].eq_ignore_ascii_case(prefix)
+}
+
+fn is_url_start_boundary(text: &str, start: usize) -> bool {
+    let Some(previous) = text[..start].chars().next_back() else {
+        return true;
+    };
+
+    !previous.is_ascii_alphanumeric() && !matches!(previous, '@' | '.' | '_' | '-')
+}
+
+fn is_valid_url_candidate(candidate: &str, scheme_less: bool) -> bool {
+    let parsed = if scheme_less {
+        reqwest::Url::parse(&format!("http://{candidate}"))
+    } else {
+        reqwest::Url::parse(candidate)
+    };
+
+    parsed.is_ok_and(|url| url.host_str().is_some_and(is_valid_url_host))
+}
+
+fn is_valid_url_host(host: &str) -> bool {
+    let unbracketed = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
+    if unbracketed.parse::<std::net::IpAddr>().is_ok() {
+        return true;
+    }
+
+    unbracketed.split('.').all(|label| {
+        !label.is_empty()
+            && label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            && label
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric)
+            && label
+                .as_bytes()
+                .last()
+                .is_some_and(u8::is_ascii_alphanumeric)
     })
+}
+
+fn is_url_ascii_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || matches!(
+            byte,
+            b'-' | b'.'
+                | b'_'
+                | b'~'
+                | b':'
+                | b'/'
+                | b'?'
+                | b'#'
+                | b'['
+                | b']'
+                | b'@'
+                | b'!'
+                | b'$'
+                | b'&'
+                | b'\''
+                | b'('
+                | b')'
+                | b'*'
+                | b'+'
+                | b','
+                | b';'
+                | b'='
+                | b'%'
+        )
+}
+
+fn is_ascii_opening_delimiter(byte: u8) -> bool {
+    matches!(byte, b'(' | b'[' | b'\'')
+}
+
+fn trim_url_suffix(text: &str, content_start: usize, mut end: usize) -> usize {
+    let mut trimmed_closing_ascii_single_quote = false;
+
+    while end > content_start {
+        let byte = text.as_bytes()[end - 1];
+        if byte == b'\'' && !trimmed_closing_ascii_single_quote {
+            end -= 1;
+            trimmed_closing_ascii_single_quote = true;
+            continue;
+        }
+
+        if matches!(byte, b'.' | b',' | b'!' | b'?' | b';' | b':') {
+            end -= 1;
+            continue;
+        }
+
+        if byte == b')'
+            && text[content_start..end]
+                .bytes()
+                .filter(|byte| *byte == b'(')
+                .count()
+                < text[content_start..end]
+                    .bytes()
+                    .filter(|byte| *byte == b')')
+                    .count()
+        {
+            end -= 1;
+            continue;
+        }
+
+        if byte == b']'
+            && text[content_start..end]
+                .bytes()
+                .filter(|byte| *byte == b'[')
+                .count()
+                < text[content_start..end]
+                    .bytes()
+                    .filter(|byte| *byte == b']')
+                    .count()
+        {
+            end -= 1;
+            continue;
+        }
+
+        if byte == b'('
+            && text[content_start..end]
+                .bytes()
+                .filter(|byte| *byte == b'(')
+                .count()
+                > text[content_start..end]
+                    .bytes()
+                    .filter(|byte| *byte == b')')
+                    .count()
+        {
+            end -= 1;
+            continue;
+        }
+
+        if byte == b'['
+            && text[content_start..end]
+                .bytes()
+                .filter(|byte| *byte == b'[')
+                .count()
+                > text[content_start..end]
+                    .bytes()
+                    .filter(|byte| *byte == b']')
+                    .count()
+        {
+            end -= 1;
+            continue;
+        }
+
+        break;
+    }
+    end
 }
 
 fn contains_blocked_user(blocked_users: &[String], message: &ChatMessage) -> bool {
@@ -1053,6 +1279,151 @@ mod tests {
             formatter.format_chat_message(&chat("hello\nhttps://example.com/\u{0007}")),
             SpeechFormatDecision::Speak("hello URL省略".to_string())
         );
+    }
+
+    #[test]
+    fn formatter_applies_url_rules_to_embedded_urls() {
+        let cases = [
+            ("standalone", "https://example.com/path", "URL省略"),
+            (
+                "uppercase HTTP and punycode",
+                "HTTP://XN--R8JZ45G.XN--ZCKZAH/path",
+                "URL省略",
+            ),
+            (
+                "Japanese text before URL",
+                "詳しくはhttps://example.com/pathです",
+                "詳しくはURL省略です",
+            ),
+            (
+                "parentheses and Japanese quotes",
+                "(https://example.com)と「www.example.com/path」",
+                "(URL省略)と「URL省略」",
+            ),
+            (
+                "ASCII quotes",
+                "\"https://example.com\" と'www.example.com/path'",
+                "\"URL省略\" と'URL省略'",
+            ),
+            (
+                "balanced path parentheses",
+                "(https://example.com/a_(b))です",
+                "(URL省略)です",
+            ),
+            (
+                "balanced path and query parentheses",
+                "https://example.com/a_(b)?q=(c)",
+                "URL省略",
+            ),
+            (
+                "opening parenthesis after URL",
+                "https://example.com(続き)",
+                "URL省略(続き)",
+            ),
+            (
+                "opening bracket after URL",
+                "https://example.com[続き]",
+                "URL省略[続き]",
+            ),
+            (
+                "ASCII parenthesized prose after URL",
+                "https://example.com(note)",
+                "URL省略(note)",
+            ),
+            (
+                "ASCII bracketed prose after URL",
+                "https://example.com[notes]",
+                "URL省略[notes]",
+            ),
+            (
+                "opening quote after URL",
+                "https://example.com'続き'",
+                "URL省略'続き'",
+            ),
+            (
+                "valid bracketed IPv6 authority",
+                "https://[2001:db8::1]/path",
+                "URL省略",
+            ),
+            (
+                "sentence punctuation",
+                "https://example.com/path,続きです。",
+                "URL省略,続きです。",
+            ),
+            (
+                "multiple URLs",
+                "https://one.example/a とwww.two.example/b!",
+                "URL省略 とURL省略!",
+            ),
+        ];
+
+        let replace_formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            read_user_name: false,
+            escape_bouyomi_tags: false,
+            ..SpeechFormatterOptions::default()
+        });
+        let block_formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            read_user_name: false,
+            replace_urls: false,
+            block_urls: true,
+            escape_bouyomi_tags: false,
+            ..SpeechFormatterOptions::default()
+        });
+
+        for (case_name, input, expected) in cases {
+            assert_eq!(
+                replace_formatter.format_chat_message(&chat(input)),
+                SpeechFormatDecision::Speak(expected.to_string()),
+                "replace: {case_name}"
+            );
+            assert_eq!(
+                block_formatter.format_chat_message(&chat(input)),
+                SpeechFormatDecision::Blocked("URL を含むため読み上げません。".to_string()),
+                "block: {case_name}"
+            );
+        }
+    }
+
+    #[test]
+    fn formatter_does_not_detect_incomplete_or_unrelated_url_like_text() {
+        let replace_formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            read_user_name: false,
+            escape_bouyomi_tags: false,
+            ..SpeechFormatterOptions::default()
+        });
+        let block_formatter = SpeechFormatter::new(SpeechFormatterOptions {
+            read_user_name: false,
+            replace_urls: false,
+            block_urls: true,
+            escape_bouyomi_tags: false,
+            ..SpeechFormatterOptions::default()
+        });
+
+        for (case_name, input) in [
+            ("incomplete http prefix", "https:// を確認"),
+            ("incomplete www prefix", "www. を確認"),
+            ("incomplete bracketed IPv6", "https://[ を確認"),
+            ("empty bracketed IPv6", "https://[] を確認"),
+            ("invalid bracketed IPv6", "https://[oops] を確認"),
+            ("invalid port", "https://example.com:65536 を確認"),
+            (
+                "www domain inside email",
+                "連絡先 user@www.example.com です",
+            ),
+            ("scheme inside ASCII identifier", "abchttps://example.com"),
+            ("ordinary text", "httpとwwwだけです"),
+        ] {
+            assert_eq!(
+                replace_formatter.format_chat_message(&chat(input)),
+                SpeechFormatDecision::Speak(input.to_string()),
+                "replace: {case_name}"
+            );
+            assert_eq!(
+                block_formatter.format_chat_message(&chat(input)),
+                SpeechFormatDecision::Speak(input.to_string()),
+                "block: {case_name}"
+            );
+        }
     }
 
     #[test]
