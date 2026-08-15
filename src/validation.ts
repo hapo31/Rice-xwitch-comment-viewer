@@ -14,6 +14,9 @@ export function isValidBouyomiVoice(value: string | number): boolean {
 }
 
 export function isValidRepeatSuppressionSeconds(value: string | number): boolean {
+  if (typeof value === "string" && value.trim().length === 0) {
+    return false;
+  }
   const seconds = Number(value);
   return Number.isInteger(seconds) && seconds >= 0 && seconds <= 30;
 }

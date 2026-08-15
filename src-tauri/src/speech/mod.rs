@@ -7,6 +7,7 @@ use crate::app_events::{
 };
 #[cfg(feature = "app")]
 use crate::settings::AppState;
+use crate::settings::SpeechSettings;
 #[cfg(feature = "app")]
 use crate::settings::UrlHandling;
 use crate::twitch::{ChatMessage, MessageFragment};
@@ -362,14 +363,14 @@ pub fn enqueue_chat_message_for_speech(
     message: ChatMessage,
 ) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let (formatter, repeat_suppression_seconds) = {
+    let (formatter, speech_settings) = {
         let settings = state.settings.lock().map_err(|error| error.to_string())?;
         if !settings.speech.auto_speak {
             return Ok(());
         }
         (
             SpeechFormatter::new(SpeechFormatterOptions::from(&settings.speech)),
-            u64::from(settings.speech.repeat_suppression_seconds),
+            settings.speech.clone(),
         )
     };
 
@@ -381,25 +382,9 @@ pub fn enqueue_chat_message_for_speech(
             .lock()
             .map_err(|error| error.to_string())?;
         let now = Instant::now();
-        if is_repeat_suppressed(
-            queue.last_user_enqueue.get(&message.user_id).copied(),
-            now,
-            repeat_suppression_seconds,
-        ) {
-            let warning_message = format!("{} の連投を抑制しました。", message.user_display_name);
-            let id = next_queue_id(&mut queue);
-            push_history(
-                &mut queue,
-                SpeechQueueItem {
-                    id,
-                    source_message_id: Some(message.id.clone()),
-                    user_display_name: message.user_display_name.clone(),
-                    text: message.text.clone(),
-                    status: SpeechQueueItemStatus::Blocked,
-                    retry_count: 0,
-                    delivery_state: SpeechQueueDeliveryState::Ready,
-                },
-            );
+        if let Some(warning_message) =
+            suppress_repeated_message(&mut queue, &speech_settings, &message, now)
+        {
             emit_queue_snapshot(&app, &queue, Some(warning_message));
             return Ok(());
         }
@@ -473,6 +458,37 @@ fn is_repeat_suppressed(
         && last_enqueue.is_some_and(|last_enqueue| {
             now.duration_since(last_enqueue) < Duration::from_secs(repeat_suppression_seconds)
         })
+}
+
+fn suppress_repeated_message(
+    queue: &mut SpeechQueueState,
+    settings: &SpeechSettings,
+    message: &ChatMessage,
+    now: Instant,
+) -> Option<String> {
+    if !is_repeat_suppressed(
+        queue.last_user_enqueue.get(&message.user_id).copied(),
+        now,
+        u64::from(settings.repeat_suppression_seconds),
+    ) {
+        return None;
+    }
+
+    let warning_message = format!("{} の連投を抑制しました。", message.user_display_name);
+    let id = next_queue_id(queue);
+    push_history(
+        queue,
+        SpeechQueueItem {
+            id,
+            source_message_id: Some(message.id.clone()),
+            user_display_name: message.user_display_name.clone(),
+            text: message.text.clone(),
+            status: SpeechQueueItemStatus::Blocked,
+            retry_count: 0,
+            delivery_state: SpeechQueueDeliveryState::Ready,
+        },
+    );
+    Some(warning_message)
 }
 
 #[cfg(feature = "app")]
@@ -1144,7 +1160,6 @@ fn truncate_chars(text: &str, max_len: usize) -> String {
     output
 }
 
-#[cfg(feature = "app")]
 fn next_queue_id(queue: &mut SpeechQueueState) -> String {
     let id = queue.next_id;
     queue.next_id = queue.next_id.saturating_add(1);
@@ -1188,31 +1203,43 @@ mod tests {
     }
 
     #[test]
-    fn repeat_suppression_honors_zero_one_and_two_second_boundaries() {
+    fn speech_settings_control_repeat_suppression_in_the_queue_path() {
         let now = Instant::now();
+        let message = chat("連投テスト");
+        let mut settings = crate::settings::AppSettings::default().speech;
+        let mut queue = SpeechQueueState::default();
 
-        assert!(!is_repeat_suppressed(Some(now), now, 0));
-        assert!(is_repeat_suppressed(
-            Some(now - Duration::from_millis(999)),
-            now,
-            1,
-        ));
-        assert!(!is_repeat_suppressed(
-            Some(now - Duration::from_secs(1)),
-            now,
-            1,
-        ));
-        assert!(is_repeat_suppressed(
-            Some(now - Duration::from_millis(1_999)),
-            now,
-            2,
-        ));
-        assert!(!is_repeat_suppressed(
-            Some(now - Duration::from_secs(2)),
-            now,
-            2,
-        ));
-        assert!(!is_repeat_suppressed(None, now, 2));
+        settings.repeat_suppression_seconds = 0;
+        queue.last_user_enqueue.insert(message.user_id.clone(), now);
+        assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_none());
+        assert!(queue.history.is_empty());
+
+        settings.repeat_suppression_seconds = 1;
+        let accepted_at = now - Duration::from_millis(999);
+        queue
+            .last_user_enqueue
+            .insert(message.user_id.clone(), accepted_at);
+        assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_some());
+        assert_eq!(queue.history.len(), 1);
+        assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Blocked);
+        assert_eq!(queue.last_user_enqueue[&message.user_id], accepted_at);
+
+        queue.history.clear();
+        queue
+            .last_user_enqueue
+            .insert(message.user_id.clone(), now - Duration::from_secs(1));
+        assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_none());
+
+        settings.repeat_suppression_seconds = 2;
+        queue
+            .last_user_enqueue
+            .insert(message.user_id.clone(), now - Duration::from_millis(1_999));
+        assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_some());
+        queue.history.clear();
+        queue
+            .last_user_enqueue
+            .insert(message.user_id.clone(), now - Duration::from_secs(2));
+        assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_none());
     }
 
     #[test]

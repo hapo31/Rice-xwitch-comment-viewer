@@ -28,6 +28,8 @@ describe("settings validation", () => {
   });
 
   it.each<[string, boolean]>([
+    ["", false],
+    ["   ", false],
     ["0", true],
     ["1", true],
     ["2", true],

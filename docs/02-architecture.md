@@ -49,7 +49,7 @@ Rust backend
 | `SpeechAdapter` | 読み上げ先を抽象化するtrait |
 | `BouyomiAdapter` | 棒読みちゃんTCPプロトコル実装 |
 | `VoiceroidAdapter` | Windows専用の実験的アダプタ。C# sidecarまたはUI Automationを隠蔽する |
-| `SettingsStore` | 一般設定JSONを原子的に保存し、破損時はbackupまたは既定値へ復旧する。更新は候補を保存できた場合だけ共有メモリへ反映する。OAuthトークンは扱わない |
+| `SettingsStore` | 一般設定JSONを原子的に保存し、JSON構文または検証対象の設定値が不正な場合はbackupまたは既定値へ復旧する。更新は候補を保存できた場合だけ共有メモリへ反映する。OAuthトークンは扱わない |
 | `TwitchAuthStore` | Twitch OAuth状態をOS keyringへ保存/復元/削除する |
 | `LauncherService` | 登録アプリのパス検証、重複排除、単体/一斉起動を扱う |
 
@@ -147,7 +147,7 @@ Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、encoded/de
 ## 永続化
 
 - 一般設定: Tauriのapp data配下にJSON保存。同一ディレクトリの一時ファイルへ書き込み・`sync_all` した後、OSごとの atomic replace で `settings.json` を更新する。直前の正常版は `settings.json.bak` 1世代だけ保持する。
-- 設定復旧: 起動時に本体のJSONが不正なら backup を検証して復旧する。backup も不正または不在なら、破損ファイルを `settings.json.corrupt-<timestamp>-<suffix>` として退避して既定値で起動する。復旧内容と退避先は Logs、system Chat、警告通知に表示する。
+- 設定復旧: 起動時に本体のJSON構文または検証対象の設定値が不正なら backup を同じ契約で検証して復旧する。backup も不正または不在なら、無効なファイルを `settings.json.corrupt-<timestamp>-<suffix>` として退避して既定値で起動する。復旧理由・内容・退避先は Logs、system Chat、警告通知に日本語で表示する。
 - ランチャー項目: 一般設定の `launcher.items` に保存する。`kind`, `target`, `displayName`, `order` と、将来用の `backgroundColor`, `groupId`, `iconDataUrl` を境界として持つ。
 - Twitch OAuth状態: access token、refresh token、スコープ、有効期限、検証済みプロフィールをOS keyringへ保存する。設定JSONへは保存しない。
 - refresh token: 更新成功時に保存済みの値を新しい値へ差し替える。keyring保存に失敗した場合もログイン状態はメモリ上で継続するが、token はディスクへ保存しない。UIには session-only であることと、再起動後に再ログインが必要なことを表示する。

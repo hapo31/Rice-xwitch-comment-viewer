@@ -122,7 +122,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] `SpeechFormatter` の NG/URL/長文処理テストを追加する。
 - [x] Issue #61: 日本語文中・括弧/引用符内の `http://`、`https://`、`www.` URL を空白に依存せず検出し、置換・遮断で同じ parser を使う。URL 前後の本文と末尾句読点・引用符、直後の開き delimiter を保持し、balanced path 括弧は URL 内に残す。メール/ASCII 識別子内の誤検出と不正な authority を除外するテーブルテストを追加する。
 - [x] Issue #63: 最大文字数をユーザー名 prefix・省略記号を含む最終読み上げ文へ適用し、上限 1・既定 120・最大 500・長い表示名・multibyte・空本文・URL/NG 処理順の境界テストを追加する。
-- [x] Issue #34: 連投抑制の 0 秒を無効、1〜30 秒を指定間隔として扱い、frontend/backend の範囲検証と保存値・読み上げキューの実効値を一致させる。
+- [x] Issue #34: 連投抑制の 0 秒を無効、1〜30 秒を指定間隔として扱い、空欄入力と保存設定の範囲外値を拒否・復旧し、設定値から実キュー判定までの実効値を一致させる。
 - [x] TypeScript の store reducer テストを追加する。
 
 ## Phase 5: 配信運用向け仕上げ
@@ -239,7 +239,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Rust: WebSocket 再接続状態遷移テストを追加する。
 - [x] Rust: 通常再接続と reconnect ハンドオーバーをまたぐ重複排除テストを追加する。
 - [x] Rust: Launcher の拡張子、重複、順序、予約種別、旧設定互換テストを追加する。
-- [x] Rust: 設定JSONの原子的保存、disk full/replace failure、破損本体/backup復旧テストを追加する。
+- [x] Rust: 設定JSONの原子的保存、disk full/replace failure、構文・設定値が不正な本体/backup復旧テストを追加する。
 - [x] TypeScript: store reducer テストを追加する。
 - [x] TypeScript: キュー行の状態表示テストを追加する。
 - [x] TypeScript: 設定フォームのバリデーションテストを追加する。
