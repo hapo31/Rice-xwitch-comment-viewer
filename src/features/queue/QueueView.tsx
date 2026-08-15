@@ -72,29 +72,37 @@ export function QueueView({
         </div>
       </header>
 
-      <section className="h-[calc(100%-3rem)] overflow-auto">
-        <div className="grid grid-cols-[140px_96px_minmax(0,1fr)_80px] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400">
-          <span>ユーザー</span>
-          <span>状態</span>
-          <span>読み上げ文</span>
-          <span className="text-right">操作</span>
+      <section
+        role="table"
+        aria-label="読み上げキュー"
+        aria-colcount={4}
+        aria-rowcount={Math.max(displayItems.length, 1) + 1}
+        className="h-[calc(100%-3rem)] overflow-auto"
+      >
+        <div role="row" aria-rowindex={1} className="grid grid-cols-[140px_96px_minmax(0,1fr)_80px] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400">
+          <span role="columnheader" aria-colindex={1}>ユーザー</span>
+          <span role="columnheader" aria-colindex={2}>状態</span>
+          <span role="columnheader" aria-colindex={3}>読み上げ文</span>
+          <span role="columnheader" aria-colindex={4} className="text-right">操作</span>
         </div>
         {displayItems.length === 0 ? (
-          <div className="px-4 py-8 text-sm text-zinc-400">確認が必要な読み上げはありません。</div>
+          <div role="row" aria-rowindex={2}>
+            <div role="cell" aria-colspan={4} className="px-4 py-8 text-sm text-zinc-400">確認が必要な読み上げはありません。</div>
+          </div>
         ) : (
-          displayItems.map((item) => (
-            <div key={item.id} className="grid min-h-11 grid-cols-[140px_96px_minmax(0,1fr)_80px] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
-              <span className="truncate pr-3 font-medium text-sky-300">{item.userDisplayName}</span>
-              <span className="flex items-center gap-2 text-xs text-zinc-400">
+          displayItems.map((item, index) => (
+            <div key={item.id} role="row" aria-rowindex={index + 2} className="grid min-h-11 grid-cols-[140px_96px_minmax(0,1fr)_80px] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
+              <span role="cell" aria-colindex={1} className="truncate pr-3 font-medium text-sky-300">{item.userDisplayName}</span>
+              <span role="cell" aria-colindex={2} className="flex items-center gap-2 text-xs text-zinc-400">
                 <StatusIcon status={item.status} />
                 {queueStatusLabel(item.status)}
               </span>
-              <span className="line-clamp-2 pr-4 text-zinc-200">{item.text}</span>
-              <span className="flex justify-end">
+              <span role="cell" aria-colindex={3} className="line-clamp-2 pr-4 text-zinc-200">{item.text}</span>
+              <span role="cell" aria-colindex={4} className="flex justify-end">
                 {item.status === "error" && (
                   <button
                     type="button"
-                    aria-label="エラー項目を再試行"
+                    aria-label={`${item.userDisplayName}の読み上げを再試行`}
                     title="エラー項目を再試行"
                     onClick={() => onQueueRetry(item.id)}
                     className="mr-1 flex h-7 w-7 items-center justify-center border border-zinc-800 bg-zinc-850 text-zinc-400 hover:border-sky-400 hover:text-sky-200"
@@ -104,7 +112,7 @@ export function QueueView({
                 )}
                 <button
                   type="button"
-                  aria-label={item.status === "queued" ? "待機中の読み上げを削除" : "履歴項目を削除"}
+                  aria-label={`${item.userDisplayName}の${item.status === "queued" ? "待機中の読み上げ" : "履歴項目"}を削除`}
                   title={item.status === "queued" ? "待機中の読み上げを削除" : "履歴項目を削除"}
                   disabled={!["queued", "error", "blocked"].includes(item.status)}
                   onClick={() => (item.status === "queued" ? onQueueRemove(item.id) : onQueueDismiss(item.id))}

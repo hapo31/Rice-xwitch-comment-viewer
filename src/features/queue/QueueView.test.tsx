@@ -26,7 +26,35 @@ describe("QueueView", () => {
 
     expect(markup).toContain('aria-label="待機中の読み上げをクリア"');
     expect(markup).toContain('aria-label="表示履歴をクリア"');
-    expect(markup.match(/aria-label="履歴項目を削除"/g)).toHaveLength(2);
-    expect(markup).not.toContain('aria-label="履歴項目を削除" disabled=""');
+    expect(markup).toContain('role="table"');
+    expect(markup).toContain('aria-label="読み上げキュー"');
+    expect(markup).toContain('aria-colcount="4"');
+    expect(markup).toContain('aria-rowcount="4"');
+    expect(markup.match(/role="columnheader"/g)).toHaveLength(4);
+    expect(markup.match(/role="cell"/g)).toHaveLength(12);
+    expect(markup).toContain('aria-rowindex="4"');
+    expect(markup).toContain('aria-label="errorの読み上げを再試行"');
+    expect(markup).toContain('aria-label="queuedの待機中の読み上げを削除"');
+    expect(markup).toContain('aria-label="errorの履歴項目を削除"');
+    expect(markup).toContain('aria-label="blockedの履歴項目を削除"');
+    expect(markup).not.toContain('aria-label="blockedの履歴項目を削除" disabled=""');
+  });
+
+  it("keeps the empty state inside the named table as one logical row", () => {
+    const markup = renderToStaticMarkup(
+      <QueueView
+        state={initialAppState}
+        onSpeechControl={() => undefined}
+        onQueueReload={() => undefined}
+        onQueueRemove={() => undefined}
+        onQueueDismiss={() => undefined}
+        onQueueDismissHistory={() => undefined}
+        onQueueRetry={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('aria-rowcount="2"');
+    expect(markup).toContain('aria-rowindex="2"');
+    expect(markup).toContain('role="cell" aria-colspan="4"');
   });
 });

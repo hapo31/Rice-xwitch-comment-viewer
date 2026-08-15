@@ -187,16 +187,27 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
             新着 {unseenMessageCount} 件を表示
           </button>
         )}
-        <div className="min-w-0">
-          <div
-            className="sticky top-0 z-10 grid border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400"
-            style={{ gridTemplateColumns: CHAT_GRID_TEMPLATE }}
-          >
-            <span>時刻</span>
-            <span>ユーザー</span>
-            <span>チャット</span>
+        <div
+          role="table"
+          aria-label="チャット一覧"
+          aria-colcount={3}
+          aria-rowcount={messages.length + 1}
+          className="min-w-0"
+        >
+          <div role="rowgroup" className="sticky top-0 z-10 bg-zinc-900">
+            <div
+              role="row"
+              aria-rowindex={1}
+              className="grid border-b border-zinc-800 px-4 py-2 text-xs font-medium text-zinc-400"
+              style={{ gridTemplateColumns: CHAT_GRID_TEMPLATE }}
+            >
+              <span role="columnheader" aria-colindex={1}>時刻</span>
+              <span role="columnheader" aria-colindex={2}>ユーザー</span>
+              <span role="columnheader" aria-colindex={3}>チャット</span>
+            </div>
           </div>
           <div
+            role="rowgroup"
             className="relative"
             style={{
               height: `${rowVirtualizer.getTotalSize()}px`,
@@ -211,12 +222,13 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
                   ref={rowVirtualizer.measureElement}
                   data-index={virtualRow.index}
                   data-chat-message-id={message?.id}
+                  role="presentation"
                   className="absolute left-0 top-0 w-full"
                   style={{
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <ChatRow message={message} />
+                  <ChatRow message={message} rowIndex={virtualRow.index + 2} />
                 </div>
               );
             })}
@@ -227,7 +239,13 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
   );
 }
 
-export function ChatRow({ message }: { message: ChatMessage | StartupGuideMessage }) {
+export function ChatRow({
+  message,
+  rowIndex,
+}: {
+  message: ChatMessage | StartupGuideMessage;
+  rowIndex?: number;
+}) {
   const presentation = getChatMessagePresentation(message);
   const time = new Intl.DateTimeFormat("ja-JP", {
     hour: "2-digit",
@@ -237,16 +255,18 @@ export function ChatRow({ message }: { message: ChatMessage | StartupGuideMessag
 
   return (
     <div
+      role="row"
+      aria-rowindex={rowIndex}
       className="grid min-h-11 items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900"
       style={{ gridTemplateColumns: CHAT_GRID_TEMPLATE }}
     >
-      <span className="font-mono text-xs text-zinc-400">{time}</span>
-      <span className={`flex min-w-0 items-center gap-1 pr-3 font-medium ${presentation.userNameClassName}`}>
+      <span role="cell" aria-colindex={1} className="font-mono text-xs text-zinc-400">{time}</span>
+      <span role="cell" aria-colindex={2} className={`flex min-w-0 items-center gap-1 pr-3 font-medium ${presentation.userNameClassName}`}>
         <ChatBadges badges={"badges" in message ? message.badges : undefined} />
         <span className="truncate">{message.userDisplayName}</span>
         {message.kind === "user" && <ChatReadStatus status={message.status} />}
       </span>
-      <span className={`line-clamp-2 ${presentation.textClassName}`}>
+      <span role="cell" aria-colindex={3} className={`line-clamp-2 ${presentation.textClassName}`}>
         {"action" in message && message.action === "login" && (
           <Link
             to="/auth"
