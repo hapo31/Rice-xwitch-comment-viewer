@@ -26,16 +26,29 @@ export function LogsView({ state }: { state: AppState }) {
       </header>
 
       <section ref={scrollParentRef} className="min-h-0 flex-1 overflow-auto">
-        <div className="min-w-[480px]">
-          <div className="sticky top-0 z-10 grid grid-cols-[96px_88px_minmax(0,1fr)] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400">
-            <span>時刻</span>
-            <span>種別</span>
-            <span>メッセージ</span>
+        <div
+          role="table"
+          aria-label="アプリログ"
+          aria-colcount={3}
+          aria-rowcount={Math.max(state.logs.length, 1) + 1}
+          className="min-w-[480px]"
+        >
+          <div role="rowgroup" className="sticky top-0 z-10 bg-zinc-900">
+            <div role="row" aria-rowindex={1} className="grid grid-cols-[96px_88px_minmax(0,1fr)] border-b border-zinc-800 px-4 py-2 text-xs font-medium text-zinc-400">
+              <span role="columnheader" aria-colindex={1}>時刻</span>
+              <span role="columnheader" aria-colindex={2}>種別</span>
+              <span role="columnheader" aria-colindex={3}>メッセージ</span>
+            </div>
           </div>
           {state.logs.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-zinc-400">ログはまだありません。</div>
+            <div role="rowgroup">
+              <div role="row" aria-rowindex={2}>
+                <div role="cell" aria-colspan={3} className="px-4 py-8 text-sm text-zinc-400">ログはまだありません。</div>
+              </div>
+            </div>
           ) : (
             <div
+              role="rowgroup"
               className="relative"
               style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
             >
@@ -49,10 +62,11 @@ export function LogsView({ state }: { state: AppState }) {
                     key={virtualRow.key}
                     ref={rowVirtualizer.measureElement}
                     data-index={virtualRow.index}
+                    role="presentation"
                     className="absolute left-0 top-0 w-full"
                     style={{ transform: `translateY(${virtualRow.start}px)` }}
                   >
-                    <LogRow log={log} />
+                    <LogRow log={log} rowIndex={virtualRow.index + 2} />
                   </div>
                 );
               })}
@@ -64,12 +78,12 @@ export function LogsView({ state }: { state: AppState }) {
   );
 }
 
-function LogRow({ log }: { log: AppState["logs"][number] }) {
+function LogRow({ log, rowIndex }: { log: AppState["logs"][number]; rowIndex?: number }) {
   return (
-    <div className="grid min-h-10 grid-cols-[96px_88px_minmax(0,1fr)] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
-      <span className="font-mono text-xs text-zinc-400">{formatLogTime(log.occurredAtMs)}</span>
-      <span className={`text-xs ${logLevelClass(log.level)}`}>{logLevelLabel(log.level)}</span>
-      <span className="break-words text-zinc-200">{log.message}</span>
+    <div role="row" aria-rowindex={rowIndex} className="grid min-h-10 grid-cols-[96px_88px_minmax(0,1fr)] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
+      <span role="cell" aria-colindex={1} className="font-mono text-xs text-zinc-400">{formatLogTime(log.occurredAtMs)}</span>
+      <span role="cell" aria-colindex={2} className={`text-xs ${logLevelClass(log.level)}`}>{logLevelLabel(log.level)}</span>
+      <span role="cell" aria-colindex={3} className="break-words text-zinc-200">{log.message}</span>
     </div>
   );
 }
