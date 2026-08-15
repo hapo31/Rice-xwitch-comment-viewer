@@ -101,6 +101,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Twitch 認証状態とチャット受信接続状態を UI store 上で分離する。
 - [x] Issue #23: EventSub 再購読時に最新の access token を取得し、401 時は refresh token rotation を保存して一度だけ再試行する。
 - [x] Issue #30: 必須 scope 不足の認証状態では EventSub 接続 task を開始せず、EventSub の更新後 access token も `/validate` した scope で再検証する。並行した再購読で古い refresh 結果が新しく回転済みの認証を解除しないよう、token lock 下で refresh token を照合する。
+- [x] Issue #32: EventSub の welcome/購読成功を確立済みとして記録し、30 秒以上安定した session の後だけ再接続 backoff を最短へ reset する。welcome 直後の失敗、連続失敗の上限、通常再接続と handover をまたぐ状態を決定的テストで確認する。
 - [ ] 実 Twitch 環境で `channel.chat.message` 購読と Chat view 表示を手動確認する。
 
 ## Phase 4: 読み上げキュー統合
