@@ -148,6 +148,12 @@
 
 調査や作業中に分かった補足情報を記録するファイルです。日付が新しいものほど上に追記してください。
 
+## 2026-08-15
+
+- Issue #73: Tauri v2 の `csp` は production HTML へ注入され、bundled script/style の hash / nonce は build 時に Tauri が補う。`devCsp` が `null` または未指定の場合は production `csp` へ fallback するため、Vite HMR を production policy へ許可せず、development policy だけに `ws://localhost:1420` と Vite style injection を明示した。renderer は外部 API へ直接接続しないので、production の `connect-src` は公式 IPC source の `ipc:` / `http://ipc.localhost` だけでよい。動的 style 属性は仮想スクロール、倍率、tile 色に必要なため `style-src-attr 'unsafe-inline'` に限定して残した。
+- capability directory の全ファイルは設定未指定時に自動有効化されるため、`tauri.conf.json` から `default` だけを明示した。`core:default`、event/window の default set は未使用 command を含むので個別 permission へ縮小した。custom command は app manifest がない local renderer では暗黙許可されるため、`tauri_build::AppManifest` で invoke handler と同じ command 一覧を ACL 化し、main capability へ明示した。
+- Launcher icon は保存済み JSON を直接 deserialize する経路でも remote URL が表示され得た。`data:image/png;base64,`、encoded/decoded 上限、base64 decode、PNG chunk/checksum/IEND、単一 frame、最大 512 x 512 px を deserialize と更新の両方で検証し、違反値は `None` に落として汎用アイコンへ戻す。CSP の `img-src 'self' data:` と合わせ、remote image request、SVG active content、署名だけを模した壊れた PNG を許可しない。
+
 ## 2026-08-12
 
 - Issue #1 の確認で、Logs は接続・認証・読み上げ障害から復旧するための正式画面である一方、2026-05-26 に Activity Bar の導線だけが削除されており、通常操作で到達不能になっていた。`docs/05-ui-ux.md` の全正式画面を並べる方針に合わせ、Activity Bar に Logs を戻した。`AGENTS.md` の「Logs を除く」はこの旧判断を残した不整合だったため、通常操作から 1 回で Logs へ到達できる方針に訂正した。

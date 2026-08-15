@@ -22,7 +22,43 @@ fn main() {
     }
 
     if std::env::var_os("CARGO_FEATURE_APP").is_some() {
-        tauri_build::build();
+        const APP_COMMANDS: &[&str] = &[
+            "app_exit",
+            "app_open_external_url",
+            "app_build_info",
+            "launcher_add",
+            "launcher_remove",
+            "launcher_launch",
+            "launcher_launch_all",
+            "settings_get",
+            "settings_take_recovery_notice",
+            "settings_update",
+            "speech_health_check",
+            "speech_health_probe",
+            "speech_connection_diagnostics",
+            "speech_test",
+            "speech_pause",
+            "speech_resume",
+            "speech_skip",
+            "speech_clear",
+            "speech_queue_reload",
+            "speech_queue_remove",
+            "speech_queue_dismiss",
+            "speech_queue_dismiss_history",
+            "speech_queue_retry",
+            "twitch_start_auth",
+            "twitch_poll_auth",
+            "twitch_validate_auth",
+            "twitch_connect",
+            "twitch_stop_chat",
+            "twitch_get_stored_auth",
+            "twitch_disconnect",
+        ];
+        tauri_build::try_build(
+            tauri_build::Attributes::new()
+                .app_manifest(tauri_build::AppManifest::new().commands(APP_COMMANDS)),
+        )
+        .expect("failed to build Tauri application manifest");
     }
 }
 

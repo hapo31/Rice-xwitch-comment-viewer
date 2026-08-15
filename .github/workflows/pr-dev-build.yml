@@ -46,6 +46,8 @@ jobs:
             libayatana-appindicator3-dev libgtk-3-dev librsvg2-dev libwebkit2gtk-4.1-dev
       - name: Create development build without bundles
         run: pnpm tauri build --debug --no-bundle
+      - name: Smoke test bundled frontend security boundary
+        run: pnpm run check:security -- --dist dist --binary src-tauri/target/debug/rice
       - name: Write build report
         if: always()
         run: |
