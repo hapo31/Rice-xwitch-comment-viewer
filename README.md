@@ -17,16 +17,17 @@ Rice は、Twitch 配信中のチャット確認と読み上げを一つにま�
 ## 必要なもの
 
 - Windows 10 または 11 の 64 bit PC（公開 Release は `x86_64-pc-windows-msvc` 向け）
+- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/consumer/)
 - Twitch アカウントと、Twitch へ接続できるネットワーク
 - 読み上げを使う場合: 棒読みちゃん。本体側で TCP アプリ連携を有効にします。既定の接続先は `127.0.0.1:50001` です。
 
-Rice 本体だけでも、読み上げなしでチャット受信・表示の準備を進められます。棒読みちゃん、Twitch、ネットワークはいずれも別サービス／別アプリです。
+WebView2 Runtime は Rice の画面表示に必要です。Rice 本体だけでも、読み上げなしでチャット受信・表示の準備を進められます。棒読みちゃん、Twitch、ネットワークはいずれも別サービス／別アプリです。
 
 ## 入手、インストール、検証
 
 1. [GitHub Releases](https://github.com/hapo31/Rice-xwitch-comment-viewer/releases/latest) を開き、最新 Release の **Assets** を表示します。
-2. 通常は NSIS installer（`Rice_<version>_x64-setup.exe`）を選び、ダウンロード後に実行して案内に従います。スタートメニューなどへ登録して使う場合に適しています。
-3. インストールせずに試す場合は portable ZIP（`Rice_<version>_x86_64-pc-windows-msvc_portable.zip`）を選びます。任意の書き込み可能なフォルダーへ展開してから、展開先の `rice.exe` を実行してください。ZIP の中から直接実行しないでください。
+2. 通常は NSIS installer（`Rice_<version>_x64-setup.exe`）を選び、ダウンロード後に実行して案内に従います。スタートメニューなどへ登録して使う場合に適しています。現行構成は Tauri 既定の [`downloadBootstrapper`](https://v2.tauri.app/distribute/windows-installer/#downloaded-bootstrapper) を使うため、WebView2 Runtime がない環境では installer が Microsoft の bootstrapper をダウンロードして実行します。インストール中もネットワーク接続が必要です。
+3. インストールせずに試す場合は portable ZIP（`Rice_<version>_x86_64-pc-windows-msvc_portable.zip`）を選びます。portable には WebView2 Runtime が含まれないため、先に [Microsoft 公式ページ](https://developer.microsoft.com/en-us/microsoft-edge/webview2/consumer/)からインストールしてください。任意の書き込み可能なフォルダーへ展開してから、展開先の `rice.exe` を実行します。ZIP の中から直接実行しないでください。
 
 各 Release には `SHA256SUMS.txt` も含まれます。ダウンロード後のファイル名とチェックサムが Release のものと一致することを、PowerShell で確認できます。
 
@@ -35,7 +36,9 @@ Get-FileHash .\Rice_<version>_x64-setup.exe -Algorithm SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
-portable ZIP を選んだ場合は、展開前の ZIP に対して同じ方法で確認します。ハッシュが一致しない、または Release に `SHA256SUMS.txt` がない場合は実行せず、再ダウンロードして Release ページを確認してください。現行 Release workflow はチェックサムを公開しますが、コード署名・provenance の扱いはこの README で保証しません。
+portable ZIP を選んだ場合は、展開前の ZIP に対して同じ方法で確認します。ハッシュが一致しない、または Release に `SHA256SUMS.txt` がない場合は実行せず、再ダウンロードして Release ページを確認してください。
+
+現在の配布バイナリはコード署名と provenance に対応していないため、Windows SmartScreen の警告が表示される可能性があります。`SHA256SUMS.txt` との一致で確認できるのはダウンロード破損の有無であり、配布元の真正性ではありません。実行前に、このリポジトリの GitHub Release から取得したファイルであることも確認してください。
 
 ## 最初の設定
 
@@ -55,10 +58,10 @@ portable ZIP を選んだ場合は、展開前の ZIP に対して同じ方法�
 | 画面 | 用途 | 代表的な復旧操作 |
 | --- | --- | --- |
 | **Chat** | 受信したチャットと system の案内を表示。左ペインで受信を開始・停止します。 | チャットを受信しない場合、Login のログイン／チャンネルを確認してから左ペインの「開始」を押します。 |
-| **Login** | Twitch 認証と接続先チャンネルを管理します。 | 認証切れ、権限不足、購読取り消しは「認証開始」で再ログインします。「有効性確認」も利用できます。 |
+| **Login** | Twitch 認証と接続先チャンネルを管理します。 | 認証切れ、権限不足、購読取り消しでは、既存プロフィールが表示されてボタンが「認証解除」になっている場合は、先に「認証解除」、続いて「認証開始」で再ログインします。「有効性確認」も利用できます。 |
 | **Settings** | 棒読みちゃん接続、診断、テスト読み上げ、声質、自動読み上げを設定します。 | 読み上げエラーなら棒読みちゃんを起動し、host／port と TCP アプリ連携を確認して「診断」を実行します。 |
-| **Queue** | 待機中、読み上げ済み、読み飛ばし、エラーの項目を確認・操作します。 | 読み上げが止まった場合、失敗項目と接続状態を確認し、必要に応じて Settings の診断へ戻ります。 |
-| **Filter** | NG ユーザー・NG ワード、URL、長文の読み上げ規則を設定します。 | 期待したチャットが読まれない場合、フィルターと Queue の「読み飛ばし」状態を確認します。 |
+| **Queue** | 「待機」「読み上げ中」「エラー」「抑制」の項目を確認・操作します。完了済み・スキップ済みの項目は表示しません。 | 読み上げが止まった場合、「エラー」の項目と接続状態を確認し、必要に応じて Settings の診断へ戻ります。 |
+| **Filter** | NG ユーザー・NG ワード、URL、長文の読み上げ規則を設定します。 | 期待したチャットが読まれない場合、フィルターと Queue の「抑制」状態を確認します。 |
 | **Logs** | 認証、チャット受信、読み上げ連携の動作ログを表示します。 | 原因が分からない場合に、直前の警告・エラーを確認します。 |
 | **Launcher** | 登録した Windows アプリを起動します。 | Twitch／読み上げ設定とは独立しています。 |
 
@@ -66,9 +69,10 @@ portable ZIP を選んだ場合は、展開前の ZIP に対して同じ方法�
 
 ## 設定、認証情報、ログ
 
-- 一般設定（チャンネル名、棒読みちゃん接続、フィルター、Launcher など）はアプリのデータフォルダーに `settings.json` として保存されます。保存時にはバックアップを作り、破損を検出した場合はバックアップまたは既定値で復旧して Chat と Logs に通知します。
+- 一般設定（チャンネル名、棒読みちゃん接続、フィルター、Launcher など）は Windows の `%APPDATA%\dev.rice.tts\settings.json` に保存されます。portable 版も実行ファイルの隣ではなく同じ場所を使います。保存時には同じフォルダーに `settings.json.bak` を作り、破損を検出した場合はバックアップまたは既定値で復旧して Chat と Logs に通知します。
 - Twitch の access token と refresh token は OS の資格情報ストアに保存します。`settings.json` や新しい平文ファイルには保存しません。資格情報ストアが使えない場合は、そのログインは起動中だけ有効で、再起動後に再ログインが必要です。
-- Login の「認証解除」は保存済みの Twitch 認証情報を削除します。設定を初期化またはアプリのデータフォルダーを削除すると、チャンネル、読み上げ、フィルター、Launcher の設定を失うため、必要なら先にコピーしてバックアップしてください。認証解除の詳細は [認証情報の保存と安全性](./docs/07-oauth-storage-security.md) を参照してください。
+- 設定を手動でバックアップする場合は Rice を終了してから `%APPDATA%\dev.rice.tts` をコピーします。設定を既定値へ戻す場合も Rice を終了し、必要なバックアップを取ってから `settings.json` と `settings.json.bak` を削除して再起動します。チャンネル、読み上げ、フィルター、Launcher の設定は失われます。
+- OS の資格情報ストアにある Twitch token は設定ファイルと別管理です。`settings.json` を削除してもログアウトされません。保存済み認証も削除する場合は、Rice の **Login** で「認証解除」を実行してください。詳細は [認証情報の保存と安全性](./docs/07-oauth-storage-security.md) を参照してください。
 - Chat、Queue、Logs は現在のアプリ起動中の表示です。ログとコメント履歴を永続保存する機能は、現時点ではありません。必要な障害情報はアプリを終了する前に控えてください。
 
 ## 開発・設計・リリース情報
@@ -86,5 +90,5 @@ portable ZIP を選んだ場合は、展開前の ZIP に対して同じ方法�
 Release、route、画面名を変更する PR では、README の導線も同時にレビューしてください。
 
 - `src/routes.ts` の正式 route と画面名（Chat / Launcher / Queue / Filter / Settings / Login / Logs）がこの README と一致すること。`/rules` と `/voices` は legacy redirect であり、新しい利用者向け導線に使わないこと。
-- `Dockerfile` の portable ZIP 名、Windows target、`release-windows.yml` の `.exe`／`.zip`／`SHA256SUMS.txt` 生成が「入手、インストール、検証」と一致すること。
+- `Dockerfile` の portable ZIP 名、Windows target、`release-windows.yml` の `.exe`／`.zip`／`SHA256SUMS.txt` 生成、`tauri.conf.json` の WebView2 install mode（未指定なら Tauri の既定値）と署名設定が「必要なもの」「入手、インストール、検証」と一致すること。
 - Settings、Login、Side Panel にある操作名（「認証開始」「接続確認」「診断」「開始」）と、障害からの復旧先が一致すること。

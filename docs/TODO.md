@@ -140,7 +140,7 @@
 - [x] Issue #6: NG ユーザー/NG ワードと速度/音程/音量のフォームコントロールへラベルを関連付け、既定値を含む現在値を支援技術へ公開する。
 - [x] Issue #7: 入力エラーを対象フィールドと関連付け、棒読みちゃんホスト空欄と保存不能理由を明示する。
 - [x] プロジェクト概要、主な機能、導入方法、ライセンスを案内するルート README と MIT License を追加する。
-- [x] Issue #100: Windows 利用者向け README に製品範囲、Release の installer／portable 選択と SHA-256 検証、初回設定、障害復旧、設定・認証・ログの保存方針を記載し、route／操作名／Release asset 規則のレビュー項目を追加する。
+- [x] Issue #100: Windows 利用者向け README に製品範囲、WebView2 を含む installer／portable の前提と選択、SHA-256 検証と未署名時の注意、初回設定、実在する状態に沿った障害復旧、設定・認証・ログの保存／削除方針を記載し、route／操作名／Release asset 規則のレビュー項目を追加する。
 - [x] Issue #97: devcontainer の bootstrap を固定し、通常開発と SSH/Docker/host network 利用を明示的な profile に分離する。
 - [x] Issue #60: 設定更新を候補へ適用・保存成功後に commit するトランザクションに統一し、失敗時にメモリと永続設定を変更しない。
 - [x] 画面実装を `features` 単位へ分割し、ルーティング層を画面配線のみに整理する。
