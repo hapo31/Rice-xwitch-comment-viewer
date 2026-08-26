@@ -31,6 +31,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] 独自 Title Bar、ウィンドウ操作、リサイズハンドルを作る。
 - [x] UI 倍率の自動/手動切替を作る。
 - [x] Issue #50: UI 倍率セレクターへグループ名と現在の選択状態を公開し、キーボードで操作可能にする。
+- [x] Issue #157: 終了時にウィンドウ座標を保存し、現在のモニター構成で操作可能な場合だけ次回起動時に復元する。
 - [x] 一般設定を Tauri app data 配下の `settings.json` に保存する。
 - [x] `settings.json` を原子的に保存し、破損時に backup または既定値で復旧して退避先を system Chat/Logs/警告へ表示する。
 - [x] `app_events` からフロントエンドへ流すイベント設計を実装に接続する。
@@ -240,6 +241,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Rust: 通常再接続と reconnect ハンドオーバーをまたぐ重複排除テストを追加する。
 - [x] Rust: Launcher の拡張子、重複、順序、予約種別、旧設定互換テストを追加する。
 - [x] Rust: 設定JSONの原子的保存、disk full/replace failure、構文・設定値が不正な本体/backup復旧テストを追加する。
+- [x] Rust: Issue #157 の旧設定互換、座標のJSON保存、画面外位置の復元抑止をテストする。
 - [x] TypeScript: store reducer テストを追加する。
 - [x] TypeScript: キュー行の状態表示テストを追加する。
 - [x] TypeScript: 設定フォームのバリデーションテストを追加する。
@@ -261,6 +263,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [ ] 手動: 空白・日本語・`&` を含むアプリパスと、移動済みアプリを含む一斉起動の部分失敗表示を確認する。
 - [ ] 手動: マウス操作では不要な focus ring が出ず、Tab 操作では各入力・ボタンの位置を確認できること、および Windows 高コントラストで focus indicator を確認する（Issue #51）。
 - [ ] 手動: Windows release package の DevTools で CSP violation がないことと、Tauri event/invoke、タイトルバー、Dialog、Launcher icon、主要 API 操作を確認する（Issue #73）。
+- [ ] 手動: Issue #157 として、ウィンドウを別モニターへ移動して終了後に復元されること、モニターを外した後は画面外で起動しないことを Windows 10/11 で確認する。
 
 ## 調査メモ
 

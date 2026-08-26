@@ -148,6 +148,10 @@
 
 調査や作業中に分かった補足情報を記録するファイルです。日付が新しいものほど上に追記してください。
 
+## 2026-08-26
+
+- Issue #157: ウィンドウの物理ピクセル座標を一般設定の `window.position` として、OS の close request と独自タイトルバー経由の終了操作の両方で原子的に保存する。起動時は、現在のモニター作業領域に少なくとも 64 x 32px が残る位置だけを復元し、モニターの取り外し・再配置で画面外になる保存座標は初期の中央配置へ安全にフォールバックする。旧設定に `window` がない場合は既定値（未保存位置）として互換読み込みする。
+
 ## 2026-08-15
 
 - Issue #73: Tauri v2 の `csp` は production HTML へ注入され、bundled script/style の hash / nonce は build 時に Tauri が補う。`devCsp` が `null` または未指定の場合は production `csp` へ fallback するため、Vite HMR を production policy へ許可せず、development policy だけに `ws://localhost:1420` と Vite style injection を明示した。renderer は外部 API へ直接接続しないので、production の `connect-src` は公式 IPC source の `ipc:` / `http://ipc.localhost` だけでよい。動的 style 属性は仮想スクロール、倍率、tile 色に必要なため `style-src-attr 'unsafe-inline'` に限定して残した。
