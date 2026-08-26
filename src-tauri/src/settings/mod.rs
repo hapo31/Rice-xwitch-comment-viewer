@@ -24,6 +24,21 @@ pub struct AppSettings {
     pub speech: SpeechSettings,
     #[serde(default)]
     pub launcher: LauncherSettings,
+    #[serde(default)]
+    pub window: WindowSettings,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowSettings {
+    pub position: Option<WindowPosition>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowPosition {
+    pub x: i32,
+    pub y: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,6 +196,7 @@ impl Default for AppSettings {
                 connection_success_speech_text: String::new(),
             },
             launcher: LauncherSettings::default(),
+            window: WindowSettings::default(),
         }
     }
 }
@@ -729,7 +745,7 @@ fn settings_path<R: tauri::Runtime>(
 mod tests {
     use super::{
         apply_patch, backup_path, update_settings_transaction, AppSettings, SaveFault,
-        SettingsPatch, SettingsStore,
+        SettingsPatch, SettingsStore, WindowPosition,
     };
     use crate::launcher::{normalize_launcher_items, LauncherItem, LauncherItemKind};
     use std::fs;
@@ -772,6 +788,36 @@ mod tests {
             serde_json::from_value(value).expect("deserialize legacy settings");
 
         assert!(restored.launcher.items.is_empty());
+    }
+
+    #[test]
+    fn legacy_settings_without_window_position_keep_the_default() {
+        let settings = AppSettings::default();
+        let mut value = serde_json::to_value(settings).expect("serialize default settings");
+        value
+            .as_object_mut()
+            .expect("settings must be an object")
+            .remove("window");
+
+        let restored: AppSettings =
+            serde_json::from_value(value).expect("deserialize legacy settings");
+
+        assert_eq!(restored.window.position, None);
+    }
+
+    #[test]
+    fn window_position_round_trips_through_settings_json() {
+        let mut settings = AppSettings::default();
+        settings.window.position = Some(WindowPosition { x: -1280, y: 96 });
+
+        let restored: AppSettings =
+            serde_json::from_str(&serde_json::to_string(&settings).expect("serialize settings"))
+                .expect("deserialize settings");
+
+        assert_eq!(
+            restored.window.position,
+            Some(WindowPosition { x: -1280, y: 96 })
+        );
     }
 
     #[test]

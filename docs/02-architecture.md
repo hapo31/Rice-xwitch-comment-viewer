@@ -147,6 +147,7 @@ Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、encoded/de
 ## 永続化
 
 - 一般設定: Tauriのapp data配下にJSON保存。同一ディレクトリの一時ファイルへ書き込み・`sync_all` した後、OSごとの atomic replace で `settings.json` を更新する。直前の正常版は `settings.json.bak` 1世代だけ保持する。
+- ウィンドウ位置: `settings.json` の `window.position` に物理ピクセル座標を保存する。終了要求時とアプリ内の終了操作で保存し、次回起動時は現在のいずれかのモニター作業領域にタイトルバー相当（64 x 32px）以上が残る位置だけを復元する。モニター構成の変更で画面外になる位置は復元せず、初期の中央配置を使う。
 - 設定復旧: 起動時に本体のJSON構文または検証対象の設定値が不正なら backup を同じ契約で検証して復旧する。backup も不正または不在なら、無効なファイルを `settings.json.corrupt-<timestamp>-<suffix>` として退避して既定値で起動する。復旧理由・内容・退避先は Logs、system Chat、警告通知に日本語で表示する。
 - ランチャー項目: 一般設定の `launcher.items` に保存する。`kind`, `target`, `displayName`, `order` と、将来用の `backgroundColor`, `groupId`, `iconDataUrl` を境界として持つ。
 - Twitch OAuth状態: access token、refresh token、スコープ、有効期限、検証済みプロフィールをOS keyringへ保存する。設定JSONへは保存しない。
