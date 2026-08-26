@@ -23,3 +23,11 @@ if RICE_RELEASE_ROOT="${repo_dir}" "$PWD/scripts/verify-release-version.sh" 1.2.
   echo "エラー: tag の不一致を検出できませんでした。" >&2
   exit 1
 fi
+
+printf '{"version":"1.2.5"}\n' > "${repo_dir}/package.json"
+if RICE_RELEASE_ROOT="${repo_dir}" "$PWD/scripts/verify-release-version.sh" 1.2.4 --tag v1.2.4; then
+  echo "エラー: manifest version の不一致を検出できませんでした。" >&2
+  exit 1
+fi
+
+printf 'release version verification tests passed\n'
