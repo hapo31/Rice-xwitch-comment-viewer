@@ -1,0 +1,132 @@
+name: Publish Windows release
+
+# workflow_run executes this workflow definition from the default branch. The
+# tag-triggered build therefore never receives a contents:write token.
+on:
+  workflow_run:
+    workflows: ["Release Windows"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-windows-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish verified GitHub Release
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.path == '.github/workflows/release-windows.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: release
+    permissions:
+      actions: read
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event.workflow_run.head_branch }}
+      RELEASE_COMMIT: ${{ github.event.workflow_run.head_sha }}
+      RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
+    steps:
+      - name: Checkout trusted release policy
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Checkout event commit
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+
+      - name: Download release provenance
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rice-release-provenance-${{ github.event.workflow_run.head_branch }}
+          path: release-provenance
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Verify build provenance and immutable tag
+        id: release-source
+        run: |
+          set -euo pipefail
+          provenance="${GITHUB_WORKSPACE}/release-provenance/release-provenance.json"
+          jq -e '
+            type == "object" and
+            .schemaVersion == 1 and
+            (.tag | type == "string") and
+            (.tagObject | type == "string") and
+            (.commit | type == "string")
+          ' "${provenance}" >/dev/null
+
+          provenance_tag="$(jq -er '.tag' "${provenance}")"
+          provenance_tag_object="$(jq -er '.tagObject' "${provenance}")"
+          provenance_commit="$(jq -er '.commit' "${provenance}")"
+          if [ "${provenance_tag}" != "${RELEASE_TAG}" ]; then
+            echo "エラー: provenance tag (${provenance_tag}) が workflow run tag (${RELEASE_TAG}) と一致しません。" >&2
+            exit 1
+          fi
+          if [ "${provenance_commit}" != "${RELEASE_COMMIT}" ]; then
+            echo "エラー: provenance commit (${provenance_commit}) が workflow run commit (${RELEASE_COMMIT}) と一致しません。" >&2
+            exit 1
+          fi
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "エラー: タグ名は vX.Y.Z 形式で指定してください: ${RELEASE_TAG}" >&2
+            exit 64
+          fi
+
+          git -C source fetch --no-tags origin \
+            "+refs/heads/main:refs/remotes/origin/main" \
+            "refs/tags/${RELEASE_TAG}:refs/rice/release-tag"
+          (
+            cd source
+            ../trusted/scripts/verify-release-tag.sh "${RELEASE_TAG}" \
+              --tag-ref refs/rice/release-tag \
+              --expected-tag-object "${provenance_tag_object}" \
+              --expected-commit "${RELEASE_COMMIT}" \
+              --checkout-ref HEAD \
+              --main-ref refs/remotes/origin/main
+            RICE_RELEASE_ROOT="${PWD}" \
+              ../trusted/scripts/verify-release-version.sh "${RELEASE_TAG#v}" --tag "${RELEASE_TAG}"
+
+            # Keep the verified snapshot for --notes-from-tag. Do not fetch the
+            # mutable remote tag again in this job.
+            git update-ref "refs/tags/${RELEASE_TAG}" "${provenance_tag_object}"
+          )
+          echo "tag-object=${provenance_tag_object}" >> "${GITHUB_OUTPUT}"
+
+      - name: Download release artifact bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rice-windows-${{ github.event.workflow_run.head_branch }}
+          path: release-artifacts
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Create or update release safely
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_TAG_OBJECT: ${{ steps.release-source.outputs.tag-object }}
+        run: |
+          set -euo pipefail
+          assets=("${GITHUB_WORKSPACE}"/release-artifacts/*)
+          (
+            cd source
+            ../trusted/scripts/publish-release.sh \
+              "${RELEASE_TAG}" \
+              "${GITHUB_REPOSITORY}" \
+              "${EXPECTED_TAG_OBJECT}" \
+              "${assets[@]}"
+          )

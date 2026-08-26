@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-08-26: Issue #94 release tag / publish 権限境界
+
+- 調査時点の repository settings は rulesets 0 件、`main` branch protection なし、environments 0 件だった。workflow だけでは tag update/delete の TOCTOU と、過去の tag commit に残る旧 workflow の write 権限を無効化できないため、`refs/tags/v*` の作成主体・update・delete を制限する active ruleset、review 済み `main`、tag 作成者と分離した required reviewer を持つ `release` environment を管理者の必須手順として残す。外部設定はこの変更では操作していない。
+- tag push workflow から `contents: write` を除去し、検証済み tag object / event commit を provenance artifact に固定した。default branch SHA の trusted script を使う `workflow_run` publish job が、current tag object、workflow run commit、checkout `HEAD`、`origin/main` 到達可能性、3 manifest version を再照合し、remote tag を Release 作成・upload・公開の前後で確認する。non-main、event/checkout mismatch、同じ commit 上で annotation だけを変えた moved tag、manifest/tag mismatch、remote moved tag、write 権限の tag workflow 再導入を自動テストした。release script tests、workflow policy / YAML 構文、`pnpm test`（38 files / 154 tests）、`pnpm build`、`git diff --check` は成功した。
+
 ## 2026-08-08: Issue #53 Chat 仮想スクロールの prepend アンカー
 
 - Chat は新着を先頭へ追加するため、過去ログを読んでいると同じ `scrollTop` が別の行を指す状態だった。更新直前に最初の可視メッセージ ID とコンテナ先頭からの相対 offset を記録し、prepend 後はその ID へ仮想スクロールして offset を戻す。先頭閲覧時は offset 0 を維持して新着を即時表示する。

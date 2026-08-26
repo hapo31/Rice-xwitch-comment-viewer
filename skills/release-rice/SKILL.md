@@ -15,6 +15,7 @@ description: Rice の新しいバージョンを非同期にリリースする�
 4. 現在のブランチが `main` であることを確認する。別ブランチなら停止する。
 5. `git rev-list --left-right --count main...origin/main` が `0 0` であることを確認する。behind の clean な `main` だけ `git pull --ff-only origin main` を提案できる。ahead または diverged なら停止する。
 6. `git tag --list 'v*' --sort=-version:refname` と、必要なら `gh release list` を確認する。未公開タグがあっても自動で削除・再利用しない。
+7. `docs/releasing.md` の「GitHub repository settings」を基準に、active な `refs/tags/v*` ruleset、保護された `main`、required reviewer と protected tag 制限を持つ `release` environment を GitHub API または Settings 画面で確認する。設定がない、または現在の実行者が許可された release identity か判断できない場合はタグを作らず停止する。ruleset、environment、branch protection を自動作成・変更しない。
 
 ## 2. バージョンと差分を確認する
 
@@ -58,9 +59,9 @@ description: Rice の新しいバージョンを非同期にリリースする�
 
 1. 同名タグが local/remote とも未使用で、`HEAD` と `origin/main` が一致することをもう一度確認する。
 2. `git tag -a "vX.Y.Z" --cleanup=verbatim -F "$notes_file"` で annotated tag を作る。`--cleanup=verbatim` で Markdown 見出しの `#` を保持する。`git tag vX.Y.Z` のような軽量タグは禁止する。
-3. `scripts/verify-release-tag.sh "vX.Y.Z"` と `scripts/verify-release-version.sh "X.Y.Z" --tag "vX.Y.Z"` を実行し、タグ object、対象 commit、annotation message、3 manifest と tag の version 一致を確認する。
+3. `tag_object="$(git rev-parse "vX.Y.Z^{tag}")"` を取得し、`scripts/verify-release-tag.sh "vX.Y.Z" --expected-tag-object "$tag_object" --expected-commit HEAD --checkout-ref HEAD --main-ref origin/main` と `scripts/verify-release-version.sh "X.Y.Z" --tag "vX.Y.Z"` を実行する。タグ object、対象 commit、`HEAD` / `origin/main`、annotation message、3 manifest と tag の version 一致を確認する。
 4. 一時ファイルを削除する。削除後も annotation message は Git tag object に保存される。
 5. tag push の直前にタグ名と対象 commit を提示し、許可されたリリース作業として `git push origin "vX.Y.Z"` を実行する。既存タグへの force push は行わない。
-6. GitHub Actions の完了を待たず終了する。タグ名、commit SHA、Actions の確認 URL または `gh run list --workflow release-windows.yml --branch "vX.Y.Z"`、失敗時は `gh run view RUN_ID --log-failed` を表示する。
+6. GitHub Actions の完了を待たず終了する。tag push workflow は read-only で build し、公開 workflow は `release` environment の承認待ちになる。タグ名、commit SHA、Actions の確認 URL または `gh run list --workflow release-windows.yml --branch "vX.Y.Z"`、失敗時は `gh run view RUN_ID --log-failed` を表示し、承認担当者へ pending deployment を案内する。
 
 GitHub Release の本文だけを後から直す場合は、タグを動かさず `gh release edit vX.Y.Z --notes-file release-notes.md` を案内する。
