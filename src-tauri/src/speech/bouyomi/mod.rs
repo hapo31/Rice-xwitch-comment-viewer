@@ -161,6 +161,10 @@ impl BouyomiAdapter {
         Ok(started_at.elapsed())
     }
 
+    pub async fn health_probe(&self) -> anyhow::Result<Duration> {
+        self.health_check(false, "").await
+    }
+
     pub async fn speak(&self, text: &str) -> anyhow::Result<()> {
         let packet = build_talk_packet(&self.defaults, text);
         self.send_packet(&packet).await
@@ -349,9 +353,8 @@ pub async fn speech_health_check(
 #[tauri::command]
 pub async fn speech_health_probe(state: tauri::State<'_, AppState>) -> Result<String, String> {
     let adapter = adapter_from_settings(&state)?;
-    let (speak_on_success, success_message) = connection_success_settings(&state)?;
     adapter
-        .health_check(speak_on_success, &success_message)
+        .health_probe()
         .await
         .map(|elapsed| {
             format!(
@@ -573,6 +576,7 @@ fn build_diagnostic_recommendation(attempted: &[BouyomiConnectionAttempt]) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::{io::AsyncReadExt, net::TcpListener};
 
     #[test]
     fn builds_bouyomi_talk_packet() {
@@ -662,6 +666,23 @@ mod tests {
             BouyomiQueryCommand::IsNowPlaying.packet(),
             0x120_i16.to_le_bytes()
         );
+    }
+
+    #[tokio::test]
+    async fn automatic_health_probe_sends_only_the_silent_status_query() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let received = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut packet = [0_u8; 2];
+            stream.read_exact(&mut packet).await.unwrap();
+            packet
+        });
+        let adapter = BouyomiAdapter::new("127.0.0.1", port, BouyomiTalkConfig::default()).unwrap();
+
+        adapter.health_probe().await.unwrap();
+
+        assert_eq!(received.await.unwrap(), 0x120_i16.to_le_bytes());
     }
 
     #[test]
