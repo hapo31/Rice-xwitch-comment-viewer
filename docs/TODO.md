@@ -137,6 +137,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Issue #13: Helix による接続準備中にも接続 task を予約し、停止・解除で後続の EventSub 起動を取消せるようにする。
 - [x] Issue #19: 一時的な validate/refresh 障害では資格情報を保持し、401 と `invalid_grant` の確定失効時だけ再ログインへ切り替える。
 - [x] Issue #20: OS 資格情報ストアの削除が失敗した場合は認証解除を成功扱いにせず、メモリ状態も維持して再試行可能にする。
+- [x] Issue #22: Twitch の HTTP 接続・応答と EventSub WebSocket handshake に明示的な deadline を設定する。
 - [x] Issue #2: Chat 行へ読み上げ状態を表示し、キュー更新時に `sourceMessageId` で状態を同期する。
 - [x] Issue #1: Activity Bar から Logs view を開ける導線を追加し、リンク名・現在地表現を回帰テストする。
 - [x] `main` 向け PR で frontend/Rust の unit test と lint を並列実行する read-only GitHub Actions workflow を追加する。

@@ -49,6 +49,9 @@ const CHANNEL_CHAT_MESSAGE_TYPE: &str = "channel.chat.message";
 const CHANNEL_CHAT_MESSAGE_VERSION: &str = "1";
 const DEDUPE_CACHE_LIMIT: usize = 5_000;
 const DEDUPE_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
+const TWITCH_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+#[cfg(feature = "app")]
+const TWITCH_WS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 #[cfg(feature = "app")]
 static NEXT_TWITCH_CONNECTION_GENERATION: AtomicU64 = AtomicU64::new(1);
 #[cfg(all(feature = "app", target_os = "linux"))]
@@ -1516,8 +1519,16 @@ pub fn twitch_stop_chat(
     Ok(())
 }
 
+fn twitch_http_client() -> anyhow::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .connect_timeout(TWITCH_HTTP_TIMEOUT)
+        .timeout(TWITCH_HTTP_TIMEOUT)
+        .build()
+        .map_err(anyhow::Error::from)
+}
+
 async fn request_device_code(client_id: &str) -> anyhow::Result<DeviceCodeResponse> {
-    let response = reqwest::Client::new()
+    let response = twitch_http_client()?
         .post(TWITCH_DEVICE_URL)
         .form(&[("client_id", client_id), ("scopes", CHAT_READ_SCOPE)])
         .send()
@@ -1527,7 +1538,8 @@ async fn request_device_code(client_id: &str) -> anyhow::Result<DeviceCodeRespon
 }
 
 async fn poll_device_token(pending: &PendingDeviceAuth) -> Result<TokenResponse, PollAuthError> {
-    let response = reqwest::Client::new()
+    let response = twitch_http_client()
+        .map_err(PollAuthError::Other)?
         .post(TWITCH_TOKEN_URL)
         .form(&[
             ("client_id", pending.client_id.as_str()),
@@ -1578,7 +1590,7 @@ async fn refresh_access_token(
         ));
     }
 
-    let response = reqwest::Client::new()
+    let response = twitch_http_client()?
         .post(TWITCH_TOKEN_URL)
         .form(&[
             ("client_id", client_id),
@@ -1592,7 +1604,7 @@ async fn refresh_access_token(
 }
 
 async fn validate_access_token(access_token: &str) -> anyhow::Result<ValidateResponse> {
-    let response = reqwest::Client::new()
+    let response = twitch_http_client()?
         .get(TWITCH_VALIDATE_URL)
         .bearer_auth(access_token)
         .send()
@@ -1606,7 +1618,7 @@ async fn fetch_twitch_user(
     access_token: &str,
     login: &str,
 ) -> anyhow::Result<HelixUser> {
-    let response = reqwest::Client::new()
+    let response = twitch_http_client()?
         .get(TWITCH_USERS_URL)
         .query(&[("login", login)])
         .header("Client-Id", client_id)
@@ -1683,7 +1695,11 @@ async fn run_eventsub_session(
         )),
     );
 
-    let (mut socket, _) = connect_async(url).await?;
+    let (mut socket, _) = tokio::time::timeout(TWITCH_WS_HANDSHAKE_TIMEOUT, connect_async(url))
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!("Twitch EventSub WebSocket の接続が期限内に完了しませんでした。")
+        })??;
     let mut keepalive_timeout = Duration::from_secs(40);
 
     loop {
@@ -1774,7 +1790,12 @@ async fn handover_eventsub_session(
     seen_message_ids: &mut MessageDedupe,
 ) -> anyhow::Result<(EventSubSocket, EventSubSession)> {
     let deadline = tokio::time::Instant::now() + EVENTSUB_RECONNECT_HANDOVER_TIMEOUT;
-    let mut connect = Box::pin(connect_async(&reconnect_url));
+    let mut connect = Box::pin(async {
+        tokio::time::timeout(TWITCH_WS_HANDSHAKE_TIMEOUT, connect_async(&reconnect_url))
+            .await
+            .map_err(|_| anyhow::anyhow!("Twitch EventSub の再接続が期限内に完了しませんでした。"))?
+            .map_err(anyhow::Error::from)
+    });
     let mut reconnect_socket: Option<EventSubSocket> = None;
     let mut reconnect_error: Option<anyhow::Error> = None;
 
@@ -1826,7 +1847,7 @@ async fn handover_eventsub_session(
                 _ = tokio::time::sleep_until(deadline) => break,
                 connection = connect.as_mut() => match connection {
                     Ok((socket, _)) => reconnect_socket = Some(socket),
-                    Err(error) => reconnect_error = Some(error.into()),
+                    Err(error) => reconnect_error = Some(error),
                 },
                 old_message = old_socket.next() => {
                     let old_message = old_message
@@ -2198,7 +2219,7 @@ async fn send_chat_message_subscription(
             "session_id": session_id,
         },
     });
-    let response = reqwest::Client::new()
+    let response = twitch_http_client()?
         .post(TWITCH_EVENTSUB_SUBSCRIPTIONS_URL)
         .header("Client-Id", client_id)
         .bearer_auth(access_token)
@@ -2480,12 +2501,12 @@ mod tests {
         retry_eventsub_subscription, AuthSecretStore, AuthStorage, EventSubReconnectBackoff,
         StoredTwitchAuth, SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchToken,
         TwitchUserProfile, EVENTSUB_BACKOFF_RESET_STABLE_DURATION,
-        EVENTSUB_RECONNECT_HANDOVER_TIMEOUT,
+        EVENTSUB_RECONNECT_HANDOVER_TIMEOUT, TWITCH_WS_HANDSHAKE_TIMEOUT,
     };
     use super::{
         ensure_required_twitch_scopes, is_definitive_auth_failure, normalize_chat_message,
         oauth_error_code, retry_backoff_seconds, EventSubEnvelope, MessageDedupe,
-        OAuthErrorResponse,
+        OAuthErrorResponse, TWITCH_HTTP_TIMEOUT,
     };
     use chrono::{DateTime, Utc};
     use std::{
@@ -2788,6 +2809,13 @@ mod tests {
                 "{case_name}"
             );
         }
+    }
+
+    #[test]
+    fn twitch_transport_deadlines_are_bounded() {
+        assert_eq!(TWITCH_HTTP_TIMEOUT, Duration::from_secs(15));
+        #[cfg(feature = "app")]
+        assert_eq!(TWITCH_WS_HANDSHAKE_TIMEOUT, Duration::from_secs(10));
     }
 
     #[test]
