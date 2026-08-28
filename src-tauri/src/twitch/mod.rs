@@ -1358,6 +1358,9 @@ pub fn twitch_disconnect(
 
 #[cfg(feature = "app")]
 fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(), String> {
+    // Keep the active state if durable credential deletion fails. This avoids
+    // reporting a successful logout that is reversed when keyring recovers.
+    TwitchAuthStore::clear().map_err(to_secure_store_user_message)?;
     if let Some(handle) = state
         .twitch_connection
         .lock()
@@ -1366,7 +1369,6 @@ fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(), Str
     {
         handle.abort();
     }
-
     let mut auth = state
         .twitch_auth
         .lock()
@@ -1375,7 +1377,7 @@ fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(), Str
     auth.pending = None;
     auth.token = None;
     auth.profile = None;
-    TwitchAuthStore::clear().map_err(to_secure_store_user_message)
+    Ok(())
 }
 
 #[cfg(feature = "app")]
@@ -3255,6 +3257,21 @@ mod tests {
         assert!(warning.contains("ファイルを削除"));
         assert!(warning.contains("アクセスを取り消し"));
         assert!(legacy.secret.borrow().is_some());
+    }
+
+    #[test]
+    fn failed_secure_auth_clear_keeps_the_secret_for_retry() {
+        let secure = FakeAuthSecretStore {
+            fail_clear: true,
+            ..FakeAuthSecretStore::with_secret(stored_auth_secret())
+        };
+        let legacy = FakeAuthSecretStore::default();
+        let storage = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        };
+        assert!(storage.clear().is_err());
+        assert!(secure.secret.borrow().is_some());
     }
 
     #[test]
