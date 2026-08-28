@@ -6,10 +6,13 @@
 
 Node 20.19.4, pnpm 8.11.0, Codex CLI 0.98.0, Rust 1.89.0, and the base images are fixed in [`bootstrap-lock.json`](./bootstrap-lock.json). The Dockerfile downloads the two npm tarballs during the image build, checks their SHA-512 integrity, and installs them with lifecycle scripts disabled. Rust, rustfmt, and clippy are copied from the fixed Rust image. Thus these tools are installed before any profile can mount host credentials or Docker access.
 
+GitHub CLI is installed through the pinned [`github-cli` Feature](./devcontainer-lock.json).
+
 After a normal Rebuild, `postCreateCommand` only verifies the baked Codex version and runs the project's lockfile-based `pnpm install`. Check the installed tools with:
 
 ```bash
 codex --version
+gh --version
 pnpm --version
 rustc --version
 ```

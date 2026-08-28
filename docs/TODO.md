@@ -20,6 +20,8 @@
 
 Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP、main window capability / custom command ACL を有効化し、Launcher icon を完全 decode・寸法検証済みの PNG data URL に限定した。
 
+通常 devcontainer には lock 済みの GitHub CLI feature を追加した。
+
 ## Phase 0: プロジェクト作成
 
 - [x] Tauri + TypeScript + Tailwind の雛形を作る。
@@ -152,6 +154,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] プロジェクト概要、主な機能、導入方法、ライセンスを案内するルート README と MIT License を追加する。
 - [x] Issue #100: Windows 利用者向け README に製品範囲、WebView2 を含む installer／portable の前提と選択、SHA-256 検証と未署名時の注意、初回設定、実在する状態に沿った障害復旧、設定・認証・ログの保存／削除方針を記載し、route／操作名／Release asset 規則のレビュー項目を追加する。
 - [x] Issue #97: devcontainer の bootstrap を固定し、通常開発と SSH/Docker/host network 利用を明示的な profile に分離する。
+- [x] 通常 devcontainer に lock 済みの GitHub CLI feature を追加する。
 - [x] Issue #60: 設定更新を候補へ適用・保存成功後に commit するトランザクションに統一し、失敗時にメモリと永続設定を変更しない。
 - [x] 画面実装を `features` 単位へ分割し、ルーティング層を画面配線のみに整理する。
 - [x] Windows 10 スタートメニュー風の Launcher 画面を追加する。

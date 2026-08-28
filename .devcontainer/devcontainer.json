@@ -7,6 +7,9 @@
   "containerEnv": {
     "CARGO_TARGET_DIR": "/home/vscode/.cargo-target/rice"
   },
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
   "postCreateCommand": ".devcontainer/setup.sh",
   "mounts": [
     "source=rice-cargo-target,target=/home/vscode/.cargo-target,type=volume"

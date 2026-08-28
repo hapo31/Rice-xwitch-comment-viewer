@@ -35,6 +35,13 @@ grep -F -- "rust:1.89.0-bookworm@${rust_digest}" "${dockerfile}" >/dev/null
 ! jq -e '.runArgs[]? == "--network=host"' .devcontainer/devcontainer.json >/dev/null
 ! rg -n 'target=/home/vscode/\.ssh|source=\$\{localEnv:HOME\}/\.ssh|docker-outside-of-docker' .devcontainer/devcontainer.json
 
+default_feature_lock=".devcontainer/devcontainer-lock.json"
+jq -e '.features | keys == ["ghcr.io/devcontainers/features/github-cli:1"]' .devcontainer/devcontainer.json >/dev/null
+jq -e '
+  .features["ghcr.io/devcontainers/features/github-cli:1"] as $feature
+  | $feature.resolved == ("ghcr.io/devcontainers/features/github-cli@" + $feature.integrity)
+' "${default_feature_lock}" >/dev/null
+
 jq -e '
   .containerEnv.SSH_AUTH_SOCK == "/tmp/vscode-ssh-auth.sock"
   and ([.mounts[]] | any(test("SSH_AUTH_SOCK")))
