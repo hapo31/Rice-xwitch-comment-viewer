@@ -12,7 +12,8 @@
   },
   "postCreateCommand": ".devcontainer/setup.sh",
   "mounts": [
-    "source=rice-cargo-target,target=/home/vscode/.cargo-target,type=volume"
+    "source=rice-cargo-target,target=/home/vscode/.cargo-target,type=volume",
+    "source=rice-codex-home,target=/home/vscode/.codex,type=volume"
   ],
   "init": true,
   "forwardPorts": [1420],

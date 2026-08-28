@@ -2,7 +2,7 @@
 
 ## Default profile and bootstrap lock
 
-`.devcontainer/devcontainer.json` is the normal development profile. It does not mount host SSH keys or Git configuration, a Codex state volume, the Docker socket, or host networking.
+`.devcontainer/devcontainer.json` is the normal development profile. It does not mount host SSH keys or Git configuration, the Docker socket, or host networking. Codex state is retained in the local Docker named volume `rice-codex-home` at `/home/vscode/.codex`, so a Rebuild keeps Codex authentication, history, and sessions. The volume is local to the Docker environment; it is not committed to Git or sent in the Docker build context.
 
 Node 20.19.4, pnpm 8.11.0, Codex CLI 0.98.0, Rust 1.89.0, and the base images are fixed in [`bootstrap-lock.json`](./bootstrap-lock.json). The Dockerfile downloads the two npm tarballs during the image build, checks their SHA-512 integrity, and installs them with lifecycle scripts disabled. Rust, rustfmt, and clippy are copied from the fixed Rust image. Thus these tools are installed before any profile can mount host credentials or Docker access.
 
@@ -33,13 +33,13 @@ Open these configuration files explicitly (for example, with `devcontainer up --
 
 | Profile | Capability | Use only when |
 | --- | --- | --- |
-| [`profiles/ssh-agent/devcontainer.json`](./profiles/ssh-agent/devcontainer.json) | Scoped SSH agent socket and `rice-codex-home` state volume | Git-over-SSH or a persisted Codex login is required. |
+| [`profiles/ssh-agent/devcontainer.json`](./profiles/ssh-agent/devcontainer.json) | Scoped SSH agent socket | Git-over-SSH is required. |
 | [`profiles/windows-bouyomi/devcontainer.json`](./profiles/windows-bouyomi/devcontainer.json) | `--network=host` | Connecting to a Windows-side BouyomiChan server from mirrored WSL2 networking. |
 | [`profiles/release/devcontainer.json`](./profiles/release/devcontainer.json) | Docker outside of Docker | Running `scripts/build-windows-docker.sh` locally. |
 
 The SSH profile requires a running agent and uses `${SSH_AUTH_SOCK}`. It never bind-mounts `~/.ssh`, so private-key files are not readable by the container. Load only the key needed for this repository and remove it from the agent when finished. Do not combine the release profile with SSH or host-network profiles unless the task genuinely requires every capability.
 
-Codex state in the SSH-agent profile is retained in `rice-codex-home` at `/home/vscode/.codex`. Create it manually if needed:
+Codex state in the normal profile is retained in `rice-codex-home` at `/home/vscode/.codex`. Docker creates the volume automatically on the first container creation. To create it before opening the devcontainer, run:
 
 ```bash
 docker volume create rice-codex-home

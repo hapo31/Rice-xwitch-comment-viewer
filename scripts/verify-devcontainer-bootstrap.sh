@@ -36,6 +36,8 @@ grep -F -- "rust:1.89.0-bookworm@${rust_digest}" "${dockerfile}" >/dev/null
 ! rg -n 'target=/home/vscode/\.ssh|source=\$\{localEnv:HOME\}/\.ssh|docker-outside-of-docker' .devcontainer/devcontainer.json
 
 default_feature_lock=".devcontainer/devcontainer-lock.json"
+jq -e '([.mounts[]] | any(test("source=rice-codex-home,target=/home/vscode/\\.codex,type=volume")))' .devcontainer/devcontainer.json >/dev/null
+
 jq -e '.features | keys == ["ghcr.io/devcontainers/features/github-cli:1"]' .devcontainer/devcontainer.json >/dev/null
 jq -e '
   .features["ghcr.io/devcontainers/features/github-cli:1"] as $feature
