@@ -1125,12 +1125,15 @@ pub async fn twitch_validate_auth(
             let token = match refresh_access_token(&client_id, &refresh_token).await {
                 Ok(token) => token,
                 Err(refresh_error) => {
-                    let message = to_twitch_user_message(anyhow::anyhow!(
-                        "{validate_error}; {refresh_error}"
-                    ));
                     ensure_auth_generation_is_current(&state, generation)?;
-                    clear_invalid_twitch_auth(&state, &app, &message)?;
-                    return Err(message);
+                    if is_definitive_auth_failure(&refresh_error) {
+                        let message = to_twitch_user_message(anyhow::anyhow!(
+                            "{validate_error}; {refresh_error}"
+                        ));
+                        clear_invalid_twitch_auth(&state, &app, &message)?;
+                        return Err(message);
+                    }
+                    return Err(retryable_auth_error_message(&refresh_error));
                 }
             };
             let profile = match validate_access_token(&token.access_token).await {
@@ -1145,10 +1148,13 @@ pub async fn twitch_validate_auth(
                     profile
                 }
                 Err(error) => {
-                    let message = to_twitch_user_message(error);
                     ensure_auth_generation_is_current(&state, generation)?;
-                    clear_invalid_twitch_auth(&state, &app, &message)?;
-                    return Err(message);
+                    if is_definitive_auth_failure(&error) {
+                        let message = to_twitch_user_message(error);
+                        clear_invalid_twitch_auth(&state, &app, &message)?;
+                        return Err(message);
+                    }
+                    return Err(retryable_auth_error_message(&error));
                 }
             };
             let mut auth = state
@@ -2029,18 +2035,24 @@ async fn refresh_eventsub_access_token(
         match refresh_access_token(&credentials.client_id, &credentials.refresh_token).await {
             Ok(token) => token,
             Err(error) => {
-                let message = to_twitch_user_message(error);
-                clear_eventsub_auth(app, &message)?;
-                return Err(anyhow::anyhow!(message));
+                if is_definitive_auth_failure(&error) {
+                    let message = to_twitch_user_message(error);
+                    clear_eventsub_auth(app, &message)?;
+                    return Err(anyhow::anyhow!(message));
+                }
+                return Err(anyhow::anyhow!(retryable_auth_error_message(&error)));
             }
         };
 
     let refreshed_profile = match validate_access_token(&refreshed.access_token).await {
         Ok(validate) => TwitchUserProfile::from(validate),
         Err(error) => {
-            let message = to_twitch_user_message(error);
-            clear_eventsub_auth(app, &message)?;
-            return Err(anyhow::anyhow!(message));
+            if is_definitive_auth_failure(&error) {
+                let message = to_twitch_user_message(error);
+                clear_eventsub_auth(app, &message)?;
+                return Err(anyhow::anyhow!(message));
+            }
+            return Err(anyhow::anyhow!(retryable_auth_error_message(&error)));
         }
     };
     if let Err(error) = ensure_required_twitch_scopes(&refreshed_profile.scopes) {
@@ -2342,7 +2354,18 @@ where
         .and_then(|error| error.message.or(error.error))
         .unwrap_or_else(|| status.to_string());
 
-    Err(anyhow::anyhow!(message))
+    Err(anyhow::anyhow!("HTTP {}: {message}", status.as_u16()))
+}
+
+fn is_definitive_auth_failure(error: &anyhow::Error) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+    message.contains("http 401")
+        || message.contains("invalid_grant")
+        || message.contains("invalid access token")
+}
+
+fn retryable_auth_error_message(error: &anyhow::Error) -> String {
+    format!("Twitch の認証確認中に一時的な通信エラーが発生しました。ネットワークを確認して再試行してください: {error}")
 }
 
 fn to_twitch_user_message(error: anyhow::Error) -> String {
@@ -2458,8 +2481,9 @@ mod tests {
         EVENTSUB_RECONNECT_HANDOVER_TIMEOUT,
     };
     use super::{
-        ensure_required_twitch_scopes, normalize_chat_message, oauth_error_code,
-        retry_backoff_seconds, EventSubEnvelope, MessageDedupe, OAuthErrorResponse,
+        ensure_required_twitch_scopes, is_definitive_auth_failure, normalize_chat_message,
+        oauth_error_code, retry_backoff_seconds, EventSubEnvelope, MessageDedupe,
+        OAuthErrorResponse,
     };
     use chrono::{DateTime, Utc};
     use std::{
@@ -2762,6 +2786,22 @@ mod tests {
                 "{case_name}"
             );
         }
+    }
+
+    #[test]
+    fn definitive_auth_failures_are_distinguished_from_transient_errors() {
+        assert!(is_definitive_auth_failure(&anyhow::anyhow!(
+            "HTTP 401: invalid access token"
+        )));
+        assert!(is_definitive_auth_failure(&anyhow::anyhow!(
+            "HTTP 400: invalid_grant"
+        )));
+        assert!(!is_definitive_auth_failure(&anyhow::anyhow!(
+            "HTTP 503: unavailable"
+        )));
+        assert!(!is_definitive_auth_failure(&anyhow::anyhow!(
+            "network timeout"
+        )));
     }
 
     #[test]

@@ -135,6 +135,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Issue #3: 非同期イベント購読を遅延 cleanup と部分失敗に安全な共通 helper へ統一する。
 - [x] Issue #12: frontend の設定更新を backend と同じ leaf patch 契約にし、保存要求を直列化して遅い応答や blur 直後の接続で変更を取りこぼさないようにする。
 - [x] Issue #13: Helix による接続準備中にも接続 task を予約し、停止・解除で後続の EventSub 起動を取消せるようにする。
+- [x] Issue #19: 一時的な validate/refresh 障害では資格情報を保持し、401 と `invalid_grant` の確定失効時だけ再ログインへ切り替える。
 - [x] Issue #2: Chat 行へ読み上げ状態を表示し、キュー更新時に `sourceMessageId` で状態を同期する。
 - [x] Issue #1: Activity Bar から Logs view を開ける導線を追加し、リンク名・現在地表現を回帰テストする。
 - [x] `main` 向け PR で frontend/Rust の unit test と lint を並列実行する read-only GitHub Actions workflow を追加する。
