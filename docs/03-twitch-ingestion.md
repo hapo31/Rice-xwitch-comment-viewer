@@ -69,7 +69,7 @@ Twitch EventSub WebSocketでは、最初に `session_welcome` が届き、その
 
 - 接続直後の購読は素早く行う。Twitchドキュメントではwelcome後の購読猶予が短い。
 - `session_keepalive` が一定時間来ない場合は切断扱いにして再接続/再購読する。
-- `session_reconnect` を受けたら、指定された `reconnect_url` に接続し、新しいwelcomeを受けるまでは旧接続を維持する。
+- `session_reconnect` を受けたら、指定された `reconnect_url` に接続し、新しいwelcomeを受けるまでは旧接続を維持する。新しい接続またはwelcomeに失敗した場合も旧接続を25秒間処理し続け、その期限後に通常再接続へ戻す。
 - 通常再接続で再購読する際は、接続開始時の token を保持せず、認証状態からその時点の access token を取得する。購読が 401 の場合だけ refresh token を用いて一度更新・安全な保存を行い、新しい access token で一度だけ再試行する。更新や再試行が失敗した場合は認証状態を解除し、UI に再ログインを案内する。
 - 通知は少なくとも一回配送のため、`metadata.message_id` または `event.message_id` で重複排除する。
 - WebSocket切断中の通知は再送されないため、再接続は指数バックオフしつつ最初の数回は短い間隔にする。
