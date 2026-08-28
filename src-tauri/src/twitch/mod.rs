@@ -12,6 +12,8 @@ use chrono::{DateTime, Timelike, Utc};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
+#[cfg(feature = "app")]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 #[cfg(all(feature = "app", target_os = "linux"))]
 use std::{
@@ -47,6 +49,8 @@ const CHANNEL_CHAT_MESSAGE_TYPE: &str = "channel.chat.message";
 const CHANNEL_CHAT_MESSAGE_VERSION: &str = "1";
 const DEDUPE_CACHE_LIMIT: usize = 5_000;
 const DEDUPE_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
+#[cfg(feature = "app")]
+static NEXT_TWITCH_CONNECTION_GENERATION: AtomicU64 = AtomicU64::new(1);
 #[cfg(all(feature = "app", target_os = "linux"))]
 const LEGACY_AUTH_DIR: &str = ".rice";
 #[cfg(all(feature = "app", target_os = "linux"))]
@@ -115,13 +119,14 @@ pub struct ChatBadge {
 #[cfg(feature = "app")]
 #[derive(Debug)]
 pub struct TwitchConnectionHandle {
+    generation: u64,
     task: tokio::task::JoinHandle<()>,
 }
 
 #[cfg(feature = "app")]
 impl TwitchConnectionHandle {
-    fn new(task: tokio::task::JoinHandle<()>) -> Self {
-        Self { task }
+    fn new(generation: u64, task: tokio::task::JoinHandle<()>) -> Self {
+        Self { generation, task }
     }
 
     fn abort(&self) {
@@ -253,7 +258,6 @@ struct HelixUsersResponse {
 struct HelixUser {
     id: String,
     login: String,
-    display_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1231,7 +1235,6 @@ pub async fn twitch_connect(
         .trim()
         .trim_start_matches('@')
         .to_ascii_lowercase();
-
     let (access_token, client_id, user_id, own_login, scopes) = {
         let auth = state
             .twitch_auth
@@ -1252,7 +1255,6 @@ pub async fn twitch_connect(
             profile.scopes.clone(),
         )
     };
-
     if let Err(error) = ensure_required_twitch_scopes(&scopes) {
         let message = error.to_string();
         clear_missing_scope_twitch_auth(&state, &app, &message)?;
@@ -1264,38 +1266,60 @@ pub async fn twitch_connect(
     } else {
         channel_login
     };
-    let broadcaster = fetch_twitch_user(&client_id, &access_token, &channel_login)
-        .await
-        .map_err(to_twitch_user_message)?;
-    let params = EventSubConnectionParams {
-        broadcaster_user_id: broadcaster.id.clone(),
-        broadcaster_login: broadcaster.login.clone(),
-        user_id,
-    };
-
-    {
-        let mut connection = state
+    let generation = NEXT_TWITCH_CONNECTION_GENERATION.fetch_add(1, Ordering::Relaxed);
+    let channel_for_log = channel_login.clone();
+    let app_for_task = app.clone();
+    let task = tokio::spawn(async move {
+        let broadcaster = match fetch_twitch_user(&client_id, &access_token, &channel_login).await {
+            Ok(broadcaster) => broadcaster,
+            Err(error) => {
+                let message = to_twitch_user_message(error);
+                emit_twitch_status(
+                    &app_for_task,
+                    TwitchStatusDomain::Chat,
+                    TwitchStatus::Error,
+                    Some(message.clone()),
+                );
+                emit_app_log(&app_for_task, AppLogLevel::Error, message);
+                return;
+            }
+        };
+        let is_current = app_for_task
+            .state::<AppState>()
             .twitch_connection
             .lock()
-            .map_err(|error| error.to_string())?;
-        if let Some(handle) = connection.take() {
-            handle.abort();
+            .ok()
+            .and_then(|connection| {
+                connection
+                    .as_ref()
+                    .map(|handle| handle.generation == generation)
+            })
+            .unwrap_or(false);
+        if !is_current {
+            return;
         }
-
-        let app_for_task = app.clone();
-        let task = tokio::spawn(async move {
-            run_eventsub_connection(app_for_task, params).await;
-        });
-        *connection = Some(TwitchConnectionHandle::new(task));
+        let params = EventSubConnectionParams {
+            broadcaster_user_id: broadcaster.id,
+            broadcaster_login: broadcaster.login,
+            user_id,
+        };
+        run_eventsub_connection(app_for_task, params).await;
+    });
+    let mut connection = state
+        .twitch_connection
+        .lock()
+        .map_err(|error| error.to_string())?;
+    if let Some(handle) = connection.take() {
+        handle.abort();
     }
-
+    *connection = Some(TwitchConnectionHandle::new(generation, task));
     emit_twitch_status(
         &app,
         TwitchStatusDomain::Chat,
         TwitchStatus::Connecting,
         Some(format!(
             "Twitch チャンネル {} に接続しています。",
-            broadcaster.display_name
+            channel_for_log
         )),
     );
     emit_app_log(
@@ -1303,7 +1327,7 @@ pub async fn twitch_connect(
         AppLogLevel::Info,
         format!(
             "Twitch チャンネル {} への EventSub 接続を開始しました。",
-            broadcaster.login
+            channel_for_log
         ),
     );
     Ok(())
