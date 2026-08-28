@@ -16,10 +16,12 @@ import { autoConnectTimelineEvent, speechRecoveryTimelineEvent, SystemTimelineRo
 import { restoreAndValidateStartupAuth } from "./startupAuth";
 import { AuthOperationController } from "./authOperation";
 import { SettingsUpdateQueue } from "./settingsUpdateQueue";
+import { hasActiveTwitchChat, hasPendingSpeechWork, requiresExitConfirmation } from "./exitSafety";
 import { appReducer, initialAppState } from "./stores/appStore";
 import { utcNow } from "./time";
 import { subscribeWithCleanup } from "./tauri/subscriptions";
 import {
+  ActiveOperationsExitDialog,
   createNativeCloseHandler,
   UnsavedChangesContext,
   UnsavedChangesDialog,
@@ -74,9 +76,10 @@ export function App() {
   const authOperations = useRef(new AuthOperationController());
   const systemTimelineRouter = useRef(new SystemTimelineRouter());
   const unsavedChanges = useRef(new Map<string, UnsavedChange>());
-  const activeUnsavedChangeRef = useRef<UnsavedChange>();
+  const closeConfirmationRequiredRef = useRef(false);
   const [, setUnsavedChangesVersion] = useState(0);
   const [closeRequested, setCloseRequested] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
 
   const unsavedChangesRegistry = useMemo(() => ({
     register(id: string, change: UnsavedChange) {
@@ -89,21 +92,53 @@ export function App() {
     },
   }), []);
   const activeUnsavedChange = [...unsavedChanges.current.values()].find((change) => change.isDirty);
-  activeUnsavedChangeRef.current = activeUnsavedChange;
+  const hasActiveChat = hasActiveTwitchChat(state.twitchConnectionStatus);
+  const hasPendingSpeech = hasPendingSpeechWork(state.speechStatus, state.queueItems);
+  const exitConfirmationRequired = requiresExitConfirmation(
+    state.twitchConnectionStatus,
+    state.speechStatus,
+    state.queueItems,
+    Boolean(activeUnsavedChange),
+  );
+  closeConfirmationRequiredRef.current = exitConfirmationRequired;
   const blocker = useBlocker(Boolean(activeUnsavedChange));
 
+  const completeWindowClose = useCallback(async () => {
+    setCloseRequested(false);
+    setIsClosing(true);
+    const results = await Promise.allSettled([
+      hasActiveChat ? twitchStopChat() : Promise.resolve(),
+      hasPendingSpeech ? speechControl("clear") : Promise.resolve(),
+    ]);
+    if (hasActiveChat && results[0].status === "fulfilled") {
+      dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
+    }
+    if (hasPendingSpeech && results[1].status === "fulfilled") {
+      dispatch({ type: "speech.status", status: "idle" });
+    }
+    for (const result of results) {
+      if (result.status === "rejected") reportError(result.reason);
+    }
+    try {
+      await appExit();
+    } catch (error) {
+      setIsClosing(false);
+      reportError(error);
+    }
+  }, [hasActiveChat, hasPendingSpeech]);
+
   const requestWindowClose = useCallback(() => {
-    if (activeUnsavedChange) {
+    if (exitConfirmationRequired) {
       setCloseRequested(true);
       return;
     }
-    void appExit();
-  }, [activeUnsavedChange]);
+    void completeWindowClose();
+  }, [completeWindowClose, exitConfirmationRequired]);
 
   useEffect(() => {
     if (!isDesktopRuntime()) return;
 
-    return subscribeWithCleanup([() => getCurrentWindow().onCloseRequested(createNativeCloseHandler(activeUnsavedChangeRef, () => {
+    return subscribeWithCleanup([() => getCurrentWindow().onCloseRequested(createNativeCloseHandler(closeConfirmationRequiredRef, () => {
       setCloseRequested(true);
     }))], () => reportNotification(
       "warning",
@@ -703,8 +738,7 @@ export function App() {
           onDiscard={() => {
             activeUnsavedChange.discard();
             if (closeRequested) {
-              setCloseRequested(false);
-              void appExit();
+              void completeWindowClose();
             } else if (blocker.state === "blocked") {
               blocker.proceed();
             }
@@ -713,13 +747,19 @@ export function App() {
             void activeUnsavedChange.save().then((saved) => {
               if (!saved) return;
               if (closeRequested) {
-                setCloseRequested(false);
-                void appExit();
+                void completeWindowClose();
               } else if (blocker.state === "blocked") {
                 blocker.proceed();
               }
             });
           }}
+        />
+      )}
+      {closeRequested && !activeUnsavedChange && (
+        <ActiveOperationsExitDialog
+          isClosing={isClosing}
+          onCancel={() => setCloseRequested(false)}
+          onConfirm={() => void completeWindowClose()}
         />
       )}
     </div>
