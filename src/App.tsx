@@ -15,6 +15,7 @@ import { claimStartupGuideForSession } from "./presentation/startupGuide";
 import { autoConnectTimelineEvent, speechRecoveryTimelineEvent, SystemTimelineRouter, timelineEventFromTwitchStatus } from "./presentation/systemTimeline";
 import { restoreAndValidateStartupAuth } from "./startupAuth";
 import { AuthOperationController } from "./authOperation";
+import { SettingsUpdateQueue } from "./settingsUpdateQueue";
 import { appReducer, initialAppState } from "./stores/appStore";
 import { utcNow } from "./time";
 import { subscribeWithCleanup } from "./tauri/subscriptions";
@@ -58,7 +59,7 @@ import {
   updateSettings,
   isDesktopRuntime,
 } from "./tauri/client";
-import type { AppSettings, BouyomiConnectionDiagnostics, LauncherLaunchResult, NotificationSeverity, NotificationSource } from "./types";
+import type { AppSettings, AppSettingsPatch, BouyomiConnectionDiagnostics, LauncherLaunchResult, NotificationSeverity, NotificationSource } from "./types";
 
 const showStartupGuideForSession = claimStartupGuideForSession(window.sessionStorage);
 
@@ -67,6 +68,8 @@ export function App() {
   const navigate = useNavigate();
   const displayScale = useDisplayScale();
   const autoConnectAttempted = useRef(false);
+  const settingsUpdateQueue = useRef(new SettingsUpdateQueue());
+  const settingsSnapshot = useRef<AppSettings>();
   const startupAuthAttempted = useRef(false);
   const authOperations = useRef(new AuthOperationController());
   const systemTimelineRouter = useRef(new SystemTimelineRouter());
@@ -123,6 +126,7 @@ export function App() {
   useEffect(() => {
     Promise.all([getSettings(), takeSettingsRecoveryNotice()])
       .then(([settings, recoveryNotice]) => {
+        settingsSnapshot.current = settings;
         dispatch({ type: "settings.loaded", settings });
         if (recoveryNotice) {
           addSystemChatMessage(recoveryNotice.message);
@@ -352,15 +356,19 @@ export function App() {
     }
   }
 
-  async function handleSettingsUpdate(patch: Partial<AppSettings>): Promise<boolean> {
-    try {
-      const settings = await updateSettings(patch);
-      dispatch({ type: "settings.loaded", settings });
-      return true;
-    } catch (error) {
-      reportError(error);
-      return false;
-    }
+  function handleSettingsUpdate(patch: AppSettingsPatch): Promise<boolean> {
+    const pending = settingsUpdateQueue.current.enqueue(async () => {
+      try {
+        const settings = await updateSettings(patch);
+        settingsSnapshot.current = settings;
+        dispatch({ type: "settings.loaded", settings });
+        return true;
+      } catch (error) {
+        reportError(error);
+        return false;
+      }
+    });
+    return pending;
   }
 
   async function handleTwitchStartAuth() {
@@ -476,7 +484,8 @@ export function App() {
 
   async function handleTwitchConnect({ automatic = false }: { automatic?: boolean } = {}) {
     try {
-      const channelLogin = state.settings?.twitch.channelLogin;
+      await settingsUpdateQueue.current.waitForIdle();
+      const channelLogin = settingsSnapshot.current?.twitch.channelLogin ?? state.settings?.twitch.channelLogin;
       dispatch({ type: "twitch.connectionStatus", status: "connecting" });
       if (automatic) routeSystemTimelineEvent(autoConnectTimelineEvent("started", "Twitch チャットの自動接続を開始します。"));
       await twitchConnect(channelLogin);

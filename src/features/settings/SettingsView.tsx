@@ -7,7 +7,7 @@ import {
   SettingsSection,
   ToggleRow,
 } from "../../components/SettingsFormControls";
-import type { AppSettings, BouyomiConnectionDiagnostics } from "../../types";
+import type { AppSettings, AppSettingsPatch, BouyomiConnectionDiagnostics } from "../../types";
 import { focusIndicatorClass } from "../../presentation/focus";
 import { routeHeadingId } from "../../routeAccessibility";
 import { isValidBouyomiHost, isValidBouyomiVoice, isValidPort } from "../../validation";
@@ -24,7 +24,7 @@ export function SettingsView({
   onSpeechTest,
 }: {
   settings?: AppSettings;
-  onSettingsUpdate: (patch: Partial<AppSettings>) => Promise<boolean>;
+  onSettingsUpdate: (patch: AppSettingsPatch) => Promise<boolean>;
   onSpeechHealthCheck: () => void;
   onSpeechDiagnostics: () => Promise<BouyomiConnectionDiagnostics>;
   onSpeechTest: (text?: string) => void;
@@ -115,23 +115,19 @@ export function SettingsView({
       return false;
     }
 
-    return onSettingsUpdate({
-      speech: {
-        ...speechSettings,
-        adapter: "bouyomi",
-        bouyomiHost: host.trim(),
-        bouyomiPort: numericPort,
-        bouyomiSpeed: speed,
-        bouyomiTone: tone,
-        bouyomiVolume: volume,
-        bouyomiVoice: numericVoice,
-        autoSpeak,
-        readUserName,
-        readEmotes,
-        connectionSuccessSpeechEnabled,
-        connectionSuccessSpeechText,
-      },
-    });
+    const speech: NonNullable<AppSettingsPatch["speech"]> = {};
+    if (host.trim() !== speechSettings.bouyomiHost) speech.bouyomiHost = host.trim();
+    if (numericPort !== speechSettings.bouyomiPort) speech.bouyomiPort = numericPort;
+    if (speed !== speechSettings.bouyomiSpeed) speech.bouyomiSpeed = speed;
+    if (tone !== speechSettings.bouyomiTone) speech.bouyomiTone = tone;
+    if (volume !== speechSettings.bouyomiVolume) speech.bouyomiVolume = volume;
+    if (numericVoice !== speechSettings.bouyomiVoice) speech.bouyomiVoice = numericVoice;
+    if (autoSpeak !== speechSettings.autoSpeak) speech.autoSpeak = autoSpeak;
+    if (readUserName !== speechSettings.readUserName) speech.readUserName = readUserName;
+    if (readEmotes !== speechSettings.readEmotes) speech.readEmotes = readEmotes;
+    if (connectionSuccessSpeechEnabled !== speechSettings.connectionSuccessSpeechEnabled) speech.connectionSuccessSpeechEnabled = connectionSuccessSpeechEnabled;
+    if (connectionSuccessSpeechText !== speechSettings.connectionSuccessSpeechText) speech.connectionSuccessSpeechText = connectionSuccessSpeechText;
+    return onSettingsUpdate({ speech });
   }
 
   function discardBouyomiSettings() {
@@ -151,30 +147,15 @@ export function SettingsView({
   useUnsavedChanges("settings", { isDirty, save: saveBouyomiSettings, discard: discardBouyomiSettings });
 
   function updateAutoConnect(enabled: boolean) {
-    onSettingsUpdate({
-      twitch: {
-        ...twitchSettings,
-        autoConnect: enabled,
-      },
-    });
+    void onSettingsUpdate({ twitch: { autoConnect: enabled } });
   }
 
   function updateConfirmBeforeStopChat(enabled: boolean) {
-    onSettingsUpdate({
-      twitch: {
-        ...twitchSettings,
-        confirmBeforeStopChat: enabled,
-      },
-    });
+    void onSettingsUpdate({ twitch: { confirmBeforeStopChat: enabled } });
   }
 
   function updateLiveChatAnnouncements(enabled: boolean) {
-    onSettingsUpdate({
-      twitch: {
-        ...twitchSettings,
-        liveChatAnnouncements: enabled,
-      },
-    });
+    void onSettingsUpdate({ twitch: { liveChatAnnouncements: enabled } });
   }
 
   async function runDiagnostics() {

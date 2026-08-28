@@ -15,6 +15,12 @@ export type SpeechStatus = "idle" | "speaking" | "paused" | "disconnected" | "er
 export type ChatDisplayState = "queued" | "spoken" | "skipped" | "blocked" | "error";
 export type QueueDisplayState = ChatDisplayState | "speaking";
 
+export interface AppSettingsPatch {
+  twitch?: Partial<AppSettings["twitch"]>;
+  speech?: Partial<AppSettings["speech"]>;
+  launcher?: Partial<AppSettings["launcher"]>;
+}
+
 export interface AppSettings {
   twitch: {
     channelLogin: string;

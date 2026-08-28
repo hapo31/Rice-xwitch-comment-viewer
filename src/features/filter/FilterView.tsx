@@ -5,7 +5,7 @@ import {
   RuleTextArea,
   SettingsSection,
 } from "../../components/SettingsFormControls";
-import type { AppSettings } from "../../types";
+import type { AppSettings, AppSettingsPatch } from "../../types";
 import { focusIndicatorClass } from "../../presentation/focus";
 import { routeHeadingId } from "../../routeAccessibility";
 import {
@@ -22,7 +22,7 @@ export function FilterView({
   onSettingsUpdate,
 }: {
   settings?: AppSettings;
-  onSettingsUpdate: (patch: Partial<AppSettings>) => Promise<boolean>;
+  onSettingsUpdate: (patch: AppSettingsPatch) => Promise<boolean>;
 }) {
   const speechSettings = {
     ...defaultSpeechSettings,
@@ -67,16 +67,13 @@ export function FilterView({
       return false;
     }
 
-    return onSettingsUpdate({
-      speech: {
-        ...speechSettings,
-        maxCommentLength: numericMaxLength,
-        repeatSuppressionSeconds: numericRepeatSeconds,
-        blockedUsers: blockedUserRules.items,
-        blockedWords: blockedWordRules.items,
-        urlHandling,
-      },
-    });
+    const speech: NonNullable<AppSettingsPatch["speech"]> = {};
+    if (numericMaxLength !== speechSettings.maxCommentLength) speech.maxCommentLength = numericMaxLength;
+    if (numericRepeatSeconds !== speechSettings.repeatSuppressionSeconds) speech.repeatSuppressionSeconds = numericRepeatSeconds;
+    if (!stringArrayEqual(blockedUserRules.items, speechSettings.blockedUsers)) speech.blockedUsers = blockedUserRules.items;
+    if (!stringArrayEqual(blockedWordRules.items, speechSettings.blockedWords)) speech.blockedWords = blockedWordRules.items;
+    if (urlHandling !== speechSettings.urlHandling) speech.urlHandling = urlHandling;
+    return onSettingsUpdate({ speech });
   }
 
   function discardFilter() {

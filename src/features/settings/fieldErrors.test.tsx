@@ -49,7 +49,7 @@ describe("field validation errors", () => {
           ...initialAppState,
           settings: { ...invalidSettings, twitch: { ...defaultTwitchSettings, channelLogin: "!" } },
         }}
-        onSettingsUpdate={() => undefined}
+        onSettingsUpdate={async () => false}
         onTwitchStartAuth={() => undefined}
         onTwitchPollAuth={() => undefined}
         onTwitchValidateAuth={async () => false}

@@ -9,7 +9,7 @@ import { QueueView } from "../features/queue/QueueView";
 import { SettingsView } from "../features/settings/SettingsView";
 import type { AppState } from "../stores/appStore";
 import type {
-  AppSettings,
+  AppSettingsPatch,
   BouyomiConnectionDiagnostics,
   LauncherItem,
   LauncherLaunchResult,
@@ -18,7 +18,7 @@ import { getRouteDocumentTitle, routeHeadingId, shouldFocusRouteHeading } from "
 
 interface MainViewProps {
   state: AppState;
-  onSettingsUpdate: (patch: Partial<AppSettings>) => Promise<boolean>;
+  onSettingsUpdate: (patch: AppSettingsPatch) => Promise<boolean>;
   onSpeechHealthCheck: () => void;
   onSpeechDiagnostics: () => Promise<BouyomiConnectionDiagnostics>;
   onSpeechTest: (text?: string) => void;
