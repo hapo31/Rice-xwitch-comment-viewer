@@ -2,8 +2,9 @@ pub mod bouyomi;
 
 #[cfg(feature = "app")]
 use crate::app_events::{
-    emit_app_log, emit_speech_queue_updated, emit_speech_status, AppLogLevel, SpeechQueueItemEvent,
-    SpeechQueueItemStatus, SpeechStatus,
+    emit_app_log, emit_speech_queue_updated, emit_speech_status, AppEventState, AppLogLevel,
+    SpeechQueueItemEvent, SpeechQueueItemStatus, SpeechQueuePhase, SpeechStateSnapshot,
+    SpeechStatus,
 };
 #[cfg(feature = "app")]
 use crate::settings::AppState;
@@ -580,8 +581,23 @@ pub fn dismiss_queue_history(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), S
 
 #[cfg(feature = "app")]
 #[tauri::command]
-pub fn speech_queue_reload(app: tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
-    emit_current_queue(&app)
+pub fn speech_queue_reload(
+    app: tauri::AppHandle<tauri::Wry>,
+) -> Result<SpeechStateSnapshot, String> {
+    let state = app.state::<AppState>();
+    // Keep the queue lock while reading the event state so a queue event cannot
+    // land between the payload read and the revision captured for the snapshot.
+    let queue = state
+        .speech_queue
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let queue_snapshot = queue_event_snapshot(&queue, None);
+    let event_state = app
+        .try_state::<AppEventState>()
+        .ok_or_else(|| "アプリ状態を再読込できません。".to_string())?;
+    event_state
+        .speech_state_snapshot(queue_snapshot)
+        .ok_or_else(|| "読み上げ状態をまだ取得できません。".to_string())
 }
 
 #[cfg(feature = "app")]
@@ -814,6 +830,21 @@ fn emit_queue_snapshot(
     queue: &SpeechQueueState,
     warning: Option<String>,
 ) {
+    let payload = queue_event_snapshot(queue, warning);
+    emit_speech_queue_updated(
+        app,
+        payload.queued_count,
+        payload.items,
+        payload.phase,
+        payload.warning,
+    );
+}
+
+#[cfg(feature = "app")]
+fn queue_event_snapshot(
+    queue: &SpeechQueueState,
+    warning: Option<String>,
+) -> crate::app_events::SpeechQueueUpdatedEvent {
     let items = queue
         .pending
         .iter()
@@ -833,7 +864,35 @@ fn emit_queue_snapshot(
             )
         })
         .count();
-    emit_speech_queue_updated(app, queued_count, items, warning);
+    let phase = if queue.paused {
+        SpeechQueuePhase::Paused
+    } else if queue
+        .pending
+        .iter()
+        .any(|item| item.status == SpeechQueueItemStatus::Speaking)
+    {
+        SpeechQueuePhase::Speaking
+    } else if queue
+        .pending
+        .iter()
+        .any(|item| item.status == SpeechQueueItemStatus::Error)
+        || queue
+            .history
+            .iter()
+            .any(|item| item.status == SpeechQueueItemStatus::Error)
+    {
+        SpeechQueuePhase::Error
+    } else {
+        SpeechQueuePhase::Idle
+    };
+    crate::app_events::SpeechQueueUpdatedEvent {
+        revision: 0,
+        queued_count,
+        items,
+        phase,
+        warning,
+        occurred_at_ms: chrono::Utc::now().timestamp_millis().max(0) as u64,
+    }
 }
 
 #[cfg(feature = "app")]

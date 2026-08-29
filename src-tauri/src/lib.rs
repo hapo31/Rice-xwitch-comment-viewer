@@ -6,8 +6,9 @@ mod twitch;
 
 #[cfg(feature = "app")]
 use app_events::{
-    emit_app_log, emit_speech_status, emit_twitch_auth_required, emit_twitch_status, AppLogLevel,
-    SpeechStatus, TwitchAuthRequiredReason, TwitchStatus, TwitchStatusDomain,
+    app_events_snapshot, emit_app_log, emit_speech_status, emit_twitch_auth_required,
+    emit_twitch_status, AppEventState, AppLogLevel, SpeechStatus, TwitchAuthRequiredReason,
+    TwitchStatus, TwitchStatusDomain,
 };
 #[cfg(feature = "app")]
 use launcher::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
@@ -24,8 +25,8 @@ use speech::bouyomi::{
 };
 #[cfg(feature = "app")]
 use speech::{
-    speech_queue_dismiss, speech_queue_dismiss_history, speech_queue_reload, speech_queue_remove,
-    speech_queue_retry,
+    emit_current_queue, speech_queue_dismiss, speech_queue_dismiss_history, speech_queue_reload,
+    speech_queue_remove, speech_queue_retry,
 };
 #[cfg(feature = "app")]
 use std::process::Command;
@@ -81,10 +82,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
+        .manage(AppEventState::default())
         .invoke_handler(tauri::generate_handler![
             app_exit,
             app_open_external_url,
             app_build_info,
+            app_events_snapshot,
             launcher_add,
             launcher_remove,
             launcher_launch,
@@ -144,6 +147,9 @@ pub fn run() {
                 SpeechStatus::Disconnected,
                 Some("棒読みちゃん接続を確認してください。".to_string()),
             );
+            if let Err(error) = emit_current_queue(app.handle()) {
+                emit_app_log(app.handle(), AppLogLevel::Error, error);
+            }
             let restored_auth = TwitchAuthStore::load();
             let has_restored_auth = restored_auth.auth.is_some();
             if let Some(auth) = restored_auth.auth {
@@ -154,13 +160,13 @@ pub fn run() {
                 emit_twitch_status(
                     app.handle(),
                     TwitchStatusDomain::Auth,
-                    TwitchStatus::Connected,
-                    Some("保存済みの Twitch 認証情報を復元しました。".to_string()),
+                    TwitchStatus::Validating,
+                    Some("保存済みの Twitch 認証情報を復元しました。検証しています。".to_string()),
                 );
                 emit_app_log(
                     app.handle(),
                     AppLogLevel::Info,
-                    "保存済みの Twitch 認証情報を復元しました。",
+                    "保存済みの Twitch 認証情報を復元しました。/validate を実行して確認します。",
                 );
             }
             if let Some(warning) = restored_auth.storage_warning {
@@ -177,7 +183,7 @@ pub fn run() {
                         app.handle(),
                         TwitchStatusDomain::Auth,
                         if has_restored_auth {
-                            TwitchStatus::Connected
+                            TwitchStatus::Validating
                         } else {
                             TwitchStatus::AuthRequired
                         },

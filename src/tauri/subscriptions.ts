@@ -9,6 +9,7 @@ export type AsyncSubscription = () => Promise<Unlisten>;
 export function subscribeWithCleanup(
   subscriptions: AsyncSubscription[],
   onError: (error: unknown) => void = () => undefined,
+  onReady: () => void = () => undefined,
 ): Unlisten {
   let disposed = false;
   const active: Unlisten[] = [];
@@ -29,22 +30,24 @@ export function subscribeWithCleanup(
     }
   };
 
-  for (const subscribe of subscriptions) {
-    void Promise.resolve().then(subscribe).then(
-      (unlisten) => {
-        if (disposed) {
-          safelyUnlisten(unlisten);
-        } else {
-          active.push(unlisten);
-        }
-      },
-      (error) => {
-        if (!disposed) {
-          reportError(error);
-        }
-      },
-    );
-  }
+  const registrations = subscriptions.map((subscribe) => Promise.resolve().then(subscribe).then(
+    (unlisten) => {
+      if (disposed) {
+        safelyUnlisten(unlisten);
+      } else {
+        active.push(unlisten);
+      }
+    },
+    (error) => {
+      if (!disposed) {
+        reportError(error);
+      }
+    },
+  ));
+
+  void Promise.all(registrations).then(() => {
+    if (!disposed) onReady();
+  });
 
   return () => {
     disposed = true;

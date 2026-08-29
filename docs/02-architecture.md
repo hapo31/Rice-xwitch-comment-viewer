@@ -140,6 +140,12 @@ Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、encoded/de
 
 判断根拠は Tauri v2 公式の [Content Security Policy](https://v2.tauri.app/security/csp/)、[Capabilities](https://v2.tauri.app/security/capabilities/)、[configuration schema](https://v2.tauri.app/reference/config/#securityconfig) に従う。
 
+### backend event replay と speech state snapshot
+
+backend は bounded な operational log ring と Twitch（auth/chat）/speech の最新 status を managed state に保持する。`app_events_snapshot` command は listener 登録後にこの状態を取得するため、起動時に先行 emit されたログ・status も late subscriber へ復元できる。各 status と speech queue event には単調増加 `revision` を付与し、`speech_queue_reload` は status と queue を同じ revision の `SpeechStateSnapshot` として返す。frontend は全 listener を登録してから snapshot を取得し、snapshot より新しい並行 event を古い値で上書きしない。
+
+保存済み Twitch credential の deserialize は認証済みを意味しない。起動時は `Validating` を通知し、`/validate` 成功後だけ `Connected` へ遷移する。event emit の失敗は stderr だけでなく bounded diagnostic として snapshot へ記録する。
+
 ### フロントエンド通知
 
 対処が必要な通知は `{ id, severity, source, message, occurredAtMs, correlationId? }` として保持する。`severity` は `info` / `success` / `warning` / `error`、`source` は command / event / log / system を区別する。Side Panel と Status Bar の Warnings は warning / error のみを最新 5 件まで表示するため、成功通知で実警告を押し出さない。`correlationId` がある通知はその値で重複排除し、ID がない既存イベントは本文と 5 秒の受信時間で重複排除する。重複経路で severity が異なるときは、より重大な値を残す。info / success は Logs と system Chat に残す。

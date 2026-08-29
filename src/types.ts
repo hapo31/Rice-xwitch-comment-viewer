@@ -10,9 +10,11 @@ export type AuthStatus =
   | "disconnecting"
   | "error";
 
-export type SpeechStatus = "idle" | "speaking" | "paused" | "disconnected" | "error";
+export type SpeechStatus =
+  "idle" | "speaking" | "paused" | "disconnected" | "error";
 
-export type ChatDisplayState = "queued" | "spoken" | "skipped" | "blocked" | "error";
+export type ChatDisplayState =
+  "queued" | "spoken" | "skipped" | "blocked" | "error";
 export type QueueDisplayState = ChatDisplayState | "speaking";
 
 export interface AppSettingsPatch {
@@ -213,14 +215,28 @@ export interface AppNotification {
   correlationId?: string;
 }
 
-export type TwitchConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "authRequired" | "error";
+export type TwitchConnectionStatus =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "validating"
+  | "reconnecting"
+  | "authRequired"
+  | "error";
 
 export type TwitchAuthRequiredReason = "missingRequiredScope";
 export type TwitchStatusDomain = "auth" | "chat";
 
-export type TwitchChatConnectionStatus = "disconnected" | "connecting" | "connected" | "reconnecting" | "authRequired" | "error";
+export type TwitchChatConnectionStatus =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "authRequired"
+  | "error";
 
 export interface TwitchStatusEvent {
+  revision?: number;
   domain: TwitchStatusDomain;
   status: TwitchConnectionStatus;
   reason?: TwitchAuthRequiredReason;
@@ -229,21 +245,53 @@ export interface TwitchStatusEvent {
 }
 
 export interface SpeechStatusEvent {
+  revision?: number;
   status: SpeechStatus;
+  adapterHealth?: SpeechAdapterHealth;
   message?: string;
   occurredAtMs: number;
 }
 
 export interface SpeechQueueUpdatedEvent {
+  revision?: number;
   queuedCount: number;
   items: QueueItem[];
+  phase?: SpeechQueuePhase;
   warning?: string;
   occurredAtMs: number;
+}
+
+export type SpeechQueuePhase = "idle" | "speaking" | "paused" | "error";
+export type SpeechAdapterHealth =
+  "unknown" | "connected" | "disconnected" | "error";
+
+export interface AppEventsSnapshot {
+  revision: number;
+  logs: AppLogEvent[];
+  twitchStatuses: TwitchStatusEvent[];
+  speechStatus?: SpeechStatusEvent;
+  emitErrors: AppEventEmitError[];
+}
+
+export interface AppEventEmitError {
+  event: string;
+  error: string;
+  occurredAtMs: number;
+}
+
+export interface SpeechStateSnapshot {
+  revision: number;
+  status: SpeechStatusEvent;
+  queue: SpeechQueueUpdatedEvent;
 }
 
 export type TwitchAuthPollResult =
   | { status: "pending"; message: string; interval: number }
   | { status: "slowDown"; message: string; interval: number }
-  | { status: "authorized"; profile: TwitchUserProfile; storageWarning?: string }
+  | {
+      status: "authorized";
+      profile: TwitchUserProfile;
+      storageWarning?: string;
+    }
   | { status: "denied"; message: string }
   | { status: "expired"; message: string };

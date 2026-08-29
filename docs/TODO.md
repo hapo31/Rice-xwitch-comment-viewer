@@ -201,6 +201,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Issue #54: Logs の日時 formatter を再利用し、500件のログ行を仮想化して連続追加時の描画負荷を抑える。
 - [x] `app://log` event をフロントエンドへ接続する。
 - [x] Issue #41: 同一内容の `app://log` event を連続受信しても Logs view の表示 ID を一意にする。
+- [ ] Issue #42: backend の operational event/status replay、未検証 Twitch credential の `Validating` 状態、revision 付き speech queue/status snapshot と subscribe-first reconcile を実装・検証する。
 - [x] EventSub、認証、読み上げアダプタのログを Logs view に表示する。
 - [x] ステータスバーに Twitch 接続状態、棒読みちゃん状態、キュー件数、警告状態を集約する。
 - [x] 起動時自動接続を実装する。

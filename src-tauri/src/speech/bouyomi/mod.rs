@@ -1,6 +1,7 @@
 #[cfg(feature = "app")]
 use crate::app_events::{
-    emit_app_log, emit_speech_queue_updated, emit_speech_status, AppLogLevel, SpeechStatus,
+    emit_app_log, emit_speech_queue_updated, emit_speech_status, AppLogLevel, SpeechQueuePhase,
+    SpeechStatus,
 };
 #[cfg(feature = "app")]
 use crate::settings::AppState;
@@ -347,10 +348,13 @@ pub async fn speech_health_check(
 
 #[cfg(feature = "app")]
 #[tauri::command]
-pub async fn speech_health_probe(state: tauri::State<'_, AppState>) -> Result<String, String> {
+pub async fn speech_health_probe(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
+) -> Result<String, String> {
     let adapter = adapter_from_settings(&state)?;
     let (speak_on_success, success_message) = connection_success_settings(&state)?;
-    adapter
+    let result = adapter
         .health_check(speak_on_success, &success_message)
         .await
         .map(|elapsed| {
@@ -359,7 +363,27 @@ pub async fn speech_health_probe(state: tauri::State<'_, AppState>) -> Result<St
                 elapsed.as_millis()
             )
         })
-        .map_err(to_user_message)
+        .map_err(to_user_message);
+    match &result {
+        Ok(_) => {
+            let paused = state
+                .speech_queue
+                .lock()
+                .map(|queue| queue.paused)
+                .unwrap_or(false);
+            emit_speech_status(
+                &app,
+                if paused {
+                    SpeechStatus::Paused
+                } else {
+                    SpeechStatus::Idle
+                },
+                Some("棒読みちゃんの接続を確認しました。".to_string()),
+            );
+        }
+        Err(message) => emit_speech_status(&app, SpeechStatus::Disconnected, Some(message.clone())),
+    }
+    result
 }
 
 #[cfg(feature = "app")]
@@ -478,7 +502,7 @@ pub async fn speech_clear(
             SpeechStatus::Idle,
             Some("読み上げキューをクリアしました。".to_string()),
         );
-        emit_speech_queue_updated(&app, 0, Vec::new(), None);
+        emit_speech_queue_updated(&app, 0, Vec::new(), SpeechQueuePhase::Idle, None);
         emit_app_log(&app, AppLogLevel::Info, "読み上げキューをクリアしました。");
     }
     result

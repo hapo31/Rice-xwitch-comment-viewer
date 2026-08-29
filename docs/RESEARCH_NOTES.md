@@ -1,5 +1,11 @@
 # 調査メモ
 
+## 2026-08-29: Issue #42 backend state replay と speech snapshot
+
+- Tauri の setup emit は WebView listener 登録前に実行されるため、backend に bounded operational log/status store と `app_events_snapshot` command を追加する。emit の失敗は stderr と診断 snapshot の双方で観測する。保存済み credential は `/validate` 完了まで `Validating` とし、未検証の `Connected` を送らない。
+- speech queue/status は monotonic revision 付きの単一 `SpeechStateSnapshot` として `speech_queue_reload` から取得する。frontend は listener 登録完了 callback 後に snapshot を取得し、並行 event と revision 比較して reload 後の paused queue を保持する。
+
+
 ## 2026-08-08: Issue #53 Chat 仮想スクロールの prepend アンカー
 
 - Chat は新着を先頭へ追加するため、過去ログを読んでいると同じ `scrollTop` が別の行を指す状態だった。更新直前に最初の可視メッセージ ID とコンテナ先頭からの相対 offset を記録し、prepend 後はその ID へ仮想スクロールして offset を戻す。先頭閲覧時は offset 0 を維持して新着を即時表示する。

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBlocker, useNavigate } from "react-router-dom";
 import { ActivityBar } from "./components/ActivityBar";
@@ -12,11 +19,20 @@ import { useStreamHotkeys } from "./hooks/useStreamHotkeys";
 import { getDeviceAuthRemainingSeconds } from "./features/auth/deviceAuthExpiry";
 import { APP_SHELL_CLASS_NAME } from "./layout/appShell";
 import { claimStartupGuideForSession } from "./presentation/startupGuide";
-import { autoConnectTimelineEvent, speechRecoveryTimelineEvent, SystemTimelineRouter, timelineEventFromTwitchStatus } from "./presentation/systemTimeline";
+import {
+  autoConnectTimelineEvent,
+  speechRecoveryTimelineEvent,
+  SystemTimelineRouter,
+  timelineEventFromTwitchStatus,
+} from "./presentation/systemTimeline";
 import { restoreAndValidateStartupAuth } from "./startupAuth";
 import { AuthOperationController } from "./authOperation";
 import { SettingsUpdateQueue } from "./settingsUpdateQueue";
-import { hasActiveTwitchChat, hasPendingSpeechWork, requiresExitConfirmation } from "./exitSafety";
+import {
+  hasActiveTwitchChat,
+  hasPendingSpeechWork,
+  requiresExitConfirmation,
+} from "./exitSafety";
 import { appReducer, initialAppState } from "./stores/appStore";
 import { utcNow } from "./time";
 import { subscribeWithCleanup } from "./tauri/subscriptions";
@@ -31,6 +47,7 @@ import {
   appExit,
   appOpenExternalUrl,
   getSettings,
+  getAppEventsSnapshot,
   launcherAdd,
   launcherLaunch,
   launcherLaunchAll,
@@ -61,9 +78,18 @@ import {
   updateSettings,
   isDesktopRuntime,
 } from "./tauri/client";
-import type { AppSettings, AppSettingsPatch, BouyomiConnectionDiagnostics, LauncherLaunchResult, NotificationSeverity, NotificationSource } from "./types";
+import type {
+  AppSettings,
+  AppSettingsPatch,
+  BouyomiConnectionDiagnostics,
+  LauncherLaunchResult,
+  NotificationSeverity,
+  NotificationSource,
+} from "./types";
 
-const showStartupGuideForSession = claimStartupGuideForSession(window.sessionStorage);
+const showStartupGuideForSession = claimStartupGuideForSession(
+  window.sessionStorage,
+);
 
 export function App() {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
@@ -81,19 +107,27 @@ export function App() {
   const [closeRequested, setCloseRequested] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
-  const unsavedChangesRegistry = useMemo(() => ({
-    register(id: string, change: UnsavedChange) {
-      unsavedChanges.current.set(id, change);
-      setUnsavedChangesVersion((version) => version + 1);
-    },
-    unregister(id: string) {
-      unsavedChanges.current.delete(id);
-      setUnsavedChangesVersion((version) => version + 1);
-    },
-  }), []);
-  const activeUnsavedChange = [...unsavedChanges.current.values()].find((change) => change.isDirty);
+  const unsavedChangesRegistry = useMemo(
+    () => ({
+      register(id: string, change: UnsavedChange) {
+        unsavedChanges.current.set(id, change);
+        setUnsavedChangesVersion((version) => version + 1);
+      },
+      unregister(id: string) {
+        unsavedChanges.current.delete(id);
+        setUnsavedChangesVersion((version) => version + 1);
+      },
+    }),
+    [],
+  );
+  const activeUnsavedChange = [...unsavedChanges.current.values()].find(
+    (change) => change.isDirty,
+  );
   const hasActiveChat = hasActiveTwitchChat(state.twitchConnectionStatus);
-  const hasPendingSpeech = hasPendingSpeechWork(state.speechStatus, state.queueItems);
+  const hasPendingSpeech = hasPendingSpeechWork(
+    state.speechStatus,
+    state.queueItems,
+  );
   const exitConfirmationRequired = requiresExitConfirmation(
     state.twitchConnectionStatus,
     state.speechStatus,
@@ -138,14 +172,23 @@ export function App() {
   useEffect(() => {
     if (!isDesktopRuntime()) return;
 
-    return subscribeWithCleanup([() => getCurrentWindow().onCloseRequested(createNativeCloseHandler(closeConfirmationRequiredRef, () => {
-      setCloseRequested(true);
-    }))], () => reportNotification(
-      "warning",
-      "event",
-      "終了確認の監視に失敗しました。未保存の変更を確認してから終了してください。",
-      "app-close-subscription",
-    ));
+    return subscribeWithCleanup(
+      [
+        () =>
+          getCurrentWindow().onCloseRequested(
+            createNativeCloseHandler(closeConfirmationRequiredRef, () => {
+              setCloseRequested(true);
+            }),
+          ),
+      ],
+      () =>
+        reportNotification(
+          "warning",
+          "event",
+          "終了確認の監視に失敗しました。未保存の変更を確認してから終了してください。",
+          "app-close-subscription",
+        ),
+    );
   }, []);
 
   useEffect(() => {
@@ -176,7 +219,13 @@ export function App() {
           reportNotification("warning", "system", recoveryNotice.message);
         }
       })
-      .catch(() => reportNotification("error", "command", "設定の読み込みに失敗しました。"));
+      .catch(() =>
+        reportNotification(
+          "error",
+          "command",
+          "設定の読み込みに失敗しました。",
+        ),
+      );
 
     if (startupAuthAttempted.current) {
       return;
@@ -232,79 +281,165 @@ export function App() {
   ) {
     dispatch({
       type: "notification.added",
-      notification: { severity, source, message, occurredAtMs: Date.now(), correlationId },
+      notification: {
+        severity,
+        source,
+        message,
+        occurredAtMs: Date.now(),
+        correlationId,
+      },
     });
   }
 
-  function reportError(error: unknown, source: NotificationSource = "command", correlationId?: string) {
+  function reportError(
+    error: unknown,
+    source: NotificationSource = "command",
+    correlationId?: string,
+  ) {
     reportNotification("error", source, String(error), correlationId);
   }
 
   function reportInfo(message: string, source: NotificationSource = "command") {
     reportNotification("success", source, message);
-    dispatch({ type: "log.added", log: { level: "info", message, occurredAtMs: Date.now() } });
+    dispatch({
+      type: "log.added",
+      log: { level: "info", message, occurredAtMs: Date.now() },
+    });
     addSystemChatMessage(message);
   }
 
-  function routeSystemTimelineEvent(event: Parameters<SystemTimelineRouter["shouldRecord"]>[0]) {
-    if (systemTimelineRouter.current.shouldRecord(event)) addSystemChatMessage(event.message);
+  function routeSystemTimelineEvent(
+    event: Parameters<SystemTimelineRouter["shouldRecord"]>[0],
+  ) {
+    if (systemTimelineRouter.current.shouldRecord(event))
+      addSystemChatMessage(event.message);
   }
 
   useEffect(() => {
-    return subscribeWithCleanup([
+    let cancelled = false;
+    const bootstrapState = async () => {
+      const [eventsSnapshot, speechSnapshot] = await Promise.all([
+        getAppEventsSnapshot(),
+        speechQueueReload(),
+      ]);
+      if (cancelled) return;
+      if (eventsSnapshot)
+        dispatch({ type: "events.snapshot", snapshot: eventsSnapshot });
+      if (speechSnapshot)
+        dispatch({ type: "speech.snapshot", snapshot: speechSnapshot });
+    };
+
+    const dispose = subscribeWithCleanup(
+      [
+        () =>
+          subscribeAppLogEvents((event) => {
+            dispatch({ type: "log.added", log: event });
+            if (event.level !== "info") {
+              reportNotification(event.level, "log", event.message, event.id);
+            }
+          }),
+        () =>
+          subscribeTwitchStatusEvents((event) => {
+            if (event.domain === "chat") {
+              dispatch({
+                type: "twitch.connectionStatus",
+                status:
+                  event.status === "validating" ? "disconnected" : event.status,
+                revision: event.revision,
+              });
+            } else {
+              const authStatus =
+                event.status === "connected"
+                  ? "authenticated"
+                  : event.status === "validating"
+                    ? "checking"
+                    : event.status === "authRequired"
+                      ? "expired"
+                      : event.status === "error"
+                        ? "error"
+                        : undefined;
+              if (authStatus)
+                dispatch({
+                  type: "twitch.authStatus",
+                  status: authStatus,
+                  revision: event.revision,
+                });
+            }
+            if (
+              event.message &&
+              (event.status === "authRequired" || event.status === "error")
+            ) {
+              reportNotification("error", "event", event.message);
+            }
+            const timelineEvent = timelineEventFromTwitchStatus(event);
+            if (timelineEvent) routeSystemTimelineEvent(timelineEvent);
+          }),
+        () =>
+          subscribeTwitchChatMessageEvents((message) => {
+            dispatch({
+              type: "chat.message",
+              message: {
+                ...message,
+                kind: "user",
+                status: "queued",
+              },
+            });
+          }),
+        () =>
+          subscribeSpeechStatusEvents((event) => {
+            dispatch({
+              type: "speech.status",
+              status: event.status,
+              revision: event.revision,
+              adapterHealth: event.adapterHealth,
+            });
+            if (
+              event.message &&
+              (event.status === "disconnected" || event.status === "error")
+            ) {
+              reportNotification("error", "event", event.message);
+              routeSystemTimelineEvent(
+                speechRecoveryTimelineEvent(event.message, event.status),
+              );
+            }
+          }),
+        () =>
+          subscribeSpeechQueueUpdatedEvents((event) => {
+            dispatch({
+              type: "queue.changed",
+              items: event.items ?? [],
+              revision: event.revision,
+              phase: event.phase,
+            });
+            if (event.warning) {
+              reportNotification("warning", "event", event.warning);
+            }
+          }),
+      ],
       () =>
-      subscribeAppLogEvents((event) => {
-        dispatch({ type: "log.added", log: event });
-        if (event.level !== "info") {
-          reportNotification(event.level, "log", event.message, event.id);
-        }
-      }),
-      () =>
-      subscribeTwitchStatusEvents((event) => {
-        if (event.domain === "chat") {
-          dispatch({ type: "twitch.connectionStatus", status: event.status });
-        }
-        if (event.status === "authRequired") {
-          dispatch({ type: "twitch.authStatus", status: "expired" });
-        }
-        if (event.message && (event.status === "authRequired" || event.status === "error")) {
-          reportNotification("error", "event", event.message);
-        }
-        const timelineEvent = timelineEventFromTwitchStatus(event);
-        if (timelineEvent) routeSystemTimelineEvent(timelineEvent);
-      }),
-      () =>
-      subscribeTwitchChatMessageEvents((message) => {
-        dispatch({
-          type: "chat.message",
-          message: {
-            ...message,
-            kind: "user",
-            status: "queued",
-          },
+        reportNotification(
+          "warning",
+          "event",
+          "アプリ内イベントの購読に失敗しました。画面を再読み込みしてください。",
+          "app-event-subscription",
+        ),
+      () => {
+        void bootstrapState().catch((error) => {
+          if (!cancelled)
+            reportNotification(
+              "warning",
+              "command",
+              `状態の再取得に失敗しました: ${String(error)}`,
+              "state-bootstrap",
+            );
         });
-      }),
-      () =>
-      subscribeSpeechStatusEvents((event) => {
-        dispatch({ type: "speech.status", status: event.status });
-        if (event.message && (event.status === "disconnected" || event.status === "error")) {
-          reportNotification("error", "event", event.message);
-          routeSystemTimelineEvent(speechRecoveryTimelineEvent(event.message, event.status));
-        }
-      }),
-      () =>
-      subscribeSpeechQueueUpdatedEvents((event) => {
-        dispatch({ type: "queue.changed", items: event.items ?? [] });
-        if (event.warning) {
-          reportNotification("warning", "event", event.warning);
-        }
-      }),
-    ], () => reportNotification(
-      "warning",
-      "event",
-      "アプリ内イベントの購読に失敗しました。画面を再読み込みしてください。",
-      "app-event-subscription",
-    ));
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      dispose();
+    };
   }, []);
 
   useEffect(() => {
@@ -319,7 +454,11 @@ export function App() {
 
     autoConnectAttempted.current = true;
     void handleTwitchConnect({ automatic: true });
-  }, [state.settings?.twitch.autoConnect, state.twitchAuthStatus, state.twitchConnectionStatus]);
+  }, [
+    state.settings?.twitch.autoConnect,
+    state.twitchAuthStatus,
+    state.twitchConnectionStatus,
+  ]);
 
   useEffect(() => {
     const shouldPoll =
@@ -337,9 +476,16 @@ export function App() {
         if (cancelled) {
           return;
         }
-        dispatch({ type: "speech.status", status: "idle" });
+        const snapshot = await speechQueueReload();
+        if (cancelled) return;
+        if (snapshot) dispatch({ type: "speech.snapshot", snapshot });
         reportInfo(message, "event");
-        routeSystemTimelineEvent(speechRecoveryTimelineEvent(message, "idle"));
+        routeSystemTimelineEvent(
+          speechRecoveryTimelineEvent(
+            message,
+            snapshot?.status.status ?? "idle",
+          ),
+        );
       } catch {
         // Keep the existing error visible while waiting for BouyomiChan to become reachable.
       }
@@ -358,7 +504,8 @@ export function App() {
 
   async function handleSpeechTest(text?: string) {
     try {
-      const speechText = typeof text === "string" ? text : "テスト読み上げです。";
+      const speechText =
+        typeof text === "string" ? text : "テスト読み上げです。";
       dispatch({ type: "speech.status", status: "speaking" });
       await speechTest(speechText);
       dispatch({ type: "speech.status", status: "idle" });
@@ -429,13 +576,18 @@ export function App() {
       return;
     }
 
-    if (getDeviceAuthRemainingSeconds(state.twitchAuthPrompt.expiresAtMs) === 0) {
+    if (
+      getDeviceAuthRemainingSeconds(state.twitchAuthPrompt.expiresAtMs) === 0
+    ) {
       return;
     }
 
     const delay = Math.max(state.twitchAuthPrompt.interval, 1) * 1000;
     const timer = window.setTimeout(() => {
-      if (state.twitchAuthPrompt && getDeviceAuthRemainingSeconds(state.twitchAuthPrompt.expiresAtMs) > 0) {
+      if (
+        state.twitchAuthPrompt &&
+        getDeviceAuthRemainingSeconds(state.twitchAuthPrompt.expiresAtMs) > 0
+      ) {
         void handleTwitchPollAuth({ quietWaiting: true });
       }
     }, delay);
@@ -443,7 +595,9 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [state.twitchAuthPrompt]);
 
-  async function handleTwitchPollAuth(options: { quietWaiting?: boolean } = {}) {
+  async function handleTwitchPollAuth(
+    options: { quietWaiting?: boolean } = {},
+  ) {
     const operation = authOperations.current.tryBeginPoll();
     if (operation === undefined) return;
     dispatch({ type: "twitch.authStatus", status: "polling" });
@@ -455,14 +609,19 @@ export function App() {
         dispatch({ type: "twitch.authPrompt", prompt: undefined });
         dispatch({ type: "twitch.profile", profile: result.profile });
         dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
-        reportInfo(`Twitch に ${result.profile.login} としてログインしました。`);
+        reportInfo(
+          `Twitch に ${result.profile.login} としてログインしました。`,
+        );
         if (result.storageWarning) {
           reportNotification("warning", "system", result.storageWarning);
           addSystemChatMessage(result.storageWarning);
         }
       } else {
         dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
-        if (state.twitchAuthPrompt && (result.status === "pending" || result.status === "slowDown")) {
+        if (
+          state.twitchAuthPrompt &&
+          (result.status === "pending" || result.status === "slowDown")
+        ) {
           dispatch({
             type: "twitch.authPrompt",
             prompt: {
@@ -471,11 +630,20 @@ export function App() {
             },
           });
         }
-        if (!options.quietWaiting || (result.status !== "pending" && result.status !== "slowDown")) {
+        if (
+          !options.quietWaiting ||
+          (result.status !== "pending" && result.status !== "slowDown")
+        ) {
           if (result.status === "pending" || result.status === "slowDown") {
             reportInfo(result.message, "event");
           } else {
-            reportNotification(result.status === "denied" || result.status === "expired" ? "warning" : "info", "event", result.message);
+            reportNotification(
+              result.status === "denied" || result.status === "expired"
+                ? "warning"
+                : "info",
+              "event",
+              result.message,
+            );
           }
         }
         if (result.status === "expired" || result.status === "denied") {
@@ -517,24 +685,43 @@ export function App() {
     }
   }
 
-  async function handleTwitchConnect({ automatic = false }: { automatic?: boolean } = {}) {
+  async function handleTwitchConnect({
+    automatic = false,
+  }: { automatic?: boolean } = {}) {
     try {
       await settingsUpdateQueue.current.waitForIdle();
-      const channelLogin = settingsSnapshot.current?.twitch.channelLogin ?? state.settings?.twitch.channelLogin;
+      const channelLogin =
+        settingsSnapshot.current?.twitch.channelLogin ??
+        state.settings?.twitch.channelLogin;
       dispatch({ type: "twitch.connectionStatus", status: "connecting" });
-      if (automatic) routeSystemTimelineEvent(autoConnectTimelineEvent("started", "Twitch チャットの自動接続を開始します。"));
+      if (automatic)
+        routeSystemTimelineEvent(
+          autoConnectTimelineEvent(
+            "started",
+            "Twitch チャットの自動接続を開始します。",
+          ),
+        );
       await twitchConnect(channelLogin);
       reportInfo("Twitch チャット接続を開始しました。");
     } catch (error) {
       dispatch({ type: "twitch.connectionStatus", status: "error" });
       reportError(error);
-      if (automatic) routeSystemTimelineEvent(autoConnectTimelineEvent("failed", `Twitch チャットの自動接続に失敗しました: ${String(error)}`));
+      if (automatic)
+        routeSystemTimelineEvent(
+          autoConnectTimelineEvent(
+            "failed",
+            `Twitch チャットの自動接続に失敗しました: ${String(error)}`,
+          ),
+        );
     }
   }
 
   async function handleTwitchStopChat() {
     const shouldConfirm = state.settings?.twitch.confirmBeforeStopChat ?? true;
-    if (shouldConfirm && !window.confirm("Twitch チャット受信を停止しますか？")) {
+    if (
+      shouldConfirm &&
+      !window.confirm("Twitch チャット受信を停止しますか？")
+    ) {
       return;
     }
 
@@ -575,14 +762,22 @@ export function App() {
     }
   }
 
-  async function handleSpeechControl(command: "pause" | "resume" | "skip" | "clear") {
-    if (command === "clear" && !window.confirm("待機中の読み上げをクリアしますか？")) {
+  async function handleSpeechControl(
+    command: "pause" | "resume" | "skip" | "clear",
+  ) {
+    if (
+      command === "clear" &&
+      !window.confirm("待機中の読み上げをクリアしますか？")
+    ) {
       return;
     }
 
     try {
       await speechControl(command);
-      dispatch({ type: "speech.status", status: command === "pause" ? "paused" : "idle" });
+      dispatch({
+        type: "speech.status",
+        status: command === "pause" ? "paused" : "idle",
+      });
     } catch (error) {
       dispatch({ type: "speech.status", status: "error" });
       reportError(error);
@@ -591,7 +786,9 @@ export function App() {
 
   useStreamHotkeys({
     onToggleSpeech: () => {
-      void handleSpeechControl(state.speechStatus === "paused" ? "resume" : "pause");
+      void handleSpeechControl(
+        state.speechStatus === "paused" ? "resume" : "pause",
+      );
     },
     onSkipSpeech: () => {
       void handleSpeechControl("skip");
@@ -601,7 +798,8 @@ export function App() {
 
   async function handleQueueReload() {
     try {
-      await speechQueueReload();
+      const snapshot = await speechQueueReload();
+      if (snapshot) dispatch({ type: "speech.snapshot", snapshot });
     } catch (error) {
       reportError(error);
     }
@@ -668,7 +866,11 @@ export function App() {
   async function reportLauncherResult(result: LauncherLaunchResult) {
     if (result.failures.length > 0) {
       const firstFailure = result.failures[0];
-      reportNotification("error", "command", `${firstFailure.displayName} を起動できませんでした: ${firstFailure.message}`);
+      reportNotification(
+        "error",
+        "command",
+        `${firstFailure.displayName} を起動できませんでした: ${firstFailure.message}`,
+      );
     }
     return result;
   }
@@ -693,76 +895,82 @@ export function App() {
 
   return (
     <UnsavedChangesContext.Provider value={unsavedChangesRegistry}>
-    <div className={APP_SHELL_CLASS_NAME}>
-      <TitleBar scale={displayScale.scale} scaleMode={displayScale.mode} onScaleModeChange={displayScale.setMode} onClose={requestWindowClose} />
-      <ActivityBar />
-      <SidePanel
-        state={state}
-        onSpeechControl={handleSpeechControl}
-        onTwitchConnect={handleTwitchConnect}
-        onTwitchStopChat={handleTwitchStopChat}
-        onWarningsClear={() => dispatch({ type: "warnings.cleared" })}
-      />
-      <MainView
-        state={state}
-        showStartupGuide={showStartupGuideForSession}
-        onSettingsUpdate={handleSettingsUpdate}
-        onSpeechHealthCheck={handleSpeechHealthCheck}
-        onSpeechDiagnostics={handleSpeechDiagnostics}
-        onSpeechTest={handleSpeechTest}
-        onSpeechControl={handleSpeechControl}
-        onQueueReload={handleQueueReload}
-        onQueueRemove={handleQueueRemove}
-        onQueueDismiss={handleQueueDismiss}
-        onQueueDismissHistory={handleQueueDismissHistory}
-        onQueueRetry={handleQueueRetry}
-        onLauncherAdd={handleLauncherAdd}
-        onLauncherRemove={handleLauncherRemove}
-        onLauncherLaunch={handleLauncherLaunch}
-        onLauncherLaunchAll={handleLauncherLaunchAll}
-        onTwitchStartAuth={handleTwitchStartAuth}
-        onTwitchPollAuth={handleTwitchPollAuth}
-        onTwitchValidateAuth={handleTwitchValidateAuth}
-        onTwitchDisconnect={handleTwitchDisconnect}
-        onOpenExternalUrl={handleOpenExternalUrl}
-      />
-      <StatusBar state={state} />
-      <LiveStatusAnnouncer state={state} />
-      <ResizeHandles />
-      {(blocker.state === "blocked" || closeRequested) && activeUnsavedChange && (
-        <UnsavedChangesDialog
-          onCancel={() => {
-            if (blocker.state === "blocked") blocker.reset();
-            setCloseRequested(false);
-          }}
-          onDiscard={() => {
-            activeUnsavedChange.discard();
-            if (closeRequested) {
-              void completeWindowClose();
-            } else if (blocker.state === "blocked") {
-              blocker.proceed();
-            }
-          }}
-          onSave={() => {
-            void activeUnsavedChange.save().then((saved) => {
-              if (!saved) return;
-              if (closeRequested) {
-                void completeWindowClose();
-              } else if (blocker.state === "blocked") {
-                blocker.proceed();
-              }
-            });
-          }}
+      <div className={APP_SHELL_CLASS_NAME}>
+        <TitleBar
+          scale={displayScale.scale}
+          scaleMode={displayScale.mode}
+          onScaleModeChange={displayScale.setMode}
+          onClose={requestWindowClose}
         />
-      )}
-      {closeRequested && !activeUnsavedChange && (
-        <ActiveOperationsExitDialog
-          isClosing={isClosing}
-          onCancel={() => setCloseRequested(false)}
-          onConfirm={() => void completeWindowClose()}
+        <ActivityBar />
+        <SidePanel
+          state={state}
+          onSpeechControl={handleSpeechControl}
+          onTwitchConnect={handleTwitchConnect}
+          onTwitchStopChat={handleTwitchStopChat}
+          onWarningsClear={() => dispatch({ type: "warnings.cleared" })}
         />
-      )}
-    </div>
+        <MainView
+          state={state}
+          showStartupGuide={showStartupGuideForSession}
+          onSettingsUpdate={handleSettingsUpdate}
+          onSpeechHealthCheck={handleSpeechHealthCheck}
+          onSpeechDiagnostics={handleSpeechDiagnostics}
+          onSpeechTest={handleSpeechTest}
+          onSpeechControl={handleSpeechControl}
+          onQueueReload={handleQueueReload}
+          onQueueRemove={handleQueueRemove}
+          onQueueDismiss={handleQueueDismiss}
+          onQueueDismissHistory={handleQueueDismissHistory}
+          onQueueRetry={handleQueueRetry}
+          onLauncherAdd={handleLauncherAdd}
+          onLauncherRemove={handleLauncherRemove}
+          onLauncherLaunch={handleLauncherLaunch}
+          onLauncherLaunchAll={handleLauncherLaunchAll}
+          onTwitchStartAuth={handleTwitchStartAuth}
+          onTwitchPollAuth={handleTwitchPollAuth}
+          onTwitchValidateAuth={handleTwitchValidateAuth}
+          onTwitchDisconnect={handleTwitchDisconnect}
+          onOpenExternalUrl={handleOpenExternalUrl}
+        />
+        <StatusBar state={state} />
+        <LiveStatusAnnouncer state={state} />
+        <ResizeHandles />
+        {(blocker.state === "blocked" || closeRequested) &&
+          activeUnsavedChange && (
+            <UnsavedChangesDialog
+              onCancel={() => {
+                if (blocker.state === "blocked") blocker.reset();
+                setCloseRequested(false);
+              }}
+              onDiscard={() => {
+                activeUnsavedChange.discard();
+                if (closeRequested) {
+                  void completeWindowClose();
+                } else if (blocker.state === "blocked") {
+                  blocker.proceed();
+                }
+              }}
+              onSave={() => {
+                void activeUnsavedChange.save().then((saved) => {
+                  if (!saved) return;
+                  if (closeRequested) {
+                    void completeWindowClose();
+                  } else if (blocker.state === "blocked") {
+                    blocker.proceed();
+                  }
+                });
+              }}
+            />
+          )}
+        {closeRequested && !activeUnsavedChange && (
+          <ActiveOperationsExitDialog
+            isClosing={isClosing}
+            onCancel={() => setCloseRequested(false)}
+            onConfirm={() => void completeWindowClose()}
+          />
+        )}
+      </div>
     </UnsavedChangesContext.Provider>
   );
 }
