@@ -20,6 +20,12 @@ src-tauri/
   app_events              フロントエンドへのイベント配信
 ```
 
+### Frontend domain store 境界
+
+`DomainProvider` は chat、queue、connection、settings、logs を独立した `useSyncExternalStore` source として保持する。各画面は `use*Selector` で必要な slice だけを購読し、Chat event は Chat store の subscriber だけを通知する。Launcher は settings の launcher selector、警告は logs store の notifications slice を使う。`App` は provider と shell の wiring のみを行い、Tauri の event 購読、認証復元、設定 mutation は `domainOrchestration` の dependency-injected boundary に集約する。
+
+旧 `AppState/appReducer` は presentation/test compatibility facade として残し、runtime の更新経路には使用しない。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。
+
 ## データフロー
 
 ```text
