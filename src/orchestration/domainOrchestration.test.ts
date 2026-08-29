@@ -7,6 +7,12 @@ describe("domain orchestration", () => {
     const stores = createDomainStores();
     let chatListener: ((event: any) => void) | undefined;
     const unlisten = vi.fn();
+    const renders = { chat: 0, queue: 0, connection: 0, settings: 0, logs: 0 };
+    stores.chat.subscribe(() => renders.chat++);
+    stores.queue.subscribe(() => renders.queue++);
+    stores.connection.subscribe(() => renders.connection++);
+    stores.settings.subscribe(() => renders.settings++);
+    stores.logs.subscribe(() => renders.logs++);
     const bridge: DomainEventBridge = {
       subscribeAppLogEvents: async () => unlisten,
       subscribeTwitchStatusEvents: async () => unlisten,
@@ -38,6 +44,7 @@ describe("domain orchestration", () => {
     });
     expect(stores.chat.getState().messages).toHaveLength(1);
     expect(stores.logs.getState().logs).toHaveLength(0);
+    expect(renders).toEqual({ chat: 1, queue: 0, connection: 0, settings: 0, logs: 0 });
     cleanup();
     expect(unlisten).toHaveBeenCalled();
   });

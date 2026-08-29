@@ -21,35 +21,23 @@ import type {
   LauncherLaunchResult,
 } from "../types";
 
-function useDomainAppState(): AppState {
-  const messages = useChatSelector((state) => state.messages);
-  const queueItems = useQueueSelector((state) => state.items);
-  const connection = useConnectionSelector((state) => state);
-  const settings = useSettingsSelector((state) => state.settings);
-  const logs = useLogsSelector((state) => state.logs);
-  const notifications = useLogsSelector((state) => state.notifications);
-  return useMemo(() => ({
-    ...initialAppState,
-    twitchAuthStatus: connection.twitchAuthStatus,
-    twitchConnectionStatus: connection.twitchConnectionStatus,
-    twitchAuthPrompt: connection.twitchAuthPrompt,
-    twitchProfile: connection.twitchProfile,
-    speechStatus: connection.speechStatus,
-    settings,
-    chatMessages: messages,
-    queueItems,
-    logs,
-    notifications,
-  }), [connection, messages, queueItems, settings, logs, notifications]);
-}
-
 export function DomainChatView({ showStartupGuide }: { showStartupGuide: boolean }) {
-  const state = useDomainAppState();
+  const messages = useChatSelector((state) => state.messages);
+  const settings = useSettingsSelector((state) => state.settings);
+  const connection = useConnectionSelector((state) => state);
+  const state = useMemo(() => ({
+    ...initialAppState,
+    chatMessages: messages,
+    settings,
+    twitchConnectionStatus: connection.twitchConnectionStatus,
+    twitchProfile: connection.twitchProfile,
+  }), [connection.twitchConnectionStatus, connection.twitchProfile, messages, settings]);
   return <ChatView state={state} showStartupGuide={showStartupGuide} />;
 }
 
 export function DomainQueueView(props: Omit<React.ComponentProps<typeof QueueView>, "state">) {
-  const state = useDomainAppState();
+  const queueItems = useQueueSelector((state) => state.items);
+  const state = useMemo(() => ({ ...initialAppState, queueItems }), [queueItems]);
   return <QueueView {...props} state={state} />;
 }
 
