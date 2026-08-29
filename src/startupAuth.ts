@@ -5,7 +5,7 @@ export type StartupAuthResult =
   | { status: "authenticated"; result: TwitchAuthValidationResult }
   | { status: "error"; error: string };
 
-interface StartupAuthDependencies {
+export interface StartupAuthDependencies {
   getStoredAuth: () => Promise<TwitchUserProfile | undefined>;
   validateAuth: () => Promise<TwitchAuthValidationResult>;
   reportSystemMessage: (message: string) => void;
