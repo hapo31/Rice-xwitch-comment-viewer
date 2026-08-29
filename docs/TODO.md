@@ -106,6 +106,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Issue #23: EventSub 再購読時に最新の access token を取得し、401 時は refresh token rotation を保存して一度だけ再試行する。
 - [x] Issue #30: 必須 scope 不足の認証状態では EventSub 接続 task を開始せず、EventSub の更新後 access token も `/validate` した scope で再検証する。並行した再購読で古い refresh 結果が新しく回転済みの認証を解除しないよう、token lock 下で refresh token を照合する。
 - [x] Issue #32: EventSub の welcome/購読成功を確立済みとして記録し、30 秒以上安定した session の後だけ再接続 backoff を最短へ reset する。welcome 直後の失敗、連続失敗の上限、通常再接続、安定済み旧 session からの handover で新 welcome 前に失敗する状態を決定的テストで確認する。
+- [x] Issue #43: HTTP transport、WebSocket connector、credential store、clock を差し替え可能な決定的 harness を追加し、handover 通知、跨ぎ dedupe、keepalive timeout、retry 分類、token rotation 保存、validate/logout・connect/stop 競合、scope 不足、credential store 部分失敗を自動検証する。
 - [x] Issue #74: `ChatMessage.received_at` を `DateTime<Utc>` に統一し、offset・小数秒を UTC の `receivedAt` として bridge へ渡す。timestamp の欠落・空文字・タイムゾーンなし・非文字列を含む不正値と leap second は WebSocket frame 取得時刻へ fallback して警告し、frontend の境界検証、system/mock message、ローカル時刻表示をテストする。
 - [ ] 実 Twitch 環境で `channel.chat.message` 購読と Chat view 表示を手動確認する。
 
@@ -252,6 +253,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Rust: Issue #57 の初回失敗、再試行成功/失敗、新着 enqueue/通常再開、手動復旧の状態遷移テストを追加する。
 - [x] Rust: WebSocket 再接続状態遷移テストを追加する。
 - [x] Rust: 通常再接続と reconnect ハンドオーバーをまたぐ重複排除テストを追加する。
+- [x] Rust: Issue #43 の DI harness で HTTP/WS/credential store/clock を外部環境なしに駆動し、OAuth と EventSub の状態遷移・競合を検証する。
 - [x] Rust: Launcher の拡張子、重複、順序、予約種別、旧設定互換テストを追加する。
 - [x] Rust: 設定JSONの原子的保存、disk full/replace failure、構文・設定値が不正な本体/backup復旧テストを追加する。
 - [x] Rust: Issue #157 の旧設定互換、座標のJSON保存、画面外位置の復元抑止をテストする。
