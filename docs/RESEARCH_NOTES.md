@@ -1,5 +1,11 @@
 # 調査メモ
 
+## 2026-08-29: Issue #33 認証 credential I/O の mutex 隔離（実装中）
+
+- Twitch の認証状態 mutex は generation、pending、token、profile の短い状態更新だけを担当し、keyring と旧 Linux fallback file の同期 API は `TwitchAuthStore` に注入できる backend として分離する。`load`、`save`、`clear` は `spawn_blocking` 上で実行し、I/O 自体を async runtime の worker から外す。
+- save/clear は専用 I/O mutex で直列化し、save は I/O mutex を取得した後に auth generation を再確認する。logout は先に generation を無効化してから clear を待つため、遅延した古い保存が logout 後に資格情報を復活させない設計とする。
+- 遅延 fake store のテストを追加し、keyring 保存中の profile 取得と logout 後の stale save 無効化を検証する。cargo test/clippy の結果は実装完了時に追記する。
+
 ## 2026-08-08: Issue #53 Chat 仮想スクロールの prepend アンカー
 
 - Chat は新着を先頭へ追加するため、過去ログを読んでいると同じ `scrollTop` が別の行を指す状態だった。更新直前に最初の可視メッセージ ID とコンテナ先頭からの相対 offset を記録し、prepend 後はその ID へ仮想スクロールして offset を戻す。先頭閲覧時は offset 0 を維持して新着を即時表示する。
