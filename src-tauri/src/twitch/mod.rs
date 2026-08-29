@@ -340,10 +340,41 @@ impl TwitchApiError {
         }
     }
 
-    fn is_definitive_auth_failure(&self) -> bool {
-        matches!(self, Self::Http { status: 401, .. })
-            || matches!(self, Self::Http { code: Some(code), .. } if code == "invalid_grant")
+    fn auth_failure(&self) -> Option<TwitchAuthFailure> {
+        match self {
+            Self::Http { status: 401, .. } => Some(TwitchAuthFailure::InvalidAccessToken),
+            Self::Http {
+                code: Some(code), ..
+            } if code == "invalid_grant" => Some(TwitchAuthFailure::InvalidGrant),
+            _ => None,
+        }
     }
+
+    fn user_message(&self) -> String {
+        match self {
+            Self::Http { status: 401, .. } => {
+                "Twitch の認証が無効です。Login から再ログインしてください。".to_string()
+            }
+            Self::Http {
+                code: Some(code), ..
+            } if code == "invalid_grant" => {
+                "Twitch の認証期限が切れたか取り消されました。Login から再ログインしてください。"
+                    .to_string()
+            }
+            Self::Http {
+                status, message, ..
+            } => {
+                format!("Twitch API との通信に失敗しました（HTTP {status}）: {message}")
+            }
+            Self::Transport(error) => format!("Twitch API との通信に失敗しました: {error}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TwitchAuthFailure {
+    InvalidAccessToken,
+    InvalidGrant,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2145,26 +2176,12 @@ async fn refresh_eventsub_access_token(
     let refreshed =
         match refresh_access_token(&credentials.client_id, &credentials.refresh_token).await {
             Ok(token) => token,
-            Err(error) => {
-                if is_definitive_auth_failure(&error) {
-                    let message = to_twitch_user_message(error);
-                    clear_eventsub_auth(app, &message)?;
-                    return Err(SubscriptionRequestError::AuthRequired(message));
-                }
-                return Err(SubscriptionRequestError::Retryable(error));
-            }
+            Err(error) => return Err(classify_eventsub_refresh_error(app, error)),
         };
 
     let refreshed_profile = match validate_access_token(&refreshed.access_token).await {
         Ok(validate) => TwitchUserProfile::from(validate),
-        Err(error) => {
-            if is_definitive_auth_failure(&error) {
-                let message = to_twitch_user_message(error);
-                clear_eventsub_auth(app, &message)?;
-                return Err(SubscriptionRequestError::AuthRequired(message));
-            }
-            return Err(SubscriptionRequestError::Retryable(error));
-        }
+        Err(error) => return Err(classify_eventsub_refresh_error(app, error)),
     };
     if let Err(error) = ensure_required_twitch_scopes(&refreshed_profile.scopes) {
         let message = error.to_string();
@@ -2210,6 +2227,32 @@ async fn refresh_eventsub_access_token(
         emit_app_log(app, AppLogLevel::Warning, warning);
     }
     Ok(access_token)
+}
+
+/// Classifies OAuth refresh and validation failures before they reach the EventSub
+/// reconnect supervisor. Only timeouts and HTTP 5xx errors may request a retry;
+/// malformed or forbidden requests are terminal and cannot create a reconnect loop.
+#[cfg(feature = "app")]
+fn classify_eventsub_refresh_error(
+    app: &tauri::AppHandle<tauri::Wry>,
+    error: anyhow::Error,
+) -> SubscriptionRequestError {
+    let api_error = match error.downcast::<TwitchApiError>() {
+        Ok(api_error) => api_error,
+        Err(error) => return SubscriptionRequestError::Retryable(error),
+    };
+
+    if api_error.auth_failure().is_some() {
+        let message = api_error.user_message();
+        return match clear_eventsub_auth(app, &message) {
+            Ok(()) => SubscriptionRequestError::AuthRequired(message),
+            Err(error) => SubscriptionRequestError::Retryable(error),
+        };
+    }
+    if api_error.is_transient() {
+        return SubscriptionRequestError::Retryable(anyhow::Error::new(api_error));
+    }
+    SubscriptionRequestError::Permanent(api_error)
 }
 
 #[cfg(feature = "app")]
@@ -2316,7 +2359,17 @@ async fn send_chat_message_subscription(
         .json(&body)
         .send()
         .await
-        .map_err(|error| SubscriptionRequestError::Retryable(anyhow::Error::from(error)))?;
+        .map_err(TwitchApiError::from);
+
+    let response = match response {
+        Ok(response) => response,
+        Err(error) if error.is_transient() => {
+            return Err(SubscriptionRequestError::Retryable(anyhow::Error::new(
+                error,
+            )));
+        }
+        Err(error) => return Err(SubscriptionRequestError::Permanent(error)),
+    };
 
     match parse_json_response::<serde_json::Value>(response).await {
         Ok(_) => Ok(()),
@@ -2482,7 +2535,8 @@ where
 fn is_definitive_auth_failure(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<TwitchApiError>()
-        .is_some_and(TwitchApiError::is_definitive_auth_failure)
+        .and_then(TwitchApiError::auth_failure)
+        .is_some()
 }
 
 fn subscription_error_user_message(error: &TwitchApiError) -> String {
@@ -2509,14 +2563,10 @@ fn retryable_auth_error_message(error: &anyhow::Error) -> String {
 }
 
 fn to_twitch_user_message(error: anyhow::Error) -> String {
-    let message = error.to_string();
-    if message.contains("401") || message.contains("invalid access token") {
-        "Twitch の認証が無効です。再ログインしてください。".to_string()
-    } else if message.contains("client") || message.contains("Client") {
-        format!("Twitch Client ID を確認してください: {message}")
-    } else {
-        format!("Twitch 連携でエラーが発生しました: {message}")
-    }
+    error
+        .downcast_ref::<TwitchApiError>()
+        .map(TwitchApiError::user_message)
+        .unwrap_or_else(|| format!("Twitch 連携でエラーが発生しました: {error}"))
 }
 
 fn to_secure_store_user_message(error: anyhow::Error) -> String {
@@ -2623,7 +2673,7 @@ mod tests {
     use super::{
         ensure_required_twitch_scopes, is_definitive_auth_failure, normalize_chat_message,
         oauth_error_code, retry_backoff_seconds, EventSubEnvelope, MessageDedupe,
-        OAuthErrorResponse, TwitchApiError, TWITCH_HTTP_TIMEOUT,
+        OAuthErrorResponse, TwitchApiError, TwitchAuthFailure, TWITCH_HTTP_TIMEOUT,
     };
     use chrono::{DateTime, Utc};
     use std::{
@@ -2965,6 +3015,34 @@ mod tests {
 
         assert!(is_definitive_auth_failure(&unauthorized));
         assert!(is_definitive_auth_failure(&invalid_grant));
+        assert_eq!(
+            bad_condition.auth_failure(),
+            None,
+            "a 400 API condition error must not masquerade as an auth failure"
+        );
+        assert_eq!(
+            missing_scope.auth_failure(),
+            None,
+            "a 403 permission error must remain distinct from a token failure"
+        );
+        assert_eq!(
+            TwitchApiError::Http {
+                status: 401,
+                code: Some("ignored-for-401".to_string()),
+                message: "invalid access token".to_string(),
+            }
+            .auth_failure(),
+            Some(TwitchAuthFailure::InvalidAccessToken)
+        );
+        assert_eq!(
+            TwitchApiError::Http {
+                status: 400,
+                code: Some("invalid_grant".to_string()),
+                message: "refresh token is invalid".to_string(),
+            }
+            .auth_failure(),
+            Some(TwitchAuthFailure::InvalidGrant)
+        );
         assert!(!bad_condition.is_transient());
         assert!(!missing_scope.is_transient());
         assert!(unavailable.is_transient());
@@ -3183,6 +3261,41 @@ mod tests {
             vec!["expired-access-token", "refreshed-access-token"]
         );
         assert_eq!(*refresh_calls.borrow(), 1);
+    }
+
+    #[cfg(feature = "app")]
+    #[tokio::test]
+    async fn eventsub_permanent_subscription_errors_do_not_refresh_or_retry() {
+        let attempts = RefCell::new(0);
+        let refresh_calls = RefCell::new(0);
+        let result = retry_eventsub_subscription(
+            "access-token".to_string(),
+            |_| {
+                *attempts.borrow_mut() += 1;
+                async {
+                    Err(SubscriptionRequestError::Permanent(TwitchApiError::Http {
+                        status: 400,
+                        code: Some("Bad Request".to_string()),
+                        message: "condition is invalid".to_string(),
+                    }))
+                }
+            },
+            || {
+                *refresh_calls.borrow_mut() += 1;
+                async { Ok("unexpected-refresh".to_string()) }
+            },
+        )
+        .await;
+
+        assert_eq!(*attempts.borrow(), 1);
+        assert_eq!(*refresh_calls.borrow(), 0);
+        assert!(matches!(
+            result,
+            Err(SubscriptionRequestError::Permanent(TwitchApiError::Http {
+                status: 400,
+                ..
+            }))
+        ));
     }
 
     #[cfg(feature = "app")]
