@@ -2660,6 +2660,9 @@ enum PollAuthError {
     Other(anyhow::Error),
 }
 
+#[cfg(all(test, feature = "app"))]
+mod test_harness;
+
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "app")]
