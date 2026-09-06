@@ -1546,28 +1546,7 @@ pub async fn twitch_disconnect(
 
 #[cfg(feature = "app")]
 async fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(), String> {
-    // Invalidate the in-memory generation before waiting for the store. This
-    // prevents a concurrent save from being accepted after logout begins.
-    let (previous_auth, generation) = {
-        let mut auth = state
-            .twitch_auth
-            .lock()
-            .map_err(|error| error.to_string())?;
-        let previous_auth = auth.clone();
-        let generation = auth.invalidate_operations();
-        auth.token = None;
-        auth.profile = None;
-        (previous_auth, generation)
-    };
-
-    if let Err(error) = state.twitch_auth_store.clear().await {
-        let mut auth = state
-            .twitch_auth
-            .lock()
-            .map_err(|error| error.to_string())?;
-        restore_auth_after_failed_clear_if_current(&mut auth, generation, previous_auth);
-        return Err(to_secure_store_user_message(error));
-    }
+    clear_twitch_auth_state_with_store(state.twitch_auth.clone(), &state.twitch_auth_store).await?;
 
     if let Some(handle) = state
         .twitch_connection
@@ -1576,6 +1555,33 @@ async fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(
         .take()
     {
         handle.abort();
+    }
+    Ok(())
+}
+
+/// Clears durable Twitch credentials after first invalidating the in-memory
+/// generation. This is kept separate from the Tauri command wiring so the same
+/// production path can be exercised with a delayed credential-store backend.
+#[cfg(feature = "app")]
+async fn clear_twitch_auth_state_with_store(
+    auth_state: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,
+    store: &TwitchAuthStore,
+) -> Result<(), String> {
+    // Invalidate the in-memory generation before waiting for the store. This
+    // prevents a concurrent save from being accepted after logout begins.
+    let (previous_auth, generation) = {
+        let mut auth = auth_state.lock().map_err(|error| error.to_string())?;
+        let previous_auth = auth.clone();
+        let generation = auth.invalidate_operations();
+        auth.token = None;
+        auth.profile = None;
+        (previous_auth, generation)
+    };
+
+    if let Err(error) = store.clear().await {
+        let mut auth = auth_state.lock().map_err(|error| error.to_string())?;
+        restore_auth_after_failed_clear_if_current(&mut auth, generation, previous_auth);
+        return Err(to_secure_store_user_message(error));
     }
     Ok(())
 }
@@ -2831,7 +2837,7 @@ enum PollAuthError {
 mod tests {
     #[cfg(feature = "app")]
     use super::{
-        clear_auth_for_eventsub_missing_scope_if_current,
+        clear_auth_for_eventsub_missing_scope_if_current, clear_twitch_auth_state_with_store,
         restore_auth_after_failed_clear_if_current, restore_stored_auth,
         retry_eventsub_subscription, AuthCredentialStore, AuthLoadResult, AuthSaveOutcome,
         AuthSecretStore, AuthStorage, EventSubReconnectBackoff, StoredTwitchAuth,
@@ -2905,13 +2911,33 @@ mod tests {
     }
 
     #[cfg(feature = "app")]
-    #[derive(Default)]
     struct DelayedCredentialState {
         secret: Option<String>,
         save_started: bool,
         release_save: bool,
+        clear_started: bool,
+        release_clear: bool,
+        fail_clear: bool,
         save_calls: usize,
         clear_calls: usize,
+    }
+
+    #[cfg(feature = "app")]
+    impl Default for DelayedCredentialState {
+        fn default() -> Self {
+            Self {
+                secret: None,
+                save_started: false,
+                release_save: false,
+                clear_started: false,
+                // Existing save/clear tests do not need a delayed clear. Keep it
+                // open unless the production-path regression test opts in.
+                release_clear: true,
+                fail_clear: false,
+                save_calls: 0,
+                clear_calls: 0,
+            }
+        }
     }
 
     #[cfg(feature = "app")]
@@ -2928,12 +2954,33 @@ mod tests {
             self.changed.notify_all();
         }
 
+        fn delay_and_fail_clear(&self) {
+            let mut state = self.state.lock().unwrap();
+            state.release_clear = false;
+            state.fail_clear = true;
+        }
+
+        fn wait_until_clear_started(&self) {
+            let mut state = self.state.lock().unwrap();
+            while !state.clear_started {
+                state = self.changed.wait(state).unwrap();
+            }
+        }
+
+        fn release_clear(&self) {
+            self.state.lock().unwrap().release_clear = true;
+            self.changed.notify_all();
+        }
+
         fn snapshot(&self) -> DelayedCredentialState {
             let state = self.state.lock().unwrap();
             DelayedCredentialState {
                 secret: state.secret.clone(),
                 save_started: state.save_started,
                 release_save: state.release_save,
+                clear_started: state.clear_started,
+                release_clear: state.release_clear,
+                fail_clear: state.fail_clear,
                 save_calls: state.save_calls,
                 clear_calls: state.clear_calls,
             }
@@ -2963,7 +3010,15 @@ mod tests {
 
         fn clear(&self) -> anyhow::Result<()> {
             let mut state = self.state.lock().unwrap();
+            state.clear_started = true;
+            self.changed.notify_all();
+            while !state.release_clear {
+                state = self.changed.wait(state).unwrap();
+            }
             state.clear_calls += 1;
+            if state.fail_clear {
+                return Err(anyhow::anyhow!("fake delayed credential clear failure"));
+            }
             state.secret = None;
             Ok(())
         }
@@ -3115,6 +3170,59 @@ mod tests {
         ));
         assert_eq!(backend.snapshot().save_calls, 0);
         assert!(auth_state.lock().unwrap().token.is_none());
+    }
+
+    #[cfg(feature = "app")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn delayed_failed_logout_clear_keeps_newer_authentication() {
+        let backend = Arc::new(DelayedCredentialStore::default());
+        backend.delay_and_fail_clear();
+        let store = TwitchAuthStore::with_backend(backend.clone());
+        let auth_state = Arc::new(Mutex::new(twitch_auth_state()));
+
+        let clear = tokio::spawn({
+            let store = store.clone();
+            let auth_state = auth_state.clone();
+            async move { clear_twitch_auth_state_with_store(auth_state, &store).await }
+        });
+        backend.wait_until_clear_started();
+
+        // The command has invalidated the old generation but must not retain the
+        // auth mutex while a slow keyring clear is pending. Complete a newer
+        // authentication while that durable operation is blocked.
+        let newer_generation = {
+            let mut auth = auth_state
+                .try_lock()
+                .expect("delayed credential clear must release the auth mutex");
+            let generation = auth.invalidate_operations();
+            auth.replace_token(
+                TokenResponse {
+                    access_token: "newer-access-token".to_string(),
+                    refresh_token: "newer-refresh-token".to_string(),
+                    scope: vec!["user:read:chat".to_string()],
+                    expires_in: 7200,
+                },
+                TwitchUserProfile {
+                    user_id: "newer-user-id".to_string(),
+                    login: "newer-viewer".to_string(),
+                    client_id: "client-id".to_string(),
+                    scopes: vec!["user:read:chat".to_string()],
+                    expires_in: 7200,
+                },
+            )
+            .unwrap();
+            generation
+        };
+
+        backend.release_clear();
+        let error = clear.await.unwrap().unwrap_err();
+
+        assert!(error.contains("資格情報ストア"));
+        let auth = auth_state.lock().unwrap();
+        assert_eq!(auth.generation, newer_generation);
+        let credentials = auth.eventsub_credentials().unwrap();
+        assert_eq!(credentials.access_token, "newer-access-token");
+        assert_eq!(credentials.refresh_token, "newer-refresh-token");
     }
 
     #[cfg(feature = "app")]
