@@ -69,7 +69,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] refresh 成功時に保存済み refresh token を差し替える。
 - [x] OS keyring 優先の OAuth 保存/復元/削除を実装する。
 - [x] Issue #103: keyring 保存に失敗しても OAuth token を平文ファイルへ自動保存せず、session-only として継続する。既存の Linux fallback file は keyring 復旧時に移行・削除し、移行できない場合は削除・token revoke・再ログインを案内する。
-- [ ] Issue #33: keyring/filesystem I/O を auth mutex から分離し、同期 credential store API を `spawn_blocking` に隔離する。実装中（テスト・clippy 検証待ち）。
+- [x] Issue #33: keyring/filesystem I/O を auth mutex から分離し、同期 credential store API を `spawn_blocking` に隔離する。遅延 fake store 中の profile/cancel 応答、logout 後の stale save 非 commit、失敗した credential delete 後も generation を巻き戻さないことを決定的テストで検証する。
 - [x] 旧版の Linux Secret Service fallback `~/.rice/twitch-auth.json` を検出し、keyring への移行成功時に削除する。新規の fallback file は作成しない。
 - [x] Login 画面に認証開始、確認、有効性確認、解除を実装する。
 - [x] Login 画面の認証開始/解除を認証状態に応じた単一アクションへ整理する。

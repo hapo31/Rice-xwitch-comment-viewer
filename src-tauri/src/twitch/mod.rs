@@ -582,6 +582,143 @@ impl TwitchAuthState {
 }
 
 #[cfg(feature = "app")]
+trait AuthSecretStore {
+    fn load_secret(&self) -> anyhow::Result<Option<String>>;
+    fn save_secret(&self, secret: &str) -> anyhow::Result<()>;
+    fn clear_secret(&self) -> anyhow::Result<()>;
+}
+
+#[cfg(feature = "app")]
+struct AuthStorage<'a, SecureStore, LegacyStore> {
+    secure: &'a SecureStore,
+    legacy: &'a LegacyStore,
+}
+
+#[cfg(feature = "app")]
+pub(crate) struct AuthLoadResult {
+    pub(crate) auth: Option<TwitchAuthState>,
+    pub(crate) storage_warning: Option<String>,
+}
+
+#[cfg(feature = "app")]
+impl<SecureStore: AuthSecretStore, LegacyStore: AuthSecretStore>
+    AuthStorage<'_, SecureStore, LegacyStore>
+{
+    fn load(&self) -> AuthLoadResult {
+        match self.secure.load_secret() {
+            Ok(Some(secret)) => match restore_stored_auth(&secret) {
+                Ok(auth) => AuthLoadResult {
+                    auth: Some(auth),
+                    storage_warning: self
+                        .legacy
+                        .clear_secret()
+                        .err()
+                        .map(to_legacy_cleanup_user_message),
+                },
+                Err(error) => AuthLoadResult {
+                    auth: None,
+                    storage_warning: Some(format!(
+                        "OS の資格情報ストアにある Twitch 認証情報を読み込めませんでした。Login から再認証してください: {error}"
+                    )),
+                },
+            },
+            Ok(None) => self.migrate_legacy_auth(None),
+            Err(error) => self.migrate_legacy_auth(Some(error)),
+        }
+    }
+
+    fn migrate_legacy_auth(&self, secure_load_error: Option<anyhow::Error>) -> AuthLoadResult {
+        let secret = match self.legacy.load_secret() {
+            Ok(Some(secret)) => secret,
+            Ok(None) => {
+                return AuthLoadResult {
+                    auth: None,
+                    storage_warning: secure_load_error.map(to_secure_store_load_user_message),
+                }
+            }
+            Err(error) => {
+                return AuthLoadResult {
+                    auth: None,
+                    storage_warning: Some(to_auth_recovery_failure_user_message(
+                        secure_load_error,
+                        error,
+                    )),
+                }
+            }
+        };
+
+        let auth = match restore_stored_auth(&secret) {
+            Ok(auth) => auth,
+            Err(error) => {
+                return AuthLoadResult {
+                    auth: None,
+                    storage_warning: Some(to_auth_recovery_failure_user_message(
+                        secure_load_error,
+                        error,
+                    )),
+                }
+            }
+        };
+
+        match self.secure.save_secret(&secret) {
+            Ok(()) => AuthLoadResult {
+                auth: Some(auth),
+                storage_warning: self.legacy.clear_secret().err().map_or_else(
+                    || {
+                        Some(
+                            "以前のローカル認証情報を OS の資格情報ストアへ移行し、平文ファイルを削除しました。"
+                                .to_string(),
+                        )
+                    },
+                    |error| {
+                        Some(format!(
+                            "以前のローカル認証情報を OS の資格情報ストアへ移行しましたが、平文ファイルを削除できませんでした。{}",
+                            to_legacy_cleanup_user_message(error)
+                        ))
+                    },
+                ),
+            },
+            Err(error) => AuthLoadResult {
+                auth: None,
+                storage_warning: Some(to_auth_recovery_failure_user_message(
+                    secure_load_error,
+                    error,
+                )),
+            },
+        }
+    }
+
+    fn save(&self, auth: &TwitchAuthState) -> anyhow::Result<Option<String>> {
+        let stored = auth
+            .stored_auth()
+            .ok_or_else(|| anyhow::anyhow!("保存できる Twitch 認証状態がありません。"))?;
+        let secret = serde_json::to_string(&stored)?;
+
+        match self.secure.save_secret(&secret) {
+            Ok(()) => Ok(self
+                .legacy
+                .clear_secret()
+                .err()
+                .map(to_legacy_cleanup_user_message)),
+            Err(error) => Ok(Some(to_session_only_user_message(error))),
+        }
+    }
+
+    fn clear(&self) -> anyhow::Result<()> {
+        let secure_result = self.secure.clear_secret();
+        let legacy_result = self.legacy.clear_secret();
+        match (secure_result, legacy_result) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) => Err(error),
+            (Ok(()), Err(error)) => Err(error),
+            (Err(secure_error), Err(legacy_error)) => {
+                Err(anyhow::anyhow!("{secure_error}; {legacy_error}"))
+            }
+        }
+    }
+}
+
+#[cfg(feature = "app")]
 pub(crate) trait AuthCredentialStore: Send + Sync {
     fn load(&self) -> AuthLoadResult;
     fn save(&self, auth: &TwitchAuthState) -> anyhow::Result<Option<String>>;
@@ -615,7 +752,7 @@ impl TwitchAuthStore {
         let store = self.clone();
         tokio::task::spawn_blocking(move || store.load_sync())
             .await
-            .map_err(anyhow::Error::from)?
+            .map_err(anyhow::Error::from)
     }
 
     fn load_sync(&self) -> AuthLoadResult {
@@ -1428,9 +1565,7 @@ async fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(
             .twitch_auth
             .lock()
             .map_err(|error| error.to_string())?;
-        if auth.generation == generation {
-            *auth = previous_auth;
-        }
+        restore_auth_after_failed_clear_if_current(&mut auth, generation, previous_auth);
         return Err(to_secure_store_user_message(error));
     }
 
@@ -1443,6 +1578,22 @@ async fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(
         handle.abort();
     }
     Ok(())
+}
+
+#[cfg(feature = "app")]
+fn restore_auth_after_failed_clear_if_current(
+    auth: &mut TwitchAuthState,
+    generation: u64,
+    mut previous_auth: TwitchAuthState,
+) {
+    if auth.generation == generation {
+        // Restoring a credential after a failed delete must not roll back the
+        // generation. Older poll/validate/save operations remain stale even
+        // though the user can continue using the prior credential.
+        previous_auth.generation = generation;
+        previous_auth.pending = None;
+        *auth = previous_auth;
+    }
 }
 
 #[cfg(feature = "app")]
@@ -2213,11 +2364,9 @@ async fn refresh_eventsub_access_token(
         }
     };
     let storage_warning = match auth_snapshot {
-        Some(auth) => Some(
-            save_auth_if_current(&app.state::<AppState>(), generation, auth)
-                .await
-                .map_err(|error| SubscriptionRequestError::Retryable(anyhow::anyhow!(error)))?,
-        ),
+        Some(auth) => save_auth_if_current(&app.state::<AppState>(), generation, auth)
+            .await
+            .map_err(|error| SubscriptionRequestError::Retryable(anyhow::anyhow!(error)))?,
         None => None,
     };
 
@@ -2635,7 +2784,7 @@ async fn save_auth_if_current(
         .twitch_auth_store
         .save_if_current(state.twitch_auth.clone(), generation, auth)
         .await
-        .map_err(|error| to_secure_store_user_message(error))?
+        .map_err(to_secure_store_user_message)?
     {
         AuthSaveOutcome::Saved(warning) => Ok(warning),
         AuthSaveOutcome::Stale => {
@@ -2682,7 +2831,8 @@ enum PollAuthError {
 mod tests {
     #[cfg(feature = "app")]
     use super::{
-        clear_auth_for_eventsub_missing_scope_if_current, restore_stored_auth,
+        clear_auth_for_eventsub_missing_scope_if_current,
+        restore_auth_after_failed_clear_if_current, restore_stored_auth,
         retry_eventsub_subscription, AuthCredentialStore, AuthLoadResult, AuthSaveOutcome,
         AuthSecretStore, AuthStorage, EventSubReconnectBackoff, StoredTwitchAuth,
         SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchAuthStore, TwitchToken,
@@ -2934,6 +3084,55 @@ mod tests {
         assert_eq!(snapshot.clear_calls, 1);
         assert!(snapshot.secret.is_none());
         assert!(auth_state.lock().unwrap().token.is_none());
+    }
+
+    #[cfg(feature = "app")]
+    #[tokio::test]
+    async fn stale_save_after_logout_is_never_committed() {
+        let backend = Arc::new(DelayedCredentialStore::default());
+        let store = TwitchAuthStore::with_backend(backend.clone());
+        let auth_state = Arc::new(Mutex::new(twitch_auth_state()));
+        let (generation, snapshot) = {
+            let mut auth = auth_state.lock().unwrap();
+            let snapshot = auth.clone();
+            let generation = auth.generation;
+
+            // This is the in-memory portion of logout. It must complete before
+            // waiting for credential I/O so a save queued from an older auth
+            // operation can observe that it is stale.
+            auth.invalidate_operations();
+            auth.token = None;
+            auth.profile = None;
+            (generation, snapshot)
+        };
+
+        assert!(matches!(
+            store
+                .save_if_current(auth_state.clone(), generation, snapshot)
+                .await
+                .unwrap(),
+            AuthSaveOutcome::Stale
+        ));
+        assert_eq!(backend.snapshot().save_calls, 0);
+        assert!(auth_state.lock().unwrap().token.is_none());
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn failed_logout_recovery_keeps_the_new_generation() {
+        let mut auth = twitch_auth_state();
+        let stale_generation = auth.generation;
+        let previous_auth = auth.clone();
+        let logout_generation = auth.invalidate_operations();
+        auth.token = None;
+        auth.profile = None;
+
+        restore_auth_after_failed_clear_if_current(&mut auth, logout_generation, previous_auth);
+
+        assert_eq!(auth.generation, logout_generation);
+        assert_ne!(auth.generation, stale_generation);
+        assert!(auth.pending.is_none());
+        assert!(auth.token.is_some());
     }
 
     #[test]
