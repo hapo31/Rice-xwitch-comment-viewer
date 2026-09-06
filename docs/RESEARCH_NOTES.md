@@ -114,6 +114,11 @@
 - EventSub 接続 task が開始時点の access token を `EventSubConnectionParams` に保持していたため、Login 画面などで token を更新しても、後続の通常再接続で古い token を使っていた。接続パラメータから認証情報を除き、購読のたびにアプリの認証状態から現在の token を取得するようにした。
 - 購読が 401 の時だけ refresh を一度実行し、更新された access token / rotation 後の refresh token を既存の OS credential store 保存経路へ直ちに渡してから再購読する。refresh 失敗または更新後の再試行の 401 は認証状態を解除して Login での再認証を案内する。期限切れ token の再試行、refresh 失敗時に再試行しないこと、rotation が保存対象へ反映されることを Rust の非同期テストで確認した。
 
+## 2026-08-28: 通常 devcontainer の Codex state 永続化
+
+- 通常 profile に `rice-codex-home` named volume を `/home/vscode/.codex` として追加した。これにより devcontainer の Rebuild でも Codex の認証情報、履歴、セッションを Docker 環境内に保持する。`setup.sh` は初回 volume の所有者を実行ユーザーへ変更し、ディレクトリを `0700` にする。
+- Docker named volume は Git と Docker build context の外にあり、workspace へ資格情報を保存しない。コンテナや Docker environment 自体を削除した場合は残らないため、その場合は既存の手動 backup/restore 手順を使う。
+
 ## 2026-08-05: Issue #97 devcontainer bootstrap と capability 分離
 
 - 通常 devcontainer では host `.ssh`、`.gitconfig`、Codex state volume、Docker socket、`--network=host` が `postCreateCommand` と同居しており、`@openai/codex@latest` を未固定で global install していた。これを、base/Node/Rust image digest、Codex 0.98.0 と pnpm 8.11.0 の tarball SHA-512、Rust 1.89.0 を `.devcontainer/bootstrap-lock.json` に記録する構成へ変更した。
@@ -152,6 +157,10 @@
 - `git tag -F` の既定 cleanup では Markdown 見出しがコメントとして除去されるため、リリースタグ作成時は `--cleanup=verbatim` を指定する。
 
 調査や作業中に分かった補足情報を記録するファイルです。日付が新しいものほど上に追記してください。
+
+## 2026-08-26
+
+- Issue #157: ウィンドウの物理ピクセル座標を一般設定の `window.position` として、OS の close request と独自タイトルバー経由の終了操作の両方で原子的に保存する。起動時は、現在のモニター作業領域に少なくとも 64 x 32px が残る位置だけを復元し、モニターの取り外し・再配置で画面外になる保存座標は初期の中央配置へ安全にフォールバックする。旧設定に `window` がない場合は既定値（未保存位置）として互換読み込みする。
 
 ## 2026-08-15
 

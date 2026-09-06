@@ -12,6 +12,8 @@ use chrono::{DateTime, Timelike, Utc};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
+#[cfg(feature = "app")]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 #[cfg(all(feature = "app", target_os = "linux"))]
 use std::{
@@ -22,7 +24,9 @@ use std::{
 #[cfg(feature = "app")]
 use tauri::Manager;
 #[cfg(feature = "app")]
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio::net::TcpStream;
+#[cfg(feature = "app")]
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 
 const TWITCH_DEVICE_URL: &str = "https://id.twitch.tv/oauth2/device";
 const TWITCH_TOKEN_URL: &str = "https://id.twitch.tv/oauth2/token";
@@ -35,6 +39,8 @@ const TWITCH_EVENTSUB_SUBSCRIPTIONS_URL: &str =
 const TWITCH_EVENTSUB_WS_URL: &str = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=30";
 #[cfg(feature = "app")]
 const EVENTSUB_BACKOFF_RESET_STABLE_DURATION: Duration = Duration::from_secs(30);
+#[cfg(feature = "app")]
+const EVENTSUB_RECONNECT_HANDOVER_TIMEOUT: Duration = Duration::from_secs(25);
 const CHAT_READ_SCOPE: &str = "user:read:chat";
 const REQUIRED_TWITCH_SCOPES: &[&str] = &[CHAT_READ_SCOPE];
 const KEYRING_SERVICE: &str = "rice.twitch.oauth";
@@ -43,6 +49,11 @@ const CHANNEL_CHAT_MESSAGE_TYPE: &str = "channel.chat.message";
 const CHANNEL_CHAT_MESSAGE_VERSION: &str = "1";
 const DEDUPE_CACHE_LIMIT: usize = 5_000;
 const DEDUPE_CACHE_TTL: Duration = Duration::from_secs(10 * 60);
+const TWITCH_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+#[cfg(feature = "app")]
+const TWITCH_WS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(feature = "app")]
+static NEXT_TWITCH_CONNECTION_GENERATION: AtomicU64 = AtomicU64::new(1);
 #[cfg(all(feature = "app", target_os = "linux"))]
 const LEGACY_AUTH_DIR: &str = ".rice";
 #[cfg(all(feature = "app", target_os = "linux"))]
@@ -111,13 +122,14 @@ pub struct ChatBadge {
 #[cfg(feature = "app")]
 #[derive(Debug)]
 pub struct TwitchConnectionHandle {
+    generation: u64,
     task: tokio::task::JoinHandle<()>,
 }
 
 #[cfg(feature = "app")]
 impl TwitchConnectionHandle {
-    fn new(task: tokio::task::JoinHandle<()>) -> Self {
-        Self { task }
+    fn new(generation: u64, task: tokio::task::JoinHandle<()>) -> Self {
+        Self { generation, task }
     }
 
     fn abort(&self) {
@@ -249,7 +261,6 @@ struct HelixUsersResponse {
 struct HelixUser {
     id: String,
     login: String,
-    display_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -309,6 +320,63 @@ struct EventSubChatMessageBody {
     fragments: Vec<MessageFragment>,
 }
 
+#[derive(Debug, thiserror::Error)]
+enum TwitchApiError {
+    #[error("Twitch API HTTP {status}: {message}")]
+    Http {
+        status: u16,
+        code: Option<String>,
+        message: String,
+    },
+    #[error(transparent)]
+    Transport(#[from] reqwest::Error),
+}
+
+impl TwitchApiError {
+    fn is_transient(&self) -> bool {
+        match self {
+            Self::Http { status, .. } => *status >= 500,
+            Self::Transport(error) => error.is_timeout(),
+        }
+    }
+
+    fn auth_failure(&self) -> Option<TwitchAuthFailure> {
+        match self {
+            Self::Http { status: 401, .. } => Some(TwitchAuthFailure::InvalidAccessToken),
+            Self::Http {
+                code: Some(code), ..
+            } if code == "invalid_grant" => Some(TwitchAuthFailure::InvalidGrant),
+            _ => None,
+        }
+    }
+
+    fn user_message(&self) -> String {
+        match self {
+            Self::Http { status: 401, .. } => {
+                "Twitch の認証が無効です。Login から再ログインしてください。".to_string()
+            }
+            Self::Http {
+                code: Some(code), ..
+            } if code == "invalid_grant" => {
+                "Twitch の認証期限が切れたか取り消されました。Login から再ログインしてください。"
+                    .to_string()
+            }
+            Self::Http {
+                status, message, ..
+            } => {
+                format!("Twitch API との通信に失敗しました（HTTP {status}）: {message}")
+            }
+            Self::Transport(error) => format!("Twitch API との通信に失敗しました: {error}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TwitchAuthFailure {
+    InvalidAccessToken,
+    InvalidGrant,
+}
+
 #[derive(Debug, Deserialize)]
 struct OAuthErrorResponse {
     message: Option<String>,
@@ -336,12 +404,30 @@ struct EventSubAuthCredentials {
 enum SubscriptionRequestError {
     #[error("Twitch EventSub 購読の認証が拒否されました。")]
     Unauthorized,
+    #[error("{0}")]
+    AuthRequired(String),
     #[error(transparent)]
-    Other(#[from] anyhow::Error),
+    Retryable(#[from] anyhow::Error),
+    #[error(transparent)]
+    Permanent(TwitchApiError),
 }
 
 #[cfg(feature = "app")]
-enum EventSubSessionExit {
+#[derive(Debug, thiserror::Error)]
+enum EventSubTerminalError {
+    #[error("{message}")]
+    AuthRequired { message: String },
+    #[error("{message}")]
+    Permanent { message: String },
+}
+
+#[cfg(feature = "app")]
+type EventSubSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+#[cfg(feature = "app")]
+enum EventSubFrameAction {
+    Continue,
+    Welcome(EventSubSession),
     Reconnect(String),
 }
 
@@ -1112,12 +1198,15 @@ pub async fn twitch_validate_auth(
             let token = match refresh_access_token(&client_id, &refresh_token).await {
                 Ok(token) => token,
                 Err(refresh_error) => {
-                    let message = to_twitch_user_message(anyhow::anyhow!(
-                        "{validate_error}; {refresh_error}"
-                    ));
                     ensure_auth_generation_is_current(&state, generation)?;
-                    clear_invalid_twitch_auth(&state, &app, &message)?;
-                    return Err(message);
+                    if is_definitive_auth_failure(&refresh_error) {
+                        let message = to_twitch_user_message(anyhow::anyhow!(
+                            "{validate_error}; {refresh_error}"
+                        ));
+                        clear_invalid_twitch_auth(&state, &app, &message)?;
+                        return Err(message);
+                    }
+                    return Err(retryable_auth_error_message(&refresh_error));
                 }
             };
             let profile = match validate_access_token(&token.access_token).await {
@@ -1132,10 +1221,13 @@ pub async fn twitch_validate_auth(
                     profile
                 }
                 Err(error) => {
-                    let message = to_twitch_user_message(error);
                     ensure_auth_generation_is_current(&state, generation)?;
-                    clear_invalid_twitch_auth(&state, &app, &message)?;
-                    return Err(message);
+                    if is_definitive_auth_failure(&error) {
+                        let message = to_twitch_user_message(error);
+                        clear_invalid_twitch_auth(&state, &app, &message)?;
+                        return Err(message);
+                    }
+                    return Err(retryable_auth_error_message(&error));
                 }
             };
             let mut auth = state
@@ -1222,7 +1314,6 @@ pub async fn twitch_connect(
         .trim()
         .trim_start_matches('@')
         .to_ascii_lowercase();
-
     let (access_token, client_id, user_id, own_login, scopes) = {
         let auth = state
             .twitch_auth
@@ -1243,7 +1334,6 @@ pub async fn twitch_connect(
             profile.scopes.clone(),
         )
     };
-
     if let Err(error) = ensure_required_twitch_scopes(&scopes) {
         let message = error.to_string();
         clear_missing_scope_twitch_auth(&state, &app, &message)?;
@@ -1255,38 +1345,60 @@ pub async fn twitch_connect(
     } else {
         channel_login
     };
-    let broadcaster = fetch_twitch_user(&client_id, &access_token, &channel_login)
-        .await
-        .map_err(to_twitch_user_message)?;
-    let params = EventSubConnectionParams {
-        broadcaster_user_id: broadcaster.id.clone(),
-        broadcaster_login: broadcaster.login.clone(),
-        user_id,
-    };
-
-    {
-        let mut connection = state
+    let generation = NEXT_TWITCH_CONNECTION_GENERATION.fetch_add(1, Ordering::Relaxed);
+    let channel_for_log = channel_login.clone();
+    let app_for_task = app.clone();
+    let task = tokio::spawn(async move {
+        let broadcaster = match fetch_twitch_user(&client_id, &access_token, &channel_login).await {
+            Ok(broadcaster) => broadcaster,
+            Err(error) => {
+                let message = to_twitch_user_message(error);
+                emit_twitch_status(
+                    &app_for_task,
+                    TwitchStatusDomain::Chat,
+                    TwitchStatus::Error,
+                    Some(message.clone()),
+                );
+                emit_app_log(&app_for_task, AppLogLevel::Error, message);
+                return;
+            }
+        };
+        let is_current = app_for_task
+            .state::<AppState>()
             .twitch_connection
             .lock()
-            .map_err(|error| error.to_string())?;
-        if let Some(handle) = connection.take() {
-            handle.abort();
+            .ok()
+            .and_then(|connection| {
+                connection
+                    .as_ref()
+                    .map(|handle| handle.generation == generation)
+            })
+            .unwrap_or(false);
+        if !is_current {
+            return;
         }
-
-        let app_for_task = app.clone();
-        let task = tokio::spawn(async move {
-            run_eventsub_connection(app_for_task, params).await;
-        });
-        *connection = Some(TwitchConnectionHandle::new(task));
+        let params = EventSubConnectionParams {
+            broadcaster_user_id: broadcaster.id,
+            broadcaster_login: broadcaster.login,
+            user_id,
+        };
+        run_eventsub_connection(app_for_task, params).await;
+    });
+    let mut connection = state
+        .twitch_connection
+        .lock()
+        .map_err(|error| error.to_string())?;
+    if let Some(handle) = connection.take() {
+        handle.abort();
     }
-
+    *connection = Some(TwitchConnectionHandle::new(generation, task));
     emit_twitch_status(
         &app,
         TwitchStatusDomain::Chat,
         TwitchStatus::Connecting,
         Some(format!(
             "Twitch チャンネル {} に接続しています。",
-            broadcaster.display_name
+            channel_for_log
         )),
     );
     emit_app_log(
@@ -1294,7 +1406,7 @@ pub async fn twitch_connect(
         AppLogLevel::Info,
         format!(
             "Twitch チャンネル {} への EventSub 接続を開始しました。",
-            broadcaster.login
+            channel_for_log
         ),
     );
     Ok(())
@@ -1319,6 +1431,9 @@ pub fn twitch_disconnect(
 
 #[cfg(feature = "app")]
 fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(), String> {
+    // Keep the active state if durable credential deletion fails. This avoids
+    // reporting a successful logout that is reversed when keyring recovers.
+    TwitchAuthStore::clear().map_err(to_secure_store_user_message)?;
     if let Some(handle) = state
         .twitch_connection
         .lock()
@@ -1327,7 +1442,6 @@ fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(), Str
     {
         handle.abort();
     }
-
     let mut auth = state
         .twitch_auth
         .lock()
@@ -1336,7 +1450,7 @@ fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(), Str
     auth.pending = None;
     auth.token = None;
     auth.profile = None;
-    TwitchAuthStore::clear().map_err(to_secure_store_user_message)
+    Ok(())
 }
 
 #[cfg(feature = "app")]
@@ -1475,18 +1589,27 @@ pub fn twitch_stop_chat(
     Ok(())
 }
 
+fn twitch_http_client() -> anyhow::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .connect_timeout(TWITCH_HTTP_TIMEOUT)
+        .timeout(TWITCH_HTTP_TIMEOUT)
+        .build()
+        .map_err(anyhow::Error::from)
+}
+
 async fn request_device_code(client_id: &str) -> anyhow::Result<DeviceCodeResponse> {
-    let response = reqwest::Client::new()
+    let response = twitch_http_client()?
         .post(TWITCH_DEVICE_URL)
         .form(&[("client_id", client_id), ("scopes", CHAT_READ_SCOPE)])
         .send()
         .await?;
 
-    parse_json_response(response).await
+    Ok(parse_json_response(response).await?)
 }
 
 async fn poll_device_token(pending: &PendingDeviceAuth) -> Result<TokenResponse, PollAuthError> {
-    let response = reqwest::Client::new()
+    let response = twitch_http_client()
+        .map_err(PollAuthError::Other)?
         .post(TWITCH_TOKEN_URL)
         .form(&[
             ("client_id", pending.client_id.as_str()),
@@ -1537,7 +1660,7 @@ async fn refresh_access_token(
         ));
     }
 
-    let response = reqwest::Client::new()
+    let response = twitch_http_client()?
         .post(TWITCH_TOKEN_URL)
         .form(&[
             ("client_id", client_id),
@@ -1547,17 +1670,17 @@ async fn refresh_access_token(
         .send()
         .await?;
 
-    parse_json_response(response).await
+    Ok(parse_json_response(response).await?)
 }
 
 async fn validate_access_token(access_token: &str) -> anyhow::Result<ValidateResponse> {
-    let response = reqwest::Client::new()
+    let response = twitch_http_client()?
         .get(TWITCH_VALIDATE_URL)
         .bearer_auth(access_token)
         .send()
         .await?;
 
-    parse_json_response(response).await
+    Ok(parse_json_response(response).await?)
 }
 
 async fn fetch_twitch_user(
@@ -1565,7 +1688,7 @@ async fn fetch_twitch_user(
     access_token: &str,
     login: &str,
 ) -> anyhow::Result<HelixUser> {
-    let response = reqwest::Client::new()
+    let response = twitch_http_client()?
         .get(TWITCH_USERS_URL)
         .query(&[("login", login)])
         .header("Client-Id", client_id)
@@ -1586,63 +1709,39 @@ async fn run_eventsub_connection(
     app: tauri::AppHandle<tauri::Wry>,
     params: EventSubConnectionParams,
 ) {
-    let mut url = TWITCH_EVENTSUB_WS_URL.to_string();
-    let mut subscribe_on_welcome = true;
     let mut reconnect_backoff = EventSubReconnectBackoff::default();
     let mut seen_message_ids = MessageDedupe::new(DEDUPE_CACHE_LIMIT, DEDUPE_CACHE_TTL);
 
     loop {
-        match run_eventsub_session(
+        if let Err(error) = run_eventsub_session(
             &app,
             &params,
-            &url,
-            subscribe_on_welcome,
+            TWITCH_EVENTSUB_WS_URL,
             &mut reconnect_backoff,
             &mut seen_message_ids,
         )
         .await
         {
-            Ok(EventSubSessionExit::Reconnect(reconnect_url)) => {
-                reconnect_backoff.record_handover_started();
-                url = reconnect_url;
-                subscribe_on_welcome = false;
-                emit_twitch_status(
-                    &app,
-                    TwitchStatusDomain::Chat,
-                    TwitchStatus::Reconnecting,
-                    Some("Twitch から再接続要求を受け取りました。".to_string()),
-                );
-                emit_app_log(
-                    &app,
-                    AppLogLevel::Warning,
-                    "Twitch EventSub の再接続要求を受け取りました。",
-                );
+            if let Some(terminal) = error.downcast_ref::<EventSubTerminalError>() {
+                // Terminal API and revocation failures have already emitted their
+                // actionable UI status. Never turn configuration/auth failures into
+                // an infinite reconnect loop.
+                emit_app_log(&app, AppLogLevel::Error, terminal.to_string());
+                break;
             }
-            Err(error) => {
-                let error_message = error.to_string();
-                if error_message.contains("購読が取り消されました") {
-                    // The accompanying authRequired status carries the single user-facing
-                    // recovery notification. Keep the terminal detail in Logs without
-                    // producing a second warning in the renderer.
-                    emit_app_log(&app, AppLogLevel::Info, error_message);
-                    break;
-                }
-                let wait_seconds = reconnect_backoff.next_delay_after_failure();
-                let message = format!(
-                    "Twitch EventSub が切断されました。{} 秒後に再接続します: {error}",
-                    wait_seconds
-                );
-                emit_twitch_status(
-                    &app,
-                    TwitchStatusDomain::Chat,
-                    TwitchStatus::Reconnecting,
-                    Some(message.clone()),
-                );
-                emit_app_log(&app, AppLogLevel::Warning, message);
-                tokio::time::sleep(Duration::from_secs(wait_seconds)).await;
-                url = TWITCH_EVENTSUB_WS_URL.to_string();
-                subscribe_on_welcome = true;
-            }
+            let wait_seconds = reconnect_backoff.next_delay_after_failure();
+            let message = format!(
+                "Twitch EventSub が切断されました。{} 秒後に再接続します: {error}",
+                wait_seconds
+            );
+            emit_twitch_status(
+                &app,
+                TwitchStatusDomain::Chat,
+                TwitchStatus::Reconnecting,
+                Some(message.clone()),
+            );
+            emit_app_log(&app, AppLogLevel::Warning, message);
+            tokio::time::sleep(Duration::from_secs(wait_seconds)).await;
         }
     }
 }
@@ -1652,10 +1751,9 @@ async fn run_eventsub_session(
     app: &tauri::AppHandle<tauri::Wry>,
     params: &EventSubConnectionParams,
     url: &str,
-    subscribe_on_welcome: bool,
     reconnect_backoff: &mut EventSubReconnectBackoff,
     seen_message_ids: &mut MessageDedupe,
-) -> anyhow::Result<EventSubSessionExit> {
+) -> anyhow::Result<()> {
     emit_twitch_status(
         app,
         TwitchStatusDomain::Chat,
@@ -1666,7 +1764,11 @@ async fn run_eventsub_session(
         )),
     );
 
-    let (mut socket, _) = connect_async(url).await?;
+    let (mut socket, _) = tokio::time::timeout(TWITCH_WS_HANDSHAKE_TIMEOUT, connect_async(url))
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!("Twitch EventSub WebSocket の接続が期限内に完了しませんでした。")
+        })??;
     let mut keepalive_timeout = Duration::from_secs(40);
 
     loop {
@@ -1677,110 +1779,297 @@ async fn run_eventsub_session(
                     anyhow::anyhow!("Twitch から keepalive または通知が届きませんでした。")
                 })?
                 .ok_or_else(|| anyhow::anyhow!("Twitch EventSub WebSocket が閉じられました。"))??;
-        let frame_received_at = Utc::now();
 
-        match next_message {
-            Message::Text(text) => {
-                let envelope = serde_json::from_str::<EventSubEnvelope>(&text)?;
-                match envelope.metadata.message_type.as_str() {
-                    "session_welcome" => {
-                        let session = envelope.payload.session.ok_or_else(|| {
-                            anyhow::anyhow!("Twitch の welcome に session がありません。")
-                        })?;
-                        if let Some(seconds) = session.keepalive_timeout_seconds {
-                            keepalive_timeout = Duration::from_secs(seconds);
+        match process_eventsub_frame(app, &mut socket, next_message, seen_message_ids, Utc::now())
+            .await?
+        {
+            EventSubFrameAction::Continue => {}
+            EventSubFrameAction::Welcome(session) => {
+                keepalive_timeout =
+                    complete_eventsub_welcome(app, params, session, true, reconnect_backoff)
+                        .await?;
+            }
+            EventSubFrameAction::Reconnect(reconnect_url) => {
+                reconnect_backoff.record_handover_started();
+                emit_twitch_status(
+                    app,
+                    TwitchStatusDomain::Chat,
+                    TwitchStatus::Reconnecting,
+                    Some("Twitch から再接続要求を受け取りました。".to_string()),
+                );
+                emit_app_log(
+                    app,
+                    AppLogLevel::Warning,
+                    "Twitch EventSub の再接続要求を受け取りました。旧接続を維持して切り替えます。",
+                );
+
+                let (new_socket, session) =
+                    handover_eventsub_session(app, &mut socket, reconnect_url, seen_message_ids)
+                        .await?;
+                socket = new_socket;
+                keepalive_timeout =
+                    complete_eventsub_welcome(app, params, session, false, reconnect_backoff)
+                        .await?;
+            }
+        }
+    }
+}
+
+#[cfg(feature = "app")]
+async fn complete_eventsub_welcome(
+    app: &tauri::AppHandle<tauri::Wry>,
+    params: &EventSubConnectionParams,
+    session: EventSubSession,
+    subscribe_on_welcome: bool,
+    reconnect_backoff: &mut EventSubReconnectBackoff,
+) -> anyhow::Result<Duration> {
+    let keepalive_timeout = session
+        .keepalive_timeout_seconds
+        .map(Duration::from_secs)
+        .unwrap_or(Duration::from_secs(40));
+
+    if subscribe_on_welcome {
+        create_chat_message_subscription(app, params, &session.id).await?;
+    }
+
+    reconnect_backoff.record_session_established();
+    emit_twitch_status(
+        app,
+        TwitchStatusDomain::Chat,
+        TwitchStatus::Connected,
+        Some(format!(
+            "Twitch チャンネル {} に接続しました。",
+            params.broadcaster_login
+        )),
+    );
+    emit_app_log(
+        app,
+        AppLogLevel::Info,
+        format!("Twitch EventSub session {} を開始しました。", session.id),
+    );
+
+    Ok(keepalive_timeout)
+}
+
+#[cfg(feature = "app")]
+async fn handover_eventsub_session(
+    app: &tauri::AppHandle<tauri::Wry>,
+    old_socket: &mut EventSubSocket,
+    reconnect_url: String,
+    seen_message_ids: &mut MessageDedupe,
+) -> anyhow::Result<(EventSubSocket, EventSubSession)> {
+    let deadline = tokio::time::Instant::now() + EVENTSUB_RECONNECT_HANDOVER_TIMEOUT;
+    let mut connect = Box::pin(async {
+        tokio::time::timeout(TWITCH_WS_HANDSHAKE_TIMEOUT, connect_async(&reconnect_url))
+            .await
+            .map_err(|_| anyhow::anyhow!("Twitch EventSub の再接続が期限内に完了しませんでした。"))?
+            .map_err(anyhow::Error::from)
+    });
+    let mut reconnect_socket: Option<EventSubSocket> = None;
+    let mut reconnect_error: Option<anyhow::Error> = None;
+
+    loop {
+        if let Some(new_socket) = reconnect_socket.as_mut() {
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => break,
+                old_message = old_socket.next() => {
+                    let old_message = old_message
+                        .ok_or_else(|| anyhow::anyhow!("新しい welcome 前に旧 EventSub WebSocket が閉じられました。"))??;
+                    match process_eventsub_frame(app, old_socket, old_message, seen_message_ids, Utc::now()).await? {
+                        EventSubFrameAction::Continue | EventSubFrameAction::Welcome(_) => {}
+                        EventSubFrameAction::Reconnect(_) => {
+                            emit_app_log(app, AppLogLevel::Warning, "Twitch EventSub の再接続要求を重複受信しました。切り替えを継続します。");
                         }
-                        if subscribe_on_welcome {
-                            create_chat_message_subscription(app, params, &session.id).await?;
-                        }
-                        reconnect_backoff.record_session_established();
-                        emit_twitch_status(
-                            app,
-                            TwitchStatusDomain::Chat,
-                            TwitchStatus::Connected,
-                            Some(format!(
-                                "Twitch チャンネル {} に接続しました。",
-                                params.broadcaster_login
-                            )),
-                        );
-                        emit_app_log(
-                            app,
-                            AppLogLevel::Info,
-                            format!("Twitch EventSub session {} を開始しました。", session.id),
-                        );
                     }
-                    "session_keepalive" => {}
-                    "session_reconnect" => {
-                        let reconnect_url = envelope
-                            .payload
-                            .session
-                            .and_then(|session| session.reconnect_url)
-                            .ok_or_else(|| {
-                                anyhow::anyhow!(
-                                    "Twitch の reconnect に reconnect_url がありません。"
-                                )
-                            })?;
-                        return Ok(EventSubSessionExit::Reconnect(reconnect_url));
-                    }
-                    "notification" => {
-                        if let Some(normalized) =
-                            normalize_chat_message(envelope, frame_received_at)?
-                        {
-                            if let Some(warning) = normalized.timestamp_warning {
-                                emit_app_log(app, AppLogLevel::Warning, warning);
+                }
+                new_message = new_socket.next() => {
+                    let new_message = new_message
+                        .ok_or_else(|| anyhow::anyhow!("新しい EventSub WebSocket が welcome 前に閉じられました。"));
+                    match new_message {
+                        Ok(Ok(new_message)) => match process_eventsub_frame(app, new_socket, new_message, seen_message_ids, Utc::now()).await {
+                            Ok(EventSubFrameAction::Welcome(session)) => {
+                                return Ok((reconnect_socket.take().expect("new socket exists"), session));
                             }
-                            let message = normalized.message;
-                            let dedupe_id = message.id.clone();
-                            if seen_message_ids.insert(dedupe_id) {
-                                emit_twitch_chat_message(app, message.clone());
-                                if let Err(error) =
-                                    enqueue_chat_message_for_speech(app.clone(), message)
-                                {
-                                    emit_app_log(app, AppLogLevel::Error, error);
-                                }
+                            Ok(EventSubFrameAction::Continue) => {}
+                            Ok(EventSubFrameAction::Reconnect(_)) => {
+                                reconnect_error = Some(anyhow::anyhow!("新しい EventSub WebSocket が welcome 前に再接続要求を返しました。"));
+                                reconnect_socket = None;
                             }
+                            Err(error) => {
+                                reconnect_error = Some(error);
+                                reconnect_socket = None;
+                            }
+                        },
+                        Ok(Err(error)) => {
+                            reconnect_error = Some(error.into());
+                            reconnect_socket = None;
+                        }
+                        Err(error) => {
+                            reconnect_error = Some(error);
+                            reconnect_socket = None;
                         }
                     }
-                    "revocation" => {
-                        let reason = envelope
-                            .payload
-                            .subscription
-                            .map(|subscription| {
-                                format!("{} ({})", subscription.status, subscription.kind)
-                            })
-                            .unwrap_or_else(|| "理由不明".to_string());
-                        emit_twitch_status(
-                            app,
-                            TwitchStatusDomain::Chat,
-                            TwitchStatus::AuthRequired,
-                            None,
-                        );
-                        emit_twitch_status(
-                            app,
-                            TwitchStatusDomain::Auth,
-                            TwitchStatus::AuthRequired,
-                            Some(format!(
-                                "Twitch EventSub 購読が取り消されたため、再ログインしてください: {reason}"
-                            )),
-                        );
-                        return Err(anyhow::anyhow!(
-                            "Twitch EventSub 購読が取り消されました: {reason}"
-                        ));
-                    }
-                    _ => {}
                 }
             }
-            Message::Ping(payload) => {
-                socket.send(Message::Pong(payload)).await?;
+        } else if reconnect_error.is_none() {
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => break,
+                connection = connect.as_mut() => match connection {
+                    Ok((socket, _)) => reconnect_socket = Some(socket),
+                    Err(error) => reconnect_error = Some(error),
+                },
+                old_message = old_socket.next() => {
+                    let old_message = old_message
+                        .ok_or_else(|| anyhow::anyhow!("新しい welcome 前に旧 EventSub WebSocket が閉じられました。"))??;
+                    match process_eventsub_frame(app, old_socket, old_message, seen_message_ids, Utc::now()).await? {
+                        EventSubFrameAction::Continue | EventSubFrameAction::Welcome(_) => {}
+                        EventSubFrameAction::Reconnect(_) => {
+                            emit_app_log(app, AppLogLevel::Warning, "Twitch EventSub の再接続要求を重複受信しました。切り替えを継続します。");
+                        }
+                    }
+                }
             }
-            Message::Close(frame) => {
-                return Err(anyhow::anyhow!(
-                    "Twitch EventSub WebSocket が閉じられました: {:?}",
-                    frame
-                ));
+        } else {
+            tokio::select! {
+                _ = tokio::time::sleep_until(deadline) => break,
+                old_message = old_socket.next() => {
+                    let old_message = old_message
+                        .ok_or_else(|| anyhow::anyhow!("新しい welcome 前に旧 EventSub WebSocket が閉じられました。"))??;
+                    match process_eventsub_frame(app, old_socket, old_message, seen_message_ids, Utc::now()).await? {
+                        EventSubFrameAction::Continue | EventSubFrameAction::Welcome(_) => {}
+                        EventSubFrameAction::Reconnect(_) => {
+                            emit_app_log(app, AppLogLevel::Warning, "Twitch EventSub の再接続要求を重複受信しました。切り替えを継続します。");
+                        }
+                    }
+                }
             }
-            _ => {}
         }
+    }
+
+    let detail = reconnect_error
+        .map(|error| error.to_string())
+        .unwrap_or_else(|| "新しい welcome が期限内に届きませんでした。".to_string());
+    Err(anyhow::anyhow!(
+        "Twitch EventSub の切り替えに失敗しました。旧接続を {} 秒維持した後、通常再接続へ戻ります: {detail}",
+        EVENTSUB_RECONNECT_HANDOVER_TIMEOUT.as_secs()
+    ))
+}
+
+#[cfg(feature = "app")]
+async fn process_eventsub_frame(
+    app: &tauri::AppHandle<tauri::Wry>,
+    socket: &mut EventSubSocket,
+    next_message: Message,
+    seen_message_ids: &mut MessageDedupe,
+    frame_received_at: DateTime<Utc>,
+) -> anyhow::Result<EventSubFrameAction> {
+    match next_message {
+        Message::Text(text) => {
+            let envelope = serde_json::from_str::<EventSubEnvelope>(&text)?;
+            match envelope.metadata.message_type.as_str() {
+                "session_welcome" => {
+                    let session = envelope.payload.session.ok_or_else(|| {
+                        anyhow::anyhow!("Twitch の welcome に session がありません。")
+                    })?;
+                    Ok(EventSubFrameAction::Welcome(session))
+                }
+                "session_keepalive" => Ok(EventSubFrameAction::Continue),
+                "session_reconnect" => {
+                    let reconnect_url = envelope
+                        .payload
+                        .session
+                        .and_then(|session| session.reconnect_url)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("Twitch の reconnect に reconnect_url がありません。")
+                        })?;
+                    Ok(EventSubFrameAction::Reconnect(reconnect_url))
+                }
+                "notification" => {
+                    if let Some(normalized) = normalize_chat_message(envelope, frame_received_at)? {
+                        if let Some(warning) = normalized.timestamp_warning {
+                            emit_app_log(app, AppLogLevel::Warning, warning);
+                        }
+                        let message = normalized.message;
+                        let dedupe_id = message.id.clone();
+                        if seen_message_ids.insert(dedupe_id) {
+                            emit_twitch_chat_message(app, message.clone());
+                            if let Err(error) =
+                                enqueue_chat_message_for_speech(app.clone(), message)
+                            {
+                                emit_app_log(app, AppLogLevel::Error, error);
+                            }
+                        }
+                    }
+                    Ok(EventSubFrameAction::Continue)
+                }
+                "revocation" => {
+                    let subscription = envelope.payload.subscription;
+                    let reason = subscription
+                        .as_ref()
+                        .map(|item| format!("{} ({})", item.status, item.kind))
+                        .unwrap_or_else(|| "理由不明".to_string());
+                    let terminal = match subscription.as_ref().map(|item| item.status.as_str()) {
+                        Some("authorization_revoked") => {
+                            let message = format!("Twitch EventSub 購読の認可が取り消されました。Login から再ログインしてください: {reason}");
+                            emit_twitch_status(
+                                app,
+                                TwitchStatusDomain::Chat,
+                                TwitchStatus::AuthRequired,
+                                None,
+                            );
+                            emit_twitch_status(
+                                app,
+                                TwitchStatusDomain::Auth,
+                                TwitchStatus::AuthRequired,
+                                Some(message.clone()),
+                            );
+                            EventSubTerminalError::AuthRequired { message }
+                        }
+                        Some("user_removed") => {
+                            let message = format!("Twitch EventSub の対象ユーザーが存在しません。接続チャンネルを確認してください: {reason}");
+                            emit_twitch_status(
+                                app,
+                                TwitchStatusDomain::Chat,
+                                TwitchStatus::Error,
+                                Some(message.clone()),
+                            );
+                            EventSubTerminalError::Permanent { message }
+                        }
+                        Some("version_removed") => {
+                            let message = format!("Twitch EventSub の購読バージョンが廃止されました。アプリを更新してください: {reason}");
+                            emit_twitch_status(
+                                app,
+                                TwitchStatusDomain::Chat,
+                                TwitchStatus::Error,
+                                Some(message.clone()),
+                            );
+                            EventSubTerminalError::Permanent { message }
+                        }
+                        _ => {
+                            let message = format!("Twitch EventSub 購読が取り消されました。再接続せず停止します: {reason}");
+                            emit_twitch_status(
+                                app,
+                                TwitchStatusDomain::Chat,
+                                TwitchStatus::Error,
+                                Some(message.clone()),
+                            );
+                            EventSubTerminalError::Permanent { message }
+                        }
+                    };
+                    Err(anyhow::Error::new(terminal))
+                }
+                _ => Ok(EventSubFrameAction::Continue),
+            }
+        }
+        Message::Ping(payload) => {
+            socket.send(Message::Pong(payload)).await?;
+            Ok(EventSubFrameAction::Continue)
+        }
+        Message::Close(frame) => Err(anyhow::anyhow!(
+            "Twitch EventSub WebSocket が閉じられました: {:?}",
+            frame
+        )),
+        _ => Ok(EventSubFrameAction::Continue),
     }
 }
 
@@ -1794,7 +2083,7 @@ async fn create_chat_message_subscription(
         .state::<AppState>()
         .twitch_auth
         .lock()
-        .map_err(|error| anyhow::anyhow!(error.to_string()))?
+        .map_err(|error| SubscriptionRequestError::Retryable(anyhow::anyhow!(error.to_string())))?
         .eventsub_credentials()?;
     let subscription_client_id = credentials.client_id.clone();
     let refresh_app = app.clone();
@@ -1818,12 +2107,31 @@ async fn create_chat_message_subscription(
     {
         Ok(()) => Ok(()),
         Err(SubscriptionRequestError::Unauthorized) => {
-            let message =
-                "Twitch 認証を更新しても EventSub 購読が拒否されました。再ログインしてください。";
+            let message = "Twitch 認証を更新しても EventSub 購読が拒否されました。Login から再ログインしてください。";
             clear_eventsub_auth(app, message)?;
-            Err(anyhow::anyhow!(message))
+            Err(anyhow::Error::new(EventSubTerminalError::AuthRequired {
+                message: message.to_string(),
+            }))
         }
-        Err(SubscriptionRequestError::Other(error)) => Err(error),
+        Err(SubscriptionRequestError::AuthRequired(message)) => {
+            Err(anyhow::Error::new(EventSubTerminalError::AuthRequired {
+                message,
+            }))
+        }
+        Err(SubscriptionRequestError::Permanent(error)) => {
+            let message = subscription_error_user_message(&error);
+            if matches!(error, TwitchApiError::Http { status: 403, .. }) {
+                clear_eventsub_auth(app, &message)?;
+                Err(anyhow::Error::new(EventSubTerminalError::AuthRequired {
+                    message,
+                }))
+            } else {
+                Err(anyhow::Error::new(EventSubTerminalError::Permanent {
+                    message,
+                }))
+            }
+        }
+        Err(SubscriptionRequestError::Retryable(error)) => Err(error),
     }
 }
 
@@ -1837,7 +2145,7 @@ where
     Subscribe: FnMut(String) -> SubscribeFuture,
     SubscribeFuture: std::future::Future<Output = Result<(), SubscriptionRequestError>>,
     Refresh: FnMut() -> RefreshFuture,
-    RefreshFuture: std::future::Future<Output = anyhow::Result<String>>,
+    RefreshFuture: std::future::Future<Output = Result<String, SubscriptionRequestError>>,
 {
     match subscribe(access_token).await {
         Ok(()) => Ok(()),
@@ -1853,13 +2161,14 @@ where
 async fn refresh_eventsub_access_token(
     app: &tauri::AppHandle<tauri::Wry>,
     credentials: &EventSubAuthCredentials,
-) -> anyhow::Result<String> {
+) -> Result<String, SubscriptionRequestError> {
     let latest_credentials = app
         .state::<AppState>()
         .twitch_auth
         .lock()
         .map_err(|error| anyhow::anyhow!(error.to_string()))?
-        .eventsub_credentials()?;
+        .eventsub_credentials()
+        .map_err(SubscriptionRequestError::Retryable)?;
     if latest_credentials.refresh_token != credentials.refresh_token {
         return Ok(latest_credentials.access_token);
     }
@@ -1867,20 +2176,12 @@ async fn refresh_eventsub_access_token(
     let refreshed =
         match refresh_access_token(&credentials.client_id, &credentials.refresh_token).await {
             Ok(token) => token,
-            Err(error) => {
-                let message = to_twitch_user_message(error);
-                clear_eventsub_auth(app, &message)?;
-                return Err(anyhow::anyhow!(message));
-            }
+            Err(error) => return Err(classify_eventsub_refresh_error(app, error)),
         };
 
     let refreshed_profile = match validate_access_token(&refreshed.access_token).await {
         Ok(validate) => TwitchUserProfile::from(validate),
-        Err(error) => {
-            let message = to_twitch_user_message(error);
-            clear_eventsub_auth(app, &message)?;
-            return Err(anyhow::anyhow!(message));
-        }
+        Err(error) => return Err(classify_eventsub_refresh_error(app, error)),
     };
     if let Err(error) = ensure_required_twitch_scopes(&refreshed_profile.scopes) {
         let message = error.to_string();
@@ -1888,22 +2189,23 @@ async fn refresh_eventsub_access_token(
             app,
             &credentials.refresh_token,
             &message,
-        )? {
+        )
+        .map_err(SubscriptionRequestError::Retryable)?
+        {
             // Another EventSub re-subscription refreshed and rotated the credentials
             // while this request was validating its now-stale refresh result.  Its
             // access token is authoritative, so leave that newer authentication in
             // place and retry the subscription with it.
             return Ok(access_token);
         }
-        return Err(anyhow::anyhow!(message));
+        return Err(SubscriptionRequestError::AuthRequired(message));
     }
 
     let (access_token, storage_warning, did_refresh) = {
         let state = app.state::<AppState>();
-        let mut auth = state
-            .twitch_auth
-            .lock()
-            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        let mut auth = state.twitch_auth.lock().map_err(|error| {
+            SubscriptionRequestError::Retryable(anyhow::anyhow!(error.to_string()))
+        })?;
         let current_credentials = auth.eventsub_credentials()?;
         if current_credentials.refresh_token != credentials.refresh_token {
             (current_credentials.access_token, None, false)
@@ -1925,6 +2227,32 @@ async fn refresh_eventsub_access_token(
         emit_app_log(app, AppLogLevel::Warning, warning);
     }
     Ok(access_token)
+}
+
+/// Classifies OAuth refresh and validation failures before they reach the EventSub
+/// reconnect supervisor. Only timeouts and HTTP 5xx errors may request a retry;
+/// malformed or forbidden requests are terminal and cannot create a reconnect loop.
+#[cfg(feature = "app")]
+fn classify_eventsub_refresh_error(
+    app: &tauri::AppHandle<tauri::Wry>,
+    error: anyhow::Error,
+) -> SubscriptionRequestError {
+    let api_error = match error.downcast::<TwitchApiError>() {
+        Ok(api_error) => api_error,
+        Err(error) => return SubscriptionRequestError::Retryable(error),
+    };
+
+    if api_error.auth_failure().is_some() {
+        let message = api_error.user_message();
+        return match clear_eventsub_auth(app, &message) {
+            Ok(()) => SubscriptionRequestError::AuthRequired(message),
+            Err(error) => SubscriptionRequestError::Retryable(error),
+        };
+    }
+    if api_error.is_transient() {
+        return SubscriptionRequestError::Retryable(anyhow::Error::new(api_error));
+    }
+    SubscriptionRequestError::Permanent(api_error)
 }
 
 #[cfg(feature = "app")]
@@ -2023,21 +2351,36 @@ async fn send_chat_message_subscription(
             "session_id": session_id,
         },
     });
-    let response = reqwest::Client::new()
+    let response = twitch_http_client()
+        .map_err(SubscriptionRequestError::Retryable)?
         .post(TWITCH_EVENTSUB_SUBSCRIPTIONS_URL)
         .header("Client-Id", client_id)
         .bearer_auth(access_token)
         .json(&body)
         .send()
         .await
-        .map_err(anyhow::Error::from)?;
+        .map_err(TwitchApiError::from);
 
-    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(SubscriptionRequestError::Unauthorized);
+    let response = match response {
+        Ok(response) => response,
+        Err(error) if error.is_transient() => {
+            return Err(SubscriptionRequestError::Retryable(anyhow::Error::new(
+                error,
+            )));
+        }
+        Err(error) => return Err(SubscriptionRequestError::Permanent(error)),
+    };
+
+    match parse_json_response::<serde_json::Value>(response).await {
+        Ok(_) => Ok(()),
+        Err(TwitchApiError::Http { status: 401, .. }) => {
+            Err(SubscriptionRequestError::Unauthorized)
+        }
+        Err(error) if error.is_transient() => Err(SubscriptionRequestError::Retryable(
+            anyhow::Error::new(error),
+        )),
+        Err(error) => Err(SubscriptionRequestError::Permanent(error)),
     }
-
-    parse_json_response::<serde_json::Value>(response).await?;
-    Ok(())
 }
 
 struct NormalizedChatMessage {
@@ -2167,7 +2510,7 @@ impl MessageDedupe {
     }
 }
 
-async fn parse_json_response<T>(response: reqwest::Response) -> anyhow::Result<T>
+async fn parse_json_response<T>(response: reqwest::Response) -> Result<T, TwitchApiError>
 where
     T: for<'de> Deserialize<'de>,
 {
@@ -2175,24 +2518,55 @@ where
         return Ok(response.json::<T>().await?);
     }
 
-    let status = response.status();
+    let status = response.status().as_u16();
     let error = response.json::<OAuthErrorResponse>().await.ok();
+    let code = error.as_ref().and_then(|item| item.error.clone());
     let message = error
-        .and_then(|error| error.message.or(error.error))
-        .unwrap_or_else(|| status.to_string());
+        .and_then(|item| item.message.or(item.error))
+        .unwrap_or_else(|| format!("HTTP {status}"));
 
-    Err(anyhow::anyhow!(message))
+    Err(TwitchApiError::Http {
+        status,
+        code,
+        message,
+    })
+}
+
+fn is_definitive_auth_failure(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<TwitchApiError>()
+        .and_then(TwitchApiError::auth_failure)
+        .is_some()
+}
+
+fn subscription_error_user_message(error: &TwitchApiError) -> String {
+    match error {
+        TwitchApiError::Http { status: 400, .. } => {
+            "Twitch EventSub 購読の条件が無効です。接続チャンネルとアプリ設定を確認してください。"
+                .to_string()
+        }
+        TwitchApiError::Http { status: 403, .. } => {
+            "Twitch EventSub に必要な権限がありません。Login から再ログインしてください。"
+                .to_string()
+        }
+        TwitchApiError::Http { status, .. } => format!(
+            "Twitch EventSub 購読を開始できませんでした（HTTP {status}）。再接続せず停止しました。"
+        ),
+        TwitchApiError::Transport(error) => {
+            format!("Twitch EventSub との通信に失敗しました: {error}")
+        }
+    }
+}
+
+fn retryable_auth_error_message(error: &anyhow::Error) -> String {
+    format!("Twitch の認証確認中に一時的な通信エラーが発生しました。ネットワークを確認して再試行してください: {error}")
 }
 
 fn to_twitch_user_message(error: anyhow::Error) -> String {
-    let message = error.to_string();
-    if message.contains("401") || message.contains("invalid access token") {
-        "Twitch の認証が無効です。再ログインしてください。".to_string()
-    } else if message.contains("client") || message.contains("Client") {
-        format!("Twitch Client ID を確認してください: {message}")
-    } else {
-        format!("Twitch 連携でエラーが発生しました: {message}")
-    }
+    error
+        .downcast_ref::<TwitchApiError>()
+        .map(TwitchApiError::user_message)
+        .unwrap_or_else(|| format!("Twitch 連携でエラーが発生しました: {error}"))
 }
 
 fn to_secure_store_user_message(error: anyhow::Error) -> String {
@@ -2294,10 +2668,12 @@ mod tests {
         retry_eventsub_subscription, AuthSecretStore, AuthStorage, EventSubReconnectBackoff,
         StoredTwitchAuth, SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchToken,
         TwitchUserProfile, EVENTSUB_BACKOFF_RESET_STABLE_DURATION,
+        EVENTSUB_RECONNECT_HANDOVER_TIMEOUT, TWITCH_WS_HANDSHAKE_TIMEOUT,
     };
     use super::{
-        ensure_required_twitch_scopes, normalize_chat_message, oauth_error_code,
-        retry_backoff_seconds, EventSubEnvelope, MessageDedupe, OAuthErrorResponse,
+        ensure_required_twitch_scopes, is_definitive_auth_failure, normalize_chat_message,
+        oauth_error_code, retry_backoff_seconds, EventSubEnvelope, MessageDedupe,
+        OAuthErrorResponse, TwitchApiError, TwitchAuthFailure, TWITCH_HTTP_TIMEOUT,
     };
     use chrono::{DateTime, Utc};
     use std::{
@@ -2603,6 +2979,76 @@ mod tests {
     }
 
     #[test]
+    fn twitch_transport_deadlines_are_bounded() {
+        assert_eq!(TWITCH_HTTP_TIMEOUT, Duration::from_secs(15));
+        #[cfg(feature = "app")]
+        assert_eq!(TWITCH_WS_HANDSHAKE_TIMEOUT, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn typed_http_and_oauth_errors_determine_auth_and_retry_policy() {
+        let unauthorized = anyhow::Error::new(TwitchApiError::Http {
+            status: 401,
+            code: None,
+            message: "invalid access token".to_string(),
+        });
+        let invalid_grant = anyhow::Error::new(TwitchApiError::Http {
+            status: 400,
+            code: Some("invalid_grant".to_string()),
+            message: "refresh token is invalid".to_string(),
+        });
+        let bad_condition = TwitchApiError::Http {
+            status: 400,
+            code: None,
+            message: "condition is invalid".to_string(),
+        };
+        let missing_scope = TwitchApiError::Http {
+            status: 403,
+            code: None,
+            message: "missing scope".to_string(),
+        };
+        let unavailable = TwitchApiError::Http {
+            status: 503,
+            code: None,
+            message: "unavailable".to_string(),
+        };
+
+        assert!(is_definitive_auth_failure(&unauthorized));
+        assert!(is_definitive_auth_failure(&invalid_grant));
+        assert_eq!(
+            bad_condition.auth_failure(),
+            None,
+            "a 400 API condition error must not masquerade as an auth failure"
+        );
+        assert_eq!(
+            missing_scope.auth_failure(),
+            None,
+            "a 403 permission error must remain distinct from a token failure"
+        );
+        assert_eq!(
+            TwitchApiError::Http {
+                status: 401,
+                code: Some("ignored-for-401".to_string()),
+                message: "invalid access token".to_string(),
+            }
+            .auth_failure(),
+            Some(TwitchAuthFailure::InvalidAccessToken)
+        );
+        assert_eq!(
+            TwitchApiError::Http {
+                status: 400,
+                code: Some("invalid_grant".to_string()),
+                message: "refresh token is invalid".to_string(),
+            }
+            .auth_failure(),
+            Some(TwitchAuthFailure::InvalidGrant)
+        );
+        assert!(!bad_condition.is_transient());
+        assert!(!missing_scope.is_transient());
+        assert!(unavailable.is_transient());
+    }
+
+    #[test]
     fn message_dedupe_rejects_duplicate_ids() {
         let mut dedupe = MessageDedupe::new(2, Duration::from_secs(60));
 
@@ -2665,6 +3111,17 @@ mod tests {
         assert_eq!(retry_backoff_seconds(3), 10);
         assert_eq!(retry_backoff_seconds(4), 30);
         assert_eq!(retry_backoff_seconds(10), 30);
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn eventsub_handover_deadline_leaves_time_for_twitch_to_close_the_old_socket() {
+        // Twitch grants 30 seconds to connect to the supplied reconnect URL and
+        // close the old socket. Keep consuming the old stream until a little
+        // before that deadline, then allow the ordinary reconnect supervisor to
+        // take over if the new welcome never arrives.
+        assert_eq!(EVENTSUB_RECONNECT_HANDOVER_TIMEOUT, Duration::from_secs(25));
+        assert!(EVENTSUB_RECONNECT_HANDOVER_TIMEOUT < Duration::from_secs(30));
     }
 
     #[cfg(feature = "app")]
@@ -2808,6 +3265,41 @@ mod tests {
 
     #[cfg(feature = "app")]
     #[tokio::test]
+    async fn eventsub_permanent_subscription_errors_do_not_refresh_or_retry() {
+        let attempts = RefCell::new(0);
+        let refresh_calls = RefCell::new(0);
+        let result = retry_eventsub_subscription(
+            "access-token".to_string(),
+            |_| {
+                *attempts.borrow_mut() += 1;
+                async {
+                    Err(SubscriptionRequestError::Permanent(TwitchApiError::Http {
+                        status: 400,
+                        code: Some("Bad Request".to_string()),
+                        message: "condition is invalid".to_string(),
+                    }))
+                }
+            },
+            || {
+                *refresh_calls.borrow_mut() += 1;
+                async { Ok("unexpected-refresh".to_string()) }
+            },
+        )
+        .await;
+
+        assert_eq!(*attempts.borrow(), 1);
+        assert_eq!(*refresh_calls.borrow(), 0);
+        assert!(matches!(
+            result,
+            Err(SubscriptionRequestError::Permanent(TwitchApiError::Http {
+                status: 400,
+                ..
+            }))
+        ));
+    }
+
+    #[cfg(feature = "app")]
+    #[tokio::test]
     async fn eventsub_refresh_failure_does_not_retry_the_subscription() {
         let attempts = RefCell::new(0);
         let result = retry_eventsub_subscription(
@@ -2816,13 +3308,17 @@ mod tests {
                 *attempts.borrow_mut() += 1;
                 async { Err(SubscriptionRequestError::Unauthorized) }
             },
-            || async { Err(anyhow::anyhow!("refresh token was revoked")) },
+            || async {
+                Err(SubscriptionRequestError::AuthRequired(
+                    "refresh token was revoked".to_string(),
+                ))
+            },
         )
         .await;
 
         assert_eq!(*attempts.borrow(), 1);
         assert!(
-            matches!(result, Err(SubscriptionRequestError::Other(error)) if error.to_string().contains("revoked"))
+            matches!(result, Err(SubscriptionRequestError::AuthRequired(message)) if message.contains("revoked"))
         );
     }
 
@@ -3042,6 +3538,21 @@ mod tests {
         assert!(warning.contains("ファイルを削除"));
         assert!(warning.contains("アクセスを取り消し"));
         assert!(legacy.secret.borrow().is_some());
+    }
+
+    #[test]
+    fn failed_secure_auth_clear_keeps_the_secret_for_retry() {
+        let secure = FakeAuthSecretStore {
+            fail_clear: true,
+            ..FakeAuthSecretStore::with_secret(stored_auth_secret())
+        };
+        let legacy = FakeAuthSecretStore::default();
+        let storage = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        };
+        assert!(storage.clear().is_err());
+        assert!(secure.secret.borrow().is_some());
     }
 
     #[test]

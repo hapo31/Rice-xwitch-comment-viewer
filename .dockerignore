@@ -6,6 +6,8 @@
 # Dockerfile release inputs.
 !Dockerfile
 !package.json
+!.devcontainer/
+!.devcontainer/bootstrap-lock.json
 !pnpm-lock.yaml
 !index.html
 !postcss.config.js

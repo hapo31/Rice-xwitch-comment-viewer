@@ -13,7 +13,10 @@ use app_events::{
 use launcher::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
 use serde::Serialize;
 #[cfg(feature = "app")]
-use settings::{settings_get, settings_take_recovery_notice, settings_update, AppState};
+use settings::{
+    settings_get, settings_take_recovery_notice, settings_update, AppSettings, AppState,
+    SettingsStore, WindowPosition,
+};
 #[cfg(feature = "app")]
 use speech::bouyomi::{
     speech_clear, speech_connection_diagnostics, speech_health_check, speech_health_probe,
@@ -28,7 +31,7 @@ use speech::{
 use std::process::Command;
 use std::sync::Mutex;
 #[cfg(feature = "app")]
-use tauri::Manager;
+use tauri::{Manager, PhysicalPosition, WindowEvent};
 #[cfg(feature = "app")]
 use twitch::{
     twitch_connect, twitch_disconnect, twitch_get_stored_auth, twitch_poll_auth, twitch_start_auth,
@@ -38,6 +41,7 @@ use twitch::{
 #[cfg(feature = "app")]
 #[tauri::command]
 fn app_exit(app: tauri::AppHandle) {
+    persist_main_window_position(&app);
     app.exit(0);
 }
 
@@ -112,6 +116,7 @@ pub fn run() {
         .setup(|app| {
             let state = app.state::<AppState>();
             let loaded_settings = settings::SettingsStore::load(app.handle())?;
+            restore_main_window_position(app.handle(), &loaded_settings.settings);
             *state.settings.lock().expect("settings mutex poisoned") = loaded_settings.settings;
             *state
                 .settings_recovery_notice
@@ -182,8 +187,99 @@ pub fn run() {
             }
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, WindowEvent::CloseRequested { .. }) {
+                persist_main_window_position(window.app_handle());
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(feature = "app")]
+fn restore_main_window_position(app: &tauri::AppHandle, settings: &AppSettings) {
+    let Some(position) = settings.window.position else {
+        return;
+    };
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let Ok(monitors) = window.available_monitors() else {
+        return;
+    };
+
+    let visible = monitors.iter().any(|monitor| {
+        let area = monitor.work_area();
+        title_bar_is_visible(
+            position,
+            size.width,
+            area.position.x,
+            area.position.y,
+            area.size.width,
+            area.size.height,
+        )
+    });
+    if visible {
+        let _ = window.set_position(PhysicalPosition::new(position.x, position.y));
+    }
+}
+
+#[cfg(feature = "app")]
+fn persist_main_window_position(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if window.is_minimized().unwrap_or(false) {
+        return;
+    }
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let state = app.state::<AppState>();
+    let Ok(mut settings) = state.settings.lock() else {
+        return;
+    };
+
+    let mut candidate = settings.clone();
+    candidate.window.position = Some(WindowPosition {
+        x: position.x,
+        y: position.y,
+    });
+    if SettingsStore::save(app, &candidate).is_ok() {
+        *settings = candidate;
+    }
+}
+
+#[cfg(feature = "app")]
+const MIN_VISIBLE_WINDOW_WIDTH_PX: i64 = 64;
+#[cfg(feature = "app")]
+const MIN_VISIBLE_WINDOW_HEIGHT_PX: i64 = 32;
+
+#[cfg(feature = "app")]
+fn title_bar_is_visible(
+    position: WindowPosition,
+    window_width: u32,
+    work_area_x: i32,
+    work_area_y: i32,
+    work_area_width: u32,
+    work_area_height: u32,
+) -> bool {
+    let window_left = i64::from(position.x);
+    let window_top = i64::from(position.y);
+    let window_right = window_left + i64::from(window_width);
+    let title_bar_bottom = window_top + MIN_VISIBLE_WINDOW_HEIGHT_PX;
+    let area_left = i64::from(work_area_x);
+    let area_top = i64::from(work_area_y);
+    let area_right = area_left + i64::from(work_area_width);
+    let area_bottom = area_top + i64::from(work_area_height);
+
+    let visible_width = (window_right.min(area_right) - window_left.max(area_left)).max(0);
+    let visible_height = (title_bar_bottom.min(area_bottom) - window_top.max(area_top)).max(0);
+
+    visible_width >= MIN_VISIBLE_WINDOW_WIDTH_PX && visible_height >= MIN_VISIBLE_WINDOW_HEIGHT_PX
 }
 
 #[cfg(feature = "app")]
@@ -271,7 +367,8 @@ pub(crate) type SharedSettings<T> = Mutex<T>;
 
 #[cfg(all(test, feature = "app"))]
 mod tests {
-    use super::{app_build_info_value, validate_external_url};
+    use super::{app_build_info_value, title_bar_is_visible, validate_external_url};
+    use crate::settings::WindowPosition;
 
     #[test]
     fn reports_package_build_information() {
@@ -295,5 +392,53 @@ mod tests {
         assert!(validate_external_url("https://example.com/activate").is_err());
         assert!(validate_external_url("http://www.twitch.tv/activate").is_err());
         assert!(validate_external_url("https://www.twitch.tv/settings").is_err());
+    }
+
+    #[test]
+    fn keeps_a_saved_position_when_part_of_the_window_is_still_visible() {
+        assert!(title_bar_is_visible(
+            WindowPosition { x: -900, y: 120 },
+            1180,
+            0,
+            0,
+            1920,
+            1080,
+        ));
+    }
+
+    #[test]
+    fn skips_a_saved_position_that_is_outside_the_current_monitor_layout() {
+        assert!(!title_bar_is_visible(
+            WindowPosition { x: 5000, y: 120 },
+            1180,
+            0,
+            0,
+            1920,
+            1080,
+        ));
+    }
+
+    #[test]
+    fn requires_a_recoverable_title_bar_area_to_be_visible() {
+        assert!(!title_bar_is_visible(
+            WindowPosition { x: 1860, y: 1055 },
+            1180,
+            0,
+            0,
+            1920,
+            1080,
+        ));
+    }
+
+    #[test]
+    fn skips_a_window_whose_only_visible_area_is_below_an_removed_monitor() {
+        assert!(!title_bar_is_visible(
+            WindowPosition { x: 0, y: -728 },
+            1180,
+            0,
+            0,
+            1920,
+            1080,
+        ));
     }
 }
