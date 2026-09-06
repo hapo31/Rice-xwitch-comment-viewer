@@ -1,13 +1,14 @@
 import { Navigate, Route, Routes, useLocation, useNavigationType } from "react-router-dom";
 import { useEffect } from "react";
-import { AuthView } from "../features/auth/AuthView";
-import { ChatView } from "../features/chat/ChatView";
-import { FilterView } from "../features/filter/FilterView";
-import { LauncherView } from "../features/launcher/LauncherView";
-import { LogsView } from "../features/logs/LogsView";
-import { QueueView } from "../features/queue/QueueView";
-import { SettingsView } from "../features/settings/SettingsView";
-import type { AppState } from "../stores/appStore";
+import {
+  DomainAuthView,
+  DomainChatView,
+  DomainFilterView,
+  DomainLauncherView,
+  DomainLogsView,
+  DomainQueueView,
+  DomainSettingsView,
+} from "../features/domainViews";
 import type {
   AppSettingsPatch,
   BouyomiConnectionDiagnostics,
@@ -17,7 +18,6 @@ import type {
 import { getRouteDocumentTitle, routeHeadingId, shouldFocusRouteHeading } from "../routeAccessibility";
 
 interface MainViewProps {
-  state: AppState;
   onSettingsUpdate: (patch: AppSettingsPatch) => Promise<boolean>;
   onSpeechHealthCheck: () => void;
   onSpeechDiagnostics: () => Promise<BouyomiConnectionDiagnostics>;
@@ -41,7 +41,6 @@ interface MainViewProps {
 }
 
 export function MainView({
-  state,
   showStartupGuide,
   onSettingsUpdate,
   onSpeechHealthCheck,
@@ -77,12 +76,11 @@ export function MainView({
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/chat" replace />} />
-      <Route path="/chat" element={<ChatView state={state} showStartupGuide={showStartupGuide} />} />
+      <Route path="/chat" element={<DomainChatView showStartupGuide={showStartupGuide} />} />
       <Route
         path="/queue"
         element={
-          <QueueView
-            state={state}
+          <DomainQueueView
             onSpeechControl={onSpeechControl}
             onQueueReload={onQueueReload}
             onQueueRemove={onQueueRemove}
@@ -95,9 +93,7 @@ export function MainView({
       <Route
         path="/launcher"
         element={
-          <LauncherView
-            items={state.settings?.launcher.items ?? []}
-            isReady={Boolean(state.settings)}
+          <DomainLauncherView
             onAdd={onLauncherAdd}
             onRemove={onLauncherRemove}
             onLaunch={onLauncherLaunch}
@@ -107,14 +103,13 @@ export function MainView({
       />
       <Route
         path="/filter"
-        element={<FilterView settings={state.settings} onSettingsUpdate={onSettingsUpdate} />}
+        element={<DomainFilterView onSettingsUpdate={onSettingsUpdate} />}
       />
       <Route path="/rules" element={<Navigate to="/filter" replace />} />
       <Route
         path="/settings"
         element={
-          <SettingsView
-            settings={state.settings}
+          <DomainSettingsView
             onSettingsUpdate={onSettingsUpdate}
             onSpeechHealthCheck={onSpeechHealthCheck}
             onSpeechDiagnostics={onSpeechDiagnostics}
@@ -126,8 +121,7 @@ export function MainView({
       <Route
         path="/auth"
         element={
-          <AuthView
-            state={state}
+          <DomainAuthView
             onSettingsUpdate={onSettingsUpdate}
             onTwitchStartAuth={onTwitchStartAuth}
             onTwitchPollAuth={onTwitchPollAuth}
@@ -137,7 +131,7 @@ export function MainView({
           />
         }
       />
-      <Route path="/logs" element={<LogsView state={state} />} />
+      <Route path="/logs" element={<DomainLogsView />} />
       <Route path="*" element={<Navigate to="/chat" replace />} />
     </Routes>
   );
