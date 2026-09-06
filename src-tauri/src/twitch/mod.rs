@@ -889,6 +889,10 @@ pub async fn twitch_poll_auth(
             }
 
             {
+                let _store = state
+                    .twitch_auth_store
+                    .lock()
+                    .map_err(|error| error.to_string())?;
                 let mut auth = state
                     .twitch_auth
                     .lock()
@@ -1096,6 +1100,10 @@ pub async fn twitch_validate_auth(
                     return Err(message);
                 }
             };
+            let _store = state
+                .twitch_auth_store
+                .lock()
+                .map_err(|error| error.to_string())?;
             let mut auth = state
                 .twitch_auth
                 .lock()
@@ -1128,6 +1136,10 @@ pub async fn twitch_validate_auth(
         }
     };
 
+    let _store = state
+        .twitch_auth_store
+        .lock()
+        .map_err(|error| error.to_string())?;
     let mut auth = state
         .twitch_auth
         .lock()
@@ -1277,6 +1289,12 @@ pub fn twitch_disconnect(
 
 #[cfg(feature = "app")]
 fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(), String> {
+    // Lock durable credential mutations first. EventSub's conditional clear uses
+    // the same ordering before it takes the connection and auth locks.
+    let _store = state
+        .twitch_auth_store
+        .lock()
+        .map_err(|error| error.to_string())?;
     if let Some(handle) = state
         .twitch_connection
         .lock()
@@ -1317,20 +1335,21 @@ where
         (generation, previous)
     };
 
-    if let Err(error) = clear_store() {
-        let mut auth = auth_state
-            .lock()
-            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        if auth.generation == generation {
-            // Keep the invalidated generation and do not revive a pending device
-            // code. It may belong to an old, cancelled authentication flow.
-            auth.token = previous.token;
-            auth.profile = previous.profile;
+    match clear_store() {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let mut auth = auth_state
+                .lock()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            if auth.generation == generation {
+                // Keep the invalidated generation and do not revive a pending device
+                // code. It may belong to an old, cancelled authentication flow.
+                auth.token = previous.token;
+                auth.profile = previous.profile;
+            }
+            Err(error)
         }
-        return Err(error);
     }
-
-    Ok(())
 }
 
 #[cfg(feature = "app")]
@@ -1885,6 +1904,10 @@ async fn refresh_eventsub_access_token(
 
     let (access_token, storage_warning, did_refresh) = {
         let state = app.state::<AppState>();
+        let _store = state
+            .twitch_auth_store
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
         let mut auth = state
             .twitch_auth
             .lock()
@@ -1934,6 +1957,10 @@ fn clear_eventsub_auth_for_missing_scope_if_current(
     error_message: &str,
 ) -> anyhow::Result<Option<String>> {
     let state = app.state::<AppState>();
+    let _store = state
+        .twitch_auth_store
+        .lock()
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     let connection_handle = {
         // Keep the same lock ordering as `clear_twitch_auth_state`: connection,
         // then authentication.  The comparison and clearing are one critical
@@ -2439,6 +2466,81 @@ mod tests {
         let credentials = auth.eventsub_credentials().unwrap();
         assert_eq!(credentials.access_token, "newer-access-token");
         assert_eq!(credentials.refresh_token, "newer-refresh-token");
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn delayed_successful_logout_clear_blocks_newer_durable_save() {
+        use std::sync::{mpsc, Arc};
+
+        let auth = Arc::new(std::sync::Mutex::new(twitch_auth_state()));
+        let store = Arc::new(std::sync::Mutex::new(()));
+        let durable_secret = Arc::new(std::sync::Mutex::new(stored_auth_secret()));
+        let clear_auth = Arc::clone(&auth);
+        let clear_store = Arc::clone(&store);
+        let clear_secret = Arc::clone(&durable_secret);
+        let (clear_started_tx, clear_started_rx) = mpsc::channel();
+        let (finish_clear_tx, finish_clear_rx) = mpsc::channel();
+        let (save_attempted_tx, save_attempted_rx) = mpsc::channel();
+
+        let logout = std::thread::spawn(move || {
+            let _store = clear_store.lock().unwrap();
+            clear_twitch_auth_with_store(clear_auth.as_ref(), || {
+                clear_started_tx.send(()).unwrap();
+                finish_clear_rx.recv().unwrap();
+                *clear_secret.lock().unwrap() = String::new();
+                Ok(())
+            })
+        });
+
+        clear_started_rx.recv().unwrap();
+        let mut newer_auth = auth
+            .try_lock()
+            .expect("logout must not hold the auth mutex during credential clear");
+        newer_auth.invalidate_operations();
+        newer_auth
+            .replace_token(
+                TokenResponse {
+                    access_token: "newer-access-token".to_string(),
+                    refresh_token: "newer-refresh-token".to_string(),
+                    scope: vec!["user:read:chat".to_string()],
+                    expires_in: 7200,
+                },
+                TwitchUserProfile {
+                    user_id: "newer-user-id".to_string(),
+                    login: "newer-viewer".to_string(),
+                    client_id: "client-id".to_string(),
+                    scopes: vec!["user:read:chat".to_string()],
+                    expires_in: 7200,
+                },
+            )
+            .unwrap();
+        let newer_secret = serde_json::to_string(
+            &newer_auth
+                .stored_auth()
+                .expect("newer authentication must be persistable"),
+        )
+        .unwrap();
+        drop(newer_auth);
+
+        let save_store = Arc::clone(&store);
+        let save_secret = Arc::clone(&durable_secret);
+        let save = std::thread::spawn(move || {
+            save_attempted_tx.send(()).unwrap();
+            let _store = save_store.lock().unwrap();
+            *save_secret.lock().unwrap() = newer_secret;
+        });
+        save_attempted_rx.recv().unwrap();
+        assert!(store.try_lock().is_err());
+        assert_eq!(*durable_secret.lock().unwrap(), stored_auth_secret());
+        finish_clear_tx.send(()).unwrap();
+        logout.join().unwrap().unwrap();
+        save.join().unwrap();
+
+        let persisted =
+            serde_json::from_str::<StoredTwitchAuth>(&durable_secret.lock().unwrap()).unwrap();
+        assert_eq!(persisted.access_token, "newer-access-token");
+        assert_eq!(persisted.refresh_token, "newer-refresh-token");
     }
 
     fn scopes_without_chat_read() -> Vec<String> {

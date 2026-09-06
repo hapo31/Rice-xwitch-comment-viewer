@@ -147,6 +147,7 @@ pub struct AppState {
     pub settings: SharedSettings<AppSettings>,
     pub settings_recovery_notice: SharedSettings<Option<SettingsRecoveryNotice>>,
     pub twitch_auth: SharedSettings<TwitchAuthState>,
+    pub twitch_auth_store: SharedSettings<()>,
     pub speech_queue: SharedSettings<SpeechQueueState>,
     #[cfg(feature = "app")]
     pub twitch_connection: SharedSettings<Option<TwitchConnectionHandle>>,
