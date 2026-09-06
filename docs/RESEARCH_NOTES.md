@@ -4,6 +4,7 @@
 
 - 最新 main を PR branch へ merge し、TODO の並行修正を保持した。API 再確認では rulesets 0 件、environments 0 件、main protection は404であり、Issue の運用完了条件は未達。外部設定と担当 identity の選定は変更していない。
 - default branch の読み取り専用 job で repository ruleset / environment を検証し、未設定の environment を公開 job が自動作成する経路を停止した。承認後の公開直前にも設定を再検証する。creation の bypass が update/delete も許可しないよう tag ruleset は独立させ、workflow_run の deployment ref は main であるため tag 限定の誤った手順を修正した。
+- release-rice の version bump も branch / worktree と PR review / required checks を経由させ、保護された main への直接 push と文書の矛盾を解消した。
 - 未設定・無効・除外・API に見える bypass・review/check 不足・self-review・誤った deployment ref、API failure、複数ページの API 読み取りを自動検査する。公開前の remote tag 移動だけでなく create 後 / upload 後の移動と draft / 公開済み Release の再実行も検証する。GitHub 公式 REST schema / endpoint 説明を確認した結果、read-only token には ruleset bypass が非公開となり、environment 管理者 bypass は API schema に存在しない。これらと team/App・承認者の人員/credential 分離は管理者の確認事項として明示し、自動検証成功だけでは運用完了と扱わない。
 
 ## 2026-08-26: Issue #94 release tag / publish 権限境界

@@ -15,7 +15,7 @@ description: Rice の新しいバージョンを非同期にリリースする�
 4. 現在のブランチが `main` であることを確認する。別ブランチなら停止する。
 5. `git rev-list --left-right --count main...origin/main` が `0 0` であることを確認する。behind の clean な `main` だけ `git pull --ff-only origin main` を提案できる。ahead または diverged なら停止する。
 6. `git tag --list 'v*' --sort=-version:refname` と、必要なら `gh release list` を確認する。未公開タグがあっても自動で削除・再利用しない。
-7. `docs/releasing.md` の「GitHub repository settings」を基準に、active な `refs/tags/v*` ruleset、保護された `main`、required reviewer と protected tag 制限を持つ `release` environment を GitHub API または Settings 画面で確認する。設定がない、または現在の実行者が許可された release identity か判断できない場合はタグを作らず停止する。ruleset、environment、branch protection を自動作成・変更しない。
+7. `docs/releasing.md` の「GitHub repository settings」を基準に、active な `refs/tags/v*` 作成用 / 不変性用 ruleset、保護された `main`、required reviewer と branch `main` 限定の `release` environment を確認する。`node scripts/verify-release-repository-policy.mjs OWNER/REPO` で API に公開される条件を検証し、非公開の bypass 設定と担当者の独立性は管理者が Settings で確認する。設定がない、または現在の実行者が許可された release identity か判断できない場合はタグを作らず停止する。ruleset、environment、branch protection を自動作成・変更しない。
 
 ## 2. バージョンと差分を確認する
 
@@ -26,12 +26,12 @@ description: Rice の新しいバージョンを非同期にリリースする�
 
 ## 3. バージョンを更新して検証する
 
-1. `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` の 3 manifest を同じ `X.Y.Z` に更新する。`StatusBar.tsx` は `app_build_info` の Cargo version を動的表示するため、source の version literal を更新しない。
+1. 検証した最新 `main` から version bump 用 branch / worktree を作り、`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` の 3 manifest を同じ `X.Y.Z` に更新する。`StatusBar.tsx` は `app_build_info` の Cargo version を動的表示するため、source の version literal を更新しない。
 2. `cargo check --manifest-path src-tauri/Cargo.toml` で `Cargo.lock` を同期する。
 3. `pnpm test`、`pnpm build`、`cargo test --manifest-path src-tauri/Cargo.toml` を実行する。可能なら `scripts/build-windows-docker.sh` も実行する。省略した検証と理由を報告する。
 4. `scripts/verify-release-version.sh "X.Y.Z" --changed-from HEAD` を実行し、version bump の変更対象が 3 manifest だけであることを確認する。差分と作業ツリーも確認する。
 5. バージョン変更だけを `chore: bump version to X.Y.Z` として commit する。ユーザーの別変更を混ぜない。
-6. `git push origin main` の直前に対象 commit を提示し、許可されたリリース作業として push する。push 後、`main...origin/main` が `0 0` であることを確認する。
+6. version bump branch を push して `main` 向け PR を提出し、必須 review / checks を満たす通常の手順で取り込む。保護された `main` への直接 push や ruleset bypass は使わない。承認待ちなら PR と待機条件を報告し、tag 作成へ進まない。取り込み後は clean な `main` を fast-forward で同期し、`main...origin/main` が `0 0` であることを確認する。
 
 ## 4. リリースノートを作る
 
