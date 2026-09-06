@@ -1286,15 +1286,51 @@ fn clear_twitch_auth_state(state: &tauri::State<'_, AppState>) -> Result<(), Str
         handle.abort();
     }
 
-    let mut auth = state
-        .twitch_auth
-        .lock()
-        .map_err(|error| error.to_string())?;
-    auth.generation = auth.generation.wrapping_add(1);
-    auth.pending = None;
-    auth.token = None;
-    auth.profile = None;
-    TwitchAuthStore::clear().map_err(to_secure_store_user_message)
+    clear_twitch_auth_with_store(&state.twitch_auth, TwitchAuthStore::clear)
+        .map_err(to_secure_store_user_message)
+}
+
+/// Clears the in-memory authentication before deleting its durable credential.
+///
+/// Credential stores can block (for example while an OS keyring is recovering),
+/// so they must not be called while the authentication mutex is held. If the
+/// delete fails, restore the previous credential only when this logout is still
+/// the current generation. A user may have started a new login while the delete
+/// was pending; restoring the old credential in that case would replace the new
+/// operation's state.
+#[cfg(feature = "app")]
+fn clear_twitch_auth_with_store<Clear>(
+    auth_state: &std::sync::Mutex<TwitchAuthState>,
+    clear_store: Clear,
+) -> anyhow::Result<()>
+where
+    Clear: FnOnce() -> anyhow::Result<()>,
+{
+    let (generation, previous) = {
+        let mut auth = auth_state
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        let previous = auth.clone();
+        let generation = auth.invalidate_operations();
+        auth.token = None;
+        auth.profile = None;
+        (generation, previous)
+    };
+
+    if let Err(error) = clear_store() {
+        let mut auth = auth_state
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        if auth.generation == generation {
+            // Keep the invalidated generation and do not revive a pending device
+            // code. It may belong to an old, cancelled authentication flow.
+            auth.token = previous.token;
+            auth.profile = previous.profile;
+        }
+        return Err(error);
+    }
+
+    Ok(())
 }
 
 #[cfg(feature = "app")]
@@ -2207,9 +2243,10 @@ enum PollAuthError {
 mod tests {
     #[cfg(feature = "app")]
     use super::{
-        clear_auth_for_eventsub_missing_scope_if_current, restore_stored_auth,
-        retry_eventsub_subscription, AuthSecretStore, AuthStorage, StoredTwitchAuth,
-        SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchToken, TwitchUserProfile,
+        clear_auth_for_eventsub_missing_scope_if_current, clear_twitch_auth_with_store,
+        restore_stored_auth, retry_eventsub_subscription, AuthSecretStore, AuthStorage,
+        StoredTwitchAuth, SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchToken,
+        TwitchUserProfile,
     };
     use super::{
         ensure_required_twitch_scopes, normalize_chat_message, oauth_error_code,
@@ -2323,6 +2360,85 @@ mod tests {
         assert!(auth.pending.is_none());
         assert!(auth.token.is_none());
         assert!(auth.profile.is_none());
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn failed_logout_credential_clear_restores_the_current_generation() {
+        let auth = std::sync::Mutex::new(twitch_auth_state());
+
+        let error = clear_twitch_auth_with_store(&auth, || {
+            Err(anyhow::anyhow!("fake secure-store clear failure"))
+        })
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("fake secure-store clear failure"));
+        let auth = auth.lock().unwrap();
+        assert_eq!(auth.generation, 1);
+        assert!(auth.pending.is_none());
+        assert_eq!(
+            auth.eventsub_credentials().unwrap().access_token,
+            "access-token"
+        );
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn delayed_failed_logout_clear_keeps_a_newer_authentication() {
+        use std::sync::{mpsc, Arc};
+
+        let auth = Arc::new(std::sync::Mutex::new(twitch_auth_state()));
+        let clear_auth = Arc::clone(&auth);
+        let (clear_started_tx, clear_started_rx) = mpsc::channel();
+        let (finish_clear_tx, finish_clear_rx) = mpsc::channel();
+
+        let logout = std::thread::spawn(move || {
+            clear_twitch_auth_with_store(clear_auth.as_ref(), || {
+                clear_started_tx.send(()).unwrap();
+                finish_clear_rx.recv().unwrap();
+                Err(anyhow::anyhow!("fake secure-store clear failure"))
+            })
+        });
+
+        clear_started_rx.recv().unwrap();
+        // `try_lock` proves the command released the production auth mutex while
+        // the durable credential deletion is still waiting.
+        let mut newer_auth = auth
+            .try_lock()
+            .expect("logout must not hold the auth mutex during credential clear");
+        let newer_generation = newer_auth.invalidate_operations();
+        newer_auth
+            .replace_token(
+                TokenResponse {
+                    access_token: "newer-access-token".to_string(),
+                    refresh_token: "newer-refresh-token".to_string(),
+                    scope: vec!["user:read:chat".to_string()],
+                    expires_in: 7200,
+                },
+                TwitchUserProfile {
+                    user_id: "newer-user-id".to_string(),
+                    login: "newer-viewer".to_string(),
+                    client_id: "client-id".to_string(),
+                    scopes: vec!["user:read:chat".to_string()],
+                    expires_in: 7200,
+                },
+            )
+            .unwrap();
+        drop(newer_auth);
+
+        finish_clear_tx.send(()).unwrap();
+        let error = logout.join().unwrap().unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("fake secure-store clear failure"));
+        let auth = auth.lock().unwrap();
+        assert_eq!(auth.generation, newer_generation);
+        let credentials = auth.eventsub_credentials().unwrap();
+        assert_eq!(credentials.access_token, "newer-access-token");
+        assert_eq!(credentials.refresh_token, "newer-refresh-token");
     }
 
     fn scopes_without_chat_read() -> Vec<String> {
