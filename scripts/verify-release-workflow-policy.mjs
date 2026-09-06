@@ -54,6 +54,16 @@ requireMatch(
 );
 requireMatch(
   publishWorkflow,
+  /needs:\s*repository-policy/,
+  "publish job は read-only repository-policy job の成功を必須にしてください。",
+);
+requireMatch(
+  publishWorkflow,
+  /node trusted\/scripts\/verify-release-repository-policy\.mjs/,
+  "承認待ちの間の設定変更も公開直前に再検証してください。",
+);
+requireMatch(
+  publishWorkflow,
   /environment:\s*\n\s+name:\s*release/,
   "publish job は protected release environment を使用する必要があります。",
 );

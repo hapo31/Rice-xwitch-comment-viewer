@@ -15,11 +15,19 @@ set -euo pipefail
 printf '%s\n' "$*" >> "${GH_MOCK_LOG}"
 case "$1" in
   api)
-    printf '%s\n' "${GH_MOCK_REMOTE_TAG_OBJECT}"
+    calls="$(grep -c '^api ' "${GH_MOCK_LOG}")"
+    if [ "${calls}" -ge "${GH_MOCK_MOVE_AT:-99}" ]; then
+      printf '%s\n' bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    else
+      printf '%s\n' "${GH_MOCK_REMOTE_TAG_OBJECT}"
+    fi
     ;;
   release)
     if [ "${2:-}" = "view" ]; then
-      exit 1
+      if [ "${GH_MOCK_EXISTING:-missing}" = missing ]; then
+        exit 1
+      fi
+      printf '%s\n' "${GH_MOCK_EXISTING}"
     fi
     ;;
   *)
@@ -63,3 +71,45 @@ if [ "$(grep -c '^api ' "${mock_log}")" -ne 3 ]; then
 fi
 
 printf 'release publication guard tests passed\n'
+
+for move_at in 2 3; do
+  : > "${mock_log}"
+  if PATH="${fixture_dir}/bin:${PATH}" \
+    GH_MOCK_LOG="${mock_log}" GH_MOCK_MOVE_AT="${move_at}" \
+    GH_MOCK_REMOTE_TAG_OBJECT="${expected_tag_object}" \
+    "${script_dir}/publish-release.sh" \
+      v1.2.3 owner/repository "${expected_tag_object}" "${fixture_dir}/asset.zip"; then
+    echo "エラー: API 呼び出し ${move_at} 回目で移動された tag を拒否できませんでした。" >&2
+    exit 1
+  fi
+  if grep -Eq '^release edit' "${mock_log}"; then
+    echo 'エラー: 移動された tag の draft を公開しました。' >&2
+    exit 1
+  fi
+  if [ "${move_at}" -eq 2 ] && grep -Eq '^release upload' "${mock_log}"; then
+    echo 'エラー: upload 前の tag 移動を検出しても Assets を変更しました。' >&2
+    exit 1
+  fi
+done
+
+for existing in true false; do
+  : > "${mock_log}"
+  PATH="${fixture_dir}/bin:${PATH}" \
+    GH_MOCK_LOG="${mock_log}" GH_MOCK_EXISTING="${existing}" \
+    GH_MOCK_REMOTE_TAG_OBJECT="${expected_tag_object}" \
+    "${script_dir}/publish-release.sh" \
+      v1.2.3 owner/repository "${expected_tag_object}" "${fixture_dir}/asset.zip"
+  if grep -Eq '^release create' "${mock_log}"; then
+    echo 'エラー: 再実行で既存 Release を再作成しました。' >&2
+    exit 1
+  fi
+  grep -Fq 'release upload v1.2.3' "${mock_log}"
+  if [ "${existing}" = true ]; then
+    grep -Fq 'release edit v1.2.3' "${mock_log}"
+  elif grep -Eq '^release edit' "${mock_log}"; then
+    echo 'エラー: 公開済み Release の状態を変更しました。' >&2
+    exit 1
+  fi
+done
+
+printf 'release publication race and retry tests passed\n'

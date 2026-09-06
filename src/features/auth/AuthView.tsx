@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { focusIndicatorClass } from "../../presentation/focus";
 import { routeHeadingId } from "../../routeAccessibility";
 import type { AppState } from "../../stores/appStore";
-import type { AppSettings } from "../../types";
+import type { AppSettingsPatch } from "../../types";
 import { isValidTwitchChannelLogin } from "../../validation";
 import { defaultTwitchSettings } from "../settings/defaults";
 import { FieldError } from "../../components/SettingsFormControls";
@@ -19,7 +19,7 @@ export function AuthView({
   onOpenExternalUrl,
 }: {
   state: AppState;
-  onSettingsUpdate: (patch: Partial<AppSettings>) => void;
+  onSettingsUpdate: (patch: AppSettingsPatch) => Promise<boolean>;
   onTwitchStartAuth: () => void;
   onTwitchPollAuth: () => void;
   onTwitchValidateAuth: () => Promise<boolean>;
@@ -71,12 +71,7 @@ export function AuthView({
       return;
     }
 
-    onSettingsUpdate({
-      twitch: {
-        ...twitchSettings,
-        channelLogin: trimmedChannelLogin,
-      },
-    });
+    void onSettingsUpdate({ twitch: { channelLogin: trimmedChannelLogin } });
   }
 
   async function validateAuth() {

@@ -30,6 +30,7 @@ jobs:
           scripts/test-verify-release-tag.sh
           scripts/test-verify-release-version.sh
           scripts/test-publish-release.sh
+          node --test scripts/test-release-repository-policy.mjs
       - name: Check release workflow privilege boundary
         run: node scripts/verify-release-workflow-policy.mjs
 

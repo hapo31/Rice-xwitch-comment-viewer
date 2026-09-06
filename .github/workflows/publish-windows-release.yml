@@ -15,8 +15,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  repository-policy:
+    name: Verify repository release protections
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.path == '.github/workflows/release-windows.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require configured protections before deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/verify-release-repository-policy.mjs "${GITHUB_REPOSITORY}"
+
   release:
     name: Publish verified GitHub Release
+    needs: repository-policy
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
@@ -121,6 +144,7 @@ jobs:
           EXPECTED_TAG_OBJECT: ${{ steps.release-source.outputs.tag-object }}
         run: |
           set -euo pipefail
+          node trusted/scripts/verify-release-repository-policy.mjs "${GITHUB_REPOSITORY}"
           assets=("${GITHUB_WORKSPACE}"/release-artifacts/*)
           (
             cd source

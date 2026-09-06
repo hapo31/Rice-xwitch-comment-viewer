@@ -5,6 +5,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppLogEvent,
   AppSettings,
+  AppSettingsPatch,
   BouyomiConnectionDiagnostics,
   LauncherItem,
   LauncherLaunchResult,
@@ -66,7 +67,7 @@ export async function getAppBuildInfo(): Promise<AppBuildInfo | undefined> {
   return invoke<AppBuildInfo>("app_build_info");
 }
 
-function normalizeSettings(settings: Partial<AppSettings> | undefined): AppSettings {
+function normalizeSettings(settings: Partial<AppSettings> | AppSettingsPatch | undefined): AppSettings {
   return {
     ...fallbackSettings,
     ...settings,
@@ -102,7 +103,7 @@ export async function takeSettingsRecoveryNotice(): Promise<SettingsRecoveryNoti
   return (await invoke<SettingsRecoveryNotice | null>("settings_take_recovery_notice")) ?? undefined;
 }
 
-export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+export async function updateSettings(patch: AppSettingsPatch): Promise<AppSettings> {
   if (!isTauriRuntime) {
     return normalizeSettings(patch);
   }

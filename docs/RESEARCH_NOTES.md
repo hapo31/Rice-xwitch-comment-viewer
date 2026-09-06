@@ -1,5 +1,11 @@
 # 調査メモ
 
+## 2026-09-06: Issue #94 保護設定の fail-closed 検証
+
+- 最新 main を PR branch へ merge し、TODO の並行修正を保持した。API 再確認では rulesets 0 件、environments 0 件、main protection は404であり、Issue の運用完了条件は未達。外部設定と担当 identity の選定は変更していない。
+- default branch の読み取り専用 job で repository ruleset / environment を検証し、未設定の environment を公開 job が自動作成する経路を停止した。承認後の公開直前にも設定を再検証する。creation の bypass が update/delete も許可しないよう tag ruleset は独立させ、workflow_run の deployment ref は main であるため tag 限定の誤った手順を修正した。
+- 未設定・無効・除外・API に見える bypass・review/check 不足・self-review・誤った deployment ref、API failure、複数ページの API 読み取りを自動検査する。公開前の remote tag 移動だけでなく create 後 / upload 後の移動と draft / 公開済み Release の再実行も検証する。GitHub 公式 REST schema / endpoint 説明を確認した結果、read-only token には ruleset bypass が非公開となり、environment 管理者 bypass は API schema に存在しない。これらと team/App・承認者の人員/credential 分離は管理者の確認事項として明示し、自動検証成功だけでは運用完了と扱わない。
+
 ## 2026-08-26: Issue #94 release tag / publish 権限境界
 
 - 調査時点の repository settings は rulesets 0 件、`main` branch protection なし、environments 0 件だった。workflow だけでは tag update/delete の TOCTOU と、過去の tag commit に残る旧 workflow の write 権限を無効化できないため、`refs/tags/v*` の作成主体・update・delete を制限する active ruleset、review 済み `main`、tag 作成者と分離した required reviewer を持つ `release` environment を管理者の必須手順として残す。外部設定はこの変更では操作していない。
@@ -114,6 +120,11 @@
 - EventSub 接続 task が開始時点の access token を `EventSubConnectionParams` に保持していたため、Login 画面などで token を更新しても、後続の通常再接続で古い token を使っていた。接続パラメータから認証情報を除き、購読のたびにアプリの認証状態から現在の token を取得するようにした。
 - 購読が 401 の時だけ refresh を一度実行し、更新された access token / rotation 後の refresh token を既存の OS credential store 保存経路へ直ちに渡してから再購読する。refresh 失敗または更新後の再試行の 401 は認証状態を解除して Login での再認証を案内する。期限切れ token の再試行、refresh 失敗時に再試行しないこと、rotation が保存対象へ反映されることを Rust の非同期テストで確認した。
 
+## 2026-08-28: 通常 devcontainer の Codex state 永続化
+
+- 通常 profile に `rice-codex-home` named volume を `/home/vscode/.codex` として追加した。これにより devcontainer の Rebuild でも Codex の認証情報、履歴、セッションを Docker 環境内に保持する。`setup.sh` は初回 volume の所有者を実行ユーザーへ変更し、ディレクトリを `0700` にする。
+- Docker named volume は Git と Docker build context の外にあり、workspace へ資格情報を保存しない。コンテナや Docker environment 自体を削除した場合は残らないため、その場合は既存の手動 backup/restore 手順を使う。
+
 ## 2026-08-05: Issue #97 devcontainer bootstrap と capability 分離
 
 - 通常 devcontainer では host `.ssh`、`.gitconfig`、Codex state volume、Docker socket、`--network=host` が `postCreateCommand` と同居しており、`@openai/codex@latest` を未固定で global install していた。これを、base/Node/Rust image digest、Codex 0.98.0 と pnpm 8.11.0 の tarball SHA-512、Rust 1.89.0 を `.devcontainer/bootstrap-lock.json` に記録する構成へ変更した。
@@ -152,6 +163,10 @@
 - `git tag -F` の既定 cleanup では Markdown 見出しがコメントとして除去されるため、リリースタグ作成時は `--cleanup=verbatim` を指定する。
 
 調査や作業中に分かった補足情報を記録するファイルです。日付が新しいものほど上に追記してください。
+
+## 2026-08-26
+
+- Issue #157: ウィンドウの物理ピクセル座標を一般設定の `window.position` として、OS の close request と独自タイトルバー経由の終了操作の両方で原子的に保存する。起動時は、現在のモニター作業領域に少なくとも 64 x 32px が残る位置だけを復元し、モニターの取り外し・再配置で画面外になる保存座標は初期の中央配置へ安全にフォールバックする。旧設定に `window` がない場合は既定値（未保存位置）として互換読み込みする。
 
 ## 2026-08-15
 
