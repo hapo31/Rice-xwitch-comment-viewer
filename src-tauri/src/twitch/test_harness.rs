@@ -589,24 +589,33 @@ mod tests {
         websocket.connections.push_back((
             "wss://handover".to_string(),
             VecDeque::from([
-                chat("same", "duplicate"),
                 welcome("new", 30),
+                chat("same", "duplicate"),
                 chat("new", "new"),
             ]),
         ));
         let mut harness = harness(FakeHttpTransport::default(), websocket);
 
         harness.start("wss://initial").unwrap();
+        harness.handover("wss://handover").unwrap();
+        assert_eq!(
+            harness.poll().unwrap(),
+            Some(HarnessEvent::Keepalive),
+            "the duplicate from the new socket is ignored after the old socket notification"
+        );
         assert_eq!(
             harness.poll().unwrap(),
             Some(HarnessEvent::Chat {
-                id: "same".into(),
-                text: "old".into()
+                id: "new".into(),
+                text: "new".into()
             })
         );
-        harness.handover("wss://handover").unwrap();
 
         assert_eq!(harness.state, HarnessConnectionState::Connected);
+        assert!(harness.events.contains(&HarnessEvent::Chat {
+            id: "same".into(),
+            text: "old".into()
+        }));
         assert!(harness.events.contains(&HarnessEvent::Chat {
             id: "new".into(),
             text: "new".into()
