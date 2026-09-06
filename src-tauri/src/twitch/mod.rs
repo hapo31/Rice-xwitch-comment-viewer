@@ -799,19 +799,48 @@ impl TwitchAuthStore {
         self.backend.save(auth).map(AuthSaveOutcome::Saved)
     }
 
-    pub(crate) async fn clear(&self) -> anyhow::Result<()> {
+    async fn clear_if_current(
+        &self,
+        auth_state: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,
+        generation: u64,
+    ) -> anyhow::Result<AuthClearOutcome> {
         let store = self.clone();
-        tokio::task::spawn_blocking(move || store.clear_sync())
+        tokio::task::spawn_blocking(move || store.clear_if_current_sync(&auth_state, generation))
             .await
             .map_err(anyhow::Error::from)?
     }
 
-    fn clear_sync(&self) -> anyhow::Result<()> {
+    fn clear_if_current_sync(
+        &self,
+        auth_state: &std::sync::Mutex<TwitchAuthState>,
+        generation: u64,
+    ) -> anyhow::Result<AuthClearOutcome> {
         let _io_guard = self
             .io_lock
             .lock()
             .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        self.backend.clear()
+        if auth_state
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .generation
+            != generation
+        {
+            return Ok(AuthClearOutcome::Stale);
+        }
+        self.backend.clear()?;
+        // The backend call can block after the pre-clear comparison. Keep the
+        // I/O lock while checking once more so a newer auth/save waits to write
+        // after this old clear, and callers never tear down its connection.
+        if auth_state
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?
+            .generation
+            != generation
+        {
+            Ok(AuthClearOutcome::StaleAfterClear)
+        } else {
+            Ok(AuthClearOutcome::Cleared)
+        }
     }
 }
 
@@ -820,6 +849,14 @@ impl TwitchAuthStore {
 enum AuthSaveOutcome {
     Saved(Option<String>),
     Stale,
+}
+
+#[cfg(feature = "app")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthClearOutcome {
+    Cleared,
+    Stale,
+    StaleAfterClear,
 }
 
 #[cfg(feature = "app")]
@@ -1578,12 +1615,17 @@ async fn clear_twitch_auth_state_with_store(
         (previous_auth, generation)
     };
 
-    if let Err(error) = store.clear().await {
-        let mut auth = auth_state.lock().map_err(|error| error.to_string())?;
-        restore_auth_after_failed_clear_if_current(&mut auth, generation, previous_auth);
-        return Err(to_secure_store_user_message(error));
+    match store.clear_if_current(auth_state.clone(), generation).await {
+        Ok(AuthClearOutcome::Cleared) => Ok(()),
+        Ok(AuthClearOutcome::Stale | AuthClearOutcome::StaleAfterClear) => {
+            Err("新しい Twitch 認証操作が開始されたため、古い解除結果を破棄しました。".to_string())
+        }
+        Err(error) => {
+            let mut auth = auth_state.lock().map_err(|error| error.to_string())?;
+            restore_auth_after_failed_clear_if_current(&mut auth, generation, previous_auth);
+            Err(to_secure_store_user_message(error))
+        }
     }
-    Ok(())
 }
 
 #[cfg(feature = "app")]
@@ -2439,13 +2481,9 @@ async fn clear_eventsub_auth_for_missing_scope_if_current(
     error_message: &str,
 ) -> anyhow::Result<Option<String>> {
     let state = app.state::<AppState>();
-    let connection_handle = {
-        // Compare and invalidate under the short state locks, then perform
-        // credential I/O after both locks have been released.
-        let mut connection = state
-            .twitch_connection
-            .lock()
-            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    let generation = {
+        // Compare and invalidate under the short auth lock, then perform
+        // credential I/O after it has been released.
         let mut auth = state
             .twitch_auth
             .lock()
@@ -2456,16 +2494,31 @@ async fn clear_eventsub_auth_for_missing_scope_if_current(
         {
             return Ok(Some(access_token));
         }
-        connection.take()
+        auth.generation
     };
 
-    state
+    match state
         .twitch_auth_store
-        .clear()
+        .clear_if_current(state.twitch_auth.clone(), generation)
         .await
         .map_err(to_secure_store_user_message)
-        .map_err(|error| anyhow::anyhow!(error))?;
-    if let Some(handle) = connection_handle {
+        .map_err(|error| anyhow::anyhow!(error))?
+    {
+        AuthClearOutcome::Cleared => {}
+        AuthClearOutcome::Stale | AuthClearOutcome::StaleAfterClear => {
+            let auth = state
+                .twitch_auth
+                .lock()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            return Ok(Some(auth.eventsub_credentials()?.access_token));
+        }
+    }
+    if let Some(handle) = state
+        .twitch_connection
+        .lock()
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?
+        .take()
+    {
         handle.abort();
     }
     emit_twitch_auth_required(
@@ -2839,11 +2892,12 @@ mod tests {
     use super::{
         clear_auth_for_eventsub_missing_scope_if_current, clear_twitch_auth_state_with_store,
         restore_auth_after_failed_clear_if_current, restore_stored_auth,
-        retry_eventsub_subscription, AuthCredentialStore, AuthLoadResult, AuthSaveOutcome,
-        AuthSecretStore, AuthStorage, EventSubReconnectBackoff, StoredTwitchAuth,
-        SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchAuthStore, TwitchToken,
-        TwitchUserProfile, EVENTSUB_BACKOFF_RESET_STABLE_DURATION,
-        EVENTSUB_RECONNECT_HANDOVER_TIMEOUT, TWITCH_WS_HANDSHAKE_TIMEOUT,
+        retry_eventsub_subscription, AuthClearOutcome, AuthCredentialStore, AuthLoadResult,
+        AuthSaveOutcome, AuthSecretStore, AuthStorage, EventSubReconnectBackoff, StoredTwitchAuth,
+        SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchAuthStore,
+        TwitchConnectionHandle, TwitchToken, TwitchUserProfile,
+        EVENTSUB_BACKOFF_RESET_STABLE_DURATION, EVENTSUB_RECONNECT_HANDOVER_TIMEOUT,
+        TWITCH_WS_HANDSHAKE_TIMEOUT,
     };
     use super::{
         ensure_required_twitch_scopes, is_definitive_auth_failure, normalize_chat_message,
@@ -2958,6 +3012,10 @@ mod tests {
             let mut state = self.state.lock().unwrap();
             state.release_clear = false;
             state.fail_clear = true;
+        }
+
+        fn delay_clear(&self) {
+            self.state.lock().unwrap().release_clear = false;
         }
 
         fn wait_until_clear_started(&self) {
@@ -3119,20 +3177,25 @@ mod tests {
         backend.wait_until_save_started();
 
         // Logout invalidates the generation before waiting for credential I/O.
-        {
+        let logout_generation = {
             let mut auth = auth_state.lock().unwrap();
-            auth.invalidate_operations();
+            let generation = auth.invalidate_operations();
             auth.token = None;
             auth.profile = None;
-        }
+            generation
+        };
         let clear = tokio::spawn({
             let store = store.clone();
-            async move { store.clear().await }
+            let auth_state = auth_state.clone();
+            async move { store.clear_if_current(auth_state, logout_generation).await }
         });
 
         backend.release_save();
         save.await.unwrap().unwrap();
-        clear.await.unwrap().unwrap();
+        assert!(matches!(
+            clear.await.unwrap().unwrap(),
+            AuthClearOutcome::Cleared
+        ));
 
         let snapshot = backend.snapshot();
         assert_eq!(snapshot.save_calls, 1);
@@ -3170,6 +3233,93 @@ mod tests {
         ));
         assert_eq!(backend.snapshot().save_calls, 0);
         assert!(auth_state.lock().unwrap().token.is_none());
+    }
+
+    #[cfg(feature = "app")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn stale_clear_after_newer_auth_never_deletes_its_durable_credential() {
+        let backend = Arc::new(DelayedCredentialStore::default());
+        let store = TwitchAuthStore::with_backend(backend.clone());
+        let auth_state = Arc::new(Mutex::new(twitch_auth_state()));
+        let old_generation = auth_state.lock().unwrap().generation;
+
+        // Keep an already-authorized old save inside the credential backend so
+        // both logout clear and the newer save must contend for the real I/O
+        // lock rather than relying on task scheduling order.
+        let old_save = tokio::spawn({
+            let store = store.clone();
+            let auth_state = auth_state.clone();
+            async move {
+                store
+                    .save_if_current(auth_state, old_generation, twitch_auth_state())
+                    .await
+            }
+        });
+        backend.wait_until_save_started();
+
+        let logout_generation = {
+            let mut auth = auth_state.lock().unwrap();
+            let generation = auth.invalidate_operations();
+            auth.token = None;
+            auth.profile = None;
+            generation
+        };
+        let clear = tokio::spawn({
+            let store = store.clone();
+            let auth_state = auth_state.clone();
+            async move { store.clear_if_current(auth_state, logout_generation).await }
+        });
+
+        let (newer_generation, newer_auth) = {
+            let mut auth = auth_state.lock().unwrap();
+            let generation = auth.invalidate_operations();
+            auth.replace_token(
+                TokenResponse {
+                    access_token: "newer-access-token".to_string(),
+                    refresh_token: "newer-refresh-token".to_string(),
+                    scope: vec!["user:read:chat".to_string()],
+                    expires_in: 7200,
+                },
+                TwitchUserProfile {
+                    user_id: "newer-user-id".to_string(),
+                    login: "newer-viewer".to_string(),
+                    client_id: "client-id".to_string(),
+                    scopes: vec!["user:read:chat".to_string()],
+                    expires_in: 7200,
+                },
+            )
+            .unwrap();
+            (generation, auth.clone())
+        };
+        let newer_save = tokio::spawn({
+            let store = store.clone();
+            let auth_state = auth_state.clone();
+            async move {
+                store
+                    .save_if_current(auth_state, newer_generation, newer_auth)
+                    .await
+            }
+        });
+
+        backend.release_save();
+        assert!(matches!(
+            old_save.await.unwrap().unwrap(),
+            AuthSaveOutcome::Saved(None)
+        ));
+        assert!(matches!(
+            clear.await.unwrap().unwrap(),
+            AuthClearOutcome::Stale
+        ));
+        assert!(matches!(
+            newer_save.await.unwrap().unwrap(),
+            AuthSaveOutcome::Saved(None)
+        ));
+
+        let persisted =
+            serde_json::from_str::<StoredTwitchAuth>(backend.snapshot().secret.as_deref().unwrap())
+                .unwrap();
+        assert_eq!(persisted.access_token, "newer-access-token");
+        assert_eq!(backend.snapshot().clear_calls, 0);
     }
 
     #[cfg(feature = "app")]
@@ -3223,6 +3373,77 @@ mod tests {
         let credentials = auth.eventsub_credentials().unwrap();
         assert_eq!(credentials.access_token, "newer-access-token");
         assert_eq!(credentials.refresh_token, "newer-refresh-token");
+    }
+
+    #[cfg(feature = "app")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn delayed_successful_logout_clear_preserves_newer_authentication_and_connection() {
+        let backend = Arc::new(DelayedCredentialStore::default());
+        backend.delay_clear();
+        let store = TwitchAuthStore::with_backend(backend.clone());
+        let auth_state = Arc::new(Mutex::new(twitch_auth_state()));
+
+        let clear = tokio::spawn({
+            let store = store.clone();
+            let auth_state = auth_state.clone();
+            async move { clear_twitch_auth_state_with_store(auth_state, &store).await }
+        });
+        backend.wait_until_clear_started();
+
+        let (newer_generation, newer_auth) = {
+            let mut auth = auth_state
+                .try_lock()
+                .expect("delayed credential clear must release the auth mutex");
+            let generation = auth.invalidate_operations();
+            auth.replace_token(
+                TokenResponse {
+                    access_token: "newer-access-token".to_string(),
+                    refresh_token: "newer-refresh-token".to_string(),
+                    scope: vec!["user:read:chat".to_string()],
+                    expires_in: 7200,
+                },
+                TwitchUserProfile {
+                    user_id: "newer-user-id".to_string(),
+                    login: "newer-viewer".to_string(),
+                    client_id: "client-id".to_string(),
+                    scopes: vec!["user:read:chat".to_string()],
+                    expires_in: 7200,
+                },
+            )
+            .unwrap();
+            (generation, auth.clone())
+        };
+        let newer_connection = Arc::new(Mutex::new(Some(TwitchConnectionHandle::new(
+            newer_generation,
+            tokio::spawn(async { std::future::pending::<()>().await }),
+        ))));
+        let save = tokio::spawn({
+            let store = store.clone();
+            let auth_state = auth_state.clone();
+            async move {
+                store
+                    .save_if_current(auth_state, newer_generation, newer_auth)
+                    .await
+            }
+        });
+
+        backend.release_clear();
+        let error = clear.await.unwrap().unwrap_err();
+        // The real command only takes/aborts its connection after an Ok result.
+        // Stale-after-clear therefore leaves this newer connection untouched.
+        assert!(error.contains("古い解除結果"));
+        assert!(newer_connection.lock().unwrap().is_some());
+        backend.release_save();
+        assert!(matches!(
+            save.await.unwrap().unwrap(),
+            AuthSaveOutcome::Saved(None)
+        ));
+
+        let persisted =
+            serde_json::from_str::<StoredTwitchAuth>(backend.snapshot().secret.as_deref().unwrap())
+                .unwrap();
+        assert_eq!(persisted.access_token, "newer-access-token");
+        newer_connection.lock().unwrap().take().unwrap().abort();
     }
 
     #[cfg(feature = "app")]
