@@ -1,5 +1,11 @@
 # 調査メモ
 
+## 2026-09-08: Issue #94 単独管理方針でのレビュー完了
+
+- 所有者の明示指示により、下記過去メモのTeam・別承認者・ruleset・environment必須条件を撤回した。公開workflowはmainのtrusted script、同一runのprovenance、tag objectの継続照合を維持し、取得した成果物のchecksum検証を追加した。外部のrepository設定は変更しない。
+- repository policy 4件、workflow policy、tag/version/publicationのshell回帰テストが成功。古いGitでも動くようテストfixtureの未作成branch名変更をsymbolic-refへ変更した。
+- rulesetがない状態の短いtag照合競合と過去のwrite workflowは所有者を信頼する運用上の制約としてdocs/releasing.mdへ明記した。
+
 ## 2026-09-06: Issue #94 保護設定の fail-closed 検証
 
 - 最新 main を PR branch へ merge し、TODO の並行修正を保持した。API 再確認では rulesets 0 件、environments 0 件、main protection は404であり、Issue の運用完了条件は未達。外部設定と担当 identity の選定は変更していない。

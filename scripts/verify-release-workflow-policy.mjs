@@ -60,13 +60,12 @@ requireMatch(
 requireMatch(
   publishWorkflow,
   /node trusted\/scripts\/verify-release-repository-policy\.mjs/,
-  "承認待ちの間の設定変更も公開直前に再検証してください。",
+  "default branch を公開直前にも確認してください。",
 );
-requireMatch(
-  publishWorkflow,
-  /environment:\s*\n\s+name:\s*release/,
-  "publish job は protected release environment を使用する必要があります。",
-);
+if (/environment:/.test(publishWorkflow)) {
+  throw new Error("単独管理の公開に environment 承認を必須にしないでください。");
+}
+requireMatch(publishWorkflow, /sha256sum --check --strict SHA256SUMS.txt/, "公開前に取得した成果物のchecksumを検証してください。");
 requireMatch(
   publishWorkflow,
   /permissions:\s*\n\s+actions:\s*read\s*\n\s+contents:\s*write/,

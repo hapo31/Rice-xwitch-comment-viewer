@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   repository-policy:
-    name: Verify repository release protections
+    name: Verify release repository
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
@@ -32,7 +32,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Require configured protections before deployment
+      - name: Verify default branch
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/verify-release-repository-policy.mjs "${GITHUB_REPOSITORY}"
@@ -48,8 +48,6 @@ jobs:
       startsWith(github.event.workflow_run.head_branch, 'v')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    environment:
-      name: release
     permissions:
       actions: read
       contents: write
@@ -137,6 +135,14 @@ jobs:
           path: release-artifacts
           github-token: ${{ github.token }}
           run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Verify downloaded asset checksums
+        run: |
+          set -euo pipefail
+          cd release-artifacts
+          test -n "$(find . -maxdepth 1 -type f -name '*.exe' -print -quit)"
+          test -n "$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          sha256sum --check --strict SHA256SUMS.txt
 
       - name: Create or update release safely
         env:

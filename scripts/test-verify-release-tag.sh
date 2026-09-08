@@ -7,7 +7,7 @@ trap 'rm -rf "${fixture_dir}"' EXIT
 git -C "${fixture_dir}" init --quiet
 git -C "${fixture_dir}" config user.name test
 git -C "${fixture_dir}" config user.email test@example.invalid
-git -C "${fixture_dir}" branch -M main
+git -C "${fixture_dir}" symbolic-ref HEAD refs/heads/main
 
 printf 'first\n' > "${fixture_dir}/file.txt"
 git -C "${fixture_dir}" add file.txt
