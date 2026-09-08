@@ -4,7 +4,7 @@ use crate::launcher::{normalize_launcher_items, LauncherSettings, LauncherSettin
 use crate::speech::SpeechQueueState;
 use crate::twitch::TwitchAuthState;
 #[cfg(feature = "app")]
-use crate::twitch::TwitchConnectionHandle;
+use crate::twitch::{TwitchAuthStore, TwitchConnectionHandle};
 use crate::SharedSettings;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -157,14 +157,19 @@ pub(crate) fn default_twitch_client_id() -> String {
         .to_string()
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct AppState {
     pub settings: SharedSettings<AppSettings>,
     pub settings_recovery_notice: SharedSettings<Option<SettingsRecoveryNotice>>,
+    #[cfg(feature = "app")]
+    pub twitch_auth: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,
+    #[cfg(not(feature = "app"))]
     pub twitch_auth: SharedSettings<TwitchAuthState>,
     pub speech_queue: SharedSettings<SpeechQueueState>,
     #[cfg(feature = "app")]
     pub twitch_connection: SharedSettings<Option<TwitchConnectionHandle>>,
+    #[cfg(feature = "app")]
+    pub twitch_auth_store: TwitchAuthStore,
 }
 
 impl Default for AppSettings {
