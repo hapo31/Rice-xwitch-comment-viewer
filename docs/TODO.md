@@ -8,6 +8,8 @@
 
 ## 現在の進捗サマリ
 
+2026-09-08: ローカル worktree の整理を完了。Issue #29/#31/#33 は main 反映済み、#42/#43 は既存 PR #164/#163 に保持。詳細は調査メモを参照。
+
 | Phase | 状態 | メモ |
 | --- | --- | --- |
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込、原子的保存、破損時のbackup/既定値復旧を確認した。Issue #50 で UI 倍率を名前付き radio group にし、現在の選択状態と表示倍率を支援技術へ公開した。Issue #49 で route ごとの document title 更新と、PUSH 遷移後の画面見出しへのフォーカス移動を追加した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。 |
@@ -131,6 +133,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] TypeScript の store reducer テストを追加する。
 
 ## Phase 5: 配信運用向け仕上げ
+
+- [x] ローカル worktree と切れたリンクを整理し、main／既存 PR への保存状況を確認する。ルートの worktree 専用パスを gitignore に追加する。
 
 - [x] Issue #73: production CSP を有効化し、Vite HMR 用 dev CSP を明示し、Tauri capability / custom command ACL と完全 decode 済み Launcher PNG の renderer 権限境界を最小化する。
 - [x] Issue #3: 非同期イベント購読を遅延 cleanup と部分失敗に安全な共通 helper へ統一する。
