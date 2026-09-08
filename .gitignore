@@ -38,3 +38,9 @@ Thumbs.db
 .codex
 .codex/
 .codex-state-backup/
+
+# Local Git worktrees (root only; includes legacy links)
+/.worktrees/
+/.issue[0-9]*
+/issue[0-9]*-tmp
+/rice-issue[0-9]*
