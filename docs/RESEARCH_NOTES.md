@@ -6,11 +6,30 @@
 - OAuth refresh/validateとrotation保存を本番共通境界へ抽出し、再購読前の永続化、logout後の古いvalidate/rotation破棄をテストする。既存mainの遅延credential store、scope不足、部分失敗テストも維持する。
 - Twitch公式 https://dev.twitch.tv/docs/eventsub/handling-websocket-events/ を確認し、通知/keepaliveのみが期限を更新する契約と、新welcome前の旧接続維持を反映した。Rust app feature全125件は成功。
 
+## 2026-09-08: PR #159/#166 レビューとCI実行時間
+
+- #159の自動プローブをレビューし、mainを統合した。既存開発コンテナでRust 116件の成功を確認した。#166は文書とignoreのみで、アプリコードへの変更はない。
+- 両PRのRust CIは依存ビルド込みの3分上限でcancelledとなった。Rust test/clippyを15分へ変更し、実テスト失敗と区別する。Windowsでの棒読みちゃん・VOICEVOX実機確認は従来どおり残る。
+
+## 2026-09-08: ローカル worktree の整理
+
+- 未追跡の `.issue31-worktree`、`issue33-tmp`、`rice-issue42` は存在しない `/tmp` 配下を参照するリンクだったため削除した。`.issue42` は旧 `/workspaces/rice` を参照していた登録パスを修復し、未コミット変更がないことを確認して `git worktree remove` で削除した。存在しない worktree の登録も prune した。
+- GitHub の PR 一覧と fetch 後の `origin/main`（`3ad8d97`）を照合した。Issue #29 の型付き Twitch エラー分類は PR #161、#31 の frontend domain store 分割は PR #162、#33 の認証 credential I/O 分離は PR #165 でマージ済み。#31 は squash 後の `b4ae28f` とローカル branch の tree が一致した。
+- Issue #42 の backend state replay snapshot は未マージの PR #164 にあり、ローカル HEAD `54123d6` と PR HEAD が一致した。Issue #43 の決定的 OAuth/EventSub state harness は未マージの PR #163 にあり、ローカル `3739147` に続く `c2aa03e` がリモートへ提出済み。重複 PR は作成せず、修正ブランチは保持した。既存 PR の未完了検証は今回の整理では完了扱いにしない。
+- 今後の repo 内 worktree 用に `/.worktrees/` と既存の Issue 番号付きパスをルート限定で ignore した。`git check-ignore` で対象パスが無視され、通常のソースファイルは無視されないこと、`git diff --check` を確認した。アプリコードの変更はない。
+
+
 ## 2026-08-29: Issue #33 認証 credential I/O の mutex 隔離（実装中）
 
 - Twitch の認証状態 mutex は generation、pending、token、profile の短い状態更新だけを担当し、keyring と旧 Linux fallback file の同期 API は `TwitchAuthStore` に注入できる backend として分離する。`load`、`save`、`clear` は `spawn_blocking` 上で実行し、I/O 自体を async runtime の worker から外す。
 - save/clear は専用 I/O mutex で直列化し、save は I/O mutex を取得した後に auth generation を再確認する。logout は先に generation を無効化してから clear を待つため、遅延した古い保存が logout 後に資格情報を復活させない設計とする。
 - 遅延 fake store のテストを追加し、keyring 保存中の profile 取得と logout 後の stale save 無効化を検証する。cargo test/clippy の結果は実装完了時に追記する。
+
+## 2026-08-26: Issue #148 起動後の自動読み上げ接続プローブ
+
+- VOICEVOX の直接アダプタは未実装で、現行の正式経路は本アプリから棒読みちゃん TCP へ送り、VOICEVOX 連携は棒読みちゃん側へ委ねる。frontend は読み上げ状態の初期値を `disconnected` とし、設定読込後から 5 秒周期で `speech_health_probe` を実行するが、この自動プローブがユーザー向け［接続確認］と同じ「接続成功時に読み上げる」設定を流用していた。そのため下流の VOICEVOX が未起動でも Talk パケットが送られ、棒読みちゃん側の VOICEVOX 接続エラー発話を誘発していた。
+- 自動復旧プローブ専用の `health_probe` を追加し、設定にかかわらず無音の再生状態取得 `0x120` だけを送るようにした。ユーザーが明示的に実行する［接続確認］では従来どおり設定に応じた確認読み上げを維持する。ローカル TCP listener で自動プローブの受信 packet が `0x120` の 2 bytes だけであることを回帰テストし、`cargo test --locked`（98件）、`pnpm test`（154件）、`pnpm build`、security check、Rust fmt/clippy が成功した。本アプリ、棒読みちゃん、VOICEVOX の順に起動した Windows 実機でエラー文が発話されないことは手動確認として残る。
+
 
 ## 2026-08-08: Issue #53 Chat 仮想スクロールの prepend アンカー
 
