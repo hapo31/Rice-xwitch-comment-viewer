@@ -1,12 +1,14 @@
 # 実装 TODO
 
-最終調査日: 2026-08-29
+最終調査日: 2026-09-08
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
 
 調査メモは [`docs/RESEARCH_NOTES.md`](./RESEARCH_NOTES.md) に分離し、日付が新しいものほど上に追記してください。
 
 ## 現在の進捗サマリ
+
+2026-09-08: ローカル worktree の整理を完了。Issue #29/#31/#33 は main 反映済み、#42/#43 は既存 PR #164/#163 に保持。詳細は調査メモを参照。
 
 | Phase | 状態 | メモ |
 | --- | --- | --- |
@@ -131,6 +133,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] TypeScript の store reducer テストを追加する。
 
 ## Phase 5: 配信運用向け仕上げ
+
+- [x] ローカル worktree と切れたリンクを整理し、main／既存 PR への保存状況を確認する。ルートの worktree 専用パスを gitignore に追加する。
 
 - [x] Issue #73: production CSP を有効化し、Vite HMR 用 dev CSP を明示し、Tauri capability / custom command ACL と完全 decode 済み Launcher PNG の renderer 権限境界を最小化する。
 - [x] Issue #3: 非同期イベント購読を遅延 cleanup と部分失敗に安全な共通 helper へ統一する。
