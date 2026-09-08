@@ -1,5 +1,12 @@
 # 調査メモ
 
+## 2026-09-08: ローカル worktree の整理
+
+- 未追跡の `.issue31-worktree`、`issue33-tmp`、`rice-issue42` は存在しない `/tmp` 配下を参照するリンクだったため削除した。`.issue42` は旧 `/workspaces/rice` を参照していた登録パスを修復し、未コミット変更がないことを確認して `git worktree remove` で削除した。存在しない worktree の登録も prune した。
+- GitHub の PR 一覧と fetch 後の `origin/main`（`3ad8d97`）を照合した。Issue #29 の型付き Twitch エラー分類は PR #161、#31 の frontend domain store 分割は PR #162、#33 の認証 credential I/O 分離は PR #165 でマージ済み。#31 は squash 後の `b4ae28f` とローカル branch の tree が一致した。
+- Issue #42 の backend state replay snapshot は未マージの PR #164 にあり、ローカル HEAD `54123d6` と PR HEAD が一致した。Issue #43 の決定的 OAuth/EventSub state harness は未マージの PR #163 にあり、ローカル `3739147` に続く `c2aa03e` がリモートへ提出済み。重複 PR は作成せず、修正ブランチは保持した。既存 PR の未完了検証は今回の整理では完了扱いにしない。
+- 今後の repo 内 worktree 用に `/.worktrees/` と既存の Issue 番号付きパスをルート限定で ignore した。`git check-ignore` で対象パスが無視され、通常のソースファイルは無視されないこと、`git diff --check` を確認した。アプリコードの変更はない。
+
 ## 2026-08-29: Issue #33 認証 credential I/O の mutex 隔離（実装中）
 
 - Twitch の認証状態 mutex は generation、pending、token、profile の短い状態更新だけを担当し、keyring と旧 Linux fallback file の同期 API は `TwitchAuthStore` に注入できる backend として分離する。`load`、`save`、`clear` は `spawn_blocking` 上で実行し、I/O 自体を async runtime の worker から外す。
