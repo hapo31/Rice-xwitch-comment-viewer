@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-09-08: PR #159/#166 レビューとCI実行時間
+
+- #159の自動プローブをレビューし、mainを統合した。既存開発コンテナでRust 116件の成功を確認した。#166は文書とignoreのみで、アプリコードへの変更はない。
+- 両PRのRust CIは依存ビルド込みの3分上限でcancelledとなった。Rust test/clippyを15分へ変更し、実テスト失敗と区別する。Windowsでの棒読みちゃん・VOICEVOX実機確認は従来どおり残る。
+
 ## 2026-09-08: ローカル worktree の整理
 
 - 未追跡の `.issue31-worktree`、`issue33-tmp`、`rice-issue42` は存在しない `/tmp` 配下を参照するリンクだったため削除した。`.issue42` は旧 `/workspaces/rice` を参照していた登録パスを修復し、未コミット変更がないことを確認して `git worktree remove` で削除した。存在しない worktree の登録も prune した。

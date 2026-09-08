@@ -135,6 +135,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 5: 配信運用向け仕上げ
 
+- [x] PRレビューで確認したRust CIのビルド時間超過に対応し、Rust test/clippyの実行上限を15分へ変更する。
+
 - [x] ローカル worktree と切れたリンクを整理し、main／既存 PR への保存状況を確認する。ルートの worktree 専用パスを gitignore に追加する。
 
 - [x] Issue #73: production CSP を有効化し、Vite HMR 用 dev CSP を明示し、Tauri capability / custom command ACL と完全 decode 済み Launcher PNG の renderer 権限境界を最小化する。
