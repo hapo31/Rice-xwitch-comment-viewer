@@ -1,12 +1,14 @@
 # 実装 TODO
 
-最終調査日: 2026-08-29
+最終調査日: 2026-09-08
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
 
 調査メモは [`docs/RESEARCH_NOTES.md`](./RESEARCH_NOTES.md) に分離し、日付が新しいものほど上に追記してください。
 
 ## 現在の進捗サマリ
+
+2026-09-08: Issue #43のshadow harnessを本番処理の注入テストへ置換し、新welcome優先時の旧通知欠落とPingによるkeepalive期限延長を修正した。
 
 | Phase | 状態 | メモ |
 | --- | --- | --- |
@@ -107,7 +109,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Issue #23: EventSub 再購読時に最新の access token を取得し、401 時は refresh token rotation を保存して一度だけ再試行する。
 - [x] Issue #30: 必須 scope 不足の認証状態では EventSub 接続 task を開始せず、EventSub の更新後 access token も `/validate` した scope で再検証する。並行した再購読で古い refresh 結果が新しく回転済みの認証を解除しないよう、token lock 下で refresh token を照合する。
 - [x] Issue #32: EventSub の welcome/購読成功を確立済みとして記録し、30 秒以上安定した session の後だけ再接続 backoff を最短へ reset する。welcome 直後の失敗、連続失敗の上限、通常再接続、安定済み旧 session からの handover で新 welcome 前に失敗する状態を決定的テストで確認する。
-- [x] Issue #43: HTTP transport、WebSocket connector、credential store、clock を差し替え可能な決定的 harness を追加し、handover 通知、跨ぎ dedupe、keepalive timeout、retry 分類、token rotation 保存、validate/logout・connect/stop 競合、scope 不足、credential store 部分失敗を自動検証する。
+- [x] Issue #43: 本番session/handover/supervisorへfake socketとevent sinkを注入し、Tokio仮想時計で競合、跨ぎdedupe、keepalive期限、再接続を検証する。HTTP refresh/validateとgeneration-safe保存の実経路もテストする。
 - [x] Issue #74: `ChatMessage.received_at` を `DateTime<Utc>` に統一し、offset・小数秒を UTC の `receivedAt` として bridge へ渡す。timestamp の欠落・空文字・タイムゾーンなし・非文字列を含む不正値と leap second は WebSocket frame 取得時刻へ fallback して警告し、frontend の境界検証、system/mock message、ローカル時刻表示をテストする。
 - [ ] 実 Twitch 環境で `channel.chat.message` 購読と Chat view 表示を手動確認する。
 

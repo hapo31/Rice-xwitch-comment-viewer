@@ -1,5 +1,11 @@
 # 調査メモ
 
+## 2026-09-08: Issue #43 本番Twitch処理の回帰テスト
+
+- Draftの模擬状態機械は本番のselect!/timeoutを通らず競合を見逃していたため撤去。本番のsession/handover/supervisorに通信とevent sinkを注入し、Tokioの仮想時計で新welcome先行、旧通知、再接続跨ぎdedupe、handshake/welcome失敗25秒維持と2秒backoff、keepalive期限を検証した。Pingでは期限を延長しない。
+- OAuth refresh/validateとrotation保存を本番共通境界へ抽出し、再購読前の永続化、logout後の古いvalidate/rotation破棄をテストする。既存mainの遅延credential store、scope不足、部分失敗テストも維持する。
+- Twitch公式 https://dev.twitch.tv/docs/eventsub/handling-websocket-events/ を確認し、通知/keepaliveのみが期限を更新する契約と、新welcome前の旧接続維持を反映した。Rust app feature全125件は成功。
+
 ## 2026-08-29: Issue #33 認証 credential I/O の mutex 隔離（実装中）
 
 - Twitch の認証状態 mutex は generation、pending、token、profile の短い状態更新だけを担当し、keyring と旧 Linux fallback file の同期 API は `TwitchAuthStore` に注入できる backend として分離する。`load`、`save`、`clear` は `spawn_blocking` 上で実行し、I/O 自体を async runtime の worker から外す。
