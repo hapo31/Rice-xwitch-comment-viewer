@@ -26,6 +26,7 @@ fn main() {
             "app_exit",
             "app_open_external_url",
             "app_build_info",
+            "app_events_snapshot",
             "launcher_add",
             "launcher_remove",
             "launcher_launch",

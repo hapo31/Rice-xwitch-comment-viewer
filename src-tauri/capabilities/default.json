@@ -16,6 +16,7 @@
     "allow-app-exit",
     "allow-app-open-external-url",
     "allow-app-build-info",
+    "allow-app-events-snapshot",
     "allow-launcher-add",
     "allow-launcher-remove",
     "allow-launcher-launch",

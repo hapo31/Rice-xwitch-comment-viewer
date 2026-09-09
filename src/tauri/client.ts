@@ -10,7 +10,9 @@ import type {
   LauncherItem,
   LauncherLaunchResult,
   SpeechQueueUpdatedEvent,
+  SpeechStateSnapshot,
   SpeechStatusEvent,
+  AppEventsSnapshot,
   SettingsRecoveryNotice,
   TwitchAuthPollResult,
   TwitchStatusEvent,
@@ -93,6 +95,14 @@ export async function getSettings(): Promise<AppSettings> {
   }
 
   return normalizeSettings(await invoke<Partial<AppSettings>>("settings_get"));
+}
+
+export async function getAppEventsSnapshot(): Promise<AppEventsSnapshot | undefined> {
+  if (!isTauriRuntime) {
+    return undefined;
+  }
+
+  return invoke<AppEventsSnapshot>("app_events_snapshot");
 }
 
 export async function takeSettingsRecoveryNotice(): Promise<SettingsRecoveryNotice | undefined> {
@@ -205,12 +215,12 @@ export async function speechControl(command: "pause" | "resume" | "skip" | "clea
   return invoke<void>(commandName);
 }
 
-export async function speechQueueReload(): Promise<void> {
+export async function speechQueueReload(): Promise<SpeechStateSnapshot | undefined> {
   if (!isTauriRuntime) {
-    return;
+    return undefined;
   }
 
-  return invoke<void>("speech_queue_reload");
+  return invoke<SpeechStateSnapshot>("speech_queue_reload");
 }
 
 export async function speechQueueRemove(itemId: string): Promise<void> {

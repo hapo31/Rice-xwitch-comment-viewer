@@ -29,6 +29,7 @@ import {
   appExit,
   appOpenExternalUrl,
   getSettings,
+  getAppEventsSnapshot,
   launcherAdd,
   launcherLaunch,
   launcherLaunchAll,
@@ -68,6 +69,7 @@ const showStartupGuideForSession = claimStartupGuideForSession(window.sessionSto
 
 export function AppShell() {
   const stores = useDomainStores();
+  const [eventsRestored, setEventsRestored] = useState(false);
   const connection = useConnectionSelector((value) => value);
   const settings = useSettingsSelector((value) => value.settings);
   const queueItems = useQueueSelector((value) => value.items);
@@ -184,7 +186,10 @@ export function AppShell() {
       })
       .catch(() => reportNotification("error", "command", "設定の読み込みに失敗しました。"));
 
-    if (startupAuthAttempted.current) {
+  }, []);
+
+  useEffect(() => {
+    if (!eventsRestored || startupAuthAttempted.current) {
       return;
     }
     startupAuthAttempted.current = true;
@@ -200,7 +205,6 @@ export function AppShell() {
       if (auth.status === "authenticated") {
         dispatch({ type: "twitch.profile", profile: auth.result.profile });
         dispatch({ type: "twitch.authStatus", status: "authenticated" });
-        dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
         if (auth.result.storageWarning) {
           reportNotification("warning", "system", auth.result.storageWarning);
           addSystemChatMessage(auth.result.storageWarning);
@@ -208,14 +212,18 @@ export function AppShell() {
         return;
       }
 
+      if (auth.status === "missing") {
+        dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
+        return;
+      }
+
       if (auth.status === "error") {
         dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
-        dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
         dispatch({ type: "twitch.profile", profile: undefined });
         reportNotification("error", "command", auth.error);
       }
     });
-  }, []);
+  }, [eventsRestored]);
 
   function addSystemChatMessage(text: string) {
     dispatch({
@@ -258,21 +266,23 @@ export function AppShell() {
 
   useEffect(() => subscribeDomainEvents({
     stores,
-    bridge: { subscribeAppLogEvents, subscribeTwitchStatusEvents, subscribeTwitchChatMessageEvents, subscribeSpeechStatusEvents, subscribeSpeechQueueUpdatedEvents },
+    bridge: { getAppEventsSnapshot, speechQueueReload, subscribeAppLogEvents, subscribeTwitchStatusEvents, subscribeTwitchChatMessageEvents, subscribeSpeechStatusEvents, subscribeSpeechQueueUpdatedEvents },
     reportNotification,
+    replaySystemLog: addSystemChatMessage,
+    onRestored: () => setEventsRestored(true),
     routeSystemTimelineEvent: (event) => routeSystemTimelineEvent(event as Parameters<SystemTimelineRouter["shouldRecord"]>[0]),
     speechRecoveryMessage: speechRecoveryTimelineEvent,
     twitchTimelineEvent: timelineEventFromTwitchStatus,
   }), []);
   useEffect(() => {
-    if (autoConnectAttempted.current || !state.settings?.twitch.autoConnect || state.twitchAuthStatus !== "authenticated" || state.twitchConnectionStatus !== "disconnected") return;
+    if (!eventsRestored || autoConnectAttempted.current || !state.settings?.twitch.autoConnect || state.twitchAuthStatus !== "authenticated" || state.twitchConnectionStatus !== "disconnected") return;
     autoConnectAttempted.current = true;
     void handleTwitchConnect({ automatic: true });
-  }, [state.settings?.twitch.autoConnect, state.twitchAuthStatus, state.twitchConnectionStatus]);
+  }, [eventsRestored, state.settings?.twitch.autoConnect, state.twitchAuthStatus, state.twitchConnectionStatus]);
 
   useEffect(() => {
     const shouldPoll =
-      state.settings &&
+      eventsRestored && state.settings &&
       (state.speechStatus === "disconnected" || state.speechStatus === "error");
 
     if (!shouldPoll) {
@@ -286,7 +296,7 @@ export function AppShell() {
         if (cancelled) {
           return;
         }
-        dispatch({ type: "speech.status", status: "idle" });
+        if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "idle" });
         reportInfo(message, "event");
         routeSystemTimelineEvent(speechRecoveryTimelineEvent(message, "idle"));
       } catch {
@@ -303,7 +313,7 @@ export function AppShell() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [state.settings, state.speechStatus]);
+  }, [eventsRestored, state.settings, state.speechStatus]);
 
   async function handleSpeechTest(text?: string) {
     try {
@@ -539,7 +549,8 @@ export function AppShell() {
 
   async function handleQueueReload() {
     try {
-      await speechQueueReload();
+      const snapshot = await speechQueueReload();
+      if (snapshot) dispatch({ type: "speech.snapshot", snapshot });
     } catch (error) {
       reportError(error);
     }

@@ -9,8 +9,10 @@ export type AsyncSubscription = () => Promise<Unlisten>;
 export function subscribeWithCleanup(
   subscriptions: AsyncSubscription[],
   onError: (error: unknown) => void = () => undefined,
+  onReady: () => void = () => undefined,
 ): Unlisten {
   let disposed = false;
+  let failed = false;
   const active: Unlisten[] = [];
 
   const reportError = (error: unknown) => {
@@ -29,22 +31,25 @@ export function subscribeWithCleanup(
     }
   };
 
-  for (const subscribe of subscriptions) {
-    void Promise.resolve().then(subscribe).then(
-      (unlisten) => {
-        if (disposed) {
-          safelyUnlisten(unlisten);
-        } else {
-          active.push(unlisten);
-        }
-      },
-      (error) => {
-        if (!disposed) {
-          reportError(error);
-        }
-      },
-    );
-  }
+  const registrations = subscriptions.map((subscribe) => Promise.resolve().then(subscribe).then(
+    (unlisten) => {
+      if (disposed) {
+        safelyUnlisten(unlisten);
+      } else {
+        active.push(unlisten);
+      }
+    },
+    (error) => {
+      failed = true;
+      if (!disposed) {
+        reportError(error);
+      }
+    },
+  ));
+
+  void Promise.all(registrations).then(() => {
+    if (!disposed && !failed) onReady();
+  }).catch(reportError);
 
   return () => {
     disposed = true;

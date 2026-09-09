@@ -1,5 +1,17 @@
 # 調査メモ
 
+## 2026-09-09: Issue #42 Draftレビューと状態復元の仕上げ（完了）
+
+- mainのdomain store分割を維持してsnapshot reconciliationをorchestrationへ移した。全listenerの成功後にのみsnapshotを取得し、各streamのrevisionで古い応答と重複を除外する。起動処理と自動接続は復元後に開始し、既存のTwitch接続状態をローカルでdisconnectedへ上書きしない。
+- build.rsのapp_events_snapshot ACL登録漏れを修正。snapshotはキャッシュしたqueue payloadとrevisionを組で保持し、clear後の架空の空queue通知を除いた。自動ヘルスプローブは無音を維持し、一時停止・読み上げ中のqueue状態を保持する。
+- 起動ログとemit errorに安定したIDを付与し、late subscriberのLogs/system Chatへ復元する。state replayの購読遅延、古いsnapshot、unmount、購読/query失敗を回帰テストした。
+- native command bridgeのsnapshot応答も検証。Rust 130件、app無効85件、frontend 176件が成功し、clippy、frontend build、セキュリティ検査、format/diff検査も成功した。Windows実機での外部アプリ連携は既存の手動確認項目として残る。
+
+## 2026-08-29: Issue #42 backend state replay と speech snapshot
+
+- Tauri の setup emit は WebView listener 登録前に実行されるため、backend に bounded operational log/status store と `app_events_snapshot` command を追加する。emit の失敗は stderr と診断 snapshot の双方で観測する。保存済み credential は `/validate` 完了まで `Validating` とし、未検証の `Connected` を送らない。
+- speech queue/status は monotonic revision 付きの単一 `SpeechStateSnapshot` として `speech_queue_reload` から取得する。frontend は listener 登録完了 callback 後に snapshot を取得し、並行 event と revision 比較して reload 後の paused queue を保持する。
+
 ## 2026-09-09: Issue #43 最終検証
 
 - app feature全126件とclippyが成功。app無効のビルドで既存のqueue status importとcredential storeテストのcfg不足を検出したため修正し、app無効のテストも成功した。本番のTwitch fixture・scope・dedupeテストはapp無効でも維持した。
@@ -9,6 +21,7 @@
 - Draftの模擬状態機械は本番のselect!/timeoutを通らず競合を見逃していたため撤去。本番のsession/handover/supervisorに通信とevent sinkを注入し、Tokioの仮想時計で新welcome先行、旧通知、再接続跨ぎdedupe、handshake/welcome失敗25秒維持と2秒backoff、keepalive期限を検証した。Pingでは期限を延長しない。
 - OAuth refresh/validateとrotation保存を本番共通境界へ抽出し、再購読前の永続化、logout後の古いvalidate/rotation破棄をテストする。既存mainの遅延credential store、scope不足、部分失敗テストも維持する。
 - Twitch公式 https://dev.twitch.tv/docs/eventsub/handling-websocket-events/ を確認し、通知/keepaliveのみが期限を更新する契約と、新welcome前の旧接続維持を反映した。Rust app feature全125件は成功。
+
 
 ## 2026-09-08: Issue #94 単独管理方針でのレビュー完了
 
@@ -52,6 +65,7 @@
 
 - VOICEVOX の直接アダプタは未実装で、現行の正式経路は本アプリから棒読みちゃん TCP へ送り、VOICEVOX 連携は棒読みちゃん側へ委ねる。frontend は読み上げ状態の初期値を `disconnected` とし、設定読込後から 5 秒周期で `speech_health_probe` を実行するが、この自動プローブがユーザー向け［接続確認］と同じ「接続成功時に読み上げる」設定を流用していた。そのため下流の VOICEVOX が未起動でも Talk パケットが送られ、棒読みちゃん側の VOICEVOX 接続エラー発話を誘発していた。
 - 自動復旧プローブ専用の `health_probe` を追加し、設定にかかわらず無音の再生状態取得 `0x120` だけを送るようにした。ユーザーが明示的に実行する［接続確認］では従来どおり設定に応じた確認読み上げを維持する。ローカル TCP listener で自動プローブの受信 packet が `0x120` の 2 bytes だけであることを回帰テストし、`cargo test --locked`（98件）、`pnpm test`（154件）、`pnpm build`、security check、Rust fmt/clippy が成功した。本アプリ、棒読みちゃん、VOICEVOX の順に起動した Windows 実機でエラー文が発話されないことは手動確認として残る。
+
 
 
 

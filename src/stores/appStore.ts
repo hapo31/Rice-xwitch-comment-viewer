@@ -7,6 +7,9 @@ import type {
   QueueItem,
   QueueDisplayState,
   SpeechStatus,
+  SpeechStateSnapshot,
+  SpeechAdapterHealth,
+  SpeechQueuePhase,
   TwitchChatConnectionStatus,
   TwitchDeviceAuthStart,
   TwitchUserProfile,
@@ -29,13 +32,14 @@ export interface AppState {
 
 export type AppAction =
   | { type: "settings.loaded"; settings: AppSettings }
-  | { type: "twitch.authStatus"; status: AuthStatus }
-  | { type: "twitch.connectionStatus"; status: TwitchChatConnectionStatus }
+  | { type: "twitch.authStatus"; status: AuthStatus; revision?: number }
+  | { type: "twitch.connectionStatus"; status: TwitchChatConnectionStatus; revision?: number }
   | { type: "twitch.authPrompt"; prompt?: TwitchDeviceAuthStart }
   | { type: "twitch.profile"; profile?: TwitchUserProfile }
-  | { type: "speech.status"; status: SpeechStatus }
+  | { type: "speech.status"; status: SpeechStatus; revision?: number; adapterHealth?: SpeechAdapterHealth }
+  | { type: "speech.snapshot"; snapshot: SpeechStateSnapshot }
   | { type: "chat.message"; message: ChatMessage }
-  | { type: "queue.changed"; items: QueueItem[] }
+  | { type: "queue.changed"; items: QueueItem[]; revision?: number; phase?: SpeechQueuePhase }
   | { type: "launcher.changed"; items: AppSettings["launcher"]["items"] }
   | { type: "log.added"; log: AppLogEvent }
   | { type: "notification.added"; notification: Omit<AppNotification, "id"> & { id?: string } }

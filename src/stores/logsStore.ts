@@ -19,7 +19,8 @@ export const initialLogsState: LogsState = { logs: [], notifications: [] };
 export function logsReducer(state: LogsState, action: LogsAction): LogsState {
   switch (action.type) {
     case "log.added":
-      return { ...state, logs: [{ ...action.log, id: uniqueLogId(action.log, state.logs) }, ...state.logs].slice(0, 500) };
+      if (action.log.id && state.logs.some((log) => log.id === action.log.id)) return state;
+      return { ...state, logs: [{ ...action.log, id: uniqueLogId(action.log, state.logs) }, ...state.logs].sort((a, b) => b.occurredAtMs - a.occurredAtMs).slice(0, 500) };
     case "notification.added": {
       const notification = { ...action.notification, id: action.notification.id ?? notificationId(action.notification) };
       const duplicateIndex = state.notifications.findIndex((existing) => isDuplicateNotification(existing, notification));
