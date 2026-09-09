@@ -1,5 +1,9 @@
 # 調査メモ
 
+## 2026-09-09: Issue #43 最終検証
+
+- app feature全126件とclippyが成功。app無効のビルドで既存のqueue status importとcredential storeテストのcfg不足を検出したため修正し、app無効のテストも成功した。本番のTwitch fixture・scope・dedupeテストはapp無効でも維持した。
+
 ## 2026-09-08: Issue #43 本番Twitch処理の回帰テスト
 
 - Draftの模擬状態機械は本番のselect!/timeoutを通らず競合を見逃していたため撤去。本番のsession/handover/supervisorに通信とevent sinkを注入し、Tokioの仮想時計で新welcome先行、旧通知、再接続跨ぎdedupe、handshake/welcome失敗25秒維持と2秒backoff、keepalive期限を検証した。Pingでは期限を延長しない。

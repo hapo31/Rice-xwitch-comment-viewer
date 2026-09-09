@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-09-08
+最終調査日: 2026-09-09
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
 
@@ -255,6 +255,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [ ] 失敗時に棒読みちゃんアダプタへ戻せる UI を作る。
 
 ## テストと確認
+
+- [x] Issue #43レビュー: app無効時のqueue status importとTwitchテストfixtureのcfgを修正し、app有無のcargo testとappのclippyを確認する。
 
 - [x] Rust: 棒読みちゃんパケット生成テストを追加する。
 - [x] Rust: 棒読みちゃん制御パケットテストを追加する。

@@ -3036,14 +3036,14 @@ mod tests {
         OAuthErrorResponse, TwitchApiError, TwitchAuthFailure, TWITCH_HTTP_TIMEOUT,
     };
     use chrono::{DateTime, Utc};
-    use std::{
-        cell::RefCell,
-        time::{Duration, Instant},
-    };
+    #[cfg(feature = "app")]
+    use std::cell::RefCell;
+    use std::time::{Duration, Instant};
 
     #[cfg(feature = "app")]
     use std::sync::{Arc, Condvar, Mutex};
 
+    #[cfg(feature = "app")]
     #[derive(Default)]
     struct FakeAuthSecretStore {
         secret: RefCell<Option<String>>,
@@ -3053,6 +3053,7 @@ mod tests {
         save_calls: RefCell<usize>,
     }
 
+    #[cfg(feature = "app")]
     impl FakeAuthSecretStore {
         fn with_secret(secret: String) -> Self {
             Self {
@@ -3062,6 +3063,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "app")]
     impl AuthSecretStore for FakeAuthSecretStore {
         fn load_secret(&self) -> anyhow::Result<Option<String>> {
             if self.fail_load {
@@ -3213,6 +3215,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "app")]
     fn stored_auth_secret() -> String {
         serde_json::to_string(&StoredTwitchAuth {
             client_id: "client-id".to_string(),
@@ -3231,6 +3234,7 @@ mod tests {
         .unwrap()
     }
 
+    #[cfg(feature = "app")]
     fn twitch_auth_state() -> TwitchAuthState {
         TwitchAuthState {
             generation: 0,
@@ -3595,6 +3599,7 @@ mod tests {
         assert!(auth.token.is_some());
     }
 
+    #[cfg(feature = "app")]
     #[test]
     fn newer_auth_generation_invalidates_an_in_flight_poll_and_credentials() {
         let mut auth = twitch_auth_state();
@@ -4268,6 +4273,7 @@ mod tests {
         assert_eq!(current.refresh_token, "newer-refresh-token");
     }
 
+    #[cfg(feature = "app")]
     #[test]
     fn saves_auth_to_the_secure_store_when_available() {
         let secure = FakeAuthSecretStore::default();
@@ -4283,6 +4289,7 @@ mod tests {
         assert_eq!(*legacy.save_calls.borrow(), 0);
     }
 
+    #[cfg(feature = "app")]
     #[test]
     fn keeps_auth_session_only_when_secure_store_write_fails() {
         let secure = FakeAuthSecretStore {
@@ -4304,6 +4311,7 @@ mod tests {
         assert_eq!(*legacy.save_calls.borrow(), 0);
     }
 
+    #[cfg(feature = "app")]
     #[test]
     fn migrates_existing_legacy_auth_after_secure_store_recovers() {
         let legacy_secret = stored_auth_secret();
@@ -4328,6 +4336,7 @@ mod tests {
         assert!(legacy.secret.borrow().is_none());
     }
 
+    #[cfg(feature = "app")]
     #[test]
     fn warns_when_secure_store_cannot_be_read_and_no_legacy_auth_exists() {
         let secure = FakeAuthSecretStore {
@@ -4350,6 +4359,7 @@ mod tests {
         assert!(warning.contains("再ログイン"));
     }
 
+    #[cfg(feature = "app")]
     #[test]
     fn leaves_legacy_auth_unread_when_migration_is_rejected() {
         let secure = FakeAuthSecretStore {
@@ -4372,6 +4382,7 @@ mod tests {
         assert!(legacy.secret.borrow().is_some());
     }
 
+    #[cfg(feature = "app")]
     #[test]
     fn failed_secure_auth_clear_keeps_the_secret_for_retry() {
         let secure = FakeAuthSecretStore {
@@ -4387,6 +4398,7 @@ mod tests {
         assert!(secure.secret.borrow().is_some());
     }
 
+    #[cfg(feature = "app")]
     #[test]
     fn logout_clears_secure_and_legacy_auth_state() {
         let secure = FakeAuthSecretStore::with_secret(stored_auth_secret());
