@@ -11,6 +11,17 @@
 - Tauri の setup emit は WebView listener 登録前に実行されるため、backend に bounded operational log/status store と `app_events_snapshot` command を追加する。emit の失敗は stderr と診断 snapshot の双方で観測する。保存済み credential は `/validate` 完了まで `Validating` とし、未検証の `Connected` を送らない。
 - speech queue/status は monotonic revision 付きの単一 `SpeechStateSnapshot` として `speech_queue_reload` から取得する。frontend は listener 登録完了 callback 後に snapshot を取得し、並行 event と revision 比較して reload 後の paused queue を保持する。
 
+## 2026-09-09: Issue #43 最終検証
+
+- app feature全126件とclippyが成功。app無効のビルドで既存のqueue status importとcredential storeテストのcfg不足を検出したため修正し、app無効のテストも成功した。本番のTwitch fixture・scope・dedupeテストはapp無効でも維持した。
+
+## 2026-09-08: Issue #43 本番Twitch処理の回帰テスト
+
+- Draftの模擬状態機械は本番のselect!/timeoutを通らず競合を見逃していたため撤去。本番のsession/handover/supervisorに通信とevent sinkを注入し、Tokioの仮想時計で新welcome先行、旧通知、再接続跨ぎdedupe、handshake/welcome失敗25秒維持と2秒backoff、keepalive期限を検証した。Pingでは期限を延長しない。
+- OAuth refresh/validateとrotation保存を本番共通境界へ抽出し、再購読前の永続化、logout後の古いvalidate/rotation破棄をテストする。既存mainの遅延credential store、scope不足、部分失敗テストも維持する。
+- Twitch公式 https://dev.twitch.tv/docs/eventsub/handling-websocket-events/ を確認し、通知/keepaliveのみが期限を更新する契約と、新welcome前の旧接続維持を反映した。Rust app feature全125件は成功。
+
+
 ## 2026-09-08: Issue #94 単独管理方針でのレビュー完了
 
 - 所有者の明示指示により、下記過去メモのTeam・別承認者・ruleset・environment必須条件を撤回した。公開workflowはmainのtrusted script、同一runのprovenance、tag objectの継続照合を維持し、取得した成果物のchecksum検証を追加した。外部のrepository設定は変更しない。
@@ -29,6 +40,7 @@
 - 調査時点の repository settings は rulesets 0 件、`main` branch protection なし、environments 0 件だった。workflow だけでは tag update/delete の TOCTOU と、過去の tag commit に残る旧 workflow の write 権限を無効化できないため、`refs/tags/v*` の作成主体・update・delete を制限する active ruleset、review 済み `main`、tag 作成者と分離した required reviewer を持つ `release` environment を管理者の必須手順として残す。外部設定はこの変更では操作していない。
 - tag push workflow から `contents: write` を除去し、検証済み tag object / event commit を provenance artifact に固定した。default branch SHA の trusted script を使う `workflow_run` publish job が、current tag object、workflow run commit、checkout `HEAD`、`origin/main` 到達可能性、3 manifest version を再照合し、remote tag を Release 作成・upload・公開の前後で確認する。non-main、event/checkout mismatch、同じ commit 上で annotation だけを変えた moved tag、manifest/tag mismatch、remote moved tag、write 権限の tag workflow 再導入を自動テストした。release script tests、workflow policy / YAML 構文、`pnpm test`（38 files / 154 tests）、`pnpm build`、`git diff --check` は成功した。
 
+
 ## 2026-09-08: PR #159/#166 レビューとCI実行時間
 
 - #159の自動プローブをレビューし、mainを統合した。既存開発コンテナでRust 116件の成功を確認した。#166は文書とignoreのみで、アプリコードへの変更はない。
@@ -40,6 +52,7 @@
 - GitHub の PR 一覧と fetch 後の `origin/main`（`3ad8d97`）を照合した。Issue #29 の型付き Twitch エラー分類は PR #161、#31 の frontend domain store 分割は PR #162、#33 の認証 credential I/O 分離は PR #165 でマージ済み。#31 は squash 後の `b4ae28f` とローカル branch の tree が一致した。
 - Issue #42 の backend state replay snapshot は未マージの PR #164 にあり、ローカル HEAD `54123d6` と PR HEAD が一致した。Issue #43 の決定的 OAuth/EventSub state harness は未マージの PR #163 にあり、ローカル `3739147` に続く `c2aa03e` がリモートへ提出済み。重複 PR は作成せず、修正ブランチは保持した。既存 PR の未完了検証は今回の整理では完了扱いにしない。
 - 今後の repo 内 worktree 用に `/.worktrees/` と既存の Issue 番号付きパスをルート限定で ignore した。`git check-ignore` で対象パスが無視され、通常のソースファイルは無視されないこと、`git diff --check` を確認した。アプリコードの変更はない。
+
 
 ## 2026-08-29: Issue #33 認証 credential I/O の mutex 隔離（実装中）
 

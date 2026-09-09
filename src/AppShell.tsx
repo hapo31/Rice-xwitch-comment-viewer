@@ -212,6 +212,11 @@ export function AppShell() {
         return;
       }
 
+      if (auth.status === "missing") {
+        dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
+        return;
+      }
+
       if (auth.status === "error") {
         dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
         dispatch({ type: "twitch.profile", profile: undefined });
@@ -291,7 +296,7 @@ export function AppShell() {
         if (cancelled) {
           return;
         }
-        if (!isDesktopRuntime) dispatch({ type: "speech.status", status: "idle" });
+        if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "idle" });
         reportInfo(message, "event");
         routeSystemTimelineEvent(speechRecoveryTimelineEvent(message, "idle"));
       } catch {

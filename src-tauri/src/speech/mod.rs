@@ -1,10 +1,11 @@
 pub mod bouyomi;
 
+use crate::app_events::SpeechQueueItemStatus;
+
 #[cfg(feature = "app")]
 use crate::app_events::{
     emit_app_log, emit_speech_queue_updated, emit_speech_status, AppEventState, AppLogLevel,
-    SpeechQueueItemEvent, SpeechQueueItemStatus, SpeechQueuePhase, SpeechStateSnapshot,
-    SpeechStatus,
+    SpeechQueueItemEvent, SpeechQueuePhase, SpeechStateSnapshot, SpeechStatus,
 };
 #[cfg(feature = "app")]
 use crate::settings::AppState;
