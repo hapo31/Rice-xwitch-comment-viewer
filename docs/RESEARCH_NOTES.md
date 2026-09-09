@@ -1,10 +1,11 @@
 # 調査メモ
 
-## 2026-09-09: Issue #42 Draftレビューと状態復元の仕上げ（検証中）
+## 2026-09-09: Issue #42 Draftレビューと状態復元の仕上げ（完了）
 
 - mainのdomain store分割を維持してsnapshot reconciliationをorchestrationへ移した。全listenerの成功後にのみsnapshotを取得し、各streamのrevisionで古い応答と重複を除外する。起動処理と自動接続は復元後に開始し、既存のTwitch接続状態をローカルでdisconnectedへ上書きしない。
 - build.rsのapp_events_snapshot ACL登録漏れを修正。snapshotはキャッシュしたqueue payloadとrevisionを組で保持し、clear後の架空の空queue通知を除いた。自動ヘルスプローブは無音を維持し、一時停止・読み上げ中のqueue状態を保持する。
-- 起動ログとemit errorに安定したIDを付与し、late subscriberのLogs/system Chatへ復元する。state replayの購読遅延、古いsnapshot、unmount、購読/query失敗を回帰テストする。
+- 起動ログとemit errorに安定したIDを付与し、late subscriberのLogs/system Chatへ復元する。state replayの購読遅延、古いsnapshot、unmount、購読/query失敗を回帰テストした。
+- native command bridgeのsnapshot応答も検証。Rust 130件、app無効85件、frontend 176件が成功し、clippy、frontend build、セキュリティ検査、format/diff検査も成功した。Windows実機での外部アプリ連携は既存の手動確認項目として残る。
 
 ## 2026-08-29: Issue #42 backend state replay と speech snapshot
 
