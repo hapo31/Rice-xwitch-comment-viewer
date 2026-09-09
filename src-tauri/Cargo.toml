@@ -42,3 +42,6 @@ windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
 default = ["app"]
 app = ["dep:tauri", "dep:tauri-plugin-dialog", "custom-protocol"]
 custom-protocol = ["tauri?/custom-protocol"]
+
+[dev-dependencies]
+tokio = { version = "1.41", features = ["test-util"] }
