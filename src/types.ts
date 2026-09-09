@@ -274,6 +274,7 @@ export interface AppEventsSnapshot {
 }
 
 export interface AppEventEmitError {
+  id: string;
   event: string;
   error: string;
   occurredAtMs: number;

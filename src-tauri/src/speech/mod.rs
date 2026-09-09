@@ -591,12 +591,12 @@ pub fn speech_queue_reload(
         .speech_queue
         .lock()
         .map_err(|error| error.to_string())?;
-    let queue_snapshot = queue_event_snapshot(&queue, None);
+    let _queue_guard = queue;
     let event_state = app
         .try_state::<AppEventState>()
         .ok_or_else(|| "アプリ状態を再読込できません。".to_string())?;
     event_state
-        .speech_state_snapshot(queue_snapshot)
+        .speech_state_snapshot()
         .ok_or_else(|| "読み上げ状態をまだ取得できません。".to_string())
 }
 

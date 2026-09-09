@@ -20,6 +20,12 @@ src-tauri/
   app_events              フロントエンドへのイベント配信
 ```
 
+### Frontend domain store 境界
+
+`DomainProvider` は chat、queue、connection、settings、logs を独立した `useSyncExternalStore` source として保持する。各画面は `use*Selector` で必要な slice だけを購読し、Chat event は Chat store の subscriber だけを通知する。Launcher は settings の launcher selector、警告は logs store の notifications slice を使う。`App` は provider と shell の wiring のみを行い、Tauri の event 購読、認証復元、設定 mutation は `domainOrchestration` の dependency-injected boundary に集約する。
+
+旧 `AppState/appReducer` は presentation/test compatibility facade として残し、runtime の更新経路には使用しない。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。
+
 ## データフロー
 
 ```text
@@ -142,7 +148,7 @@ Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、encoded/de
 
 ### backend event replay と speech state snapshot
 
-backend は bounded な operational log ring と Twitch（auth/chat）/speech の最新 status を managed state に保持する。`app_events_snapshot` command は listener 登録後にこの状態を取得するため、起動時に先行 emit されたログ・status も late subscriber へ復元できる。各 status と speech queue event には単調増加 `revision` を付与し、`speech_queue_reload` は status と queue を同じ revision の `SpeechStateSnapshot` として返す。frontend は全 listener を登録してから snapshot を取得し、snapshot より新しい並行 event を古い値で上書きしない。
+backend は bounded な operational log ring と Twitch（auth/chat）/speech の最新 status を managed state に保持する。`app_events_snapshot` command は listener 登録後にこの状態を取得するため、起動時に先行 emit されたログ・status も late subscriber へ復元できる。各 status と speech queue event には単調増加 `revision` を付与し、`speech_queue_reload` は status と queue を同一ロック下で採取した `SpeechStateSnapshot` として返す（各componentは最後の更新revisionを保持する）。frontend は全 listener を登録してから snapshot を取得し、snapshot より新しい並行 event を古い値で上書きしない。
 
 保存済み Twitch credential の deserialize は認証済みを意味しない。起動時は `Validating` を通知し、`/validate` 成功後だけ `Connected` へ遷移する。event emit の失敗は stderr だけでなく bounded diagnostic として snapshot へ記録する。
 

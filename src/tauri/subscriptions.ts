@@ -12,6 +12,7 @@ export function subscribeWithCleanup(
   onReady: () => void = () => undefined,
 ): Unlisten {
   let disposed = false;
+  let failed = false;
   const active: Unlisten[] = [];
 
   const reportError = (error: unknown) => {
@@ -39,6 +40,7 @@ export function subscribeWithCleanup(
       }
     },
     (error) => {
+      failed = true;
       if (!disposed) {
         reportError(error);
       }
@@ -46,8 +48,8 @@ export function subscribeWithCleanup(
   ));
 
   void Promise.all(registrations).then(() => {
-    if (!disposed) onReady();
-  });
+    if (!disposed && !failed) onReady();
+  }).catch(reportError);
 
   return () => {
     disposed = true;

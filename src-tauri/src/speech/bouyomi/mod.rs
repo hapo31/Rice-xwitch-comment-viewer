@@ -1,8 +1,5 @@
 #[cfg(feature = "app")]
-use crate::app_events::{
-    emit_app_log, emit_speech_queue_updated, emit_speech_status, AppLogLevel, SpeechQueuePhase,
-    SpeechStatus,
-};
+use crate::app_events::{emit_app_log, emit_speech_status, AppLogLevel, SpeechStatus};
 #[cfg(feature = "app")]
 use crate::settings::AppState;
 #[cfg(feature = "app")]
@@ -160,6 +157,10 @@ impl BouyomiAdapter {
             self.send_query(BouyomiQueryCommand::IsNowPlaying).await?;
         }
         Ok(started_at.elapsed())
+    }
+
+    pub async fn health_probe(&self) -> anyhow::Result<Duration> {
+        self.health_check(false, "").await
     }
 
     pub async fn speak(&self, text: &str) -> anyhow::Result<()> {
@@ -353,9 +354,8 @@ pub async fn speech_health_probe(
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<String, String> {
     let adapter = adapter_from_settings(&state)?;
-    let (speak_on_success, success_message) = connection_success_settings(&state)?;
     let result = adapter
-        .health_check(speak_on_success, &success_message)
+        .health_probe()
         .await
         .map(|elapsed| {
             format!(
@@ -366,18 +366,24 @@ pub async fn speech_health_probe(
         .map_err(to_user_message);
     match &result {
         Ok(_) => {
-            let paused = state
+            let queue = state
                 .speech_queue
                 .lock()
-                .map(|queue| queue.paused)
-                .unwrap_or(false);
+                .map_err(|error| error.to_string())?;
+            let status = if queue.paused {
+                SpeechStatus::Paused
+            } else if queue
+                .pending
+                .iter()
+                .any(|item| item.status == crate::app_events::SpeechQueueItemStatus::Speaking)
+            {
+                SpeechStatus::Speaking
+            } else {
+                SpeechStatus::Idle
+            };
             emit_speech_status(
                 &app,
-                if paused {
-                    SpeechStatus::Paused
-                } else {
-                    SpeechStatus::Idle
-                },
+                status,
                 Some("棒読みちゃんの接続を確認しました。".to_string()),
             );
         }
@@ -502,7 +508,6 @@ pub async fn speech_clear(
             SpeechStatus::Idle,
             Some("読み上げキューをクリアしました。".to_string()),
         );
-        emit_speech_queue_updated(&app, 0, Vec::new(), SpeechQueuePhase::Idle, None);
         emit_app_log(&app, AppLogLevel::Info, "読み上げキューをクリアしました。");
     }
     result
@@ -597,6 +602,7 @@ fn build_diagnostic_recommendation(attempted: &[BouyomiConnectionAttempt]) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::{io::AsyncReadExt, net::TcpListener};
 
     #[test]
     fn builds_bouyomi_talk_packet() {
@@ -686,6 +692,23 @@ mod tests {
             BouyomiQueryCommand::IsNowPlaying.packet(),
             0x120_i16.to_le_bytes()
         );
+    }
+
+    #[tokio::test]
+    async fn automatic_health_probe_sends_only_the_silent_status_query() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let received = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut packet = [0_u8; 2];
+            stream.read_exact(&mut packet).await.unwrap();
+            packet
+        });
+        let adapter = BouyomiAdapter::new("127.0.0.1", port, BouyomiTalkConfig::default()).unwrap();
+
+        adapter.health_probe().await.unwrap();
+
+        assert_eq!(received.await.unwrap(), 0x120_i16.to_le_bytes());
     }
 
     #[test]

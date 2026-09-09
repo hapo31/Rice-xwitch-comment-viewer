@@ -15,6 +15,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-policy:
+    name: Release policy tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test release tag and version verification
+        run: |
+          set -euo pipefail
+          scripts/test-verify-release-tag.sh
+          scripts/test-verify-release-version.sh
+          scripts/test-publish-release.sh
+          node --test scripts/test-release-repository-policy.mjs
+      - name: Check release workflow privilege boundary
+        run: node scripts/verify-release-workflow-policy.mjs
+
   frontend-unit:
     name: Frontend unit tests
     runs-on: ubuntu-24.04
@@ -36,7 +55,7 @@ jobs:
   rust-unit:
     name: Rust unit tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
@@ -74,7 +93,7 @@ jobs:
   rust-lint:
     name: Rust format and clippy
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:

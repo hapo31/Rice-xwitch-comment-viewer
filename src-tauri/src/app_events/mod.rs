@@ -2,7 +2,6 @@ use crate::twitch::ChatMessage;
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::Mutex;
-#[cfg(feature = "app")]
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "app")]
 use tauri::{AppHandle, Emitter, Manager, Runtime};
@@ -98,7 +97,6 @@ pub enum SpeechStatus {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum SpeechAdapterHealth {
-    Unknown,
     Connected,
     Disconnected,
     Error,
@@ -148,6 +146,7 @@ pub enum SpeechQueuePhase {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppEventEmitError {
+    pub id: String,
     pub event: String,
     pub error: String,
     pub occurred_at_ms: u64,
@@ -176,7 +175,7 @@ pub struct AppEventState {
     inner: Mutex<AppEventStateInner>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct AppEventStateInner {
     revision: u64,
     logs: VecDeque<AppLogEvent>,
@@ -185,20 +184,6 @@ struct AppEventStateInner {
     speech_status: Option<SpeechStatusEvent>,
     speech_queue: Option<SpeechQueueUpdatedEvent>,
     emit_errors: VecDeque<AppEventEmitError>,
-}
-
-impl Default for AppEventStateInner {
-    fn default() -> Self {
-        Self {
-            revision: 0,
-            logs: VecDeque::new(),
-            twitch_auth_status: None,
-            twitch_chat_status: None,
-            speech_status: None,
-            speech_queue: None,
-            emit_errors: VecDeque::new(),
-        }
-    }
 }
 
 impl AppEventState {
@@ -254,8 +239,9 @@ impl AppEventState {
         let Ok(mut inner) = self.inner.lock() else {
             return;
         };
-        Self::next_revision(&mut inner);
+        let revision = Self::next_revision(&mut inner);
         inner.emit_errors.push_front(AppEventEmitError {
+            id: format!("emit-error-{revision}"),
             event: event.to_string(),
             error,
             occurred_at_ms: current_timestamp_ms(),
@@ -282,22 +268,13 @@ impl AppEventState {
         }
     }
 
-    pub fn speech_state_snapshot(
-        &self,
-        mut queue: SpeechQueueUpdatedEvent,
-    ) -> Option<SpeechStateSnapshot> {
+    pub fn speech_state_snapshot(&self) -> Option<SpeechStateSnapshot> {
         let inner = self.inner.lock().expect("app event mutex poisoned");
-        if let Some(current_queue) = &inner.speech_queue {
-            queue.revision = current_queue.revision;
-        }
-        inner
-            .speech_status
-            .clone()
-            .map(|status| SpeechStateSnapshot {
-                revision: inner.revision.max(queue.revision),
-                status,
-                queue,
-            })
+        Some(SpeechStateSnapshot {
+            revision: inner.revision,
+            status: inner.speech_status.clone()?,
+            queue: inner.speech_queue.clone()?,
+        })
     }
 }
 
@@ -439,7 +416,6 @@ pub fn emit_speech_queue_updated<R: Runtime>(
     emit_payload(app, SPEECH_QUEUE_UPDATED_EVENT, payload);
 }
 
-#[cfg(feature = "app")]
 fn current_timestamp_ms() -> u64 {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(duration) => duration.as_millis() as u64,
@@ -478,5 +454,115 @@ mod tests {
 
         assert_eq!(serde_json::to_value(auth).unwrap()["domain"], "auth");
         assert_eq!(serde_json::to_value(chat).unwrap()["domain"], "chat");
+    }
+    fn log(message: &str) -> AppLogEvent {
+        AppLogEvent {
+            id: None,
+            level: AppLogLevel::Info,
+            message: message.into(),
+            occurred_at_ms: 1,
+        }
+    }
+    fn status(status: SpeechStatus) -> SpeechStatusEvent {
+        SpeechStatusEvent {
+            revision: 0,
+            status,
+            adapter_health: SpeechAdapterHealth::Connected,
+            message: None,
+            occurred_at_ms: 1,
+        }
+    }
+    fn queue() -> SpeechQueueUpdatedEvent {
+        SpeechQueueUpdatedEvent {
+            revision: 0,
+            queued_count: 1,
+            items: vec![SpeechQueueItemEvent {
+                id: "q1".into(),
+                source_message_id: Some("chat1".into()),
+                user_display_name: "viewer".into(),
+                text: "hello".into(),
+                status: SpeechQueueItemStatus::Queued,
+            }],
+            phase: SpeechQueuePhase::Paused,
+            warning: None,
+            occurred_at_ms: 1,
+        }
+    }
+    #[test]
+    fn startup_logs_and_unvalidated_auth_are_replayable_and_bounded() {
+        let state = AppEventState::default();
+        for n in 0..OPERATIONAL_LOG_LIMIT + 2 {
+            state.record_log(log(&n.to_string()));
+        }
+        let event = state.record_twitch_status(TwitchStatusEvent {
+            revision: 0,
+            domain: TwitchStatusDomain::Auth,
+            status: TwitchStatus::Validating,
+            reason: None,
+            message: None,
+            occurred_at_ms: 1,
+        });
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.logs.len(), OPERATIONAL_LOG_LIMIT);
+        assert_eq!(snapshot.logs.last().unwrap().message, "2");
+        assert_ne!(snapshot.logs[0].id, snapshot.logs[1].id);
+        assert_eq!(snapshot.twitch_statuses[0].revision, event.revision);
+        assert_eq!(
+            serde_json::to_value(&snapshot).unwrap()["twitchStatuses"][0]["status"],
+            "validating"
+        );
+    }
+    #[test]
+    fn paused_state_snapshot_is_stable_without_new_events() {
+        let state = AppEventState::default();
+        assert!(state.speech_state_snapshot().is_none());
+        let status = state.record_speech_status(status(SpeechStatus::Paused));
+        let queue = state.record_speech_queue(queue());
+        let first = state.speech_state_snapshot().unwrap();
+        let second = state.speech_state_snapshot().unwrap();
+        assert_eq!(
+            serde_json::to_value(&first).unwrap(),
+            serde_json::to_value(second).unwrap()
+        );
+        assert_eq!(first.status.revision, status.revision);
+        assert_eq!(first.queue.revision, queue.revision);
+        assert_eq!(first.queue.items.len(), 1);
+        assert_eq!(first.queue.phase, SpeechQueuePhase::Paused);
+        assert_eq!(first.status.adapter_health, SpeechAdapterHealth::Connected);
+        // Each component keeps its own revision even after unrelated log events.
+        state.record_log(log("later"));
+        let later = state.speech_state_snapshot().unwrap();
+        assert!(later.revision > first.revision);
+        assert_eq!(later.queue.revision, first.queue.revision);
+    }
+    #[test]
+    fn snapshot_keeps_exact_payload_revision_pairs_across_updates() {
+        let state = AppEventState::default();
+        state.record_speech_status(status(SpeechStatus::Paused));
+        state.record_speech_queue(queue());
+        let old = state.speech_state_snapshot().unwrap();
+        let new = state.record_speech_queue(SpeechQueueUpdatedEvent {
+            items: vec![],
+            queued_count: 0,
+            phase: SpeechQueuePhase::Idle,
+            ..queue()
+        });
+        let current = state.speech_state_snapshot().unwrap();
+        assert!(new.revision > old.queue.revision);
+        assert_eq!(old.queue.items.len(), 1);
+        assert_eq!(current.queue.revision, new.revision);
+        assert!(current.queue.items.is_empty());
+        assert_eq!(current.status.revision, old.status.revision);
+    }
+    #[test]
+    fn emit_errors_are_bounded_and_have_replay_ids() {
+        let state = AppEventState::default();
+        for _ in 0..EMIT_ERROR_LIMIT + 2 {
+            state.record_emit_error(APP_LOG_EVENT, "serialize failed".into());
+        }
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.emit_errors.len(), EMIT_ERROR_LIMIT);
+        assert_ne!(snapshot.emit_errors[0].id, snapshot.emit_errors[1].id);
+        assert_eq!(snapshot.emit_errors[0].event, APP_LOG_EVENT);
     }
 }

@@ -36,7 +36,7 @@ use tauri::{Manager, PhysicalPosition, WindowEvent};
 #[cfg(feature = "app")]
 use twitch::{
     twitch_connect, twitch_disconnect, twitch_get_stored_auth, twitch_poll_auth, twitch_start_auth,
-    twitch_stop_chat, twitch_validate_auth, TwitchAuthStore,
+    twitch_stop_chat, twitch_validate_auth,
 };
 
 #[cfg(feature = "app")]
@@ -150,7 +150,7 @@ pub fn run() {
             if let Err(error) = emit_current_queue(app.handle()) {
                 emit_app_log(app.handle(), AppLogLevel::Error, error);
             }
-            let restored_auth = TwitchAuthStore::load();
+            let restored_auth = tauri::async_runtime::block_on(state.twitch_auth_store.load())?;
             let has_restored_auth = restored_auth.auth.is_some();
             if let Some(auth) = restored_auth.auth {
                 *state
