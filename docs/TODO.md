@@ -2,13 +2,17 @@
 
 最終調査日: 2026-09-08
 
+
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
 
 調査メモは [`docs/RESEARCH_NOTES.md`](./RESEARCH_NOTES.md) に分離し、日付が新しいものほど上に追記してください。
 
 ## 現在の進捗サマリ
 
+2026-09-08: Issue #94を所有者一人の運用へ変更。外部承認設定を必須にせず、公開元と成果物の検証を維持した。
+
 2026-09-08: ローカル worktree の整理を完了。Issue #29/#31/#33 は main 反映済み、#42/#43 は既存 PR #164/#163 に保持。詳細は調査メモを参照。
+
 
 | Phase | 状態 | メモ |
 | --- | --- | --- |
@@ -17,7 +21,7 @@
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring、session-only 保存失敗処理、旧 Linux 平文ファイルの移行/削除、Login 画面、起動時の保存済み認証の自動検証は実装済み。Issue #4 で認証とチャット接続の状態イベントに domain を追加し、表示文言に依存せず独立更新するようにした。Device Code の絶対期限に基づく残り時間と期限切れ時の再発行導線、Issue #30 の必須 `user:read:chat` scope 検証と不足時の再ログイン案内も実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映、再購読時の最新 access token 取得と 401 時の一度だけの refresh/retry（Issue #23）、更新後 access token の `/validate` に基づく scope 再検証（Issue #30）を実装。Issue #9 で Twitch 指定の `reconnect_url` への接続と旧 socket の受信を並行し、新しい welcome 後にのみ切り替え、失敗時は25秒の猶予後に通常再接続へ移行するようにした。Issue #74 で `receivedAt` を Rust から TypeScript まで UTC RFC 3339 に統一し、非文字列を含む不正 timestamp と leap second の frame 取得時刻 fallback、ローカル時刻表示をテストした。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。Issue #63 で最大文字数をユーザー名 prefix・省略記号を含む最終読み上げ文へ適用し、Issue #34 で連投抑制の 0 秒を無効、1〜30 秒を指定間隔として実行時にも厳密に適用した。Issue #57 で失敗済み項目をエラー履歴へ隔離し、明示的な手動再試行のみで retry budget を復元するようにした。Issue #78 で正規化後に本文が空のチャットを理由付きで Blocked にした。Issue #52 で待機中の読み上げ制御と履歴 dismiss を分離し、blocked を含む履歴を個別・一括で削除可能にした。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
-| Phase 5: 配信運用向け仕上げ | 実装中 | Launcher、dev ビルド識別、設定破損時の復旧通知、設定更新 transaction、重要 Issue の並列修正スキル、ルート README と MIT License を実装。Issue #100 で Windows 利用者向け README を導入・検証・初回設定・障害復旧・データ保存まで拡充し、実在する route／操作名／Release asset 規則を確認するレビュー項目を追加した。Issue #1 で Activity Bar から Logs を開ける導線とナビゲーション回帰テストを追加した。Issue #2 で読み上げキューの `sourceMessageId` を Chat 行へ同期し、全終端状態を視覚・支援技術の両方で確認できる表示にした。Issue #3 で非同期の Tauri 購読を cleanup-safe な共通 helper へ統一し、遅延解決・部分失敗でもリスナーを残さないようにした。 Issue #12 で設定更新を leaf patch と直列処理に統一し、保存直後の接続も保存済みチャンネルを使うようにした。Issue #5 で変更のない保存ボタンを DOM から除外してフォーカス順とアクセシビリティツリーに残らないようにし、Issue #6 で NG 入力欄と声質スライダーのラベル・現在値を支援技術へ公開、Issue #7 で入力エラーを対象フィールドと関連付け、棒読みちゃんホスト空欄と保存不能理由を明示した。Issue #14 で通知を構造化して成功通知を Logs / system Chat に分離し、警告の重複を排除した。Issue #15 で通常文字を `zinc-400` に統一し、コントラストと低コントラスト文字の再導入を検査した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。Issue #17 で配信中の Space / S / Cmd/Ctrl+, ショートカットを入力中・IME・キーリピートを妨げない共通 hook として実装した。Issue #18 で Launcher 削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応した。Issue #21 で接続・認証・復旧を重複抑止付きの system Chat timeline へ集約した。Issue #24 で Launcher の DnD listener を mount 中の単一購読とし、最新の追加 handler を ref 経由で参照するようにした。Issue #26 で最小幅 900px の Chat レイアウトを 100/125/150% に対応させた。Issue #28 で未保存変更を画面遷移・履歴戻る・終了時に共通確認するようにした。 Issue #27 で接続中または待機中の読み上げがある終了要求も保護し、承認後はチャット受信停止とキュークリアの完了を待って終了するようにした。 Issue #29 で EventSub の HTTP status/OAuth code/revocation reason を型付きで保持し、401/403 は認証復旧、400 等の永続障害は停止、timeout/5xx は再接続として分岐した。Issue #35 で Chat・Queue・Logs を読み取り用 ARIA table とし、列見出し、論理行位置・総行数、Queue 操作対象を支援技術へ公開した。Issue #36 で Chat 新着を重複なく集約したライブ通知と停止設定を追加した。Issue #37 で Chat 行の Twitch バッジを短縮ラベルと支援技術向け名称で表示した。Issue #39 で NG ルールの 200 件上限を frontend/backend ともに明示検証し、ASCII 大小文字を区別しない重複を除外した。Settings / Filter の設定群には統一した見出しを追加し、Issue #41 で同一内容の連続ログにも一意な表示 ID を割り当て、Issue #45 で Speech/Queue の内部状態値を日本語表示へ集約し、Queue 状態アイコンを支援技術から隠した。Issue #53 で Chat を遡っている場合の仮想スクロール可視アンカー保持と新着へ戻る導線を追加した。Issue #54 で Logs を仮想化し日時 formatter を再利用するようにした。Issue #31 で React の chat、queue、connection、settings、logs を独立 external store と selector に分離し、Chat event で無関係な画面を再 render しない計測テストと auth/event/settings orchestration テストを追加した。Issue #51 で keyboard focus indicator と forced-colors fallback を追加した。release-rice は 3 manifest と tag の version を共通 script で照合し、StatusBar の動的 build info は source 更新対象から除外した。devcontainer bootstrap を固定・build 時検証へ移し、SSH agent/Docker/host network を明示 profile に分離した。Windows 実機確認と詳細な運用エラー整理は継続。 |
+| Phase 5: 配信運用向け仕上げ | 実装中 | Launcher、dev ビルド識別、設定破損時の復旧通知、設定更新 transaction、重要 Issue の並列修正スキル、ルート README と MIT License を実装。Issue #100 で Windows 利用者向け README を導入・検証・初回設定・障害復旧・データ保存まで拡充し、実在する route／操作名／Release asset 規則を確認するレビュー項目を追加した。Issue #1 で Activity Bar から Logs を開ける導線とナビゲーション回帰テストを追加した。Issue #2 で読み上げキューの `sourceMessageId` を Chat 行へ同期し、全終端状態を視覚・支援技術の両方で確認できる表示にした。Issue #3 で非同期の Tauri 購読を cleanup-safe な共通 helper へ統一し、遅延解決・部分失敗でもリスナーを残さないようにした。 Issue #12 で設定更新を leaf patch と直列処理に統一し、保存直後の接続も保存済みチャンネルを使うようにした。Issue #5 で変更のない保存ボタンを DOM から除外してフォーカス順とアクセシビリティツリーに残らないようにし、Issue #6 で NG 入力欄と声質スライダーのラベル・現在値を支援技術へ公開、Issue #7 で入力エラーを対象フィールドと関連付け、棒読みちゃんホスト空欄と保存不能理由を明示した。Issue #14 で通知を構造化して成功通知を Logs / system Chat に分離し、警告の重複を排除した。Issue #15 で通常文字を `zinc-400` に統一し、コントラストと低コントラスト文字の再導入を検査した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。Issue #17 で配信中の Space / S / Cmd/Ctrl+, ショートカットを入力中・IME・キーリピートを妨げない共通 hook として実装した。Issue #18 で Launcher 削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応した。Issue #21 で接続・認証・復旧を重複抑止付きの system Chat timeline へ集約した。Issue #24 で Launcher の DnD listener を mount 中の単一購読とし、最新の追加 handler を ref 経由で参照するようにした。Issue #26 で最小幅 900px の Chat レイアウトを 100/125/150% に対応させた。Issue #28 で未保存変更を画面遷移・履歴戻る・終了時に共通確認するようにした。 Issue #27 で接続中または待機中の読み上げがある終了要求も保護し、承認後はチャット受信停止とキュークリアの完了を待って終了するようにした。 Issue #29 で EventSub の HTTP status/OAuth code/revocation reason を型付きで保持し、401/403 は認証復旧、400 等の永続障害は停止、timeout/5xx は再接続として分岐した。Issue #35 で Chat・Queue・Logs を読み取り用 ARIA table とし、列見出し、論理行位置・総行数、Queue 操作対象を支援技術へ公開した。Issue #36 で Chat 新着を重複なく集約したライブ通知と停止設定を追加した。Issue #37 で Chat 行の Twitch バッジを短縮ラベルと支援技術向け名称で表示した。Issue #39 で NG ルールの 200 件上限を frontend/backend ともに明示検証し、ASCII 大小文字を区別しない重複を除外した。Settings / Filter の設定群には統一した見出しを追加し、Issue #41 で同一内容の連続ログにも一意な表示 ID を割り当て、Issue #45 で Speech/Queue の内部状態値を日本語表示へ集約し、Queue 状態アイコンを支援技術から隠した。Issue #53 で Chat を遡っている場合の仮想スクロール可視アンカー保持と新着へ戻る導線を追加した。Issue #54 で Logs を仮想化し日時 formatter を再利用するようにした。Issue #31 で React の chat、queue、connection、settings、logs を独立 external store と selector に分離し、Chat event で無関係な画面を再 render しない計測テストと auth/event/settings orchestration テストを追加した。Issue #51 で keyboard focus indicator と forced-colors fallback を追加した。Issue #94 で tag push build を read-only にし、default branch の publish workflow、tag provenance、`main` 到達可能性と version の再検証へ公開境界を分離した。release-rice は 3 manifest と tag の version を共通 script で照合し、StatusBar の動的 build info は source 更新対象から除外した。devcontainer bootstrap を固定・build 時検証へ移し、SSH agent/Docker/host network を明示 profile に分離した。Windows 実機確認と詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
 Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP、main window capability / custom command ACL を有効化し、Launcher icon を完全 decode・寸法検証済みの PNG data URL に限定した。
@@ -153,7 +157,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] `main` 向け PR で frontend/Rust の unit test と lint を並列実行する read-only GitHub Actions workflow を追加する。
 - [x] PR 作成時と手動 dispatch 時だけ dev build を実行し、結果を job summary へ出す workflow を追加する。
 - [x] devcontainer bootstrap 検証は `.devcontainer/**` または workflow 自体を変更したときだけ実行する。
-- [ ] GitHub の `main` branch protection / ruleset で「PR quality / Frontend unit tests」「PR quality / Rust unit tests」「PR quality / Frontend typecheck」「PR quality / Rust format and clippy」「PR dev build / Dev build」を required status checks に登録する（リポジトリ管理権限が必要）。
+- [x] 単独管理の方針ではrequired status checksのrepository設定を必須にせず、PRレビュー時にCIを確認する（2026-09-08所有者判断）。
 - [x] Issue #16: 接続・認証・読み上げの非同期状態変化を、重複を抑制した live region で支援技術へ通知する。
 - [x] Issue #17: Space / S / Cmd/Ctrl+, による配信向け読み上げ操作と Settings 遷移を追加し、入力中・IME 変換中・キーリピート時は無効化する。
 - [x] Issue #39: NG ユーザー/NG ワードを 200 件で明示的に検証し、大小文字を区別しない重複を除外して超過時の保存を防止する。
@@ -201,6 +205,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Release workflow の Rust テスト前に Tauri が必要とする Linux 開発パッケージを導入し、`v0.2.2` として再リリースする。
 - [x] `gh release create` の `--notes-from-tag` / `--repo` 非互換を解消し、`v0.2.3` Release workflow の build / publish 成功を確認する。
 - [x] Release 公開ジョブでも annotated tag を復元・検証し、`--notes-from-tag` がコミットメッセージへフォールバックしないようにする。
+- [x] Issue #94: 単独管理の方針で、read-only tag build、default branchのtrusted publisher、main ancestry、event/checkout/tag object、versionと成果物checksumの照合を実装する。Team・別承認者・ruleset・environmentは必須にしない。
 - [x] 重要 Issue を独立 worktree と個別 PR で並列修正する `issue-fix-batch` スキルを追加する。
 - [x] Docker build context を default-deny allowlist 化し、Codex state/credential の送信前検査と退避先の workspace 外移動を行う（#98）。
 - [x] UI 倍率変更時に Activity Bar、Side Panel、Status Bar が操作部品と同じ比率で拡大するよう、アプリシェル寸法を rem に統一する。
@@ -276,6 +281,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] TypeScript: Issue #49 の route 別 document title と PUSH/POP/REPLACE ごとのフォーカス方針をテストする。
  - [x] TypeScript: Issue #17 の Space / S / Cmd/Ctrl+, と入力中・IME・キーリピート・Shift 修飾時のショートカット抑止をテストする。
 - [x] Security: production CSP、明示的な Vite dev CSP、main capability、custom command ACL、bundled asset source を自動検査する。
+- [x] Security: Issue #94のnon-main tag、event/checkout target、moved tag object、manifest/tag version、upload前後のremote tag移動、draft/公開済みRelease再実行、workflow権限境界、default branchとAPI取得失敗を自動検査する。
+- [x] Issue #94の運用方針: 2026-09-08の所有者指示により単独管理とし、Team・別承認者・ruleset・release environmentの設定を完了条件から外す。
 - [ ] 手動: 棒読みちゃん未起動/起動中/ポート競合を確認する。
 - [ ] 手動: Twitch トークン期限切れ/認可取り消しを確認する。
 - [ ] 手動: 配信中チャット連投を確認する。

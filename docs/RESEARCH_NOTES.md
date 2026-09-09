@@ -1,5 +1,23 @@
 # 調査メモ
 
+## 2026-09-08: Issue #94 単独管理方針でのレビュー完了
+
+- 所有者の明示指示により、下記過去メモのTeam・別承認者・ruleset・environment必須条件を撤回した。公開workflowはmainのtrusted script、同一runのprovenance、tag objectの継続照合を維持し、取得した成果物のchecksum検証を追加した。外部のrepository設定は変更しない。
+- repository policy 4件、workflow policy、tag/version/publicationのshell回帰テストが成功。古いGitでも動くようテストfixtureの未作成branch名変更をsymbolic-refへ変更した。
+- rulesetがない状態の短いtag照合競合と過去のwrite workflowは所有者を信頼する運用上の制約としてdocs/releasing.mdへ明記した。
+
+## 2026-09-06: Issue #94 保護設定の fail-closed 検証
+
+- 最新 main を PR branch へ merge し、TODO の並行修正を保持した。API 再確認では rulesets 0 件、environments 0 件、main protection は404であり、Issue の運用完了条件は未達。外部設定と担当 identity の選定は変更していない。
+- default branch の読み取り専用 job で repository ruleset / environment を検証し、未設定の environment を公開 job が自動作成する経路を停止した。承認後の公開直前にも設定を再検証する。creation の bypass が update/delete も許可しないよう tag ruleset は独立させ、workflow_run の deployment ref は main であるため tag 限定の誤った手順を修正した。
+- release-rice の version bump も branch / worktree と PR review / required checks を経由させ、保護された main への直接 push と文書の矛盾を解消した。
+- 未設定・無効・除外・API に見える bypass・review/check 不足・self-review・誤った deployment ref、API failure、複数ページの API 読み取りを自動検査する。公開前の remote tag 移動だけでなく create 後 / upload 後の移動と draft / 公開済み Release の再実行も検証する。GitHub 公式 REST schema / endpoint 説明を確認した結果、read-only token には ruleset bypass が非公開となり、environment 管理者 bypass は API schema に存在しない。これらと team/App・承認者の人員/credential 分離は管理者の確認事項として明示し、自動検証成功だけでは運用完了と扱わない。
+
+## 2026-08-26: Issue #94 release tag / publish 権限境界
+
+- 調査時点の repository settings は rulesets 0 件、`main` branch protection なし、environments 0 件だった。workflow だけでは tag update/delete の TOCTOU と、過去の tag commit に残る旧 workflow の write 権限を無効化できないため、`refs/tags/v*` の作成主体・update・delete を制限する active ruleset、review 済み `main`、tag 作成者と分離した required reviewer を持つ `release` environment を管理者の必須手順として残す。外部設定はこの変更では操作していない。
+- tag push workflow から `contents: write` を除去し、検証済み tag object / event commit を provenance artifact に固定した。default branch SHA の trusted script を使う `workflow_run` publish job が、current tag object、workflow run commit、checkout `HEAD`、`origin/main` 到達可能性、3 manifest version を再照合し、remote tag を Release 作成・upload・公開の前後で確認する。non-main、event/checkout mismatch、同じ commit 上で annotation だけを変えた moved tag、manifest/tag mismatch、remote moved tag、write 権限の tag workflow 再導入を自動テストした。release script tests、workflow policy / YAML 構文、`pnpm test`（38 files / 154 tests）、`pnpm build`、`git diff --check` は成功した。
+
 ## 2026-09-08: PR #159/#166 レビューとCI実行時間
 
 - #159の自動プローブをレビューし、mainを統合した。既存開発コンテナでRust 116件の成功を確認した。#166は文書とignoreのみで、アプリコードへの変更はない。
@@ -22,6 +40,7 @@
 
 - VOICEVOX の直接アダプタは未実装で、現行の正式経路は本アプリから棒読みちゃん TCP へ送り、VOICEVOX 連携は棒読みちゃん側へ委ねる。frontend は読み上げ状態の初期値を `disconnected` とし、設定読込後から 5 秒周期で `speech_health_probe` を実行するが、この自動プローブがユーザー向け［接続確認］と同じ「接続成功時に読み上げる」設定を流用していた。そのため下流の VOICEVOX が未起動でも Talk パケットが送られ、棒読みちゃん側の VOICEVOX 接続エラー発話を誘発していた。
 - 自動復旧プローブ専用の `health_probe` を追加し、設定にかかわらず無音の再生状態取得 `0x120` だけを送るようにした。ユーザーが明示的に実行する［接続確認］では従来どおり設定に応じた確認読み上げを維持する。ローカル TCP listener で自動プローブの受信 packet が `0x120` の 2 bytes だけであることを回帰テストし、`cargo test --locked`（98件）、`pnpm test`（154件）、`pnpm build`、security check、Rust fmt/clippy が成功した。本アプリ、棒読みちゃん、VOICEVOX の順に起動した Windows 実機でエラー文が発話されないことは手動確認として残る。
+
 
 
 ## 2026-08-08: Issue #53 Chat 仮想スクロールの prepend アンカー

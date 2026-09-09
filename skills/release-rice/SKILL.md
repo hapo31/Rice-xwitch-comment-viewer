@@ -15,6 +15,7 @@ description: Rice の新しいバージョンを非同期にリリースする�
 4. 現在のブランチが `main` であることを確認する。別ブランチなら停止する。
 5. `git rev-list --left-right --count main...origin/main` が `0 0` であることを確認する。behind の clean な `main` だけ `git pull --ff-only origin main` を提案できる。ahead または diverged なら停止する。
 6. `git tag --list 'v*' --sort=-version:refname` と、必要なら `gh release list` を確認する。未公開タグがあっても自動で削除・再利用しない。
+7. `node scripts/verify-release-repository-policy.mjs OWNER/REPO` で default branch が main であることを確認する。単独管理の方針に従い、Team、別担当者の承認、ruleset、release environment は要求しない。
 
 ## 2. バージョンと差分を確認する
 
@@ -25,12 +26,12 @@ description: Rice の新しいバージョンを非同期にリリースする�
 
 ## 3. バージョンを更新して検証する
 
-1. `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` の 3 manifest を同じ `X.Y.Z` に更新する。`StatusBar.tsx` は `app_build_info` の Cargo version を動的表示するため、source の version literal を更新しない。
+1. 検証した最新 `main` から version bump 用 branch / worktree を作り、`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` の 3 manifest を同じ `X.Y.Z` に更新する。`StatusBar.tsx` は `app_build_info` の Cargo version を動的表示するため、source の version literal を更新しない。
 2. `cargo check --manifest-path src-tauri/Cargo.toml` で `Cargo.lock` を同期する。
 3. `pnpm test`、`pnpm build`、`cargo test --manifest-path src-tauri/Cargo.toml` を実行する。可能なら `scripts/build-windows-docker.sh` も実行する。省略した検証と理由を報告する。
 4. `scripts/verify-release-version.sh "X.Y.Z" --changed-from HEAD` を実行し、version bump の変更対象が 3 manifest だけであることを確認する。差分と作業ツリーも確認する。
 5. バージョン変更だけを `chore: bump version to X.Y.Z` として commit する。ユーザーの別変更を混ぜない。
-6. `git push origin main` の直前に対象 commit を提示し、許可されたリリース作業として push する。push 後、`main...origin/main` が `0 0` であることを確認する。
+6. version bump branch を push して `main` 向け PR を提出し、レビューとテストを終えて取り込む。別担当者の承認は要求しない。取り込み後は clean な `main` を fast-forward で同期し、`main...origin/main` が `0 0` であることを確認する。
 
 ## 4. リリースノートを作る
 
@@ -58,9 +59,9 @@ description: Rice の新しいバージョンを非同期にリリースする�
 
 1. 同名タグが local/remote とも未使用で、`HEAD` と `origin/main` が一致することをもう一度確認する。
 2. `git tag -a "vX.Y.Z" --cleanup=verbatim -F "$notes_file"` で annotated tag を作る。`--cleanup=verbatim` で Markdown 見出しの `#` を保持する。`git tag vX.Y.Z` のような軽量タグは禁止する。
-3. `scripts/verify-release-tag.sh "vX.Y.Z"` と `scripts/verify-release-version.sh "X.Y.Z" --tag "vX.Y.Z"` を実行し、タグ object、対象 commit、annotation message、3 manifest と tag の version 一致を確認する。
+3. `tag_object="$(git rev-parse "vX.Y.Z^{tag}")"` を取得し、`scripts/verify-release-tag.sh "vX.Y.Z" --expected-tag-object "$tag_object" --expected-commit HEAD --checkout-ref HEAD --main-ref origin/main` と `scripts/verify-release-version.sh "X.Y.Z" --tag "vX.Y.Z"` を実行する。タグ object、対象 commit、`HEAD` / `origin/main`、annotation message、3 manifest と tag の version 一致を確認する。
 4. 一時ファイルを削除する。削除後も annotation message は Git tag object に保存される。
 5. tag push の直前にタグ名と対象 commit を提示し、許可されたリリース作業として `git push origin "vX.Y.Z"` を実行する。既存タグへの force push は行わない。
-6. GitHub Actions の完了を待たず終了する。タグ名、commit SHA、Actions の確認 URL または `gh run list --workflow release-windows.yml --branch "vX.Y.Z"`、失敗時は `gh run view RUN_ID --log-failed` を表示する。
+6. GitHub Actions の完了を待たず終了する。tag push workflow は read-only で build し、公開 workflow は source と成果物を再検証して公開する。タグ名、commit SHA、Actions の確認 URL または `gh run list --workflow release-windows.yml --branch "vX.Y.Z"`、失敗時は `gh run view RUN_ID --log-failed` を表示し。
 
 GitHub Release の本文だけを後から直す場合は、タグを動かさず `gh release edit vX.Y.Z --notes-file release-notes.md` を案内する。
