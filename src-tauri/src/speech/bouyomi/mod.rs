@@ -9,10 +9,26 @@ use serde::Serialize;
 use std::net::IpAddr;
 use std::time::Duration;
 use tokio::{
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     time::{timeout, Instant},
 };
+
+#[derive(Debug, thiserror::Error)]
+enum BouyomiProbeError {
+    #[error("棒読みちゃんへの接続がタイムアウトしました。接続先と通信設定を確認してください。")]
+    ConnectTimeout,
+    #[error("棒読みちゃんへの接続に失敗しました: {0}")]
+    ConnectIo(#[source] std::io::Error),
+    #[error("棒読みちゃんの状態応答がタイムアウトしました。ポート競合、アプリ連携/TCP受付、通信設定を確認してください。")]
+    ResponseTimeout,
+    #[error(
+        "棒読みちゃんの状態応答を受信できません。ポート競合や相手側の切断を確認してください。: {0}"
+    )]
+    ResponseIo(#[source] std::io::Error),
+    #[error("棒読みちゃんと互換性のない状態応答です（値: {0}）。別アプリとのポート競合を確認してください。")]
+    InvalidResponse(u8),
+}
 
 pub const DEFAULT_CONNECTION_SUCCESS_MESSAGE: &str = "棒読みちゃんと接続しました";
 
@@ -150,11 +166,10 @@ impl BouyomiAdapter {
         success_message: &str,
     ) -> anyhow::Result<Duration> {
         let started_at = Instant::now();
+        self.send_query(BouyomiQueryCommand::IsNowPlaying).await?;
         if speak_on_success {
             self.speak(normalize_connection_success_message(success_message))
                 .await?;
-        } else {
-            self.send_query(BouyomiQueryCommand::IsNowPlaying).await?;
         }
         Ok(started_at.elapsed())
     }
@@ -173,7 +188,17 @@ impl BouyomiAdapter {
     }
 
     async fn send_query(&self, command: BouyomiQueryCommand) -> anyhow::Result<()> {
-        self.send_packet(&command.packet()).await
+        let mut stream = self.connect().await?;
+        timeout(self.timeout, stream.write_all(&command.packet())).await??;
+        let mut response = [0_u8; 1];
+        timeout(self.timeout, stream.read_exact(&mut response))
+            .await
+            .map_err(|_| BouyomiProbeError::ResponseTimeout)?
+            .map_err(BouyomiProbeError::ResponseIo)?;
+        match response[0] {
+            0 | 1 => Ok(()),
+            value => Err(BouyomiProbeError::InvalidResponse(value).into()),
+        }
     }
 
     async fn send_packet(&self, packet: &[u8]) -> anyhow::Result<()> {
@@ -191,7 +216,9 @@ impl BouyomiAdapter {
             self.timeout,
             TcpStream::connect((self.address.host.as_str(), self.address.port)),
         )
-        .await??)
+        .await
+        .map_err(|_| BouyomiProbeError::ConnectTimeout)?
+        .map_err(BouyomiProbeError::ConnectIo)?)
     }
 
     pub async fn diagnose(&self) -> BouyomiConnectionDiagnostics {
@@ -199,23 +226,22 @@ impl BouyomiAdapter {
 
         let addr = self.address.display();
         let started_at = Instant::now();
-        let result = self.connect_to_address().await;
+        let result = self.health_probe().await;
         let elapsed_ms = started_at.elapsed().as_millis();
 
         match result {
-            Ok(stream) => {
-                drop(stream);
+            Ok(_) => {
                 attempted.push(BouyomiConnectionAttempt {
                     addr,
                     status: BouyomiConnectionStatus::Connected,
-                    message: "接続できました。".to_string(),
+                    message: "棒読みちゃん互換の状態応答を確認しました。".to_string(),
                     elapsed_ms,
                 });
             }
             Err(error) => attempted.push(BouyomiConnectionAttempt {
                 addr,
                 status: BouyomiConnectionStatus::Failed,
-                message: error.to_string(),
+                message: to_user_message(error),
                 elapsed_ms,
             }),
         }
@@ -563,6 +589,14 @@ fn normalize_test_text(text: &str) -> String {
 }
 
 pub(crate) fn to_user_message(error: anyhow::Error) -> String {
+    if let Some(probe_error) = error.downcast_ref::<BouyomiProbeError>() {
+        if let BouyomiProbeError::ConnectIo(source) = probe_error {
+            if source.kind() == std::io::ErrorKind::ConnectionRefused {
+                return "棒読みちゃんに接続できません。起動中でアプリ連携/TCP受付が有効か確認し、［診断］を実行してください。".to_string();
+            }
+        }
+        return probe_error.to_string();
+    }
     let message = error.to_string();
     if message.contains("Connection refused")
         || message.contains("os error 111")
@@ -702,6 +736,7 @@ mod tests {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut packet = [0_u8; 2];
             stream.read_exact(&mut packet).await.unwrap();
+            stream.write_all(&[0]).await.unwrap();
             packet
         });
         let adapter = BouyomiAdapter::new("127.0.0.1", port, BouyomiTalkConfig::default()).unwrap();
@@ -709,6 +744,110 @@ mod tests {
         adapter.health_probe().await.unwrap();
 
         assert_eq!(received.await.unwrap(), 0x120_i16.to_le_bytes());
+    }
+
+    async fn probe_fixture(response: Option<Vec<u8>>, diagnose: bool) -> Result<(), String> {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let mut adapter = BouyomiAdapter::new(
+            "127.0.0.1",
+            listener.local_addr().unwrap().port(),
+            BouyomiTalkConfig::default(),
+        )
+        .unwrap();
+        adapter.timeout = Duration::from_millis(50);
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut command = [0; 2];
+            stream.read_exact(&mut command).await.unwrap();
+            assert_eq!(command, 0x120_i16.to_le_bytes());
+            if let Some(bytes) = response {
+                stream.write_all(&bytes).await.unwrap();
+            } else {
+                std::future::pending::<()>().await;
+            }
+        });
+        let result = if diagnose {
+            let diagnostics = adapter.diagnose().await;
+            let attempt = &diagnostics.attempted[0];
+            if attempt.status == BouyomiConnectionStatus::Connected {
+                Ok(())
+            } else {
+                Err(attempt.message.clone())
+            }
+        } else {
+            adapter
+                .health_probe()
+                .await
+                .map(|_| ())
+                .map_err(to_user_message)
+        };
+        server.abort();
+        let _ = server.await;
+        result
+    }
+
+    #[tokio::test]
+    async fn health_and_diagnostics_require_valid_protocol_responses() {
+        for diagnose in [false, true] {
+            for value in [0, 1] {
+                probe_fixture(Some(vec![value]), diagnose).await.unwrap();
+            }
+            assert!(probe_fixture(Some(vec![2]), diagnose)
+                .await
+                .unwrap_err()
+                .contains("互換性"));
+            assert!(probe_fixture(Some(b"HTTP/1.1".to_vec()), diagnose)
+                .await
+                .unwrap_err()
+                .contains("ポート競合"));
+            assert!(probe_fixture(Some(vec![]), diagnose)
+                .await
+                .unwrap_err()
+                .contains("切断"));
+            assert!(probe_fixture(None, diagnose)
+                .await
+                .unwrap_err()
+                .contains("タイムアウト"));
+        }
+    }
+
+    #[tokio::test]
+    async fn refused_endpoint_is_not_connected() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let adapter = BouyomiAdapter::new(
+            "127.0.0.1",
+            listener.local_addr().unwrap().port(),
+            BouyomiTalkConfig::default(),
+        )
+        .unwrap();
+        drop(listener);
+        assert!(adapter.health_probe().await.is_err());
+        let result = adapter.diagnose().await;
+        assert_eq!(result.attempted[0].status, BouyomiConnectionStatus::Failed);
+        assert!(result.attempted[0].message.contains("起動中"));
+    }
+
+    #[tokio::test]
+    async fn confirmation_speech_is_not_sent_to_an_incompatible_endpoint() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let adapter = BouyomiAdapter::new(
+            "127.0.0.1",
+            listener.local_addr().unwrap().port(),
+            BouyomiTalkConfig::default(),
+        )
+        .unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut command = [0; 2];
+            stream.read_exact(&mut command).await.unwrap();
+            assert_eq!(command, 0x120_i16.to_le_bytes());
+            stream.write_all(&[5]).await.unwrap();
+            assert!(timeout(Duration::from_millis(50), listener.accept())
+                .await
+                .is_err());
+        });
+        assert!(adapter.health_check(true, "test").await.is_err());
+        server.await.unwrap();
     }
 
     #[test]

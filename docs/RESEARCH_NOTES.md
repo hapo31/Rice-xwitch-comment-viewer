@@ -299,3 +299,7 @@
 ## 2026-09-10: Issue #87
 
 Client ID 共通 gate と EXE のバイト列検証を追加。未設定、空白、不正形式、正常値、異なる埋め込み、EXE 不在とログ非露出を自動テスト。Docker context 検査と workflow policy が成功。セルフレビューで直接 Docker build の迂回を塞ぎ、実際に COPY しない devcontainer bootstrap 例外を context から除去した。実際の Windows build／Twitch ログインは未実施。
+
+## 2026-09-10: Issue #59
+
+TCP 到達性だけで成功とせず 0x120 の boolean 応答を期限付きで検証する。接続確認音声も検証後に送信。公式 ReadMe (https://chi.usamimi.info/Program/Application/BouyomiChan/ReadMe.txt) のアプリ連携説明と既存設計参照の bouyomi4rs プロトコル資料を照合し、外部コードはコピーしていない。fake TCP server で正常0/1、不正値、HTTP、EOF、無応答、接続拒否、検証失敗時の音声未送信を検証。Rust 全133件、clippy -D warnings、fmt、diff check が成功。セルフレビューで診断と health が同じ判定を使い、TCP 成功のみでは接続成功にならないことを確認。Windows 実機の棒読みちゃん確認は未実施。
