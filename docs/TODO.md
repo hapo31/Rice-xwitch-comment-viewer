@@ -9,6 +9,8 @@
 
 ## 現在の進捗サマリ
 
+2026-09-10: Issue #55 の in-flight 分離と worker 所有権の共通化を実装。取消・遅延成功/失敗・再試行待機・overflow・スナップショットの回帰テストを追加し、Rust 全137件と clippy が成功。
+
 2026-09-10: Issue #59 の診断・接続確認・無音プローブを状態応答検証へ統一。Rust 全133件と clippy が成功。実機での確認は継続。
 
 2026-09-10: Issue #87 の Client ID 検査を CI・ローカル・Docker で共通化し、生成 EXE の埋め込み確認を追加。未設定・不正値・正常値・埋め込み欠落の自動検証とセルフレビューを完了。実 Windows 成果物のビルド検証は未実施。
@@ -132,6 +134,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [ ] 実 Twitch 環境で `channel.chat.message` 購読と Chat view 表示を手動確認する。
 
 ## Phase 4: 読み上げキュー統合
+
+- [x] Issue #55: in-flight を pending から分離し、取消後の遅延完了と overflow の競合を検証する。
 
 - [x] `SpeechFormatter` を実装する。
 - [x] URL、改行、制御文字、長文、emote の扱いを `SpeechFormatter` に閉じ込める。

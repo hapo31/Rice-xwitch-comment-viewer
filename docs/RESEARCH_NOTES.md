@@ -303,3 +303,7 @@ Client ID 共通 gate と EXE のバイト列検証を追加。未設定、空�
 ## 2026-09-10: Issue #59
 
 TCP 到達性だけで成功とせず 0x120 の boolean 応答を期限付きで検証する。接続確認音声も検証後に送信。公式 ReadMe (https://chi.usamimi.info/Program/Application/BouyomiChan/ReadMe.txt) のアプリ連携説明と既存設計参照の bouyomi4rs プロトコル資料を照合し、外部コードはコピーしていない。fake TCP server で正常0/1、不正値、HTTP、EOF、無応答、接続拒否、検証失敗時の音声未送信を検証。Rust 全133件、clippy -D warnings、fmt、diff check が成功。セルフレビューで診断と health が同じ判定を使い、TCP 成功のみでは接続成功にならないことを確認。Windows 実機の棒読みちゃん確認は未実施。
+
+## 2026-09-10: Issue #55
+
+送信開始時に pending から in-flight へ移し、完了はそのIDへ適用する。取消後も worker 所有権を維持し、遅延した結果は新項目へ適用しない。overflow は pending のみを落とし、snapshot は in-flight を含む。取消済み送信の失敗はログへ記録し、現キューのエラー状態を上書きしない。Rust 全137件、frontend 全176件、clippy -D warnings、fmt、diff check が成功。セルフレビューでは pause/再試行待ち中の取消、snapshot の件数、既存retry budgetとの整合を確認した。TCP制御の順序保証は #58、受付と発声完了の区別は #56 に残る。

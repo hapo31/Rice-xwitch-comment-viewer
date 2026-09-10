@@ -73,6 +73,7 @@ const RETRY_DELAY: Duration = Duration::from_millis(700);
 #[derive(Debug)]
 pub struct SpeechQueueState {
     pending: VecDeque<SpeechQueueItem>,
+    in_flight: Option<SpeechQueueItem>,
     history: VecDeque<SpeechQueueItem>,
     last_user_enqueue: HashMap<String, Instant>,
     next_id: u64,
@@ -84,6 +85,7 @@ impl Default for SpeechQueueState {
     fn default() -> Self {
         Self {
             pending: VecDeque::new(),
+            in_flight: None,
             history: VecDeque::new(),
             last_user_enqueue: HashMap::new(),
             next_id: 1,
@@ -121,7 +123,41 @@ enum SpeechQueueFailureTransition {
 }
 
 impl SpeechQueueState {
+    fn cancel_in_flight(&mut self) -> bool {
+        let Some(mut item) = self.in_flight.take() else {
+            return false;
+        };
+        item.status = SpeechQueueItemStatus::Skipped;
+        push_history(self, item);
+        // The worker retains ownership until its physical send settles. Unique IDs
+        // make that late completion a no-op, even if new items arrive meanwhile.
+        true
+    }
+
+    fn skip_current(&mut self) {
+        if !self.cancel_in_flight() {
+            if let Some(mut item) = self.pending.pop_front() {
+                item.status = SpeechQueueItemStatus::Skipped;
+                push_history(self, item);
+            }
+        }
+    }
+
+    fn make_pending_room(&mut self) -> bool {
+        let mut dropped_any = false;
+        while self.pending.len() + usize::from(self.in_flight.is_some()) >= DEFAULT_QUEUE_LIMIT {
+            let Some(mut item) = self.pending.pop_front() else {
+                break;
+            };
+            item.status = SpeechQueueItemStatus::Skipped;
+            push_history(self, item);
+            dropped_any = true;
+        }
+        dropped_any
+    }
+
     fn clear_pending(&mut self) {
+        self.cancel_in_flight();
         while let Some(mut item) = self.pending.pop_front() {
             item.status = SpeechQueueItemStatus::Skipped;
             push_history(self, item);
@@ -129,6 +165,13 @@ impl SpeechQueueState {
     }
 
     fn remove_pending_item(&mut self, item_id: &str) -> bool {
+        if self
+            .in_flight
+            .as_ref()
+            .is_some_and(|item| item.id == item_id)
+        {
+            return self.cancel_in_flight();
+        }
         let Some(index) = self.pending.iter().position(|item| item.id == item_id) else {
             return false;
         };
@@ -152,20 +195,34 @@ impl SpeechQueueState {
         self.history.clear();
     }
 
+    fn claim_worker(&mut self) -> bool {
+        if self.is_processing || self.paused || !self.has_auto_processable_item() {
+            return false;
+        }
+        self.is_processing = true;
+        true
+    }
+
     fn has_auto_processable_item(&self) -> bool {
-        self.pending
-            .front()
-            .is_some_and(|item| item.delivery_state == SpeechQueueDeliveryState::Ready)
+        self.in_flight.is_none()
+            && self
+                .pending
+                .front()
+                .is_some_and(|item| item.delivery_state == SpeechQueueDeliveryState::Ready)
     }
 
     fn begin_next_request(&mut self) -> Option<SpeechRequest> {
-        let item = self.pending.front_mut()?;
-        if item.delivery_state != SpeechQueueDeliveryState::Ready {
+        if self.in_flight.is_some() {
+            return None;
+        }
+        let front = self.pending.front()?;
+        if front.delivery_state != SpeechQueueDeliveryState::Ready {
             return None;
         }
 
+        let mut item = self.pending.pop_front().expect("front checked");
         item.status = SpeechQueueItemStatus::Speaking;
-        Some(SpeechRequest {
+        let request = SpeechRequest {
             id: item.id.clone(),
             source_message_id: item.source_message_id.clone(),
             text: item.text.clone(),
@@ -173,40 +230,41 @@ impl SpeechQueueState {
             speed: None,
             tone: None,
             volume: None,
-        })
+        };
+        self.in_flight = Some(item);
+        Some(request)
     }
 
     fn complete_request(&mut self, request_id: &str) -> bool {
-        let Some(front) = self.pending.front() else {
-            return false;
-        };
-        if front.id != request_id {
+        if !self
+            .in_flight
+            .as_ref()
+            .is_some_and(|item| item.id == request_id)
+        {
             return false;
         }
-
-        let mut item = self.pending.pop_front().expect("front checked");
+        let mut item = self.in_flight.take().expect("in-flight checked");
         item.status = SpeechQueueItemStatus::Spoken;
         push_history(self, item);
         true
     }
 
     fn fail_request(&mut self, request_id: &str) -> SpeechQueueFailureTransition {
-        let Some(front) = self.pending.front() else {
-            return SpeechQueueFailureTransition::Ignored;
-        };
-        if front.id != request_id {
+        if !self
+            .in_flight
+            .as_ref()
+            .is_some_and(|item| item.id == request_id)
+        {
             return SpeechQueueFailureTransition::Ignored;
         }
-
-        if front.retry_count == 0 {
-            let item = self.pending.front_mut().expect("front checked");
+        let mut item = self.in_flight.take().expect("in-flight checked");
+        if item.retry_count == 0 {
             item.retry_count = 1;
             item.status = SpeechQueueItemStatus::Queued;
             item.delivery_state = SpeechQueueDeliveryState::RetryScheduled;
+            self.pending.push_front(item);
             return SpeechQueueFailureTransition::RetryScheduled;
         }
-
-        let mut item = self.pending.pop_front().expect("front checked");
         item.status = SpeechQueueItemStatus::Error;
         item.delivery_state = SpeechQueueDeliveryState::RetryExhausted;
         push_history(self, item);
@@ -417,15 +475,10 @@ pub fn enqueue_chat_message_for_speech(
         };
 
         queue.last_user_enqueue.insert(message.user_id.clone(), now);
-        while queue.pending.len() >= DEFAULT_QUEUE_LIMIT {
-            if let Some(mut dropped) = queue.pending.pop_front() {
-                dropped.status = SpeechQueueItemStatus::Skipped;
-                push_history(&mut queue, dropped);
-                warning = Some(
-                    "読み上げキューが上限に達したため、古い未読チャットを落としました。"
-                        .to_string(),
-                );
-            }
+        if queue.make_pending_room() {
+            warning = Some(
+                "読み上げキューが上限に達したため、古い未読チャットを落としました。".to_string(),
+            );
         }
 
         let item = SpeechQueueItem {
@@ -438,8 +491,7 @@ pub fn enqueue_chat_message_for_speech(
             delivery_state: SpeechQueueDeliveryState::Ready,
         };
         queue.pending.push_back(item);
-        if !queue.is_processing && !queue.paused && queue.has_auto_processable_item() {
-            queue.is_processing = true;
+        if queue.claim_worker() {
             should_spawn = true;
         }
         emit_queue_snapshot(&app, &queue, warning);
@@ -525,12 +577,8 @@ pub fn skip_current_queue_item(app: &tauri::AppHandle<tauri::Wry>) -> Result<(),
             .speech_queue
             .lock()
             .map_err(|error| error.to_string())?;
-        if let Some(mut item) = queue.pending.pop_front() {
-            item.status = SpeechQueueItemStatus::Skipped;
-            push_history(&mut queue, item);
-        }
-        if !queue.pending.is_empty() && !queue.paused && !queue.is_processing {
-            queue.is_processing = true;
+        queue.skip_current();
+        if queue.claim_worker() {
             should_spawn = true;
         }
         emit_queue_snapshot(app, &queue, None);
@@ -644,8 +692,7 @@ pub fn speech_queue_retry(
                     .to_string(),
             );
         }
-        if !queue.is_processing && !queue.paused && queue.has_auto_processable_item() {
-            queue.is_processing = true;
+        if queue.claim_worker() {
             should_spawn = true;
         }
         emit_queue_snapshot(
@@ -684,8 +731,7 @@ pub fn resume_queue(app: tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
             .lock()
             .map_err(|error| error.to_string())?;
         queue.paused = false;
-        if !queue.is_processing && queue.has_auto_processable_item() {
-            queue.is_processing = true;
+        if queue.claim_worker() {
             should_spawn = true;
         }
         emit_queue_snapshot(&app, &queue, None);
@@ -768,6 +814,14 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                         }
                     };
                     transition = queue.fail_request(&request.id);
+                    if transition == SpeechQueueFailureTransition::Ignored {
+                        emit_app_log(
+                            &app,
+                            AppLogLevel::Warning,
+                            format!("取消済みの読み上げ送信が失敗しました: {error_message}"),
+                        );
+                        continue;
+                    }
                     let queue_message = match transition {
                         SpeechQueueFailureTransition::RetryScheduled => error_message.clone(),
                         SpeechQueueFailureTransition::RetryExhausted => format!(
@@ -847,15 +901,17 @@ fn queue_event_snapshot(
     warning: Option<String>,
 ) -> crate::app_events::SpeechQueueUpdatedEvent {
     let items = queue
-        .pending
+        .in_flight
         .iter()
+        .chain(queue.pending.iter())
         .chain(queue.history.iter().rev())
         .take(DEFAULT_QUEUE_LIMIT + DEFAULT_HISTORY_LIMIT)
         .map(to_queue_event_item)
         .collect::<Vec<_>>();
     let queued_count = queue
-        .pending
+        .in_flight
         .iter()
+        .chain(queue.pending.iter())
         .filter(|item| {
             matches!(
                 item.status,
@@ -867,11 +923,7 @@ fn queue_event_snapshot(
         .count();
     let phase = if queue.paused {
         SpeechQueuePhase::Paused
-    } else if queue
-        .pending
-        .iter()
-        .any(|item| item.status == SpeechQueueItemStatus::Speaking)
-    {
+    } else if queue.in_flight.is_some() {
         SpeechQueuePhase::Speaking
     } else if queue
         .pending
@@ -1824,6 +1876,122 @@ mod tests {
             formatter.format_chat_message(&chat("(speed 300) test")),
             SpeechFormatDecision::Speak("（speed 300） test".to_string())
         );
+    }
+
+    #[test]
+    fn cancelled_in_flight_results_cannot_change_new_items_or_worker_ownership() {
+        for operation in ["clear", "skip", "remove"] {
+            for succeeds in [false, true] {
+                let mut queue = SpeechQueueState::default();
+                queue.pending.push_back(queued_item("old"));
+                assert!(queue.claim_worker());
+                let request = queue.begin_next_request().unwrap();
+                assert!(queue.pending.is_empty());
+                match operation {
+                    "clear" => queue.clear_pending(),
+                    "skip" => queue.skip_current(),
+                    "remove" => {
+                        assert!(queue.remove_pending_item(&request.id));
+                    }
+                    _ => unreachable!(),
+                }
+                queue.pending.push_back(queued_item("new"));
+                assert!(queue.in_flight.is_none());
+                assert!(queue.is_processing);
+                assert!(
+                    !queue.claim_worker(),
+                    "the old physical send still owns the worker"
+                );
+                if succeeds {
+                    assert!(!queue.complete_request(&request.id));
+                } else {
+                    assert_eq!(
+                        queue.fail_request(&request.id),
+                        SpeechQueueFailureTransition::Ignored
+                    );
+                }
+                assert_eq!(queue.history.len(), 1);
+                assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Skipped);
+                let next = queue.begin_next_request().unwrap();
+                assert_eq!(next.id, "new");
+                assert!(queue.complete_request(&next.id));
+                assert!(queue.pending.is_empty());
+                assert!(queue.in_flight.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn cancelling_a_scheduled_retry_does_not_restore_it_or_lose_new_work() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("old"));
+        assert!(queue.claim_worker());
+        let old = queue.begin_next_request().unwrap();
+        assert_eq!(
+            queue.fail_request(&old.id),
+            SpeechQueueFailureTransition::RetryScheduled
+        );
+        queue.clear_pending();
+        queue.pending.push_back(queued_item("new"));
+        assert!(!queue.activate_scheduled_retry(&old.id));
+        assert!(!queue.claim_worker());
+        assert_eq!(queue.begin_next_request().unwrap().id, "new");
+    }
+
+    #[test]
+    fn overflow_only_drops_unsent_items_and_preserves_in_flight_completion() {
+        for succeeds in [false, true] {
+            let mut queue = SpeechQueueState::default();
+            queue.pending.push_back(queued_item("sending"));
+            let request = queue.begin_next_request().unwrap();
+            for index in 0..DEFAULT_QUEUE_LIMIT - 1 {
+                queue
+                    .pending
+                    .push_back(queued_item(&format!("pending-{index}")));
+            }
+            assert!(queue.make_pending_room());
+            queue.pending.push_back(queued_item("newest"));
+            assert_eq!(queue.pending.len() + 1, DEFAULT_QUEUE_LIMIT);
+            assert_eq!(queue.history[0].id, "pending-0");
+            assert_eq!(
+                queue.in_flight.as_ref().unwrap().status,
+                SpeechQueueItemStatus::Speaking
+            );
+            assert!(queue.begin_next_request().is_none());
+            if succeeds {
+                assert!(queue.complete_request(&request.id));
+            } else {
+                assert_eq!(
+                    queue.fail_request(&request.id),
+                    SpeechQueueFailureTransition::RetryScheduled
+                );
+                assert_eq!(queue.pending.front().unwrap().id, "sending");
+            }
+            assert!(!queue
+                .history
+                .iter()
+                .any(|item| item.id == "sending" && item.status == SpeechQueueItemStatus::Skipped));
+        }
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn snapshots_include_in_flight_and_clear_preserves_terminal_states() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("sending"));
+        queue.pending.push_back(queued_item("waiting"));
+        queue.begin_next_request().unwrap();
+        let snapshot = queue_event_snapshot(&queue, None);
+        assert_eq!(snapshot.queued_count, 2);
+        assert_eq!(snapshot.phase, SpeechQueuePhase::Speaking);
+        assert_eq!(snapshot.items[0].id, "sending");
+        queue.clear_pending();
+        let snapshot = queue_event_snapshot(&queue, None);
+        assert_eq!(snapshot.queued_count, 0);
+        assert!(snapshot
+            .items
+            .iter()
+            .all(|item| item.status == SpeechQueueItemStatus::Skipped));
     }
 
     #[test]

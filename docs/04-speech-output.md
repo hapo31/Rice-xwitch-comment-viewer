@@ -161,3 +161,11 @@ Tauri Rust
 - RemoteControl.Voiceroid: <https://github.com/VOICeVIO/RemoteControl.Voiceroid>
 - RemoteControl.Voiceroid API doc: <https://github-wiki-see.page/m/VOICeVIO/RemoteControl.Voiceroid/wiki/API-Doc>
 - VOICEROID2 UI Automation gist: <https://gist.github.com/sskwwskwww/38d99e2453c31ffc3ed335a6bdd56908>
+
+## 送信中のキュー操作（Issue #55）
+
+送信開始時に pending から取り出して in-flight を1件保持する。最大200件は両者の合計とし、overflow は未送信の pending だけを落とす。スナップショットの待機件数には in-flight を含む。
+
+clear は in-flight と pending を取消、skip は in-flight を優先して1件取消、個別削除は指定IDを取消にする。取消項目は Skipped として履歴へ移し、ID が一致しない遅延完了・失敗は無効にする。送信済みの TCP byte を撤回する保証はなく、下流の制御順序は Issue #58、受付と発声完了の区別は Issue #56 で扱う。
+
+取消後も物理送信が完了するまでは同じ worker が所有権を保持し、新しい enqueue で二重起動しない。古い送信の成功・失敗後は同じ loop が次の pending を処理する。停止・空判定と所有権解放は queue lock 内で行う。自動再試行時だけ元の項目を pending の先頭へ戻す。
