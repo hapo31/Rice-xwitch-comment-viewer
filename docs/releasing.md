@@ -54,8 +54,8 @@ scripts/verify-release-version.sh 1.2.3 --tag v1.2.3
 3. Linux Docker と cargo-xwin で Windows x86_64 の NSIS installer と portable ZIP を作り、チェックサムを付ける。
 4. build 成功後、default branch 上の publish workflow が読み取り専用 job で default branch を確認し、同じ run ID の provenance と Assets だけを取得する。tag commit 自身の script は実行せず、default branch の検証・公開 script を使う。
 5. publish job の trusted script で provenance の tag object、workflow run commit、current remote tag、checkout `HEAD`、`origin/main`、3 manifest とダウンロードした成果物の checksum を再検証する。
-6. Release がなければタグ本文を使った draft を作り、全 Assets の upload 成功後に remote tag object を再確認して公開する。
-7. 再実行で Release があれば本文は変更せず、Assets だけ `--clobber` で更新する。未完了 draft なら Assets を揃えて公開する。
+6. Release がなければタグ本文を使った draft を作り、全 Assets の upload 後にダウンロードしてファイル名・内容の完全一致を検証し、remote tag object を再確認して公開する。
+7. 公開済み Release の再実行は全 Assets のファイル名・内容が完全一致する場合だけ変更なしで成功する。不一致・不足・余分な Assets があれば停止し、新しい patch version を発行する。未完了 draft に限って `--clobber` で Assets を揃え、ダウンロード検証後に公開する。余分な draft Asset は所有者が除去してから再実行する。
 
 公開処理は `scripts/publish-release.sh` に集約し、workflow から1回だけ呼び出す。
 

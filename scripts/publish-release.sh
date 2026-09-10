@@ -11,6 +11,26 @@ repository="$2"
 expected_tag_object="${3,,}"
 shift 3
 assets=("$@")
+verification_dir="$(mktemp -d)"
+trap 'rm -rf "${verification_dir}"' EXIT
+mkdir "${verification_dir}/expected" "${verification_dir}/remote"
+for asset in "${assets[@]}"; do
+  name="$(basename "${asset}")"
+  if [ ! -f "${asset}" ] || [ -e "${verification_dir}/expected/${name}" ]; then
+    echo 'エラー: 成果物が存在しないか、ファイル名が重複しています。' >&2
+    exit 1
+  fi
+  cp -- "${asset}" "${verification_dir}/expected/${name}"
+done
+(cd "${verification_dir}/expected" && sha256sum --check --strict SHA256SUMS.txt)
+
+verify_remote_assets() {
+  gh release download "${tag_name}" --repo "${repository}" --dir "${verification_dir}/remote"
+  if ! diff -qr "${verification_dir}/expected" "${verification_dir}/remote"; then
+    echo 'エラー: Release の成果物が不一致または不足しています。公開済み成果物は変更せず、新しい patch version を発行してください。draft は成果物を揃えて再実行してください。' >&2
+    exit 1
+  fi
+}
 
 if [[ ! "${tag_name}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "エラー: タグ名は vX.Y.Z 形式で指定してください: ${tag_name}" >&2
@@ -50,10 +70,21 @@ fi
 
 assert_remote_tag_unchanged
 
+if [ "${is_draft}" = false ]; then
+  verify_remote_assets
+  assert_remote_tag_unchanged
+  echo '公開済み Release の全成果物が一致しました。変更はありません。'
+  exit 0
+elif [ "${is_draft}" != true ]; then
+  echo 'エラー: Release の公開状態を確認できません。' >&2
+  exit 1
+fi
+
 gh release upload "${tag_name}" "${assets[@]}" \
   --repo "${repository}" \
   --clobber
 
+verify_remote_assets
 assert_remote_tag_unchanged
 
 if [ "${is_draft}" = "true" ]; then

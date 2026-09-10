@@ -291,3 +291,7 @@
 - `src/tauri/client.ts` で `app://log`, `twitch://status`, `twitch://chat-message`, `speech://status`, `speech://queue-updated` を購読できる。
 - `src-tauri/src/app_events/mod.rs` にイベント payload と `tauri::Emitter` helper を実装し、設定/認証/棒読みちゃん操作から発火する。
 - `src-tauri/src/twitch/mod.rs` は認証、Helix ユーザー解決、EventSub WebSocket 接続、Helix subscription 作成まで実装済み。
+
+## 2026-09-10: Issue #90
+
+公開済み Release は download と全ファイル比較だけを行い、upload/edit しない。draft は checksum と upload 後の完全一致を公開条件とする。mock gh の失敗注入テスト、bash 構文検査、workflow policy 検査が成功。セルフレビューで余分な remote asset も拒否することを確認。外部管理者の同時操作との API 間競合は既存の運用制約として残る。
