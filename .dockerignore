@@ -6,14 +6,14 @@
 # Dockerfile release inputs.
 !Dockerfile
 !package.json
-!.devcontainer/
-!.devcontainer/bootstrap-lock.json
 !pnpm-lock.yaml
 !index.html
 !postcss.config.js
 !tailwind.config.js
 !tsconfig.json
 !vite.config.ts
+!scripts/
+!scripts/verify-twitch-client-id.mjs
 !src/
 !src/**
 !src-tauri/

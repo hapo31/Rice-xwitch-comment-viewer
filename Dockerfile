@@ -38,6 +38,9 @@ RUN npm install --global "pnpm@${PNPM_VERSION}" \
     && rustup target add "${WINDOWS_TARGET}" \
     && cargo install --locked --version "${CARGO_XWIN_VERSION}" cargo-xwin
 
+COPY scripts/verify-twitch-client-id.mjs ./scripts/verify-twitch-client-id.mjs
+RUN node scripts/verify-twitch-client-id.mjs
+
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
@@ -49,6 +52,8 @@ COPY src-tauri/icons ./src-tauri/icons
 COPY src-tauri/src ./src-tauri/src
 
 RUN pnpm tauri build --bundles nsis --runner cargo-xwin --target "${WINDOWS_TARGET}"
+
+RUN node scripts/verify-twitch-client-id.mjs "src-tauri/target/${WINDOWS_TARGET}/release/rice.exe"
 
 RUN mkdir /out \
     && find "src-tauri/target/${WINDOWS_TARGET}/release/bundle/nsis" \

@@ -13,6 +13,8 @@ expected_exceptions=(
   '!tailwind.config.js'
   '!tsconfig.json'
   '!vite.config.ts'
+  '!scripts/'
+  '!scripts/verify-twitch-client-id.mjs'
   '!src/'
   '!src/**'
   '!src-tauri/'
@@ -33,6 +35,7 @@ expected_copy_sources=(
   package.json
   pnpm-lock.yaml
   postcss.config.js
+  scripts/verify-twitch-client-id.mjs
   src
   src-tauri/Cargo.lock
   src-tauri/Cargo.toml

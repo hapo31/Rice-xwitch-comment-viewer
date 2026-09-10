@@ -9,6 +9,8 @@
 
 ## 現在の進捗サマリ
 
+2026-09-10: Issue #87 の Client ID 検査を CI・ローカル・Docker で共通化し、生成 EXE の埋め込み確認を追加。未設定・不正値・正常値・埋め込み欠落の自動検証とセルフレビューを完了。実 Windows 成果物のビルド検証は未実施。
+
 2026-09-10: Issue #90 の公開済み Release の上書きを禁止し、draft の再ダウンロード検証を追加。成功・不一致・不足・余分な成果物・通信失敗・tag 移動のスクリプトテストとセルフレビューを完了。
 
 2026-09-09: Issue #42の状態復元とDraft残作業を実装・自動検証済み。Rust 130件（app無効85件）、frontend 176件、clippy、build、セキュリティ検査が成功した。PR #159/#160/#163/#166はmainへマージ済み。
@@ -146,6 +148,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] TypeScript の store reducer テストを追加する。
 
 ## Phase 5: 配信運用向け仕上げ
+
+- [x] Issue #87: Client ID の共通 release gate と実行ファイルの埋め込み検査を追加する。
 
 - [x] Issue #90: 公開済み Release を変更せず、全 asset の一致時だけ再実行を成功させ、draft は検証後に公開する。
 

@@ -295,3 +295,7 @@
 ## 2026-09-10: Issue #90
 
 公開済み Release は download と全ファイル比較だけを行い、upload/edit しない。draft は checksum と upload 後の完全一致を公開条件とする。mock gh の失敗注入テスト、bash 構文検査、workflow policy 検査が成功。セルフレビューで余分な remote asset も拒否することを確認。外部管理者の同時操作との API 間競合は既存の運用制約として残る。
+
+## 2026-09-10: Issue #87
+
+Client ID 共通 gate と EXE のバイト列検証を追加。未設定、空白、不正形式、正常値、異なる埋め込み、EXE 不在とログ非露出を自動テスト。Docker context 検査と workflow policy が成功。セルフレビューで直接 Docker build の迂回を塞ぎ、実際に COPY しない devcontainer bootstrap 例外を context から除去した。実際の Windows build／Twitch ログインは未実施。

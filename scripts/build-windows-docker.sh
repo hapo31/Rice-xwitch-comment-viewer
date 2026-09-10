@@ -15,16 +15,8 @@ fi
 
 RICE_TWITCH_CLIENT_ID="${RICE_TWITCH_CLIENT_ID:-${TWITCH_CLIENT_ID:-}}"
 
-if [ -z "${RICE_TWITCH_CLIENT_ID}" ]; then
-  cat >&2 <<'EOF'
-RICE_TWITCH_CLIENT_ID が未設定です。
-
-.env に次のように設定するか、環境変数として指定してから再実行してください。
-
-RICE_TWITCH_CLIENT_ID=your_twitch_public_client_id
-EOF
-  exit 1
-fi
+export RICE_TWITCH_CLIENT_ID
+node scripts/verify-twitch-client-id.mjs
 
 rm -rf release-artifacts
 mkdir -p release-artifacts

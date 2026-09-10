@@ -30,6 +30,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Test release guards
+        run: |
+          node scripts/test-twitch-client-id.mjs
+          bash scripts/test-publish-release.sh
+
+      - name: Verify Twitch authentication configuration
+        run: node scripts/verify-twitch-client-id.mjs
+
       - name: Verify immutable release source
         run: |
           set -euo pipefail
@@ -90,9 +98,6 @@ jobs:
       - name: Build in Docker without shared caches
         run: |
           set -euo pipefail
-          if [ -z "${RICE_TWITCH_CLIENT_ID}" ]; then
-            echo "::warning::RICE_TWITCH_CLIENT_ID is not configured. The app will build, but Twitch login will show a setup error until a client ID is provided at build time."
-          fi
           rm -rf release-artifacts
           mkdir -p release-artifacts
           docker build \

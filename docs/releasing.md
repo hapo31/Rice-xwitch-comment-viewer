@@ -14,6 +14,10 @@ Rice は、レビュー・検証して `main` に取り込んだ commit を指�
 node scripts/verify-release-repository-policy.mjs OWNER/REPO
 ```
 
+## Twitch 認証の配布前検査
+
+`RICE_TWITCH_CLIENT_ID` は repository variable または secret に空白のない英数字で設定する。ローカル Docker wrapper と CI は `scripts/verify-twitch-client-id.mjs` で同じ検査を行い、未設定・不正形式ならビルド前に停止する。Docker の直接実行でも同じ gate を通す。ビルド後は生成された `rice.exe` に指定 ID が含まれることを検査し、不一致なら installer/ZIP を出力しない。検査ログは値を出力しない。Client ID は公開識別子として実行ファイルへ埋め込まれるが、トークンや client secret は渡さない。この検査は ID の Twitch 登録状態や実際のログイン成功を保証しない。
+
 ## 実行方法
 
 Codex では次のようにリポジトリ内スキルを指定する。
