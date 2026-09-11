@@ -34,6 +34,15 @@ enum BouyomiProbeError {
 }
 
 pub const DEFAULT_CONNECTION_SUCCESS_MESSAGE: &str = "棒読みちゃんと接続しました";
+const PLAYBACK_SETTLE_DELAY: Duration = Duration::from_millis(50);
+const PLAYBACK_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const PLAYBACK_TRACKING_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BouyomiPlaybackCompletion {
+    Completed,
+    Unconfirmed(String),
+}
 
 #[derive(Debug, Clone)]
 pub struct BouyomiAddress {
@@ -199,6 +208,50 @@ impl BouyomiAdapter {
         self.send_talk_unordered(text).await
     }
 
+    /// Submit exactly one talk request and keep it locally in-flight until
+    /// Bouyomi reports neither playback nor queued tasks. A tracking failure is
+    /// distinct from a submission failure: callers must not resend an already
+    /// accepted talk automatically because that could duplicate speech.
+    pub async fn speak_and_wait(&self, text: &str) -> anyhow::Result<BouyomiPlaybackCompletion> {
+        self.speak(text).await?;
+        tokio::time::sleep(PLAYBACK_SETTLE_DELAY).await;
+        let started_at = Instant::now();
+
+        loop {
+            let state = self.playback_state().await;
+            match state {
+                Ok((false, 0)) => return Ok(BouyomiPlaybackCompletion::Completed),
+                Ok(_) if started_at.elapsed() < PLAYBACK_TRACKING_TIMEOUT => {
+                    tokio::time::sleep(PLAYBACK_POLL_INTERVAL).await;
+                }
+                Ok(_) => {
+                    return Ok(BouyomiPlaybackCompletion::Unconfirmed(
+                        "棒読みちゃんは読み上げを受け付けましたが、5分以内に再生完了を確認できませんでした。再送すると重複する可能性があるため、自動再試行していません。"
+                            .to_string(),
+                    ));
+                }
+                Err(error) => {
+                    return Ok(BouyomiPlaybackCompletion::Unconfirmed(format!(
+                        "棒読みちゃんは読み上げを受け付けましたが、再生完了を確認できませんでした。再送すると重複する可能性があるため、自動再試行していません: {}",
+                        to_user_message(error)
+                    )));
+                }
+            }
+        }
+    }
+
+    async fn playback_state(&self) -> anyhow::Result<(bool, u8)> {
+        let _dispatch_guard = self.dispatcher.lock().await;
+        let remaining = self
+            .send_query_unordered(BouyomiQueryCommand::RemainingTasks)
+            .await?;
+        let is_playing = self
+            .send_query_unordered(BouyomiQueryCommand::IsNowPlaying)
+            .await?
+            != 0;
+        Ok((is_playing, remaining))
+    }
+
     async fn send_talk_unordered(&self, text: &str) -> anyhow::Result<()> {
         let packet = build_talk_packet(&self.defaults, text);
         self.send_packet_unordered(&packet).await
@@ -209,7 +262,7 @@ impl BouyomiAdapter {
         self.send_packet_unordered(&command.packet()).await
     }
 
-    async fn send_query_unordered(&self, command: BouyomiQueryCommand) -> anyhow::Result<()> {
+    async fn send_query_unordered(&self, command: BouyomiQueryCommand) -> anyhow::Result<u8> {
         let mut stream = self.connect().await?;
         timeout(self.timeout, stream.write_all(&command.packet())).await??;
         let mut response = [0_u8; 1];
@@ -217,9 +270,10 @@ impl BouyomiAdapter {
             .await
             .map_err(|_| BouyomiProbeError::ResponseTimeout)?
             .map_err(BouyomiProbeError::ResponseIo)?;
-        match response[0] {
-            0 | 1 => Ok(()),
-            value => Err(BouyomiProbeError::InvalidResponse(value).into()),
+        match (command, response[0]) {
+            (BouyomiQueryCommand::IsNowPlaying, value @ (0 | 1)) => Ok(value),
+            (BouyomiQueryCommand::RemainingTasks, value) => Ok(value),
+            (_, value) => Err(BouyomiProbeError::InvalidResponse(value).into()),
         }
     }
 
@@ -329,12 +383,14 @@ impl BouyomiControlCommand {
 #[derive(Debug, Clone, Copy)]
 enum BouyomiQueryCommand {
     IsNowPlaying,
+    RemainingTasks,
 }
 
 impl BouyomiQueryCommand {
     fn packet(self) -> [u8; 2] {
         let command: i16 = match self {
             Self::IsNowPlaying => 0x120,
+            Self::RemainingTasks => 0x130,
         };
 
         command.to_le_bytes()
@@ -749,6 +805,10 @@ mod tests {
             BouyomiQueryCommand::IsNowPlaying.packet(),
             0x120_i16.to_le_bytes()
         );
+        assert_eq!(
+            BouyomiQueryCommand::RemainingTasks.packet(),
+            0x130_i16.to_le_bytes()
+        );
     }
 
     #[tokio::test]
@@ -817,6 +877,42 @@ mod tests {
 
         assert_eq!(clear_packet, BouyomiControlCommand::Clear.packet());
         assert_eq!(&drain.await.unwrap()[0..2], &1_i16.to_le_bytes());
+    }
+
+    #[tokio::test]
+    async fn submitted_talk_stays_in_flight_until_remote_playback_is_idle() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let adapter = BouyomiAdapter::new(
+            "127.0.0.1",
+            listener.local_addr().unwrap().port(),
+            BouyomiTalkConfig::default(),
+        )
+        .unwrap();
+        let server = tokio::spawn(async move {
+            let (mut talk, _) = listener.accept().await.unwrap();
+            let mut header = [0_u8; 15];
+            talk.read_exact(&mut header).await.unwrap();
+            assert_eq!(&header[0..2], &1_i16.to_le_bytes());
+
+            for (expected, response) in [
+                (0x130_i16, 1_u8),
+                (0x120_i16, 1_u8),
+                (0x130_i16, 0_u8),
+                (0x120_i16, 0_u8),
+            ] {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut command = [0_u8; 2];
+                stream.read_exact(&mut command).await.unwrap();
+                assert_eq!(command, expected.to_le_bytes());
+                stream.write_all(&[response]).await.unwrap();
+            }
+        });
+
+        assert_eq!(
+            adapter.speak_and_wait("slow").await.unwrap(),
+            BouyomiPlaybackCompletion::Completed
+        );
+        server.await.unwrap();
     }
 
     async fn probe_fixture(response: Option<Vec<u8>>, diagnose: bool) -> Result<(), String> {

@@ -122,6 +122,12 @@ enum SpeechQueueFailureTransition {
     Ignored,
 }
 
+#[cfg(feature = "app")]
+enum SpeechDeliveryOutcome {
+    Completed,
+    SubmittedUnconfirmed(String),
+}
+
 impl SpeechQueueState {
     fn cancel_in_flight(&mut self) -> bool {
         let Some(mut item) = self.in_flight.take() else {
@@ -269,6 +275,24 @@ impl SpeechQueueState {
         item.delivery_state = SpeechQueueDeliveryState::RetryExhausted;
         push_history(self, item);
         SpeechQueueFailureTransition::RetryExhausted
+    }
+
+    fn fail_after_acceptance(&mut self, request_id: &str) -> bool {
+        if !self
+            .in_flight
+            .as_ref()
+            .is_some_and(|item| item.id == request_id)
+        {
+            return false;
+        }
+        let mut item = self.in_flight.take().expect("in-flight checked");
+        item.status = SpeechQueueItemStatus::Error;
+        item.delivery_state = SpeechQueueDeliveryState::RetryExhausted;
+        // The request reached Bouyomi, so consuming the automatic retry budget
+        // prevents a duplicate utterance. A user may still explicitly retry it.
+        item.retry_count = 1;
+        push_history(self, item);
+        true
     }
 
     fn activate_scheduled_retry(&mut self, request_id: &str) -> bool {
@@ -790,7 +814,7 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
         );
         let result = speak_request_from_settings(&app, request.clone()).await;
         match result {
-            Ok(()) => {
+            Ok(SpeechDeliveryOutcome::Completed) => {
                 let state = app.state::<AppState>();
                 let mut queue = match state.speech_queue.lock() {
                     Ok(queue) => queue,
@@ -801,6 +825,27 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                 };
                 queue.complete_request(&request.id);
                 emit_queue_snapshot(&app, &queue, None);
+            }
+            Ok(SpeechDeliveryOutcome::SubmittedUnconfirmed(message)) => {
+                let state = app.state::<AppState>();
+                let mut queue = match state.speech_queue.lock() {
+                    Ok(queue) => queue,
+                    Err(error) => {
+                        emit_app_log(&app, AppLogLevel::Error, error.to_string());
+                        return;
+                    }
+                };
+                if queue.fail_after_acceptance(&request.id) {
+                    emit_speech_status(&app, SpeechStatus::Error, Some(message.clone()));
+                    emit_app_log(&app, AppLogLevel::Error, message.clone());
+                    emit_queue_snapshot(&app, &queue, Some(message));
+                } else {
+                    emit_app_log(
+                        &app,
+                        AppLogLevel::Warning,
+                        "取消済みの読み上げは棒読みちゃん側の完了を確認できませんでした。",
+                    );
+                }
             }
             Err(error_message) => {
                 let transition;
@@ -855,7 +900,7 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
 async fn speak_request_from_settings(
     app: &tauri::AppHandle<tauri::Wry>,
     request: SpeechRequest,
-) -> Result<(), String> {
+) -> Result<SpeechDeliveryOutcome, String> {
     let state = app.state::<AppState>();
     let (host, port, defaults) = {
         let settings = state.settings.lock().map_err(|error| error.to_string())?;
@@ -878,9 +923,15 @@ async fn speak_request_from_settings(
         defaults,
         state.bouyomi_dispatcher.clone(),
     )?;
-    SpeechAdapter::speak(&adapter, request)
+    adapter
+        .speak_and_wait(&request.text)
         .await
-        .map(|_| ())
+        .map(|completion| match completion {
+            bouyomi::BouyomiPlaybackCompletion::Completed => SpeechDeliveryOutcome::Completed,
+            bouyomi::BouyomiPlaybackCompletion::Unconfirmed(message) => {
+                SpeechDeliveryOutcome::SubmittedUnconfirmed(message)
+            }
+        })
         .map_err(bouyomi::to_user_message)
 }
 
@@ -2043,6 +2094,25 @@ mod tests {
         let item = queue.history.front().expect("spoken history");
         assert_eq!(item.status, SpeechQueueItemStatus::Spoken);
         assert_eq!(item.retry_count, 1);
+    }
+
+    #[test]
+    fn accepted_but_unconfirmed_item_is_not_automatically_resent() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("speech-1"));
+
+        let request = queue.begin_next_request().expect("submitted request");
+        assert!(queue.fail_after_acceptance(&request.id));
+
+        assert!(queue.pending.is_empty());
+        assert!(queue.in_flight.is_none());
+        let item = queue.history.front().expect("unconfirmed history");
+        assert_eq!(item.status, SpeechQueueItemStatus::Error);
+        assert_eq!(item.retry_count, 1);
+        assert_eq!(
+            item.delivery_state,
+            SpeechQueueDeliveryState::RetryExhausted
+        );
     }
 
     #[test]

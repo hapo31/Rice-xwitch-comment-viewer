@@ -9,6 +9,8 @@
 
 ## 現在の進捗サマリ
 
+2026-09-11: Issue #56 で棒読みちゃんへのTCP受付と再生完了を分離。残タスク数・再生中状態がともに0になるまで1件を in-flight に保持し、後続送信とキュー上限をリモート未再生分まで含めた。受付後の追跡失敗は重複防止のため自動再送しない。app無効のRust全94件が成功。
+
 2026-09-11: Issue #58 の棒読みちゃん共有 dispatcher を追加し、talk・test・health・control を短命TCP接続のまま直列化。遅延 talk と clear の接続順を検証する fake TCP server テストを追加した。ローカル環境は `libdbus-1-dev` 不足のため Rust 実行テスト待ち。
 
 2026-09-10: Issue #55 の in-flight 分離と worker 所有権の共通化を実装。取消・遅延成功/失敗・再試行待機・overflow・スナップショットの回帰テストを追加し、Rust 全137件と clippy が成功。
@@ -63,7 +65,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 ## Phase 1: 棒読みちゃん連携
 
 - [x] Issue #58: 棒読みちゃん宛ての talk・test・health・control を共有 dispatcher で順序付け、pause/skip/clear を barrier として扱う。
-- [ ] Issue #56: TCP 受付済みと再生完了を分離し、棒読みちゃん側の backlog を含めて読み上げキューを追跡する。
+- [x] Issue #56: TCP 受付済みと再生完了を分離し、棒読みちゃん側の backlog を含めて読み上げキューを追跡する。
 
 - [x] Issue #59: 状態取得応答の検証と、無応答・不正応答・切断・接続拒否の診断を追加する。
 

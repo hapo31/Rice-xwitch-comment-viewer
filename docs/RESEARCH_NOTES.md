@@ -1,10 +1,16 @@
 # 調査メモ
 
+## 2026-09-11 Issue #56: 棒読みちゃん受付後の再生完了追跡
+
+- 棒読みちゃんTCPの talk は送信成功だけでは発声完了を保証しないため、送信後に `0x130`（残タスク数）と `0x120`（再生中）を照会し、両方が0になるまで当該項目を in-flight / Speaking に保持する。後続 talk は送らないため、アプリが送信したリモート未再生分もローカルの200件上限に含まれる。
+- 状態照会は共有 dispatcher をポーリング間で解放し、pause/resume/skip/clear が待ち続けないようにした。受付後に照会不能または5分超過となった項目は、再送による二重発声を避けて自動 retry を消費済みの Error 履歴へ移す。
+- fake TCP server が talk 受付後に busy/残1、次に idle/残0を返す回帰テストと、受付後の追跡失敗が自動再送されないqueueテストを追加した。応答が1 byteであることは既存参照実装 `bouyomi4rs` の `send_command_with_response` と `get_remaining_tasks` も確認した。`cargo test --locked --no-default-features` は全94件成功した。
+
 ## 2026-09-11 Issue #58: 棒読みちゃん送信の順序保証
 
 - `AppState` が共有する async dispatcher を全 `BouyomiAdapter` へ渡し、talk、テスト読み上げ、接続確認、無音プローブ、pause/resume/skip/clear の接続・送受信全体を直列化した。接続確認の query と任意の確認読み上げも一つの transaction として扱う。
 - 巨大な talk の `write_all` を fake TCP server 側で意図的に停滞させ、clear が二本目の接続を開始できず、talk 完了後に clear packet が届く回帰テストを追加した。
-- `cargo fmt --all` と `git diff --check` は成功。ローカルコンテナに `libdbus-1-dev` がなく、sudo も利用できないため Rust テストは未実行。CI相当環境または依存導入済みdevcontainerでの確認を残す。
+- `cargo fmt --all` と `git diff --check` は成功。`libdbus-1-dev` を一時領域へ展開して `cargo test --locked --no-default-features` を実行し、Issue #56追加後の全94件（#58のTCP回帰テストを含む）が成功した。app有効のビルドはローカル環境のGTK/WebKit開発依存不足のため後段CIで確認する。
 
 ## 2026-09-09: Issue #42 Draftレビューと状態復元の仕上げ（完了）
 
