@@ -72,6 +72,7 @@ pub struct BouyomiTalkConfig {
 実装ルール:
 
 - 読み上げごとに短いTCP接続を張る設計から始める。棒読みちゃん側の既存連携と相性がよい。
+- アプリ内の talk、テスト読み上げ、接続確認、無音プローブ、pause/resume/skip/clear は共有 async dispatcher を通す。短命TCP接続は維持するが、一つの送信が物理的に完了するまで次の接続を開始しない。特に pause/skip/clear の成功は、それ以前に dispatcher へ入った talk が後から到着しない送信 barrier とする。制御送信に失敗した場合はローカルキューを変更せず、棒読みちゃん側へ反映できなかったことをエラーとして返す。
 - 接続先は host と port を構造化して保持し、接続時は `(host, port)` の `ToSocketAddrs` を使う。これにより IPv4・DNS名・IPv6を同じ経路で解決する。`SocketAddr` 単体ではDNS名を保持できないため使わない。
 - host欄はIPv4、DNS名、または角括弧なしのIPv6アドレスを受け付ける。portをhost欄へ含めず、IPv6 zone identifierは初期実装では受け付けない。表示・diagnosticsではIPv6を `[::1]:50001` のように角括弧付きで表記する。
 - hostの妥当性検証とaddress構築はアダプタの一箇所に集約し、設定保存、queue、health、test、control、diagnosticsから共通して利用する。
@@ -164,7 +165,7 @@ Tauri Rust
 
 ## 送信中のキュー操作（Issue #55）
 
-送信開始時に pending から取り出して in-flight を1件保持する。最大200件は両者の合計とし、overflow は未送信の pending だけを落とす。スナップショットの待機件数には in-flight を含む。
+送信開始時に pending から取り出して in-flight を1件保持する。最大200件は両者の合計とし、overflow は未送信の pending だけを落とす。スナップショットの待機件数には in-flight を含む。棒読みちゃん宛ての物理送信は共有 dispatcher が直列化するため、clear/pause/skip より前に開始した talk が制御成功後に到着することはない。
 
 clear は in-flight と pending を取消、skip は in-flight を優先して1件取消、個別削除は指定IDを取消にする。取消項目は Skipped として履歴へ移し、ID が一致しない遅延完了・失敗は無効にする。送信済みの TCP byte を撤回する保証はなく、下流の制御順序は Issue #58、受付と発声完了の区別は Issue #56 で扱う。
 

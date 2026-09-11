@@ -1,5 +1,11 @@
 # 調査メモ
 
+## 2026-09-11 Issue #58: 棒読みちゃん送信の順序保証
+
+- `AppState` が共有する async dispatcher を全 `BouyomiAdapter` へ渡し、talk、テスト読み上げ、接続確認、無音プローブ、pause/resume/skip/clear の接続・送受信全体を直列化した。接続確認の query と任意の確認読み上げも一つの transaction として扱う。
+- 巨大な talk の `write_all` を fake TCP server 側で意図的に停滞させ、clear が二本目の接続を開始できず、talk 完了後に clear packet が届く回帰テストを追加した。
+- `cargo fmt --all` と `git diff --check` は成功。ローカルコンテナに `libdbus-1-dev` がなく、sudo も利用できないため Rust テストは未実行。CI相当環境または依存導入済みdevcontainerでの確認を残す。
+
 ## 2026-09-09: Issue #42 Draftレビューと状態復元の仕上げ（完了）
 
 - mainのdomain store分割を維持してsnapshot reconciliationをorchestrationへ移した。全listenerの成功後にのみsnapshotを取得し、各streamのrevisionで古い応答と重複を除外する。起動処理と自動接続は復元後に開始し、既存のTwitch接続状態をローカルでdisconnectedへ上書きしない。

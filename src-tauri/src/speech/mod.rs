@@ -872,7 +872,12 @@ async fn speak_request_from_settings(
         )
     };
 
-    let adapter = bouyomi::BouyomiAdapter::new(&host, port, defaults)?;
+    let adapter = bouyomi::BouyomiAdapter::with_dispatcher(
+        &host,
+        port,
+        defaults,
+        state.bouyomi_dispatcher.clone(),
+    )?;
     SpeechAdapter::speak(&adapter, request)
         .await
         .map(|_| ())

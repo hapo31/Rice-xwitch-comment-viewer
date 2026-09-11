@@ -7,12 +7,15 @@ use crate::speech::{clear_speech_queue, pause_queue, resume_queue, skip_current_
 use crate::speech::{SpeechAdapter, SpeechHealth, SpeechRequest, SpeechResult};
 use serde::Serialize;
 use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     time::{timeout, Instant},
 };
+
+pub type BouyomiDispatcher = Arc<tokio::sync::Mutex<()>>;
 
 #[derive(Debug, thiserror::Error)]
 enum BouyomiProbeError {
@@ -100,6 +103,7 @@ pub struct BouyomiAdapter {
     address: BouyomiAddress,
     pub defaults: BouyomiTalkConfig,
     pub timeout: Duration,
+    dispatcher: BouyomiDispatcher,
 }
 
 #[derive(Debug, Clone)]
@@ -153,10 +157,20 @@ impl BouyomiAdapter {
         port: u16,
         defaults: BouyomiTalkConfig,
     ) -> Result<Self, String> {
+        Self::with_dispatcher(host, port, defaults, BouyomiDispatcher::default())
+    }
+
+    pub fn with_dispatcher(
+        host: impl AsRef<str>,
+        port: u16,
+        defaults: BouyomiTalkConfig,
+        dispatcher: BouyomiDispatcher,
+    ) -> Result<Self, String> {
         Ok(Self {
             address: BouyomiAddress::new(host, port)?,
             defaults,
             timeout: Duration::from_secs(2),
+            dispatcher,
         })
     }
 
@@ -166,9 +180,11 @@ impl BouyomiAdapter {
         success_message: &str,
     ) -> anyhow::Result<Duration> {
         let started_at = Instant::now();
-        self.send_query(BouyomiQueryCommand::IsNowPlaying).await?;
+        let _dispatch_guard = self.dispatcher.lock().await;
+        self.send_query_unordered(BouyomiQueryCommand::IsNowPlaying)
+            .await?;
         if speak_on_success {
-            self.speak(normalize_connection_success_message(success_message))
+            self.send_talk_unordered(normalize_connection_success_message(success_message))
                 .await?;
         }
         Ok(started_at.elapsed())
@@ -179,15 +195,21 @@ impl BouyomiAdapter {
     }
 
     pub async fn speak(&self, text: &str) -> anyhow::Result<()> {
+        let _dispatch_guard = self.dispatcher.lock().await;
+        self.send_talk_unordered(text).await
+    }
+
+    async fn send_talk_unordered(&self, text: &str) -> anyhow::Result<()> {
         let packet = build_talk_packet(&self.defaults, text);
-        self.send_packet(&packet).await
+        self.send_packet_unordered(&packet).await
     }
 
     pub async fn control(&self, command: BouyomiControlCommand) -> anyhow::Result<()> {
-        self.send_packet(&command.packet()).await
+        let _dispatch_guard = self.dispatcher.lock().await;
+        self.send_packet_unordered(&command.packet()).await
     }
 
-    async fn send_query(&self, command: BouyomiQueryCommand) -> anyhow::Result<()> {
+    async fn send_query_unordered(&self, command: BouyomiQueryCommand) -> anyhow::Result<()> {
         let mut stream = self.connect().await?;
         timeout(self.timeout, stream.write_all(&command.packet())).await??;
         let mut response = [0_u8; 1];
@@ -201,7 +223,7 @@ impl BouyomiAdapter {
         }
     }
 
-    async fn send_packet(&self, packet: &[u8]) -> anyhow::Result<()> {
+    async fn send_packet_unordered(&self, packet: &[u8]) -> anyhow::Result<()> {
         let mut stream = self.connect().await?;
         timeout(self.timeout, stream.write_all(packet)).await??;
         Ok(())
@@ -561,10 +583,11 @@ pub(crate) fn adapter_from_settings(
         code: 0,
     };
 
-    BouyomiAdapter::new(
+    BouyomiAdapter::with_dispatcher(
         &settings.speech.bouyomi_host,
         settings.speech.bouyomi_port,
         defaults,
+        state.bouyomi_dispatcher.clone(),
     )
 }
 
@@ -744,6 +767,56 @@ mod tests {
         adapter.health_probe().await.unwrap();
 
         assert_eq!(received.await.unwrap(), 0x120_i16.to_le_bytes());
+    }
+
+    #[tokio::test]
+    async fn shared_dispatcher_keeps_clear_behind_an_in_flight_talk() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let dispatcher = BouyomiDispatcher::default();
+        let mut talk_adapter = BouyomiAdapter::with_dispatcher(
+            "127.0.0.1",
+            port,
+            BouyomiTalkConfig::default(),
+            dispatcher.clone(),
+        )
+        .unwrap();
+        talk_adapter.timeout = Duration::from_secs(5);
+        let mut clear_adapter = BouyomiAdapter::with_dispatcher(
+            "127.0.0.1",
+            port,
+            BouyomiTalkConfig::default(),
+            dispatcher,
+        )
+        .unwrap();
+        clear_adapter.timeout = Duration::from_secs(5);
+
+        // A payload larger than the socket send buffer lets the fake server hold
+        // the first write open. The dispatcher must prevent clear from opening a
+        // second connection until that physical write has settled.
+        let talk =
+            tokio::spawn(async move { talk_adapter.speak(&"a".repeat(8 * 1024 * 1024)).await });
+        let (mut talk_stream, _) = listener.accept().await.unwrap();
+        let clear =
+            tokio::spawn(async move { clear_adapter.control(BouyomiControlCommand::Clear).await });
+
+        assert!(timeout(Duration::from_millis(75), listener.accept())
+            .await
+            .is_err());
+
+        let drain = tokio::spawn(async move {
+            let mut bytes = Vec::new();
+            talk_stream.read_to_end(&mut bytes).await.unwrap();
+            bytes
+        });
+        talk.await.unwrap().unwrap();
+        let (mut clear_stream, _) = listener.accept().await.unwrap();
+        let mut clear_packet = [0_u8; 2];
+        clear_stream.read_exact(&mut clear_packet).await.unwrap();
+        clear.await.unwrap().unwrap();
+
+        assert_eq!(clear_packet, BouyomiControlCommand::Clear.packet());
+        assert_eq!(&drain.await.unwrap()[0..2], &1_i16.to_le_bytes());
     }
 
     async fn probe_fixture(response: Option<Vec<u8>>, diagnose: bool) -> Result<(), String> {

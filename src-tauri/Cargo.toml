@@ -22,7 +22,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 tauri = { version = "2.0.0", features = [], optional = true }
 tauri-plugin-dialog = { version = "2", optional = true }
 thiserror = "1.0"
-tokio = { version = "1.41", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
+tokio = { version = "1.41", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 keyring = { version = "3.6", default-features = false }
 chrono = { version = "0.4", features = ["serde"] }
 futures-util = "0.3"

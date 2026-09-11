@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-09-10
+最終調査日: 2026-09-11
 
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
@@ -8,6 +8,8 @@
 調査メモは [`docs/RESEARCH_NOTES.md`](./RESEARCH_NOTES.md) に分離し、日付が新しいものほど上に追記してください。
 
 ## 現在の進捗サマリ
+
+2026-09-11: Issue #58 の棒読みちゃん共有 dispatcher を追加し、talk・test・health・control を短命TCP接続のまま直列化。遅延 talk と clear の接続順を検証する fake TCP server テストを追加した。ローカル環境は `libdbus-1-dev` 不足のため Rust 実行テスト待ち。
 
 2026-09-10: Issue #55 の in-flight 分離と worker 所有権の共通化を実装。取消・遅延成功/失敗・再試行待機・overflow・スナップショットの回帰テストを追加し、Rust 全137件と clippy が成功。
 
@@ -60,6 +62,9 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 1: 棒読みちゃん連携
 
+- [x] Issue #58: 棒読みちゃん宛ての talk・test・health・control を共有 dispatcher で順序付け、pause/skip/clear を barrier として扱う。
+- [ ] Issue #56: TCP 受付済みと再生完了を分離し、棒読みちゃん側の backlog を含めて読み上げキューを追跡する。
+
 - [x] Issue #59: 状態取得応答の検証と、無応答・不正応答・切断・接続拒否の診断を追加する。
 
 - [x] `SpeechAdapter` trait の境界を作る。
@@ -108,6 +113,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Twitch ユーザー ID と接続チャンネルを EventSub 接続へ渡す command を実装する。
 
 ## Phase 3: EventSub チャット受信
+
+- [ ] Issue #83: 設定チャンネルと世代付きの実接続チャンネルを分離し、status/chat の遅延イベントで表示が巻き戻らないようにする。
 
 - [x] `tokio-tungstenite` を導入する。
 - [x] `EventSubClient` 相当の接続ループを作り、`wss://eventsub.wss.twitch.tv/ws` へ接続する。

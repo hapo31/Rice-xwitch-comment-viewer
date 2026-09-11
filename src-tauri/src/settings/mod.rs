@@ -166,6 +166,10 @@ pub struct AppState {
     #[cfg(not(feature = "app"))]
     pub twitch_auth: SharedSettings<TwitchAuthState>,
     pub speech_queue: SharedSettings<SpeechQueueState>,
+    /// Serializes every command sent to the configured Bouyomi endpoint. Each
+    /// command still uses a short-lived TCP connection, but control commands
+    /// become barriers for queue/test/probe traffic.
+    pub bouyomi_dispatcher: crate::speech::bouyomi::BouyomiDispatcher,
     #[cfg(feature = "app")]
     pub twitch_connection: SharedSettings<Option<TwitchConnectionHandle>>,
     #[cfg(feature = "app")]
