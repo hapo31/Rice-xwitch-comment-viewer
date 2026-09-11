@@ -126,6 +126,7 @@ export interface TwitchChatMessageEvent {
   fragments: TwitchMessageFragment[];
   badges: TwitchChatBadge[];
   receivedAt: UtcTimestamp;
+  connectionGeneration?: number;
 }
 
 export interface TwitchMessageFragment {
@@ -227,6 +228,12 @@ export type TwitchConnectionStatus =
 export type TwitchAuthRequiredReason = "missingRequiredScope";
 export type TwitchStatusDomain = "auth" | "chat";
 
+export interface TwitchActiveConnection {
+  generation: number;
+  broadcasterUserId: string;
+  broadcasterLogin: string;
+}
+
 export type TwitchChatConnectionStatus =
   | "disconnected"
   | "connecting"
@@ -240,6 +247,8 @@ export interface TwitchStatusEvent {
   domain: TwitchStatusDomain;
   status: TwitchConnectionStatus;
   reason?: TwitchAuthRequiredReason;
+  connectionGeneration?: number;
+  activeConnection?: TwitchActiveConnection;
   message?: string;
   occurredAtMs: number;
 }

@@ -39,6 +39,10 @@ export function AuthView({
   const isAuthenticated = state.twitchAuthStatus === "authenticated";
   const canDisconnect = Boolean(state.twitchProfile) && state.twitchAuthStatus !== "authorizing" && state.twitchAuthStatus !== "disconnecting";
   const isAuthOperationInProgress = ["authorizing", "polling", "checking", "disconnecting"].includes(state.twitchAuthStatus);
+  const activeChannel = state.twitchActiveConnection?.broadcasterLogin;
+  const hasPendingChannelChange = Boolean(
+    activeChannel && activeChannel.toLowerCase() !== twitchSettings.channelLogin.toLowerCase(),
+  );
 
   useEffect(() => {
     setChannelLogin(twitchSettings.channelLogin);
@@ -122,6 +126,11 @@ export function AuthView({
                   className={`h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
                 />
                 {!isChannelValid && <FieldError id="twitch-channel" message={channelError} />}
+                {hasPendingChannelChange && (
+                  <p className="mt-2 text-xs text-amber-300" role="status">
+                    現在は {activeChannel} を受信中です。{twitchSettings.channelLogin} は次回接続時に反映されます。
+                  </p>
+                )}
               </div>
             </div>
           </section>

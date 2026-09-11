@@ -49,6 +49,45 @@ describe("domain orchestration", () => {
     expect(unlisten).toHaveBeenCalled();
   });
 
+  it("drops chat events from an old connection generation", async () => {
+    const stores = createDomainStores();
+    let chatListener: ((event: any) => void) | undefined;
+    let statusListener: ((event: any) => void) | undefined;
+    const unlisten = vi.fn();
+    const bridge: DomainEventBridge = {
+      subscribeAppLogEvents: async () => unlisten,
+      subscribeTwitchStatusEvents: async (listener) => { statusListener = listener; return unlisten; },
+      subscribeTwitchChatMessageEvents: async (listener) => { chatListener = listener; return unlisten; },
+      subscribeSpeechStatusEvents: async () => unlisten,
+      subscribeSpeechQueueUpdatedEvents: async () => unlisten,
+    };
+    const cleanup = subscribeDomainEvents({ stores, bridge, reportNotification: vi.fn() });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    statusListener?.({
+      revision: 10,
+      domain: "chat",
+      status: "connected",
+      occurredAtMs: 1,
+      connectionGeneration: 2,
+      activeConnection: { generation: 2, broadcasterUserId: "channel-b", broadcasterLogin: "channel_b" },
+    });
+    const base = {
+      platform: "twitch",
+      userId: "user-1",
+      userLogin: "viewer",
+      userDisplayName: "Viewer",
+      text: "hello",
+      fragments: [],
+      badges: [],
+      receivedAt: "2026-08-01T00:00:00Z",
+    };
+    chatListener?.({ ...base, id: "old", channelId: "channel-a", channelLogin: "channel_a", connectionGeneration: 1 });
+    chatListener?.({ ...base, id: "current", channelId: "channel-b", channelLogin: "channel_b", connectionGeneration: 2 });
+
+    expect(stores.chat.getState().messages.map((message) => message.id)).toEqual(["current"]);
+    cleanup();
+  });
+
   it("serializes settings mutations and publishes the backend result", async () => {
     const resolvers: Array<(value: any) => void> = [];
     const updateSettings = vi.fn((_patch: any): Promise<any> => new Promise((resolve) => resolvers.push(resolve)));

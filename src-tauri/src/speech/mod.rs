@@ -79,6 +79,7 @@ pub struct SpeechQueueState {
     next_id: u64,
     is_processing: bool,
     paused: bool,
+    controls_in_progress: usize,
 }
 
 impl Default for SpeechQueueState {
@@ -91,6 +92,7 @@ impl Default for SpeechQueueState {
             next_id: 1,
             is_processing: false,
             paused: false,
+            controls_in_progress: 0,
         }
     }
 }
@@ -587,6 +589,7 @@ pub fn clear_speech_queue(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), Stri
         .speech_queue
         .lock()
         .map_err(|error| error.to_string())?;
+    queue.controls_in_progress = queue.controls_in_progress.saturating_sub(1);
     queue.clear_pending();
     emit_queue_snapshot(app, &queue, None);
     Ok(())
@@ -601,6 +604,7 @@ pub fn skip_current_queue_item(app: &tauri::AppHandle<tauri::Wry>) -> Result<(),
             .speech_queue
             .lock()
             .map_err(|error| error.to_string())?;
+        queue.controls_in_progress = queue.controls_in_progress.saturating_sub(1);
         queue.skip_current();
         if queue.claim_worker() {
             should_spawn = true;
@@ -740,6 +744,7 @@ pub fn pause_queue(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
         .speech_queue
         .lock()
         .map_err(|error| error.to_string())?;
+    queue.controls_in_progress = queue.controls_in_progress.saturating_sub(1);
     queue.paused = true;
     emit_queue_snapshot(app, &queue, None);
     Ok(())
@@ -754,6 +759,7 @@ pub fn resume_queue(app: tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
             .speech_queue
             .lock()
             .map_err(|error| error.to_string())?;
+        queue.controls_in_progress = queue.controls_in_progress.saturating_sub(1);
         queue.paused = false;
         if queue.claim_worker() {
             should_spawn = true;
@@ -813,6 +819,10 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
             Some("チャットを読み上げています。".to_string()),
         );
         let result = speak_request_from_settings(&app, request.clone()).await;
+        if let Err(error) = wait_for_queue_control(&app).await {
+            emit_app_log(&app, AppLogLevel::Error, error);
+            return;
+        }
         match result {
             Ok(SpeechDeliveryOutcome::Completed) => {
                 let state = app.state::<AppState>();
@@ -893,6 +903,47 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                 }
             }
         }
+    }
+}
+
+#[cfg(feature = "app")]
+pub(crate) fn begin_queue_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut queue = state
+        .speech_queue
+        .lock()
+        .map_err(|error| error.to_string())?;
+    queue.controls_in_progress = queue.controls_in_progress.saturating_add(1);
+    Ok(())
+}
+
+#[cfg(feature = "app")]
+pub(crate) fn cancel_queue_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let mut queue = state
+        .speech_queue
+        .lock()
+        .map_err(|error| error.to_string())?;
+    queue.controls_in_progress = queue.controls_in_progress.saturating_sub(1);
+    Ok(())
+}
+
+#[cfg(feature = "app")]
+async fn wait_for_queue_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
+    loop {
+        let controls_in_progress = {
+            let state = app.state::<AppState>();
+            let controls_in_progress = state
+                .speech_queue
+                .lock()
+                .map_err(|error| error.to_string())?
+                .controls_in_progress;
+            controls_in_progress
+        };
+        if controls_in_progress == 0 {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
 
@@ -1510,6 +1561,7 @@ mod tests {
             received_at: DateTime::parse_from_rfc3339("2026-05-23T00:00:00Z")
                 .unwrap()
                 .with_timezone(&Utc),
+            connection_generation: None,
         }
     }
 

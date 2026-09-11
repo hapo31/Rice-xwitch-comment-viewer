@@ -1,9 +1,17 @@
 # 調査メモ
 
+## 2026-09-11 Issue #83: 設定チャンネルと実接続チャンネルの分離
+
+- 設定の `twitch.channel` は次回接続用として維持し、接続試行ごとの generation と、EventSub購読が成功した broadcaster user ID/login を別の実接続状態として status snapshot/event に保存する。chat eventにもgenerationを付与した。
+- backendのstatus replayは古いgenerationを拒否し、frontend store/orchestrationも古いstatus、世代不一致または実接続identityと異なるchatを拒否する。旧backendとの互換用にgenerationなしeventは従来どおり受理する。
+- Chat headerとSide Panelは実接続先を優先し、設定だけが変更された場合は「次回接続先」を併記する。Authにも設定反映が次回接続からであることを表示する。
+- app無効のRust全95件、app featureを含むWindows GNU targetの`cargo check`、frontend全521件、typecheck、buildが成功した。実WindowsでのEventSub接続確認は継続する。
+
 ## 2026-09-11 Issue #56: 棒読みちゃん受付後の再生完了追跡
 
 - 棒読みちゃんTCPの talk は送信成功だけでは発声完了を保証しないため、送信後に `0x130`（残タスク数）と `0x120`（再生中）を照会し、両方が0になるまで当該項目を in-flight / Speaking に保持する。後続 talk は送らないため、アプリが送信したリモート未再生分もローカルの200件上限に含まれる。
 - 状態照会は共有 dispatcher をポーリング間で解放し、pause/resume/skip/clear が待ち続けないようにした。受付後に照会不能または5分超過となった項目は、再送による二重発声を避けて自動 retry を消費済みの Error 履歴へ移す。
+- 制御コマンドの送信開始からローカルqueue反映までを control-in-progress として記録し、その間に完了pollが返っても反映を待機する。これによりskip/clearが送信済みin-flight項目ではなく次項目へ誤適用される競合を防ぐ。
 - fake TCP server が talk 受付後に busy/残1、次に idle/残0を返す回帰テストと、受付後の追跡失敗が自動再送されないqueueテストを追加した。応答が1 byteであることは既存参照実装 `bouyomi4rs` の `send_command_with_response` と `get_remaining_tasks` も確認した。`cargo test --locked --no-default-features` は全94件成功した。
 
 ## 2026-09-11 Issue #58: 棒読みちゃん送信の順序保証

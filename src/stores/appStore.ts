@@ -11,6 +11,7 @@ import type {
   SpeechAdapterHealth,
   SpeechQueuePhase,
   TwitchChatConnectionStatus,
+  TwitchActiveConnection,
   TwitchDeviceAuthStart,
   TwitchUserProfile,
 } from "../types";
@@ -22,6 +23,8 @@ export interface AppState {
   twitchConnectionStatus: TwitchChatConnectionStatus;
   twitchAuthPrompt?: TwitchDeviceAuthStart;
   twitchProfile?: TwitchUserProfile;
+  twitchActiveConnection?: TwitchActiveConnection;
+  twitchConnectionGeneration: number;
   speechStatus: SpeechStatus;
   settings?: AppSettings;
   chatMessages: ChatMessage[];
@@ -33,7 +36,7 @@ export interface AppState {
 export type AppAction =
   | { type: "settings.loaded"; settings: AppSettings }
   | { type: "twitch.authStatus"; status: AuthStatus; revision?: number }
-  | { type: "twitch.connectionStatus"; status: TwitchChatConnectionStatus; revision?: number }
+  | { type: "twitch.connectionStatus"; status: TwitchChatConnectionStatus; revision?: number; connectionGeneration?: number; activeConnection?: TwitchActiveConnection }
   | { type: "twitch.authPrompt"; prompt?: TwitchDeviceAuthStart }
   | { type: "twitch.profile"; profile?: TwitchUserProfile }
   | { type: "speech.status"; status: SpeechStatus; revision?: number; adapterHealth?: SpeechAdapterHealth }
@@ -49,6 +52,7 @@ export type AppAction =
 export const initialAppState: AppState = {
   twitchAuthStatus: "unauthenticated",
   twitchConnectionStatus: "disconnected",
+  twitchConnectionGeneration: 0,
   speechStatus: "disconnected",
   chatMessages: [],
   queueItems: [],
@@ -63,7 +67,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "twitch.authStatus":
       return { ...state, twitchAuthStatus: action.status };
     case "twitch.connectionStatus":
-      return { ...state, twitchConnectionStatus: action.status };
+      return {
+        ...state,
+        twitchConnectionStatus: action.status,
+        twitchConnectionGeneration: action.connectionGeneration ?? state.twitchConnectionGeneration,
+        twitchActiveConnection: action.status === "disconnected" ? undefined : action.activeConnection ?? state.twitchActiveConnection,
+      };
     case "twitch.authPrompt":
       return { ...state, twitchAuthPrompt: action.prompt };
     case "twitch.profile":

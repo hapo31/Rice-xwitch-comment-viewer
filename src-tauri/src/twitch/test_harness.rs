@@ -74,6 +74,7 @@ struct Runtime {
     subscription_errors: Mutex<VecDeque<anyhow::Error>>,
     chats: Mutex<Vec<ChatMessage>>,
     statuses: Mutex<Vec<TwitchStatus>>,
+    active_connections: Mutex<Vec<TwitchActiveConnection>>,
     logs: Mutex<Vec<String>>,
 }
 impl EventSubRuntime for Runtime {
@@ -103,15 +104,31 @@ impl EventSubRuntime for Runtime {
     fn status(&self, _: TwitchStatusDomain, status: TwitchStatus, _: Option<String>) {
         self.statuses.lock().unwrap().push(status);
     }
+    fn chat_status(&self, status: TwitchStatus, _: Option<String>, _: u64) {
+        self.statuses.lock().unwrap().push(status);
+    }
+    fn connected(&self, params: &EventSubConnectionParams, _: String) {
+        self.statuses.lock().unwrap().push(TwitchStatus::Connected);
+        self.active_connections
+            .lock()
+            .unwrap()
+            .push(TwitchActiveConnection {
+                generation: params.generation,
+                broadcaster_user_id: params.broadcaster_user_id.clone(),
+                broadcaster_login: params.broadcaster_login.clone(),
+            });
+    }
     fn log(&self, _: AppLogLevel, message: impl Into<String>) {
         self.logs.lock().unwrap().push(message.into());
     }
-    fn chat(&self, message: ChatMessage) {
+    fn chat(&self, mut message: ChatMessage, connection_generation: u64) {
+        message.connection_generation = Some(connection_generation);
         self.chats.lock().unwrap().push(message);
     }
 }
 fn params() -> EventSubConnectionParams {
     EventSubConnectionParams {
+        generation: 7,
         broadcaster_user_id: "broadcaster".into(),
         broadcaster_login: "streamer".into(),
         user_id: "reader".into(),
@@ -147,14 +164,14 @@ async fn production_handover_preserves_ready_old_frames_and_dedupes_new_socket()
     let mut seen = cache();
     // Both sockets are ready in the actual select!, not an old-first simulator.
     let (mut next, session) =
-        handover_eventsub_session(&runtime, &mut old, "wss://handover".into(), &mut seen)
+        handover_eventsub_session(&runtime, &mut old, "wss://handover".into(), &mut seen, 7)
             .await
             .unwrap();
     assert_eq!(session.id, "new");
     assert_eq!(runtime.chats.lock().unwrap().len(), 2);
     for _ in 0..2 {
         let frame = next.next().await.unwrap().unwrap();
-        process_eventsub_frame(&runtime, &mut next, frame, &mut seen, Utc::now())
+        process_eventsub_frame(&runtime, &mut next, frame, &mut seen, Utc::now(), 7)
             .await
             .unwrap();
     }
@@ -181,7 +198,7 @@ async fn production_handover_failure_keeps_old_socket_until_deadline() {
         let mut old = FakeSocket::new([chat("during-failure")]);
         let start = tokio::time::Instant::now();
         let result =
-            handover_eventsub_session(&runtime, &mut old, "wss://handover".into(), &mut cache())
+            handover_eventsub_session(&runtime, &mut old, "wss://handover".into(), &mut cache(), 7)
                 .await;
         assert!(result.unwrap_err().to_string().contains("通常再接続"));
         assert_eq!(start.elapsed(), EVENTSUB_RECONNECT_HANDOVER_TIMEOUT);

@@ -30,8 +30,10 @@ export function DomainChatView({ showStartupGuide }: { showStartupGuide: boolean
     chatMessages: messages,
     settings,
     twitchConnectionStatus: connection.twitchConnectionStatus,
+    twitchActiveConnection: connection.twitchActiveConnection,
+    twitchConnectionGeneration: connection.twitchConnectionGeneration,
     twitchProfile: connection.twitchProfile,
-  }), [connection.twitchConnectionStatus, connection.twitchProfile, messages, settings]);
+  }), [connection.twitchActiveConnection, connection.twitchConnectionGeneration, connection.twitchConnectionStatus, connection.twitchProfile, messages, settings]);
   return <ChatView state={state} showStartupGuide={showStartupGuide} />;
 }
 
@@ -74,6 +76,8 @@ export function DomainAuthView(props: Omit<React.ComponentProps<typeof AuthView>
     settings,
     twitchAuthStatus: connection.twitchAuthStatus,
     twitchConnectionStatus: connection.twitchConnectionStatus,
+    twitchActiveConnection: connection.twitchActiveConnection,
+    twitchConnectionGeneration: connection.twitchConnectionGeneration,
     twitchAuthPrompt: connection.twitchAuthPrompt,
     twitchProfile: connection.twitchProfile,
     speechStatus: connection.speechStatus,

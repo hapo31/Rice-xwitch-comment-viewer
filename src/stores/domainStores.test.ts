@@ -3,6 +3,30 @@ import { createDomainStores } from "./domainStores";
 import { utcTimestamp } from "../time";
 
 describe("domain store subscription boundaries", () => {
+  it("keeps the newest active Twitch connection when an older generation arrives late", () => {
+    const stores = createDomainStores();
+    stores.connection.dispatch({
+      type: "chat.status.changed",
+      status: "connected",
+      revision: 10,
+      connectionGeneration: 2,
+      activeConnection: { generation: 2, broadcasterUserId: "b", broadcasterLogin: "channel_b" },
+    });
+    stores.connection.dispatch({
+      type: "chat.status.changed",
+      status: "connected",
+      revision: 11,
+      connectionGeneration: 1,
+      activeConnection: { generation: 1, broadcasterUserId: "a", broadcasterLogin: "channel_a" },
+    });
+
+    expect(stores.connection.getState()).toMatchObject({
+      twitchConnectionStatus: "connected",
+      twitchConnectionGeneration: 2,
+      twitchActiveConnection: { generation: 2, broadcasterLogin: "channel_b" },
+    });
+  });
+
   it("notifies only the chat subscribers for a chat event", () => {
     const stores = createDomainStores();
     const renders = { chat: 0, queue: 0, connection: 0, settings: 0, logs: 0 };

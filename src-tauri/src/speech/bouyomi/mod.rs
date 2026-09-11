@@ -543,6 +543,7 @@ pub async fn speech_pause(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<(), String> {
+    crate::speech::begin_queue_control(&app)?;
     let result = control_from_settings(&state, BouyomiControlCommand::Pause).await;
     if result.is_ok() {
         let _ = pause_queue(&app);
@@ -552,6 +553,8 @@ pub async fn speech_pause(
             Some("読み上げを一時停止しました。".to_string()),
         );
         emit_app_log(&app, AppLogLevel::Info, "読み上げを一時停止しました。");
+    } else {
+        let _ = crate::speech::cancel_queue_control(&app);
     }
     result
 }
@@ -562,6 +565,7 @@ pub async fn speech_resume(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<(), String> {
+    crate::speech::begin_queue_control(&app)?;
     let result = control_from_settings(&state, BouyomiControlCommand::Resume).await;
     if result.is_ok() {
         let _ = resume_queue(app.clone());
@@ -571,6 +575,8 @@ pub async fn speech_resume(
             Some("読み上げを再開しました。".to_string()),
         );
         emit_app_log(&app, AppLogLevel::Info, "読み上げを再開しました。");
+    } else {
+        let _ = crate::speech::cancel_queue_control(&app);
     }
     result
 }
@@ -581,6 +587,7 @@ pub async fn speech_skip(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<(), String> {
+    crate::speech::begin_queue_control(&app)?;
     let result = control_from_settings(&state, BouyomiControlCommand::Skip).await;
     if result.is_ok() {
         let _ = skip_current_queue_item(&app);
@@ -594,6 +601,8 @@ pub async fn speech_skip(
             AppLogLevel::Info,
             "現在の読み上げをスキップしました。",
         );
+    } else {
+        let _ = crate::speech::cancel_queue_control(&app);
     }
     result
 }
@@ -604,6 +613,7 @@ pub async fn speech_clear(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<(), String> {
+    crate::speech::begin_queue_control(&app)?;
     let result = control_from_settings(&state, BouyomiControlCommand::Clear).await;
     if result.is_ok() {
         let _ = clear_speech_queue(&app);
@@ -613,6 +623,8 @@ pub async fn speech_clear(
             Some("読み上げキューをクリアしました。".to_string()),
         );
         emit_app_log(&app, AppLogLevel::Info, "読み上げキューをクリアしました。");
+    } else {
+        let _ = crate::speech::cancel_queue_control(&app);
     }
     result
 }

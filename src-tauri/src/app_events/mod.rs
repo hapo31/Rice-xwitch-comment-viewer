@@ -1,3 +1,4 @@
+#[cfg(feature = "app")]
 use crate::twitch::ChatMessage;
 use serde::Serialize;
 use std::collections::VecDeque;
@@ -42,8 +43,20 @@ pub struct TwitchStatusEvent {
     pub status: TwitchStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<TwitchAuthRequiredReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_generation: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_connection: Option<TwitchActiveConnection>,
     pub message: Option<String>,
     pub occurred_at_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TwitchActiveConnection {
+    pub generation: u64,
+    pub broadcaster_user_id: String,
+    pub broadcaster_login: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -209,6 +222,24 @@ impl AppEventState {
         let Ok(mut inner) = self.inner.lock() else {
             return payload;
         };
+        if payload.domain == TwitchStatusDomain::Chat {
+            if let (Some(incoming), Some(current_status)) = (
+                payload.connection_generation,
+                inner.twitch_chat_status.as_ref(),
+            ) {
+                if let Some(current) = current_status.connection_generation {
+                    if incoming < current {
+                        return current_status.clone();
+                    }
+                    if incoming == current
+                        && payload.active_connection.is_none()
+                        && !matches!(payload.status, TwitchStatus::Disconnected)
+                    {
+                        payload.active_connection = current_status.active_connection.clone();
+                    }
+                }
+            }
+        }
         payload.revision = Self::next_revision(&mut inner);
         match payload.domain {
             TwitchStatusDomain::Auth => inner.twitch_auth_status = Some(payload.clone()),
@@ -326,6 +357,34 @@ pub fn emit_twitch_status<R: Runtime>(
         domain,
         status,
         reason: None,
+        connection_generation: None,
+        active_connection: None,
+        message,
+        occurred_at_ms: current_timestamp_ms(),
+    };
+    if let Some(state) = app_event_state(app) {
+        let payload = state.record_twitch_status(payload);
+        emit_payload(app, TWITCH_STATUS_EVENT, payload);
+    } else {
+        emit_payload(app, TWITCH_STATUS_EVENT, payload);
+    }
+}
+
+#[cfg(feature = "app")]
+pub fn emit_twitch_chat_status<R: Runtime>(
+    app: &AppHandle<R>,
+    status: TwitchStatus,
+    message: Option<String>,
+    connection_generation: u64,
+    active_connection: Option<TwitchActiveConnection>,
+) {
+    let payload = TwitchStatusEvent {
+        revision: 0,
+        domain: TwitchStatusDomain::Chat,
+        status,
+        reason: None,
+        connection_generation: Some(connection_generation),
+        active_connection,
         message,
         occurred_at_ms: current_timestamp_ms(),
     };
@@ -348,6 +407,8 @@ pub fn emit_twitch_auth_required<R: Runtime>(
         domain: TwitchStatusDomain::Auth,
         status: TwitchStatus::AuthRequired,
         reason: Some(reason),
+        connection_generation: None,
+        active_connection: None,
         message: Some(message.into()),
         occurred_at_ms: current_timestamp_ms(),
     };
@@ -360,7 +421,12 @@ pub fn emit_twitch_auth_required<R: Runtime>(
 }
 
 #[cfg(feature = "app")]
-pub fn emit_twitch_chat_message<R: Runtime>(app: &AppHandle<R>, message: ChatMessage) {
+pub fn emit_twitch_chat_message<R: Runtime>(
+    app: &AppHandle<R>,
+    mut message: ChatMessage,
+    connection_generation: u64,
+) {
+    message.connection_generation = Some(connection_generation);
     emit_payload(app, TWITCH_CHAT_MESSAGE_EVENT, message);
 }
 
@@ -440,6 +506,8 @@ mod tests {
             domain: TwitchStatusDomain::Auth,
             status: TwitchStatus::Connected,
             reason: None,
+            connection_generation: None,
+            active_connection: None,
             message: None,
             occurred_at_ms: 1,
         };
@@ -448,12 +516,82 @@ mod tests {
             domain: TwitchStatusDomain::Chat,
             status: TwitchStatus::Reconnecting,
             reason: None,
+            connection_generation: Some(4),
+            active_connection: Some(TwitchActiveConnection {
+                generation: 4,
+                broadcaster_user_id: "123".into(),
+                broadcaster_login: "rice".into(),
+            }),
             message: None,
             occurred_at_ms: 1,
         };
 
         assert_eq!(serde_json::to_value(auth).unwrap()["domain"], "auth");
-        assert_eq!(serde_json::to_value(chat).unwrap()["domain"], "chat");
+        let chat = serde_json::to_value(chat).unwrap();
+        assert_eq!(chat["domain"], "chat");
+        assert_eq!(chat["connectionGeneration"], 4);
+        assert_eq!(chat["activeConnection"]["broadcasterLogin"], "rice");
+    }
+
+    #[test]
+    fn chat_status_replay_rejects_an_older_connection_generation() {
+        let state = AppEventState::default();
+        let current = state.record_twitch_status(TwitchStatusEvent {
+            revision: 0,
+            domain: TwitchStatusDomain::Chat,
+            status: TwitchStatus::Connected,
+            reason: None,
+            connection_generation: Some(2),
+            active_connection: Some(TwitchActiveConnection {
+                generation: 2,
+                broadcaster_user_id: "b".into(),
+                broadcaster_login: "channel_b".into(),
+            }),
+            message: None,
+            occurred_at_ms: 2,
+        });
+        let stale = state.record_twitch_status(TwitchStatusEvent {
+            revision: 0,
+            domain: TwitchStatusDomain::Chat,
+            status: TwitchStatus::Connected,
+            reason: None,
+            connection_generation: Some(1),
+            active_connection: Some(TwitchActiveConnection {
+                generation: 1,
+                broadcaster_user_id: "a".into(),
+                broadcaster_login: "channel_a".into(),
+            }),
+            message: None,
+            occurred_at_ms: 3,
+        });
+
+        assert_eq!(stale.revision, current.revision);
+        let reconnecting = state.record_twitch_status(TwitchStatusEvent {
+            revision: 0,
+            domain: TwitchStatusDomain::Chat,
+            status: TwitchStatus::Reconnecting,
+            reason: None,
+            connection_generation: Some(2),
+            active_connection: None,
+            message: None,
+            occurred_at_ms: 4,
+        });
+        assert_eq!(
+            reconnecting
+                .active_connection
+                .as_ref()
+                .unwrap()
+                .broadcaster_login,
+            "channel_b"
+        );
+        assert_eq!(
+            state.snapshot().twitch_statuses[0]
+                .active_connection
+                .as_ref()
+                .unwrap()
+                .broadcaster_login,
+            "channel_b"
+        );
     }
     fn log(message: &str) -> AppLogEvent {
         AppLogEvent {
@@ -499,6 +637,8 @@ mod tests {
             domain: TwitchStatusDomain::Auth,
             status: TwitchStatus::Validating,
             reason: None,
+            connection_generation: None,
+            active_connection: None,
             message: None,
             occurred_at_ms: 1,
         });

@@ -75,6 +75,8 @@ Twitch EventSub WebSocketでは、最初に `session_welcome` が届き、その
 - 通知は少なくとも一回配送のため、`metadata.message_id` または `event.message_id` で重複排除する。
 - WebSocket切断中の通知は再送されないため、再接続は指数バックオフしつつ最初の数回は短い間隔にする。
 - backoff は通常接続では `session_welcome` と購読成功後、Twitch 指定の handover では新しい `session_welcome` 後に「確立済み」と記録する。handover 開始時には旧 session の確立時刻を失効させ、新しい welcome 前の接続失敗で旧 session の安定実績を使って reset しない。ただし確立直後の切断で待機時間が毎回最短に戻る retry storm を避けるため、30 秒以上安定していた session の次の障害時にだけ失敗回数を reset する。確立前・30 秒未満の失敗は従来の 2 / 5 / 10 / 30 秒バックオフを継続する。
+- 設定JSONのチャンネルは「次回接続する希望値」であり、現在の接続先ではない。接続開始ごとに単調増加する generation を割り当て、購読成功後の broadcaster user ID/login を実接続 identity として status に載せる。chat にも同じ generation を付与し、frontend は generation と identity が一致する通知だけを表示する。
+- 再接続、停止、設定保存が並行した場合も、backend の状態 replay と frontend store は現在値より古い generation の status を破棄する。接続中に設定値だけを変更しても実接続 identity は変更せず、再接続が成功した時点で更新する。
 
 ## 正規化
 

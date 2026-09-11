@@ -24,7 +24,12 @@ export function SidePanel({
   if (location.pathname === "/launcher") {
     return null;
   }
-  const channel = state.settings?.twitch.channelLogin || "未設定";
+  const configuredChannel = state.settings?.twitch.channelLogin || "未設定";
+  const activeChannel = state.twitchActiveConnection?.broadcasterLogin;
+  const channel = activeChannel || configuredChannel;
+  const hasPendingChannelChange = Boolean(
+    activeChannel && configuredChannel !== "未設定" && activeChannel.toLowerCase() !== configuredChannel.toLowerCase(),
+  );
   const queueCount = countIncompleteQueueItems(state.queueItems);
   const warnings = warningNotifications(state.notifications);
   const twitchAuthLabel = {
@@ -71,6 +76,9 @@ export function SidePanel({
           <div className="space-y-2">
             <PanelRow label="Twitch" value={twitchAuthLabel} tone={twitchAuthTone} />
             <PanelRow label="チャンネル" value={channel} to="/auth" title="Login 画面でチャンネルを設定" />
+            {hasPendingChannelChange && (
+              <PanelRow label="次回接続先" value={configuredChannel} to="/auth" title="受信を停止して再接続すると反映" />
+            )}
             <PanelRow label="サーバー接続" value={twitchConnectionLabel} tone={twitchConnectionTone} />
             <PanelRow
               label="読み上げ"

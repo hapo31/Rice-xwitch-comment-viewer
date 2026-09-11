@@ -24,7 +24,7 @@ export function dispatchDomainAction(stores: DomainStores, action: AppAction): v
   switch (action.type) {
     case "settings.loaded": stores.settings.dispatch({ type: "settings.loaded", settings: action.settings }); break;
     case "twitch.authStatus": stores.connection.dispatch({ type: "auth.status.changed", status: action.status, revision: action.revision }); break;
-    case "twitch.connectionStatus": stores.connection.dispatch({ type: "chat.status.changed", status: action.status, revision: action.revision }); break;
+    case "twitch.connectionStatus": stores.connection.dispatch({ type: "chat.status.changed", status: action.status, revision: action.revision, connectionGeneration: action.connectionGeneration, activeConnection: action.activeConnection }); break;
     case "twitch.authPrompt": stores.connection.dispatch({ type: "auth.prompt.changed", prompt: action.prompt }); break;
     case "twitch.profile": stores.connection.dispatch({ type: "auth.profile.changed", profile: action.profile }); break;
     case "speech.status": stores.connection.dispatch({ type: "speech.status.changed", status: action.status, revision: action.revision, adapterHealth: action.adapterHealth }); break;
@@ -83,8 +83,13 @@ export function subscribeDomainEvents({
     const current = stores.connection.getState();
     const revision = event.domain === "auth" ? current.authRevision : current.chatRevision;
     if (event.revision !== undefined && event.revision <= revision) return;
+    if (
+      event.domain === "chat" &&
+      event.connectionGeneration !== undefined &&
+      event.connectionGeneration < current.twitchConnectionGeneration
+    ) return;
     if (event.domain === "chat" && event.status !== "validating") {
-      dispatchDomainAction(stores, { type: "twitch.connectionStatus", status: event.status, revision: event.revision });
+      dispatchDomainAction(stores, { type: "twitch.connectionStatus", status: event.status, revision: event.revision, connectionGeneration: event.connectionGeneration, activeConnection: event.activeConnection });
     } else if (event.domain === "auth") {
       const statuses: Record<TwitchStatusEvent["status"], AuthStatus> = {
         disconnected: "unauthenticated", connecting: "checking", connected: "authenticated",
@@ -115,6 +120,16 @@ export function subscribeDomainEvents({
     () => bridge.subscribeTwitchStatusEvents(twitch),
     () => bridge.subscribeTwitchChatMessageEvents((event) => {
       if (disposed) return;
+      const connection = stores.connection.getState();
+      if (event.connectionGeneration !== undefined) {
+        if (
+          event.connectionGeneration < connection.twitchConnectionGeneration ||
+          !connection.twitchActiveConnection ||
+          event.connectionGeneration !== connection.twitchActiveConnection.generation ||
+          event.channelId !== connection.twitchActiveConnection.broadcasterUserId ||
+          event.channelLogin.toLowerCase() !== connection.twitchActiveConnection.broadcasterLogin.toLowerCase()
+        ) return;
+      }
       const message: ChatMessage = { ...event, kind: "user", status: "queued" };
       dispatchDomainAction(stores, { type: "chat.message", message });
     }),

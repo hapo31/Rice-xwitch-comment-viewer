@@ -134,7 +134,13 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
     rowVirtualizer.scrollToOffset(0);
     setUnseenMessageCount(0);
   };
-  const chatTarget = state.settings?.twitch.channelLogin || state.twitchProfile?.login || "未設定";
+  const configuredTarget = state.settings?.twitch.channelLogin || state.twitchProfile?.login || "未設定";
+  const chatTarget = state.twitchActiveConnection?.broadcasterLogin || configuredTarget;
+  const hasPendingTargetChange = Boolean(
+    state.twitchActiveConnection &&
+    configuredTarget !== "未設定" &&
+    state.twitchActiveConnection.broadcasterLogin.toLowerCase() !== configuredTarget.toLowerCase(),
+  );
   const connectionLabel = {
     disconnected: "未接続",
     connecting: "接続中",
@@ -162,7 +168,10 @@ export function ChatView({ state, showStartupGuide }: { state: AppState; showSta
         <div className="flex items-center gap-3 text-xs text-zinc-400">
           <div className="flex min-w-0 items-center gap-2">
             <span className={`h-2 w-2 rounded-full ${connectionDotClass}`} />
-            <span className="max-w-40 truncate">{chatTarget} / {connectionLabel}</span>
+            <span className="max-w-64 truncate">
+              {chatTarget} / {connectionLabel}
+              {hasPendingTargetChange ? `（次回: ${configuredTarget}）` : ""}
+            </span>
           </div>
         </div>
       </header>

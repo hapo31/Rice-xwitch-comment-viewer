@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-09-11
+最終調査日: 2026-09-12
 
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
@@ -9,9 +9,11 @@
 
 ## 現在の進捗サマリ
 
-2026-09-11: Issue #56 で棒読みちゃんへのTCP受付と再生完了を分離。残タスク数・再生中状態がともに0になるまで1件を in-flight に保持し、後続送信とキュー上限をリモート未再生分まで含めた。受付後の追跡失敗は重複防止のため自動再送しない。app無効のRust全94件が成功。
+2026-09-11: Issue #83 で設定チャンネルと実接続チャンネルを分離。接続世代と購読成功時の broadcaster identity を status/chat に付与し、古い世代や別チャンネルの遅延イベントを frontend/backend の両方で拒否する。接続中に設定を変更した場合は現在の接続先と次回接続先を併記する。app無効のRust全95件、frontend全521件、typecheck、buildが成功。
 
-2026-09-11: Issue #58 の棒読みちゃん共有 dispatcher を追加し、talk・test・health・control を短命TCP接続のまま直列化。遅延 talk と clear の接続順を検証する fake TCP server テストを追加した。ローカル環境は `libdbus-1-dev` 不足のため Rust 実行テスト待ち。
+2026-09-11: Issue #56 で棒読みちゃんへのTCP受付と再生完了を分離。残タスク数・再生中状態がともに0になるまで1件を in-flight に保持し、後続送信とキュー上限をリモート未再生分まで含めた。受付後の追跡失敗は重複防止のため自動再送しない。制御送信中は完了反映を保留し、skip/clear と再生完了の競合も防止する。app無効のRust全94件が成功。
+
+2026-09-11: Issue #58 の棒読みちゃん共有 dispatcher を追加し、talk・test・health・control を短命TCP接続のまま直列化。遅延 talk と clear の接続順を検証する fake TCP server テストを追加し、app無効のRustテストで確認した。
 
 2026-09-10: Issue #55 の in-flight 分離と worker 所有権の共通化を実装。取消・遅延成功/失敗・再試行待機・overflow・スナップショットの回帰テストを追加し、Rust 全137件と clippy が成功。
 
@@ -36,7 +38,7 @@
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込、原子的保存、破損時のbackup/既定値復旧を確認した。Issue #50 で UI 倍率を名前付き radio group にし、現在の選択状態と表示倍率を支援技術へ公開した。Issue #49 で route ごとの document title 更新と、PUSH 遷移後の画面見出しへのフォーカス移動を追加した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 読み上げ、制御、接続診断、Settings 画面は実装済み。接続先は host/port を構造化し、IPv4・DNS・IPv6を共通の接続経路で扱う。接続確認は設定に応じて確認読み上げまたは無音の状態取得を行う。Issue #84 で接続エラーの復旧導線を Settings の［診断］へ統一し、backend から画面名を除去した。Issue #148 で起動後の自動復旧プローブを無音の状態取得だけに限定し、下流の音声合成アプリが未起動の間に読み上げ要求を送らないようにした。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring、session-only 保存失敗処理、旧 Linux 平文ファイルの移行/削除、Login 画面、起動時の保存済み認証の自動検証は実装済み。Issue #4 で認証とチャット接続の状態イベントに domain を追加し、表示文言に依存せず独立更新するようにした。Device Code の絶対期限に基づく残り時間と期限切れ時の再発行導線、Issue #30 の必須 `user:read:chat` scope 検証と不足時の再ログイン案内も実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
-| Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映、再購読時の最新 access token 取得と 401 時の一度だけの refresh/retry（Issue #23）、更新後 access token の `/validate` に基づく scope 再検証（Issue #30）を実装。Issue #9 で Twitch 指定の `reconnect_url` への接続と旧 socket の受信を並行し、新しい welcome 後にのみ切り替え、失敗時は25秒の猶予後に通常再接続へ移行するようにした。Issue #74 で `receivedAt` を Rust から TypeScript まで UTC RFC 3339 に統一し、非文字列を含む不正 timestamp と leap second の frame 取得時刻 fallback、ローカル時刻表示をテストした。実 Twitch 環境での手動確認が必要。 |
+| Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映、再購読時の最新 access token 取得と 401 時の一度だけの refresh/retry（Issue #23）、更新後 access token の `/validate` に基づく scope 再検証（Issue #30）を実装。Issue #9 で Twitch 指定の `reconnect_url` への接続と旧 socket の受信を並行し、新しい welcome 後にのみ切り替え、失敗時は25秒の猶予後に通常再接続へ移行するようにした。Issue #74 で `receivedAt` を Rust から TypeScript まで UTC RFC 3339 に統一し、非文字列を含む不正 timestamp と leap second の frame 取得時刻 fallback、ローカル時刻表示をテストした。Issue #83 で設定値と世代付き実接続 identity を分離し、遅延 status/chat による表示巻き戻りを防止した。実 Twitch 環境での手動確認が必要。 |
 | Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。Issue #63 で最大文字数をユーザー名 prefix・省略記号を含む最終読み上げ文へ適用し、Issue #34 で連投抑制の 0 秒を無効、1〜30 秒を指定間隔として実行時にも厳密に適用した。Issue #57 で失敗済み項目をエラー履歴へ隔離し、明示的な手動再試行のみで retry budget を復元するようにした。Issue #78 で正規化後に本文が空のチャットを理由付きで Blocked にした。Issue #52 で待機中の読み上げ制御と履歴 dismiss を分離し、blocked を含む履歴を個別・一括で削除可能にした。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
 | Phase 5: 配信運用向け仕上げ | 実装中 | Launcher、dev ビルド識別、設定破損時の復旧通知、設定更新 transaction、重要 Issue の並列修正スキル、ルート README と MIT License を実装。Issue #100 で Windows 利用者向け README を導入・検証・初回設定・障害復旧・データ保存まで拡充し、実在する route／操作名／Release asset 規則を確認するレビュー項目を追加した。Issue #1 で Activity Bar から Logs を開ける導線とナビゲーション回帰テストを追加した。Issue #2 で読み上げキューの `sourceMessageId` を Chat 行へ同期し、全終端状態を視覚・支援技術の両方で確認できる表示にした。Issue #3 で非同期の Tauri 購読を cleanup-safe な共通 helper へ統一し、遅延解決・部分失敗でもリスナーを残さないようにした。 Issue #12 で設定更新を leaf patch と直列処理に統一し、保存直後の接続も保存済みチャンネルを使うようにした。Issue #5 で変更のない保存ボタンを DOM から除外してフォーカス順とアクセシビリティツリーに残らないようにし、Issue #6 で NG 入力欄と声質スライダーのラベル・現在値を支援技術へ公開、Issue #7 で入力エラーを対象フィールドと関連付け、棒読みちゃんホスト空欄と保存不能理由を明示した。Issue #14 で通知を構造化して成功通知を Logs / system Chat に分離し、警告の重複を排除した。Issue #15 で通常文字を `zinc-400` に統一し、コントラストと低コントラスト文字の再導入を検査した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。Issue #17 で配信中の Space / S / Cmd/Ctrl+, ショートカットを入力中・IME・キーリピートを妨げない共通 hook として実装した。Issue #18 で Launcher 削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応した。Issue #21 で接続・認証・復旧を重複抑止付きの system Chat timeline へ集約した。Issue #24 で Launcher の DnD listener を mount 中の単一購読とし、最新の追加 handler を ref 経由で参照するようにした。Issue #26 で最小幅 900px の Chat レイアウトを 100/125/150% に対応させた。Issue #28 で未保存変更を画面遷移・履歴戻る・終了時に共通確認するようにした。 Issue #27 で接続中または待機中の読み上げがある終了要求も保護し、承認後はチャット受信停止とキュークリアの完了を待って終了するようにした。 Issue #29 で EventSub の HTTP status/OAuth code/revocation reason を型付きで保持し、401/403 は認証復旧、400 等の永続障害は停止、timeout/5xx は再接続として分岐した。Issue #35 で Chat・Queue・Logs を読み取り用 ARIA table とし、列見出し、論理行位置・総行数、Queue 操作対象を支援技術へ公開した。Issue #36 で Chat 新着を重複なく集約したライブ通知と停止設定を追加した。Issue #37 で Chat 行の Twitch バッジを短縮ラベルと支援技術向け名称で表示した。Issue #39 で NG ルールの 200 件上限を frontend/backend ともに明示検証し、ASCII 大小文字を区別しない重複を除外した。Settings / Filter の設定群には統一した見出しを追加し、Issue #41 で同一内容の連続ログにも一意な表示 ID を割り当て、Issue #45 で Speech/Queue の内部状態値を日本語表示へ集約し、Queue 状態アイコンを支援技術から隠した。Issue #53 で Chat を遡っている場合の仮想スクロール可視アンカー保持と新着へ戻る導線を追加した。Issue #54 で Logs を仮想化し日時 formatter を再利用するようにした。Issue #31 で React の chat、queue、connection、settings、logs を独立 external store と selector に分離し、Chat event で無関係な画面を再 render しない計測テストと auth/event/settings orchestration テストを追加した。Issue #51 で keyboard focus indicator と forced-colors fallback を追加した。Issue #94 で tag push build を read-only にし、default branch の publish workflow、tag provenance、`main` 到達可能性と version の再検証へ公開境界を分離した。release-rice は 3 manifest と tag の version を共通 script で照合し、StatusBar の動的 build info は source 更新対象から除外した。devcontainer bootstrap を固定・build 時検証へ移し、SSH agent/Docker/host network を明示 profile に分離した。Windows 実機確認と詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
@@ -116,7 +118,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 3: EventSub チャット受信
 
-- [ ] Issue #83: 設定チャンネルと世代付きの実接続チャンネルを分離し、status/chat の遅延イベントで表示が巻き戻らないようにする。
+- [x] Issue #83: 設定チャンネルと世代付きの実接続チャンネルを分離し、status/chat の遅延イベントで表示が巻き戻らないようにする。
 
 - [x] `tokio-tungstenite` を導入する。
 - [x] `EventSubClient` 相当の接続ループを作り、`wss://eventsub.wss.twitch.tv/ws` へ接続する。
