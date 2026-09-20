@@ -1,3 +1,4 @@
+import { presentError, reportPresentedError, type ErrorOperation } from "./presentation/errors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBlocker, useNavigate } from "react-router-dom";
@@ -78,7 +79,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const displayScale = useDisplayScale();
   const autoConnectAttempted = useRef(false);
-  const settingsMutation = useRef(createSettingsMutationOrchestrator({ updateSettings, onSettingsLoaded: (nextSettings) => { settingsSnapshot.current = nextSettings; dispatch({ type: "settings.loaded", settings: nextSettings }); }, onError: (error) => reportError(error) }));
+  const settingsMutation = useRef(createSettingsMutationOrchestrator({ updateSettings, onSettingsLoaded: (nextSettings) => { settingsSnapshot.current = nextSettings; dispatch({ type: "settings.loaded", settings: nextSettings }); }, onError: (error) => reportError(error, "settings") }));
   const settingsSnapshot = useRef<AppSettings>();
   const startupAuthAttempted = useRef(false);
   const authOperations = useRef(new AuthOperationController());
@@ -125,13 +126,13 @@ export function AppShell() {
       dispatch({ type: "speech.status", status: "idle" });
     }
     for (const result of results) {
-      if (result.status === "rejected") reportError(result.reason);
+      if (result.status === "rejected") reportError(result.reason, "exit");
     }
     try {
       await appExit();
     } catch (error) {
       setIsClosing(false);
-      reportError(error);
+      reportError(error, "exit");
     }
   }, [hasActiveChat, hasPendingSpeech]);
 
@@ -184,7 +185,7 @@ export function AppShell() {
           reportNotification("warning", "system", recoveryNotice.message);
         }
       })
-      .catch(() => reportNotification("error", "command", "設定の読み込みに失敗しました。"));
+      .catch((error) => reportError(error, "settings"));
 
   }, []);
 
@@ -200,6 +201,7 @@ export function AppShell() {
       getStoredAuth: twitchGetStoredAuth,
       validateAuth: twitchValidateAuth,
       reportSystemMessage: addSystemChatMessage,
+      reportTechnicalError: (message) => dispatch({ type: "log.added", log: { level: "error", message, occurredAtMs: Date.now() } }),
     }).then((auth) => {
       if (!authOperations.current.isCurrent(operation)) return;
       if (auth.status === "authenticated") {
@@ -250,8 +252,11 @@ export function AppShell() {
     });
   }
 
-  function reportError(error: unknown, source: NotificationSource = "command", correlationId?: string) {
-    reportNotification("error", source, String(error), correlationId);
+  function reportError(error: unknown, operation: ErrorOperation = "general") {
+    return reportPresentedError(error, operation, {
+      notify: (message) => reportNotification("error", "command", message),
+      log: (message) => dispatch({ type: "log.added", log: { level: "error", message, occurredAtMs: Date.now() } }),
+    });
   }
 
   function reportInfo(message: string, source: NotificationSource = "command") {
@@ -324,7 +329,7 @@ export function AppShell() {
       reportInfo("テスト読み上げを送信しました。");
     } catch (error) {
       dispatch({ type: "speech.status", status: "error" });
-      reportError(error);
+      reportError(error, "speech");
     }
   }
 
@@ -335,7 +340,7 @@ export function AppShell() {
       reportInfo(message);
     } catch (error) {
       dispatch({ type: "speech.status", status: "disconnected" });
-      reportError(error);
+      reportError(error, "speech");
     }
   }
 
@@ -345,7 +350,7 @@ export function AppShell() {
       reportInfo(diagnostics.recommendation);
       return diagnostics;
     } catch (error) {
-      reportError(error);
+      reportError(error, "speech");
       throw error;
     }
   }
@@ -368,7 +373,7 @@ export function AppShell() {
     } catch (error) {
       if (!authOperations.current.isCurrent(operation)) return;
       dispatch({ type: "twitch.authStatus", status: "error" });
-      reportError(error);
+      reportError(error, "auth");
     }
   }
 
@@ -433,7 +438,7 @@ export function AppShell() {
     } catch (error) {
       if (!authOperations.current.isCurrent(operation)) return;
       dispatch({ type: "twitch.authStatus", status: "error" });
-      reportError(error);
+      reportError(error, "auth");
     } finally {
       authOperations.current.finishPoll(operation);
     }
@@ -460,7 +465,7 @@ export function AppShell() {
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       dispatch({ type: "twitch.authPrompt", prompt: undefined });
       dispatch({ type: "twitch.profile", profile: undefined });
-      reportError(error);
+      reportError(error, "auth");
       return false;
     }
   }
@@ -475,8 +480,8 @@ export function AppShell() {
       reportInfo("Twitch チャット接続を開始しました。");
     } catch (error) {
       dispatch({ type: "twitch.connectionStatus", status: "error" });
-      reportError(error);
-      if (automatic) routeSystemTimelineEvent(autoConnectTimelineEvent("failed", `Twitch チャットの自動接続に失敗しました: ${String(error)}`));
+      reportError(error, "chat");
+      if (automatic) routeSystemTimelineEvent(autoConnectTimelineEvent("failed", `Twitch チャットの自動接続に失敗しました: ${presentError(error, "chat").message}`));
     }
   }
 
@@ -491,7 +496,7 @@ export function AppShell() {
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
     } catch (error) {
       dispatch({ type: "twitch.connectionStatus", status: "error" });
-      reportError(error);
+      reportError(error, "chat");
     }
   }
 
@@ -511,7 +516,7 @@ export function AppShell() {
       dispatch({ type: "twitch.profile", profile: undefined });
     } catch (error) {
       if (!authOperations.current.isCurrent(operation)) return;
-      reportError(error);
+      reportError(error, "auth");
     }
   }
 
@@ -519,7 +524,7 @@ export function AppShell() {
     try {
       await appOpenExternalUrl(url);
     } catch (error) {
-      reportError(error);
+      reportError(error, "externalUrl");
     }
   }
 
@@ -533,7 +538,7 @@ export function AppShell() {
       dispatch({ type: "speech.status", status: command === "pause" ? "paused" : "idle" });
     } catch (error) {
       dispatch({ type: "speech.status", status: "error" });
-      reportError(error);
+      reportError(error, "speech");
     }
   }
 
@@ -552,7 +557,7 @@ export function AppShell() {
       const snapshot = await speechQueueReload();
       if (snapshot) dispatch({ type: "speech.snapshot", snapshot });
     } catch (error) {
-      reportError(error);
+      reportError(error, "queue");
     }
   }
 
@@ -560,7 +565,7 @@ export function AppShell() {
     try {
       await speechQueueRemove(itemId);
     } catch (error) {
-      reportError(error);
+      reportError(error, "queue");
     }
   }
 
@@ -568,7 +573,7 @@ export function AppShell() {
     try {
       await speechQueueDismiss(itemId);
     } catch (error) {
-      reportError(error);
+      reportError(error, "queue");
     }
   }
 
@@ -580,7 +585,7 @@ export function AppShell() {
     try {
       await speechQueueDismissHistory();
     } catch (error) {
-      reportError(error);
+      reportError(error, "queue");
     }
   }
 
@@ -588,7 +593,7 @@ export function AppShell() {
     try {
       await speechQueueRetry(itemId);
     } catch (error) {
-      reportError(error);
+      reportError(error, "queue");
     }
   }
 
@@ -598,7 +603,7 @@ export function AppShell() {
       dispatch({ type: "launcher.changed", items });
       return items;
     } catch (error) {
-      reportError(error);
+      reportError(error, "launcher");
       throw error;
     }
   }, []);
@@ -609,7 +614,7 @@ export function AppShell() {
       dispatch({ type: "launcher.changed", items });
       return items;
     } catch (error) {
-      reportError(error);
+      reportError(error, "launcher");
       throw error;
     }
   }
@@ -617,7 +622,7 @@ export function AppShell() {
   async function reportLauncherResult(result: LauncherLaunchResult) {
     if (result.failures.length > 0) {
       const firstFailure = result.failures[0];
-      reportNotification("error", "command", `${firstFailure.displayName} を起動できませんでした: ${firstFailure.message}`);
+      reportError(new Error(`${firstFailure.displayName} を起動できませんでした: ${firstFailure.message}`), "launcher");
     }
     return result;
   }
@@ -626,7 +631,7 @@ export function AppShell() {
     try {
       return reportLauncherResult(await launcherLaunch(itemId));
     } catch (error) {
-      reportError(error);
+      reportError(error, "launcher");
       throw error;
     }
   }
@@ -635,7 +640,7 @@ export function AppShell() {
     try {
       return reportLauncherResult(await launcherLaunchAll());
     } catch (error) {
-      reportError(error);
+      reportError(error, "launcher");
       throw error;
     }
   }

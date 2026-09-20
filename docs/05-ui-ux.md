@@ -180,3 +180,7 @@ Filter と Settings に未保存の変更があるときは、Activity Bar の�
 - `Cmd/Ctrl+,`: 設定
 
 コマンドパレットはMVP後でよいが、VSCode風UIとの相性がよい。
+
+## エラー表示
+
+command 失敗は共通の presentation 層で、操作対象に応じた短い日本語の原因・復旧手順へ変換する。backend が返す日本語の説明（送信結果が不確かな場合など）は保持する。不明な object、空文字、英語の例外も空欄や `[object Object]` として表示しない。元の message・code・stack 等は最大4000文字で Logs に分離し、起動時認証や自動接続の失敗は system Chat にも残す。

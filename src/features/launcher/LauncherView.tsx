@@ -1,3 +1,5 @@
+import { presentError } from "../../presentation/errors";
+import { useDomainStores } from "../../stores/domainStores";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { AppWindow, Ellipsis, ExternalLink, Layers3, Plus, Trash2 } from "lucide-react";
@@ -68,6 +70,7 @@ export function LauncherView({
   onLaunch,
   onLaunchAll,
 }: LauncherViewProps) {
+  const stores = useDomainStores();
   const [openMenuId, setOpenMenuId] = useState<string>();
   const [busyAction, setBusyAction] = useState<string>();
   const [isDragActive, setIsDragActive] = useState(false);
@@ -197,7 +200,9 @@ export function LauncherView({
         await addPaths(selected);
       }
     } catch (error) {
-      setNotice(`ファイル選択画面を開けませんでした: ${readableError(error)}`);
+      const presented = presentError(error, "launcher");
+      stores.logs.dispatch({ type: "log.added", log: { level: "error", message: presented.details, occurredAtMs: Date.now() } });
+      setNotice(presented.message);
     }
   }
 
@@ -411,6 +416,5 @@ export function LauncherView({
 }
 
 function readableError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.replace(/^Error:\s*/, "");
+  return presentError(error, "launcher").message;
 }

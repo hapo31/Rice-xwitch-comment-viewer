@@ -1,3 +1,4 @@
+import { presentError } from "./presentation/errors";
 import type { TwitchAuthValidationResult, TwitchUserProfile } from "./types";
 
 export type StartupAuthResult =
@@ -9,12 +10,14 @@ export interface StartupAuthDependencies {
   getStoredAuth: () => Promise<TwitchUserProfile | undefined>;
   validateAuth: () => Promise<TwitchAuthValidationResult>;
   reportSystemMessage: (message: string) => void;
+  reportTechnicalError?: (details: string) => void;
 }
 
 export async function restoreAndValidateStartupAuth({
   getStoredAuth,
   validateAuth,
   reportSystemMessage,
+  reportTechnicalError,
 }: StartupAuthDependencies): Promise<StartupAuthResult> {
   try {
     const storedProfile = await getStoredAuth();
@@ -28,8 +31,9 @@ export async function restoreAndValidateStartupAuth({
     reportSystemMessage(`Twitch 認証の有効性を確認しました（${result.profile.login}）。`);
     return { status: "authenticated", result };
   } catch (error) {
-    const message = String(error);
-    reportSystemMessage(`Twitch 認証の確認に失敗しました。Login から再認証してください: ${message}`);
+    const { message, details } = presentError(error, "auth");
+    reportTechnicalError?.(details);
+    reportSystemMessage(message);
     return { status: "error", error: message };
   }
 }

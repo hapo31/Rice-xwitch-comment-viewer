@@ -49,6 +49,7 @@ describe("restoreAndValidateStartupAuth", () => {
 
   it("reports validation failures as system chat", async () => {
     const reportSystemMessage = vi.fn();
+    const reportTechnicalError = vi.fn();
 
     const result = await restoreAndValidateStartupAuth({
       getStoredAuth: async () => storedProfile,
@@ -56,11 +57,12 @@ describe("restoreAndValidateStartupAuth", () => {
         throw new Error("token expired");
       },
       reportSystemMessage,
+      reportTechnicalError,
     });
 
-    expect(result).toEqual({ status: "error", error: "Error: token expired" });
-    expect(reportSystemMessage).toHaveBeenLastCalledWith(
-      "Twitch 認証の確認に失敗しました。Login から再認証してください: Error: token expired",
-    );
+    expect(result).toMatchObject({ status: "error", error: expect.stringContaining("再認証") });
+    expect(reportSystemMessage).toHaveBeenLastCalledWith(expect.stringContaining("認証が無効"));
+    expect(reportTechnicalError).toHaveBeenCalledWith(expect.stringContaining("token expired"));
+    expect(reportSystemMessage).not.toHaveBeenCalledWith(expect.stringContaining("Error:"));
   });
 });

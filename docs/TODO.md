@@ -15,6 +15,10 @@
 
 - [x] Issue #67: Rust の default/no-default feature 構成を CI で検証し、GUI 非依存テストの型・import 境界を維持する。
 
+2026-09-20: Issue #46 のエラー表示を共通化。command の文字列/Error/object reject を操作別の日本語案内へ変換し、元の詳細は Logs へ記録する。起動時認証の失敗は system Chat にも記録。frontend196件、typecheck/build が成功。
+
+- [x] Issue #46: command エラーを日本語の原因・復旧操作へ正規化し、技術詳細を Logs へ分離する。
+
 2026-09-20: `issue-fix-batch` スキルを撤去し、サブエージェント、修正作業、GitHub Issue 対応のルールへ分割した。`AGENTS.md` から作業内容に応じて必要なルールを読む構成へ移行し、関連する PR と Issue がすべて close されるまで worktree と修正用ブランチを保持する方針にした。
 
 2026-09-20: Issue #58 の共有 dispatcher を fake TCP server で再検証し、遅延した talk の後に pause / skip / clear が到着すること、control が先に開始された場合は talk 接続を開かないこと、pause / resume の wire・ローカル queue・成功 status/log の順序が一致することを確認した。制御 command 失敗時はローカル queue が未変更、棒読みちゃん側は到達不明と明示して Logs / status へ残し、最後の control 失敗解除で pending worker を再開する。app 無効の Rust テスト全102件、app 有効の Rust テスト全148件、全 target の clippy が成功。
@@ -285,7 +289,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Issue #53: Chat を遡っている間も prepend 後の可視アンカーを維持し、新着件数から先頭へ戻れるようにする。
 - [x] Queue view を読み上げ待ち・エラー・フィルターによる読み飛ばしだけに絞り、Chat view と同じ新着順にする。
 - [x] 起動時の仮チャットを設定状態に応じた system 操作案内へ置き換える。
-- [ ] 配信中に判断しやすい日本語エラー文言を整理する。
+- [x] 配信中に判断しやすい日本語エラー文言を整理する（Issue #46: 操作別の原因・復旧案内と Logs の技術詳細）。
 - [x] Issue #45: 内部の Speech/Queue 状態値を日本語の表示文言へ集約し、状態アイコンの重複した支援技術向け読み上げをなくす。
 - [x] キュー行の状態表示テストを追加する。
 - [x] 設定フォームのバリデーションテストを追加する。
