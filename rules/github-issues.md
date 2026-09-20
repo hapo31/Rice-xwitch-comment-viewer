@@ -64,7 +64,7 @@ PR を求められた場合は、レビュー済みブランチを Issue ごと�
 - 根本原因と修正前の影響
 - 実行した検証コマンドと結果
 
-PR の head commit がレビュー済み commit と一致することを確認します。Issue を勝手に close、PR を ready 化、merge しません。worktree と branch の後片付け時期は [`fixing.md`](fixing.md) に従います。
+PR の head commit がレビュー済み commit と一致することを確認します。Issue を勝手に close、PR を ready 化、merge しません。関連する Issue と PR がすべて close されるまで worktree とローカル／リモートブランチを保持し、その後の後片付けは [`fixing.md`](fixing.md) に従います。
 
 親エージェントの最終報告には、Issue 番号、PR URL、branch、commit、検証結果、未実施の手動確認を含めます。
 

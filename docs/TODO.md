@@ -9,7 +9,7 @@
 
 ## 現在の進捗サマリ
 
-2026-09-20: `issue-fix-batch` スキルを撤去し、サブエージェント、修正作業、GitHub Issue 対応のルールへ分割した。`AGENTS.md` から作業内容に応じて必要なルールを読む構成へ移行した。
+2026-09-20: `issue-fix-batch` スキルを撤去し、サブエージェント、修正作業、GitHub Issue 対応のルールへ分割した。`AGENTS.md` から作業内容に応じて必要なルールを読む構成へ移行し、関連する PR と Issue がすべて close されるまで worktree と修正用ブランチを保持する方針にした。
 
 2026-09-11: Issue #83 で設定チャンネルと実接続チャンネルを分離。接続世代と購読成功時の broadcaster identity を status/chat に付与し、古い世代や別チャンネルの遅延イベントを frontend/backend の両方で拒否する。接続中に設定を変更した場合は現在の接続先と次回接続先を併記する。app無効のRust全95件、frontend全521件、typecheck、buildが成功。
 
@@ -170,7 +170,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 5: 配信運用向け仕上げ
 
-- [x] `issue-fix-batch` スキルを用途別ルールへ分解し、`AGENTS.md` から必要時に参照する構成へ移行する。
+- [x] `issue-fix-batch` スキルを用途別ルールへ分解し、`AGENTS.md` から必要時に参照する構成へ移行する。関連する PR／Issue の close 後に worktree と修正用ブランチを削除する。
 
 - [x] Issue #87: Client ID の共通 release gate と実行ファイルの埋め込み検査を追加する。
 
