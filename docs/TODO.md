@@ -11,11 +11,13 @@
 
 2026-09-20: `issue-fix-batch` スキルを撤去し、サブエージェント、修正作業、GitHub Issue 対応のルールへ分割した。`AGENTS.md` から作業内容に応じて必要なルールを読む構成へ移行し、関連する PR と Issue がすべて close されるまで worktree と修正用ブランチを保持する方針にした。
 
+2026-09-20: Issue #58 の共有 dispatcher を fake TCP server で再検証し、遅延した talk の後に pause / skip / clear が到着すること、control が先に開始された場合は talk 接続を開かないこと、pause / resume の wire・ローカル queue・成功 status/log の順序が一致することを確認した。制御 command 失敗時はローカル queue が未変更、棒読みちゃん側は到達不明と明示して Logs / status へ残し、最後の control 失敗解除で pending worker を再開する。app 無効の Rust テスト全102件、app 有効の Rust テスト全148件、全 target の clippy が成功。
+
 2026-09-11: Issue #83 で設定チャンネルと実接続チャンネルを分離。接続世代と購読成功時の broadcaster identity を status/chat に付与し、古い世代や別チャンネルの遅延イベントを frontend/backend の両方で拒否する。接続中に設定を変更した場合は現在の接続先と次回接続先を併記する。app無効のRust全95件、frontend全521件、typecheck、buildが成功。
 
 2026-09-11: Issue #56 で棒読みちゃんへのTCP受付と再生完了を分離。残タスク数・再生中状態がともに0になるまで1件を in-flight に保持し、後続送信とキュー上限をリモート未再生分まで含めた。受付後の追跡失敗は重複防止のため自動再送しない。制御送信中は完了反映を保留し、skip/clear と再生完了の競合も防止する。app無効のRust全94件が成功。
 
-2026-09-11: Issue #58 の棒読みちゃん共有 dispatcher を追加し、talk・test・health・control を短命TCP接続のまま直列化。遅延 talk と clear の接続順を検証する fake TCP server テストを追加し、app無効のRustテストで確認した。
+2026-09-11: Issue #58 の棒読みちゃん共有 dispatcher を追加し、talk・test・health・control を短命TCP接続のまま直列化。遅延 talk と clear / pause / skip の接続順を検証する fake TCP server テストを追加し、app無効のRustテストで確認した。
 
 2026-09-10: Issue #55 の in-flight 分離と worker 所有権の共通化を実装。取消・遅延成功/失敗・再試行待機・overflow・スナップショットの回帰テストを追加し、Rust 全137件と clippy が成功。
 
@@ -68,7 +70,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 1: 棒読みちゃん連携
 
-- [x] Issue #58: 棒読みちゃん宛ての talk・test・health・control を共有 dispatcher で順序付け、pause/skip/clear を barrier として扱う。
+- [x] Issue #58: 棒読みちゃん宛ての talk・test・health・control を共有 dispatcher で順序付け、キューワーカーの in-flight 予約から talk 書き込み、pause/skip/clear のローカル反映まで同じ順序に入れる。control 失敗時はローカル queue 未変更と棒読みちゃん側の到達不明を表示する。
 - [x] Issue #56: TCP 受付済みと再生完了を分離し、棒読みちゃん側の backlog を含めて読み上げキューを追跡する。
 
 - [x] Issue #59: 状態取得応答の検証と、無応答・不正応答・切断・接続拒否の診断を追加する。

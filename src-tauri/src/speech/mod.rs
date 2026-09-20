@@ -204,11 +204,20 @@ impl SpeechQueueState {
     }
 
     fn claim_worker(&mut self) -> bool {
-        if self.is_processing || self.paused || !self.has_auto_processable_item() {
+        if self.is_processing
+            || self.paused
+            || self.controls_in_progress > 0
+            || !self.has_auto_processable_item()
+        {
             return false;
         }
         self.is_processing = true;
         true
+    }
+
+    fn cancel_control_and_claim_worker(&mut self) -> bool {
+        self.controls_in_progress = self.controls_in_progress.saturating_sub(1);
+        self.claim_worker()
     }
 
     fn has_auto_processable_item(&self) -> bool {
@@ -220,7 +229,7 @@ impl SpeechQueueState {
     }
 
     fn begin_next_request(&mut self) -> Option<SpeechRequest> {
-        if self.in_flight.is_some() {
+        if self.controls_in_progress > 0 || self.in_flight.is_some() {
             return None;
         }
         let front = self.pending.front()?;
@@ -241,6 +250,13 @@ impl SpeechQueueState {
         };
         self.in_flight = Some(item);
         Some(request)
+    }
+
+    fn reserve_next_request_after_dispatch_lock(&mut self) -> Option<SpeechRequest> {
+        if self.paused {
+            return None;
+        }
+        self.begin_next_request()
     }
 
     fn complete_request(&mut self, request_id: &str) -> bool {
@@ -751,7 +767,7 @@ pub fn pause_queue(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
 }
 
 #[cfg(feature = "app")]
-pub fn resume_queue(app: tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
+pub fn resume_queue(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
     let state = app.state::<AppState>();
     let mut should_spawn = false;
     {
@@ -764,10 +780,10 @@ pub fn resume_queue(app: tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
         if queue.claim_worker() {
             should_spawn = true;
         }
-        emit_queue_snapshot(&app, &queue, None);
+        emit_queue_snapshot(app, &queue, None);
     }
     if should_spawn {
-        tokio::spawn(process_speech_queue(app));
+        tokio::spawn(process_speech_queue(app.clone()));
     }
     Ok(())
 }
@@ -775,6 +791,9 @@ pub fn resume_queue(app: tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
 #[cfg(feature = "app")]
 async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
     loop {
+        let dispatcher = app.state::<AppState>().bouyomi_dispatcher.clone();
+        let dispatch_guard = dispatcher.lock_owned().await;
+        let mut control_pending = false;
         let request = {
             let state = app.state::<AppState>();
             let mut queue = match state.speech_queue.lock() {
@@ -784,7 +803,10 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                     return;
                 }
             };
-            if queue.paused {
+            if queue.controls_in_progress > 0 {
+                control_pending = true;
+                None
+            } else if queue.paused {
                 queue.is_processing = false;
                 emit_speech_status(
                     &app,
@@ -793,8 +815,7 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                 );
                 emit_queue_snapshot(&app, &queue, None);
                 return;
-            }
-            if queue.pending.is_empty() {
+            } else if queue.pending.is_empty() {
                 queue.is_processing = false;
                 emit_speech_status(
                     &app,
@@ -803,14 +824,27 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                 );
                 emit_queue_snapshot(&app, &queue, None);
                 return;
-            }
-            let Some(request) = queue.begin_next_request() else {
-                queue.is_processing = false;
+            } else {
+                let Some(request) = queue.reserve_next_request_after_dispatch_lock() else {
+                    queue.is_processing = false;
+                    emit_queue_snapshot(&app, &queue, None);
+                    return;
+                };
                 emit_queue_snapshot(&app, &queue, None);
-                return;
-            };
-            emit_queue_snapshot(&app, &queue, None);
-            request
+                Some(request)
+            }
+        };
+
+        let Some(request) = request else {
+            drop(dispatch_guard);
+            if control_pending {
+                if let Err(error) = wait_for_queue_control(&app).await {
+                    emit_app_log(&app, AppLogLevel::Error, error);
+                    return;
+                }
+                continue;
+            }
+            return;
         };
 
         emit_speech_status(
@@ -818,7 +852,19 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
             SpeechStatus::Speaking,
             Some("チャットを読み上げています。".to_string()),
         );
-        let result = speak_request_from_settings(&app, request.clone()).await;
+        let submitted = submit_speech_request_from_settings(&app, &request).await;
+        drop(dispatch_guard);
+        let result = match submitted {
+            Ok(adapter) => match adapter.wait_for_playback_completion().await {
+                bouyomi::BouyomiPlaybackCompletion::Completed => {
+                    Ok(SpeechDeliveryOutcome::Completed)
+                }
+                bouyomi::BouyomiPlaybackCompletion::Unconfirmed(message) => {
+                    Ok(SpeechDeliveryOutcome::SubmittedUnconfirmed(message))
+                }
+            },
+            Err(error) => Err(error),
+        };
         if let Err(error) = wait_for_queue_control(&app).await {
             emit_app_log(&app, AppLogLevel::Error, error);
             return;
@@ -920,11 +966,16 @@ pub(crate) fn begin_queue_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<
 #[cfg(feature = "app")]
 pub(crate) fn cancel_queue_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let mut queue = state
-        .speech_queue
-        .lock()
-        .map_err(|error| error.to_string())?;
-    queue.controls_in_progress = queue.controls_in_progress.saturating_sub(1);
+    let should_spawn = {
+        let mut queue = state
+            .speech_queue
+            .lock()
+            .map_err(|error| error.to_string())?;
+        queue.cancel_control_and_claim_worker()
+    };
+    if should_spawn {
+        tokio::spawn(process_speech_queue(app.clone()));
+    }
     Ok(())
 }
 
@@ -948,10 +999,10 @@ async fn wait_for_queue_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<()
 }
 
 #[cfg(feature = "app")]
-async fn speak_request_from_settings(
+async fn submit_speech_request_from_settings(
     app: &tauri::AppHandle<tauri::Wry>,
-    request: SpeechRequest,
-) -> Result<SpeechDeliveryOutcome, String> {
+    request: &SpeechRequest,
+) -> Result<bouyomi::BouyomiAdapter, String> {
     let state = app.state::<AppState>();
     let (host, port, defaults) = {
         let settings = state.settings.lock().map_err(|error| error.to_string())?;
@@ -975,15 +1026,10 @@ async fn speak_request_from_settings(
         state.bouyomi_dispatcher.clone(),
     )?;
     adapter
-        .speak_and_wait(&request.text)
+        .send_talk_after_dispatch_lock(&request.text)
         .await
-        .map(|completion| match completion {
-            bouyomi::BouyomiPlaybackCompletion::Completed => SpeechDeliveryOutcome::Completed,
-            bouyomi::BouyomiPlaybackCompletion::Unconfirmed(message) => {
-                SpeechDeliveryOutcome::SubmittedUnconfirmed(message)
-            }
-        })
-        .map_err(bouyomi::to_user_message)
+        .map_err(bouyomi::to_user_message)?;
+    Ok(adapter)
 }
 
 #[cfg(feature = "app")]
@@ -2027,6 +2073,45 @@ mod tests {
                 assert!(queue.in_flight.is_none());
             }
         }
+    }
+
+    #[test]
+    fn control_barrier_prevents_pending_item_reservation() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("pending"));
+        queue.controls_in_progress = 1;
+
+        assert!(queue.begin_next_request().is_none());
+        assert_eq!(
+            queue.pending.front().map(|item| item.id.as_str()),
+            Some("pending")
+        );
+        assert!(queue.in_flight.is_none());
+
+        queue.controls_in_progress = 0;
+        assert_eq!(
+            queue.begin_next_request().map(|request| request.id),
+            Some("pending".to_string())
+        );
+    }
+
+    #[test]
+    fn cancelling_the_last_control_restarts_a_worker_for_pending_speech() {
+        let mut queue = SpeechQueueState {
+            controls_in_progress: 2,
+            ..SpeechQueueState::default()
+        };
+        queue.pending.push_back(queued_item("pending"));
+
+        assert!(!queue.claim_worker());
+        assert!(!queue.cancel_control_and_claim_worker());
+        assert!(!queue.is_processing);
+        assert!(queue.cancel_control_and_claim_worker());
+        assert!(queue.is_processing);
+        assert_eq!(
+            queue.begin_next_request().map(|request| request.id),
+            Some("pending".to_string())
+        );
     }
 
     #[test]

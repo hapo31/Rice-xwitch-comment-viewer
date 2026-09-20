@@ -1,5 +1,11 @@
 # 調査メモ
 
+## 2026-09-20 Issue #58: dispatcher barrier の予約・反映順序
+
+- キューワーカーは shared dispatcher を取得してから control-in-progress を確認し、pending の in-flight 予約と talk packet 書き込みを同じ guard 内で行う。control が先に開始されていれば worker は予約せず、control の local queue 反映後に状態を再確認する。
+- pause/resume/skip/clear は packet の write、local queue 反映、成功 status/log を同じ dispatcher guard に収め、wire 順と local 適用・通知順を一致させる。送信失敗は local 未変更・リモート到達不明、送信済み後の local 反映失敗はリモート送信済み・local 未反映として Logs/status に出す。失敗した最後の control barrier は、保留中の processable な項目があれば worker を再開する。
+- fake TCP server で遅延 talk 後の pause/skip/clear、実際の `SpeechQueueState` を使う control 先行時に talk 接続を開かないこと、pause/resume の wire と local 適用順を検証した。`cargo test --locked --no-default-features` 全102件、app feature の `cargo test --locked` 全148件、`cargo clippy --locked --all-targets -- -D warnings` を実行して成功した。
+
 ## 2026-09-20: エージェント作業ルールの分離
 
 - `issue-fix-batch` は、サブエージェントの報告形式、一般的な修正の隔離方法、GitHub Issue 固有の選定／レビュー／PR 手順を一つのスキルに混在させていたため、用途別の `rules/` 文書へ分離してスキルを撤去した。
