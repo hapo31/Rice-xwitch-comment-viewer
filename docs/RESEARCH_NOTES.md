@@ -1,5 +1,11 @@
 # 調査メモ
 
+## 2026-09-20 Issue #172: RustSec 修正版の依存更新
+
+- cargo-audit 0.22.2 と RustSec DB `d5c17953a895cf19e8d3ce66eaa42b6fcfe1fb16` で既存 lockfile の advisory を確認した。quinn-proto 0.11.15、rustls 0.23.45、anyhow 1.0.103、event-listener 5.4.2 と、plist 1.10.1 経由の quick-xml 0.42.0 へ互換更新した。rustls-webpki 0.103.15 と base64 0.23.1 はこれらに必要な推移的更新である。
+- `cargo-audit audit --file src-tauri/Cargo.lock --json --no-fetch --no-yanked --deny warnings` の JSON で RUSTSEC-2026-0185 / 0190 / 0194 / 0195 / 0221 / 0285 の消失を確認した。vulnerabilities は0件、残存 warning は7件で strict gate は失敗する。残存する glib の unsound と保守終了の警告は #173 で追跡し、waiver は追加していない。最初の online audit は yanked の registry 確認が timeout したため、今回の照合は取得済み DB の advisory 検証に限定し、全項目の clean audit とは主張しない。
+- Rust 1.89.0 の `cargo test --locked` は default 156件/no-default 110件、Windows GNU target の `cargo check --locked --all-targets` が成功した。現在の CI toolchain の `cargo clippy --locked --all-targets -- -D warnings`、frontend203件、typecheck、build、diff check も成功。1.89 の clippy が検出した既存 source の4指摘は toolchain 固定を行う #93 で扱い、この変更には含めない。Windows 実機の動作確認は未実施。
+
 ## 2026-09-20 Issue #58: dispatcher barrier の予約・反映順序
 
 - キューワーカーは shared dispatcher を取得してから control-in-progress を確認し、pending の in-flight 予約と talk packet 書き込みを同じ guard 内で行う。control が先に開始されていれば worker は予約せず、control の local queue 反映後に状態を再確認する。
