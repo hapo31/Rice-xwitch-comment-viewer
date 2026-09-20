@@ -9,6 +9,10 @@
 
 ## 現在の進捗サマリ
 
+2026-09-20: Issue #172 で修正版のある RustSec 6 advisory を依存更新で解消した。quinn-proto 0.11.15、rustls 0.23.45、anyhow 1.0.103、event-listener 5.4.2、plist 1.10.1 / quick-xml 0.42.0 へ更新し、必要な推移的依存だけを lockfile に反映した。Rust 1.89 の default 156件/no-default 110件と Windows GNU check、現在の CI toolchain の clippy、frontend203件・typecheck/build が成功。保守終了等の7警告は #173 へ分離し、clean audit とは扱わない。
+
+- [x] Issue #172: RustSec が検出した quinn-proto / rustls / anyhow / event-listener と plist 経由の quick-xml を修正版へ更新し、既存機能と監査結果を検証する。
+
 2026-09-20: Issue #68 で Launcher の追加処理を設定 mutex の snapshot 後に最大4件の blocking worker へ移した。worker permit の取得待ちは6秒、実行開始後の各 worker は7秒で呼び出しを返す。PowerShell アイコン抽出は5秒で子プロセスを kill/reap する。複数選択は最大200件を4並列で処理するため、追加操作全体に7秒の上限はない。停止した同期 filesystem 操作そのものは強制取消できないため、実行中 worker は permit を保持し、残留数を全要求で最大4件に制限する。失敗時は汎用アイコンへフォールバックし、並行する設定変更は最新の Launcher 項目へ merge、抽出失敗の理由と所要時間は件数を制限して Logs へ残す。本番 worker に注入した fake extractor と停止 child process による timeout・終了確認・上限制御・競合・lock 非保持のテストを追加した。Windows で停止した shortcut と child process が残らないことの手動確認が必要。
 
 2026-09-20: Issue #67 の残作業として、PR/main で default/no-default を独立実行する Rust feature matrix を追加した。GUI 非依存構成102件と Tauri 有効構成148件が成功し、不要 import warning はなかった。
