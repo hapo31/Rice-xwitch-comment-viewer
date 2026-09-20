@@ -1,5 +1,12 @@
 # 調査メモ
 
+## 2026-09-20: エージェント作業ルールの分離
+
+- `issue-fix-batch` は、サブエージェントの報告形式、一般的な修正の隔離方法、GitHub Issue 固有の選定／レビュー／PR 手順を一つのスキルに混在させていたため、用途別の `rules/` 文書へ分離してスキルを撤去した。
+- `AGENTS.md` は全ルールを常時展開せず、サブエージェント利用時は `rules/subagent.md`、修正時は `rules/fixing.md`、GitHub Issue 対応時は `rules/github-issues.md` を読む索引として扱う。
+- サブエージェントは途中経過を送らず、調査では事実だけ、ファイル編集では編集ファイル一覧だけを最終報告する。親エージェントが成果物、commit、検証結果を直接確認する。
+- 修正は原則として一時 worktree と専用ブランチへ隔離する。「すぐに動作確認したい」という明示指示がある場合だけ通常 workspace の専用ブランチを使い、成果の保存後に一時 worktree とローカル／リモートブランチを削除する。
+
 ## 2026-09-11 Issue #83: 設定チャンネルと実接続チャンネルの分離
 
 - 設定の `twitch.channel` は次回接続用として維持し、接続試行ごとの generation と、EventSub購読が成功した broadcaster user ID/login を別の実接続状態として status snapshot/event に保存する。chat eventにもgenerationを付与した。

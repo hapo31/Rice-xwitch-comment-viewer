@@ -26,6 +26,16 @@ VOICEROID2 直接連携は MVP の主経路にしません。Windows 専用の�
 
 設計文書と実装が矛盾する場合は、先に矛盾を明示し、必要なら設計文書も更新してください。
 
+## 作業ルール
+
+Codex には Claude Code の rules と同じ自動読込機能がないため、作業内容に該当するルールを作業開始前に読んでください。複数に該当する場合は、該当するルールをすべて適用します。
+
+- サブエージェントを使う場合: [`rules/subagent.md`](rules/subagent.md)
+- 既存ファイルや挙動を修正する場合: [`rules/fixing.md`](rules/fixing.md)
+- GitHub Issue の選定、修正、または PR 作成を行う場合: [`rules/github-issues.md`](rules/github-issues.md)
+
+ルール間で競合がある場合は、ユーザーの明示指示、`AGENTS.md`、個別ルールの順に優先します。
+
 ## 技術スタックと構成方針
 
 - ランタイム: Tauri
