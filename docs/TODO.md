@@ -9,6 +9,8 @@
 
 ## 現在の進捗サマリ
 
+2026-09-20: Issue #68 で Launcher の追加処理を設定 mutex の snapshot 後に最大4件の blocking worker へ移した。worker permit の取得待ちは6秒、実行開始後の各 worker は7秒で呼び出しを返す。PowerShell アイコン抽出は5秒で子プロセスを kill/reap する。複数選択は最大200件を4並列で処理するため、追加操作全体に7秒の上限はない。停止した同期 filesystem 操作そのものは強制取消できないため、実行中 worker は permit を保持し、残留数を全要求で最大4件に制限する。失敗時は汎用アイコンへフォールバックし、並行する設定変更は最新の Launcher 項目へ merge、抽出失敗の理由と所要時間は件数を制限して Logs へ残す。本番 worker に注入した fake extractor と停止 child process による timeout・終了確認・上限制御・競合・lock 非保持のテストを追加した。Windows で停止した shortcut と child process が残らないことの手動確認が必要。
+
 2026-09-20: `issue-fix-batch` スキルを撤去し、サブエージェント、修正作業、GitHub Issue 対応のルールへ分割した。`AGENTS.md` から作業内容に応じて必要なルールを読む構成へ移行し、関連する PR と Issue がすべて close されるまで worktree と修正用ブランチを保持する方針にした。
 
 2026-09-20: Issue #58 の共有 dispatcher を fake TCP server で再検証し、遅延した talk の後に pause / skip / clear が到着すること、control が先に開始された場合は talk 接続を開かないこと、pause / resume の wire・ローカル queue・成功 status/log の順序が一致することを確認した。制御 command 失敗時はローカル queue が未変更、棒読みちゃん側は到達不明と明示して Logs / status へ残し、最後の control 失敗解除で pending worker を再開する。app 無効の Rust テスト全102件、app 有効の Rust テスト全148件、全 target の clippy が成功。
@@ -220,6 +222,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Windows 10 スタートメニュー風の Launcher 画面を追加する。
 - [x] Launcher でアプリの選択/DnD登録、削除、単体起動、一斉起動を実装する。
 - [x] Launcher の登録内容を永続化し、将来の色変更・グループ・並べ替え・Webリンクに拡張できるモデルにする。
+- [x] Issue #68: Launcher のアイコン抽出を timeout/kill/reap 付きの上限制御 worker へ移し、設定 lock 外で実行して競合する設定変更を merge する。抽出失敗は汎用アイコンと bounded Logs へフォールバックする。
 - [x] Issue #18: Launcher の削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応させる。
 - [x] Issue #24: チャット・ログ・状態更新時にも Launcher の DnD listener を再登録せず、mount 中の購読を維持し、最新 handler と遅延登録後の cleanup をテストする。
 - [x] Settings 画面から Login 画面を分離し、認証専用の画面として整理する。
@@ -331,6 +334,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [ ] 手動: ネットワーク切断と復帰を確認する。
 - [ ] 手動: Windows 10/11 で `.exe` / `.lnk` の選択・DnD登録、実アイコン、単体/一斉起動、削除、再起動後の復元を確認する。
 - [ ] 手動: 空白・日本語・`&` を含むアプリパスと、移動済みアプリを含む一斉起動の部分失敗表示を確認する。
+- [ ] 手動: Issue #68 として、停止する UNC 上の `.lnk` を追加して7秒以内に戻り、PowerShell 子プロセスが残らず、その間に設定の読込・保存と読み上げ操作が続けられることを Windows で確認する。
 - [ ] 手動: マウス操作では不要な focus ring が出ず、Tab 操作では各入力・ボタンの位置を確認できること、および Windows 高コントラストで focus indicator を確認する（Issue #51）。
 - [ ] 手動: Windows release package の DevTools で CSP violation がないことと、Tauri event/invoke、タイトルバー、Dialog、Launcher icon、主要 API 操作を確認する（Issue #73）。
 - [ ] 手動: Issue #157 として、ウィンドウを別モニターへ移動して終了後に復元されること、モニターを外した後は画面外で起動しないことを Windows 10/11 で確認する。

@@ -6,6 +6,15 @@
 - pause/resume/skip/clear は packet の write、local queue 反映、成功 status/log を同じ dispatcher guard に収め、wire 順と local 適用・通知順を一致させる。送信失敗は local 未変更・リモート到達不明、送信済み後の local 反映失敗はリモート送信済み・local 未反映として Logs/status に出す。失敗した最後の control barrier は、保留中の processable な項目があれば worker を再開する。
 - fake TCP server で遅延 talk 後の pause/skip/clear、実際の `SpeechQueueState` を使う control 先行時に talk 接続を開かないこと、pause/resume の wire と local 適用順を検証した。`cargo test --locked --no-default-features` 全102件、app feature の `cargo test --locked` 全148件、`cargo clippy --locked --all-targets -- -D warnings` を実行して成功した。
 
+## 2026-09-20 Issue #68: Launcher icon extraction の timeout と残留 worker 境界
+
+- 最新 main 上で Rust default 全154件と clippy `--all-targets -- -D warnings` が成功。Windows GNU target の `cargo check --locked --all-targets` も成功した。async command の State と Result の制約は [Tauri 公式資料](https://v2.tauri.app/develop/calling-rust/) で確認した。
+
+- Launcher 追加では settings mutex 内で Launcher 項目の snapshot だけを取得し、path 検証とアイコン抽出は設定 lock 外の `spawn_blocking` worker で実行する。worker pool はアプリ全体で最大4件、permit の取得待ちは6秒、実行開始後の各 worker の呼び出し待ちは7秒とする。最大200件の選択は4並列で複数 batch に分かれるため、追加操作全体に7秒の期限は設けない。
+- PowerShell icon extraction は5秒で `kill` し、`wait` による reaping と stdout/stderr pipe の回収が成功した場合だけ終了確認済みとして Logs に残す。kill または wait に失敗した場合は終了したとは表現せず、確認できなかった原因を記録する。
+- `std::fs` の UNC 確認など、実行済み blocking worker を安全に強制停止できない操作は残る。呼び出し側は7秒で戻るが、停止した worker は終了まで permit を保持するため、同時に残留できる worker は全 Launcher 追加要求を合算して4件までである。permit が全て残留した場合、次の追加は6秒で混雑エラーを返す。
+- worker / timeout / extractor を本番共通関数へ注入し、停止 fake extractor が期限内に返ること、上限並列数、settings lock 非保持、最新 snapshot への merge、実際の停止 child process の kill/reap を Linux の回帰テストで確認する。Windows の PowerShell/COM/UNC 実機確認は TODO に残す。
+
 ## 2026-09-20: エージェント作業ルールの分離
 
 - `issue-fix-batch` は、サブエージェントの報告形式、一般的な修正の隔離方法、GitHub Issue 固有の選定／レビュー／PR 手順を一つのスキルに混在させていたため、用途別の `rules/` 文書へ分離してスキルを撤去した。

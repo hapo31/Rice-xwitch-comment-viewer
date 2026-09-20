@@ -1,15 +1,26 @@
 #[cfg(feature = "app")]
 use crate::app_events::{emit_app_log, AppLogLevel};
+use crate::settings::AppSettings;
 #[cfg(feature = "app")]
 use crate::settings::{update_settings_transaction, AppState, SettingsStore};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use futures_util::{stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::io::Cursor;
+#[cfg(all(feature = "app", target_os = "windows"))]
+use std::io::Read;
 use std::path::{Path, PathBuf};
+#[cfg(any(all(feature = "app", target_os = "windows"), test))]
+use std::process::{Child, ExitStatus};
 #[cfg(all(feature = "app", target_os = "windows"))]
 use std::process::{Command, Stdio};
+use std::sync::Arc;
+#[cfg(feature = "app")]
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
+use tokio::sync::Semaphore;
 
 const MAX_LAUNCHER_ITEMS: usize = 200;
 const LAUNCHER_ICON_DATA_URL_PREFIX: &str = "data:image/png;base64,";
@@ -17,6 +28,21 @@ const MAX_ICON_BASE64_LENGTH: usize = 2_000_000;
 const MAX_ICON_FILE_BYTES: usize = 1_500_000;
 const MAX_ICON_DIMENSION: u32 = 512;
 const MAX_ICON_DECODED_BYTES: usize = 4 * 1024 * 1024;
+#[cfg(feature = "app")]
+const MAX_LAUNCHER_ICON_WORKERS: usize = 4;
+#[cfg(all(feature = "app", target_os = "windows"))]
+const ICON_EXTRACTION_TIMEOUT: Duration = Duration::from_secs(5);
+#[cfg(feature = "app")]
+const LAUNCHER_WORKER_WAIT_TIMEOUT: Duration = Duration::from_secs(6);
+#[cfg(feature = "app")]
+const LAUNCHER_WORKER_JOB_TIMEOUT: Duration = Duration::from_secs(7);
+
+// A timed-out blocking filesystem operation cannot be cancelled safely. Keep its
+// permit until its worker really exits so a stalled network path cannot grow the
+// blocking pool without bound across repeated add requests.
+#[cfg(feature = "app")]
+static LAUNCHER_ICON_WORKERS: LazyLock<Arc<Semaphore>> =
+    LazyLock::new(|| Arc::new(Semaphore::new(MAX_LAUNCHER_ICON_WORKERS)));
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -296,13 +322,75 @@ fn make_item_id(target: &Path, existing_ids: &HashSet<String>) -> String {
         .expect("launcher item id space exhausted")
 }
 
-fn build_new_items(
-    existing: &[LauncherItem],
-    raw_targets: Vec<String>,
-) -> Result<Vec<LauncherItem>, String> {
-    if raw_targets.is_empty() {
-        return Err("追加するアプリを選択してください。".to_string());
+#[derive(Debug, Clone)]
+struct IconExtractionWarning {
+    target: PathBuf,
+    message: String,
+    elapsed: Duration,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedLauncherItem {
+    target: PathBuf,
+    icon_data_url: Option<String>,
+    icon_warning: Option<IconExtractionWarning>,
+}
+
+trait LauncherIconExtractor: Send + Sync {
+    fn extract(&self, target: &Path) -> Result<Option<String>, String>;
+}
+
+struct SystemIconExtractor;
+
+impl LauncherIconExtractor for SystemIconExtractor {
+    fn extract(&self, target: &Path) -> Result<Option<String>, String> {
+        extract_icon_data_url(target)
     }
+}
+
+fn prepare_launcher_item(
+    raw_target: String,
+    extractor: &dyn LauncherIconExtractor,
+) -> Result<PreparedLauncherItem, String> {
+    let target = validate_application_target(&raw_target)?;
+    let started_at = Instant::now();
+    let (icon_data_url, icon_warning) = match extractor.extract(&target) {
+        Ok(icon_data_url) => (icon_data_url, None),
+        Err(message) => (
+            None,
+            Some(IconExtractionWarning {
+                target: target.clone(),
+                message,
+                elapsed: started_at.elapsed(),
+            }),
+        ),
+    };
+
+    Ok(PreparedLauncherItem {
+        target,
+        icon_data_url,
+        icon_warning,
+    })
+}
+
+#[derive(Debug, Clone)]
+struct BuiltLauncherItems {
+    items: Vec<LauncherItem>,
+    icon_warnings: Vec<IconExtractionWarning>,
+}
+
+#[derive(Clone)]
+struct LauncherWorkerConfig {
+    worker_limit: usize,
+    worker_pool: Arc<Semaphore>,
+    acquire_timeout: Duration,
+    job_timeout: Duration,
+}
+
+fn assemble_launcher_items(
+    existing: &[LauncherItem],
+    prepared: Vec<PreparedLauncherItem>,
+) -> Result<BuiltLauncherItems, String> {
     let mut target_keys = existing
         .iter()
         .map(|item| path_identity_key(Path::new(&item.target)))
@@ -312,10 +400,11 @@ fn build_new_items(
         .map(|item| item.id.clone())
         .collect::<HashSet<_>>();
     let mut order = next_order(existing);
-    let mut new_items = Vec::with_capacity(raw_targets.len());
+    let mut new_items = Vec::with_capacity(prepared.len());
+    let mut icon_warnings = Vec::new();
 
-    for raw_target in raw_targets {
-        let target = validate_application_target(&raw_target)?;
+    for prepared in prepared {
+        let target = prepared.target;
         if !target_keys.insert(path_identity_key(&target)) {
             continue;
         }
@@ -332,19 +421,197 @@ fn build_new_items(
             kind: LauncherItemKind::Application,
             target: target.to_string_lossy().into_owned(),
             display_name: derive_display_name(&target),
-            icon_data_url: extract_icon_data_url(&target),
+            icon_data_url: prepared.icon_data_url,
             background_color: None,
             group_id: None,
             order,
         });
+        if let Some(warning) = prepared.icon_warning {
+            icon_warnings.push(warning);
+        }
         order = order.saturating_add(1);
     }
 
-    Ok(new_items)
+    Ok(BuiltLauncherItems {
+        items: new_items,
+        icon_warnings,
+    })
+}
+
+async fn build_new_items_in_workers_with_extractor(
+    existing: Vec<LauncherItem>,
+    raw_targets: Vec<String>,
+    extractor: Arc<dyn LauncherIconExtractor>,
+    config: LauncherWorkerConfig,
+) -> Result<BuiltLauncherItems, String> {
+    if raw_targets.is_empty() {
+        return Err("追加するアプリを選択してください。".to_string());
+    }
+    if raw_targets.len() > MAX_LAUNCHER_ITEMS {
+        return Err(format!(
+            "一度に追加できるアプリは最大 {MAX_LAUNCHER_ITEMS} 件です。"
+        ));
+    }
+
+    if config.worker_limit == 0 {
+        return Err("ランチャーのアイコン確認 worker 数が無効です。".to_string());
+    }
+
+    let prepared = stream::iter(raw_targets.into_iter().enumerate())
+        .map(|(index, raw_target)| {
+            let config = config.clone();
+            let extractor = Arc::clone(&extractor);
+            async move {
+            let permit = tokio::time::timeout(
+                config.acquire_timeout,
+                config.worker_pool.clone().acquire_owned(),
+            )
+            .await
+            .map_err(|_| {
+                "ランチャーのアイコン確認が混み合っています。しばらく待ってからもう一度追加してください。"
+                    .to_string()
+            })?
+            .map_err(|_| "ランチャーのアイコン確認を開始できません。".to_string())?;
+
+            let task = tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                prepare_launcher_item(raw_target, extractor.as_ref())
+            });
+            let prepared = match tokio::time::timeout(config.job_timeout, task).await {
+                Ok(Ok(prepared)) => prepared?,
+                Ok(Err(error)) => {
+                    return Err(format!("ランチャーのファイル確認に失敗しました: {error}"));
+                }
+                Err(_) => {
+                    // A running blocking task cannot be force-cancelled, so it retains its
+                    // semaphore permit until it returns. That cap is the recovery boundary for
+                    // hung filesystem calls.
+                    return Err(
+                        "ランチャーのファイル確認がタイムアウトしました。ネットワーク上のショートカットを確認してください。"
+                            .to_string(),
+                    );
+                }
+            };
+            Ok::<_, String>((index, prepared))
+            }
+        })
+        .buffer_unordered(config.worker_limit)
+        .try_collect::<Vec<_>>()
+        .await;
+
+    let mut prepared = prepared?;
+    prepared.sort_by_key(|(index, _)| *index);
+    assemble_launcher_items(
+        &existing,
+        prepared.into_iter().map(|(_, item)| item).collect(),
+    )
+}
+
+#[cfg(feature = "app")]
+async fn build_new_items_in_workers(
+    existing: Vec<LauncherItem>,
+    raw_targets: Vec<String>,
+) -> Result<BuiltLauncherItems, String> {
+    build_new_items_in_workers_with_extractor(
+        existing,
+        raw_targets,
+        Arc::new(SystemIconExtractor),
+        LauncherWorkerConfig {
+            worker_limit: MAX_LAUNCHER_ICON_WORKERS,
+            worker_pool: LAUNCHER_ICON_WORKERS.clone(),
+            acquire_timeout: LAUNCHER_WORKER_WAIT_TIMEOUT,
+            job_timeout: LAUNCHER_WORKER_JOB_TIMEOUT,
+        },
+    )
+    .await
+}
+
+fn merge_new_launcher_items(
+    existing: &[LauncherItem],
+    new_items: Vec<LauncherItem>,
+) -> Vec<LauncherItem> {
+    let mut target_keys = existing
+        .iter()
+        .map(|item| path_identity_key(Path::new(&item.target)))
+        .collect::<HashSet<_>>();
+    let mut item_ids = existing
+        .iter()
+        .map(|item| item.id.clone())
+        .collect::<HashSet<_>>();
+    let mut order = next_order(existing);
+    let mut merged = Vec::new();
+
+    for mut item in new_items {
+        let target = Path::new(&item.target);
+        if !target_keys.insert(path_identity_key(target))
+            || existing.len().saturating_add(merged.len()) >= MAX_LAUNCHER_ITEMS
+        {
+            continue;
+        }
+        item.id = make_item_id(target, &item_ids);
+        item_ids.insert(item.id.clone());
+        item.order = order;
+        order = order.saturating_add(1);
+        merged.push(item);
+    }
+    merged
+}
+
+fn launcher_items_snapshot(
+    settings: &std::sync::Mutex<AppSettings>,
+) -> Result<Vec<LauncherItem>, String> {
+    settings
+        .lock()
+        .map_err(|error| error.to_string())
+        .map(|settings| settings.launcher.items.clone())
+}
+
+#[cfg(any(all(feature = "app", target_os = "windows"), test))]
+enum ChildExitWaitError {
+    Wait(std::io::Error),
+    TimedOut {
+        termination: Result<ExitStatus, String>,
+    },
+}
+
+#[cfg(any(all(feature = "app", target_os = "windows"), test))]
+fn wait_for_child_exit(
+    child: &mut Child,
+    timeout: Duration,
+) -> Result<ExitStatus, ChildExitWaitError> {
+    let started_at = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) if started_at.elapsed() >= timeout => {
+                return Err(ChildExitWaitError::TimedOut {
+                    termination: terminate_and_reap_child(child),
+                });
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(25)),
+            Err(error) => return Err(ChildExitWaitError::Wait(error)),
+        }
+    }
+}
+
+#[cfg(any(all(feature = "app", target_os = "windows"), test))]
+fn terminate_and_reap_child(child: &mut Child) -> Result<ExitStatus, String> {
+    match child.kill() {
+        Ok(()) => child
+            .wait()
+            .map_err(|error| format!("終了を待機できませんでした: {error}")),
+        Err(kill_error) => match child.try_wait() {
+            Ok(Some(status)) => Ok(status),
+            Ok(None) => Err(format!("終了要求を送れませんでした: {kill_error}")),
+            Err(wait_error) => Err(format!(
+                "終了要求を送れず、状態も確認できませんでした: {kill_error}; {wait_error}"
+            )),
+        },
+    }
 }
 
 #[cfg(all(feature = "app", target_os = "windows"))]
-fn extract_icon_data_url(target: &Path) -> Option<String> {
+fn extract_icon_data_url(target: &Path) -> Result<Option<String>, String> {
     use std::os::windows::process::CommandExt;
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -376,7 +643,7 @@ try {
 }
 "#;
 
-    let child = Command::new("powershell.exe")
+    let mut child = Command::new("powershell.exe")
         .args([
             "-NoLogo",
             "-NoProfile",
@@ -390,58 +657,185 @@ try {
         .env("RICE_LAUNCHER_ICON_PATH", target.as_os_str())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
-        .ok()?;
+        .map_err(|error| format!("PowerShell を開始できませんでした: {error}"))?;
 
-    let output = child.wait_with_output().ok()?;
-    if !output.status.success() {
-        return None;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "PowerShell の出力を取得できませんでした。".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "PowerShell のエラー出力を取得できませんでした。".to_string())?;
+    let stdout_reader =
+        std::thread::spawn(move || read_pipe_bounded(stdout, MAX_ICON_BASE64_LENGTH));
+    let stderr_reader = std::thread::spawn(move || read_pipe_bounded(stderr, 8 * 1024));
+    let status = match wait_for_child_exit(&mut child, ICON_EXTRACTION_TIMEOUT) {
+        Ok(status) => status,
+        Err(ChildExitWaitError::TimedOut { termination }) => {
+            return match termination {
+                Ok(status) => {
+                    let stdout_result = stdout_reader.join();
+                    let stderr_result = stderr_reader.join();
+                    let pipe_error = !matches!(stdout_result, Ok(Ok(_)))
+                        || !matches!(stderr_result, Ok(Ok(_)));
+                    if pipe_error {
+                        Err(format!(
+                            "PowerShell のアイコン抽出が {} 秒でタイムアウトしました。子プロセスは終了しました（{status}）が、出力回収を確認できませんでした。",
+                            ICON_EXTRACTION_TIMEOUT.as_secs()
+                        ))
+                    } else {
+                        Err(format!(
+                            "PowerShell のアイコン抽出が {} 秒でタイムアウトしました。子プロセスの終了を確認しました（{status}）。",
+                            ICON_EXTRACTION_TIMEOUT.as_secs()
+                        ))
+                    }
+                }
+                Err(error) => Err(format!(
+                    "PowerShell のアイコン抽出が {} 秒でタイムアウトしました。子プロセスの終了を確認できませんでした: {error}",
+                    ICON_EXTRACTION_TIMEOUT.as_secs()
+                )),
+            };
+        }
+        Err(ChildExitWaitError::Wait(error)) => {
+            let termination = terminate_and_reap_child(&mut child);
+            if termination.is_ok() {
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+            }
+            return Err(match termination {
+                Ok(status) => format!(
+                    "PowerShell の状態を確認できませんでした。子プロセスの終了を確認しました（{status}）: {error}"
+                ),
+                Err(termination_error) => format!(
+                    "PowerShell の状態を確認できませんでした。子プロセスの終了も確認できませんでした: {error}; {termination_error}"
+                ),
+            });
+        }
+    };
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| "PowerShell の出力処理が停止しました。".to_string())?
+        .map_err(|error| format!("PowerShell の出力を読めませんでした: {error}"))?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| "PowerShell のエラー出力処理が停止しました。".to_string())?
+        .map_err(|error| format!("PowerShell のエラー出力を読めませんでした: {error}"))?;
+    if !status.success() {
+        let details = String::from_utf8_lossy(&stderr)
+            .trim()
+            .chars()
+            .take(400)
+            .collect::<String>();
+        return Err(if details.is_empty() {
+            format!("PowerShell のアイコン抽出が終了コード {status} で失敗しました。")
+        } else {
+            format!("PowerShell のアイコン抽出に失敗しました: {details}")
+        });
     }
 
-    let encoded = String::from_utf8(output.stdout).ok()?;
+    let encoded = String::from_utf8(stdout)
+        .map_err(|_| "PowerShell のアイコン出力が文字列ではありません。".to_string())?;
     let encoded = encoded.trim();
     if encoded.is_empty() || encoded.len() > MAX_ICON_BASE64_LENGTH {
-        return None;
+        return Err("PowerShell のアイコン出力が空か大きすぎます。".to_string());
     }
-    Some(format!("{LAUNCHER_ICON_DATA_URL_PREFIX}{encoded}"))
+    Ok(Some(format!("{LAUNCHER_ICON_DATA_URL_PREFIX}{encoded}")))
 }
 
 #[cfg(any(not(feature = "app"), not(target_os = "windows")))]
-fn extract_icon_data_url(_target: &Path) -> Option<String> {
-    None
+fn extract_icon_data_url(_target: &Path) -> Result<Option<String>, String> {
+    Ok(None)
+}
+
+#[cfg(all(feature = "app", target_os = "windows"))]
+fn read_pipe_bounded(mut pipe: impl Read, maximum: usize) -> std::io::Result<Vec<u8>> {
+    let mut output = Vec::with_capacity(maximum.min(8 * 1024));
+    let mut buffer = [0_u8; 4096];
+    loop {
+        let read = pipe.read(&mut buffer)?;
+        if read == 0 {
+            return Ok(output);
+        }
+        let remaining = maximum.saturating_sub(output.len());
+        output.extend_from_slice(&buffer[..read.min(remaining)]);
+    }
 }
 
 #[cfg(feature = "app")]
 #[tauri::command]
-pub fn launcher_add(
+pub async fn launcher_add(
     app: tauri::AppHandle<tauri::Wry>,
     state: tauri::State<'_, AppState>,
     paths: Vec<String>,
 ) -> Result<Vec<LauncherItem>, String> {
-    let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
-    let new_items = build_new_items(&settings.launcher.items, paths)?;
-    let added_count = new_items.len();
-    update_settings_transaction(
-        &mut settings,
-        |candidate| {
-            candidate.launcher.items.extend(new_items);
-            Ok(())
-        },
-        |candidate| {
-            SettingsStore::save(&app, candidate)
-                .map_err(|error| format!("ランチャーの設定を保存できませんでした: {error}"))
-        },
-    )?;
+    // Snapshot only: filesystem and COM work must never run while the settings
+    // mutex is held, because that mutex is also used by chat and speech commands.
+    let existing = launcher_items_snapshot(&state.settings)?;
+    let BuiltLauncherItems {
+        items: built_items,
+        icon_warnings,
+    } = build_new_items_in_workers(existing, paths).await?;
 
-    let items = settings.launcher.items.clone();
-    drop(settings);
+    // Settings can change while workers run. Merge validated targets against the
+    // latest state so an overlapping add does not overwrite a newer save.
+    let (items, added_count) = {
+        let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
+        let new_items = merge_new_launcher_items(&settings.launcher.items, built_items);
+        let added_count = new_items.len();
+        update_settings_transaction(
+            &mut settings,
+            |candidate| {
+                candidate.launcher.items.extend(new_items);
+                Ok(())
+            },
+            |candidate| {
+                SettingsStore::save(&app, candidate)
+                    .map_err(|error| format!("ランチャーの設定を保存できませんでした: {error}"))
+            },
+        )?;
+        (settings.launcher.items.clone(), added_count)
+    };
     emit_app_log(
         &app,
         AppLogLevel::Info,
         format!("ランチャーにアプリを {added_count} 件追加しました。"),
     );
+    emit_icon_extraction_warnings(&app, &icon_warnings);
     Ok(items)
+}
+
+#[cfg(feature = "app")]
+fn emit_icon_extraction_warnings(
+    app: &tauri::AppHandle<tauri::Wry>,
+    warnings: &[IconExtractionWarning],
+) {
+    const MAX_LOGGED_WARNINGS: usize = 3;
+
+    for warning in warnings.iter().take(MAX_LOGGED_WARNINGS) {
+        emit_app_log(
+            app,
+            AppLogLevel::Warning,
+            format!(
+                "ランチャーのアイコンを取得できなかったため汎用アイコンを使います: {}（{}、{} ms）",
+                warning.target.display(),
+                warning.message,
+                warning.elapsed.as_millis()
+            ),
+        );
+    }
+    if warnings.len() > MAX_LOGGED_WARNINGS {
+        emit_app_log(
+            app,
+            AppLogLevel::Warning,
+            format!(
+                "ランチャーのアイコン取得失敗がさらに {} 件あります。ログは最大 {MAX_LOGGED_WARNINGS} 件まで表示します。",
+                warnings.len() - MAX_LOGGED_WARNINGS
+            ),
+        );
+    }
 }
 
 #[cfg(feature = "app")]
@@ -649,18 +1043,77 @@ fn log_launch_result(app: &tauri::AppHandle<tauri::Wry>, result: &LauncherLaunch
 #[cfg(test)]
 mod tests {
     use super::{
-        build_new_items, derive_display_name, is_supported_application_path, next_order,
-        normalize_launcher_icon_data_url, normalize_launcher_items, path_identity_key,
-        LauncherItem, LauncherItemKind,
+        build_new_items_in_workers_with_extractor, derive_display_name,
+        is_supported_application_path, launcher_items_snapshot, merge_new_launcher_items,
+        next_order, normalize_launcher_icon_data_url, normalize_launcher_items, path_identity_key,
+        wait_for_child_exit, ChildExitWaitError, LauncherIconExtractor, LauncherItem,
+        LauncherItemKind, LauncherWorkerConfig, SystemIconExtractor,
     };
+    use crate::settings::AppSettings;
     use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+    use tokio::sync::Semaphore;
 
     static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     struct TemporaryFile(PathBuf);
+
+    struct DelayedExtractor {
+        result: Result<Option<String>, String>,
+        delay: Duration,
+        started: Option<Arc<AtomicBool>>,
+        active: Option<Arc<AtomicUsize>>,
+        peak_active: Option<Arc<AtomicUsize>>,
+    }
+
+    impl LauncherIconExtractor for DelayedExtractor {
+        fn extract(&self, _target: &Path) -> Result<Option<String>, String> {
+            let active = self
+                .active
+                .as_ref()
+                .map(|active| active.fetch_add(1, Ordering::SeqCst) + 1);
+            if let (Some(active), Some(peak_active)) = (active, &self.peak_active) {
+                peak_active.fetch_max(active, Ordering::SeqCst);
+            }
+            if let Some(started) = &self.started {
+                started.store(true, Ordering::SeqCst);
+            }
+            std::thread::sleep(self.delay);
+            if let Some(active) = &self.active {
+                active.fetch_sub(1, Ordering::SeqCst);
+            }
+            self.result.clone()
+        }
+    }
+
+    fn test_worker_config(worker_limit: usize, job_timeout: Duration) -> LauncherWorkerConfig {
+        LauncherWorkerConfig {
+            worker_limit,
+            worker_pool: Arc::new(Semaphore::new(worker_limit)),
+            acquire_timeout: Duration::from_secs(1),
+            job_timeout,
+        }
+    }
+
+    async fn build_for_test(
+        existing: Vec<LauncherItem>,
+        raw_targets: Vec<String>,
+        extractor: Arc<dyn LauncherIconExtractor>,
+        worker_limit: usize,
+        job_timeout: Duration,
+    ) -> Result<super::BuiltLauncherItems, String> {
+        build_new_items_in_workers_with_extractor(
+            existing,
+            raw_targets,
+            extractor,
+            test_worker_config(worker_limit, job_timeout),
+        )
+        .await
+    }
 
     impl TemporaryFile {
         fn application(extension: &str) -> Self {
@@ -819,37 +1272,247 @@ mod tests {
         assert_eq!(next_order(&[item(u32::MAX)]), u32::MAX);
     }
 
-    #[test]
-    fn builds_multiple_items_in_selection_order() {
+    #[tokio::test]
+    async fn workers_build_multiple_items_in_selection_order() {
         let executable = TemporaryFile::application("EXE");
         let shortcut = TemporaryFile::application("lnk");
 
-        let items = build_new_items(
-            &[],
+        let built = build_for_test(
+            Vec::new(),
             vec![
                 executable.0.to_string_lossy().into_owned(),
                 shortcut.0.to_string_lossy().into_owned(),
             ],
+            Arc::new(SystemIconExtractor),
+            2,
+            Duration::from_secs(1),
         )
+        .await
         .expect("build launcher items");
 
+        let items = built.items;
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].order, 0);
         assert_eq!(items[1].order, 1);
         assert_eq!(items[0].kind, LauncherItemKind::Application);
     }
 
-    #[test]
-    fn skips_an_application_that_is_already_registered() {
+    #[tokio::test]
+    async fn workers_skip_an_application_that_is_already_registered() {
         let executable = TemporaryFile::application("exe");
-        let existing = build_new_items(&[], vec![executable.0.to_string_lossy().into_owned()])
-            .expect("build initial launcher item");
-
-        let duplicate_items =
-            build_new_items(&existing, vec![executable.0.to_string_lossy().into_owned()])
-                .expect("duplicates can be ignored while adding other selected apps");
+        let existing = build_for_test(
+            Vec::new(),
+            vec![executable.0.to_string_lossy().into_owned()],
+            Arc::new(SystemIconExtractor),
+            1,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("build initial launcher item")
+        .items;
+        let duplicate_items = build_for_test(
+            existing,
+            vec![executable.0.to_string_lossy().into_owned()],
+            Arc::new(SystemIconExtractor),
+            1,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("duplicates can be ignored while adding other selected apps")
+        .items;
 
         assert!(duplicate_items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn worker_timeout_returns_before_a_stalled_extractor_finishes() {
+        let executable = TemporaryFile::application("exe");
+        let started_at = Instant::now();
+        let error = build_for_test(
+            Vec::new(),
+            vec![executable.0.to_string_lossy().into_owned()],
+            Arc::new(DelayedExtractor {
+                result: Ok(None),
+                delay: Duration::from_millis(250),
+                started: None,
+                active: None,
+                peak_active: None,
+            }),
+            1,
+            Duration::from_millis(30),
+        )
+        .await
+        .expect_err("stalled extractor must time out");
+
+        assert!(error.contains("タイムアウト"));
+        assert!(started_at.elapsed() < Duration::from_millis(180));
+        tokio::time::sleep(Duration::from_millis(260)).await;
+    }
+
+    #[tokio::test]
+    async fn worker_failure_uses_a_generic_icon_and_records_the_reason() {
+        let executable = TemporaryFile::application("exe");
+        let built = build_for_test(
+            Vec::new(),
+            vec![executable.0.to_string_lossy().into_owned()],
+            Arc::new(DelayedExtractor {
+                result: Err("PowerShell のアイコン抽出に失敗しました: access denied".to_string()),
+                delay: Duration::ZERO,
+                started: None,
+                active: None,
+                peak_active: None,
+            }),
+            1,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("a failed icon extractor does not reject the application");
+
+        assert_eq!(built.items[0].icon_data_url, None);
+        assert!(built.icon_warnings[0].message.contains("access denied"));
+    }
+
+    #[tokio::test]
+    async fn workers_never_exceed_the_configured_parallelism_limit() {
+        let files = (0..8)
+            .map(|_| TemporaryFile::application("exe"))
+            .collect::<Vec<_>>();
+        let active = Arc::new(AtomicUsize::new(0));
+        let peak_active = Arc::new(AtomicUsize::new(0));
+        let built = build_for_test(
+            Vec::new(),
+            files
+                .iter()
+                .map(|file| file.0.to_string_lossy().into_owned())
+                .collect(),
+            Arc::new(DelayedExtractor {
+                result: Ok(None),
+                delay: Duration::from_millis(40),
+                started: None,
+                active: Some(Arc::clone(&active)),
+                peak_active: Some(Arc::clone(&peak_active)),
+            }),
+            2,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("bounded workers finish all items");
+
+        assert_eq!(built.items.len(), files.len());
+        assert_eq!(peak_active.load(Ordering::SeqCst), 2);
+        assert_eq!(active.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn worker_result_merges_concurrent_launcher_changes_and_discards_a_duplicate_target() {
+        let first = TemporaryFile::application("exe");
+        let concurrent = TemporaryFile::application("exe");
+        let new = TemporaryFile::application("exe");
+        let snapshot = build_for_test(
+            Vec::new(),
+            vec![first.0.to_string_lossy().into_owned()],
+            Arc::new(SystemIconExtractor),
+            1,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("build from the initial snapshot")
+        .items;
+        let latest = build_for_test(
+            snapshot.clone(),
+            vec![concurrent.0.to_string_lossy().into_owned()],
+            Arc::new(SystemIconExtractor),
+            1,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("build concurrent item")
+        .items;
+        let additions = build_for_test(
+            snapshot.clone(),
+            vec![
+                concurrent.0.to_string_lossy().into_owned(),
+                new.0.to_string_lossy().into_owned(),
+            ],
+            Arc::new(SystemIconExtractor),
+            2,
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("build requested items");
+        let mut current = snapshot;
+        current.extend(latest);
+
+        let merged = merge_new_launcher_items(&current, additions.items);
+
+        assert_eq!(merged.len(), 1);
+        assert_eq!(
+            merged[0].target,
+            new.0
+                .canonicalize()
+                .expect("canonical path")
+                .to_string_lossy()
+        );
+        assert_eq!(merged[0].order, 2);
+    }
+
+    #[tokio::test]
+    async fn worker_icon_extraction_runs_after_the_settings_snapshot_releases_its_lock() {
+        let executable = TemporaryFile::application("exe");
+        let settings = Arc::new(Mutex::new(AppSettings::default()));
+        let snapshot = launcher_items_snapshot(&settings).expect("snapshot launcher settings");
+        let started = Arc::new(AtomicBool::new(false));
+        let target = executable.0.to_string_lossy().into_owned();
+
+        let worker = tokio::spawn(build_for_test(
+            snapshot,
+            vec![target],
+            Arc::new(DelayedExtractor {
+                result: Ok(None),
+                delay: Duration::from_millis(100),
+                started: Some(Arc::clone(&started)),
+                active: None,
+                peak_active: None,
+            }),
+            1,
+            Duration::from_secs(1),
+        ));
+        while !started.load(Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            settings.try_lock().is_ok(),
+            "settings lock is free during extraction"
+        );
+        worker
+            .await
+            .expect("join extraction worker")
+            .expect("build launcher item");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn timed_out_child_is_killed_and_reaped() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "exec sleep 30"])
+            .spawn()
+            .expect("start stalled child");
+        let started_at = Instant::now();
+
+        let result = wait_for_child_exit(&mut child, Duration::from_millis(50));
+
+        assert!(started_at.elapsed() < Duration::from_secs(1));
+        match result {
+            Err(ChildExitWaitError::TimedOut { termination: Ok(_) }) => {}
+            Err(ChildExitWaitError::TimedOut {
+                termination: Err(error),
+            }) => panic!("timed out child was not terminated and reaped: {error}"),
+            Err(ChildExitWaitError::Wait(error)) => {
+                panic!("stalled child status could not be read: {error}")
+            }
+            Ok(status) => panic!("stalled child unexpectedly exited: {status}"),
+        }
+        assert!(child.try_wait().expect("read child status").is_some());
     }
 
     #[test]
