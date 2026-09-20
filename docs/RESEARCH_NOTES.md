@@ -7,6 +7,12 @@
 - frozen install、frontend203件、typecheck、build、renderer security check、diff check が成功。pnpm audit --audit-level=high は exit 0。JSON audit の件数は high/critical 0、low1、moderate8であり、全指摘が解消したとは扱わない。Windows実機確認は未実施。
 
 
+## 2026-09-20 Issue #65: 連投抑制時刻の期限・容量境界
+
+- `last_user_enqueue` は受理済みコメントの user ID を無期限に保持していた。連投判定は最大30秒までしか参照しないため、channel ID と接続 generation を scope にした期限付き cache へ変更し、scope 切替または抑制なしへの変更を次の連投判定時に破棄する。
+- 各受理時刻は FIFO の expiry record と対応付ける。background task は1秒ごとに期限切れ先頭を最大64件だけ取り出し、同一時刻に大量の期限が来た場合も mutex を解放して batch を続ける。期限30秒を1秒間隔で確認するが、解放時刻の厳密な上限はスケジューリングや mutex 待ちに依存する。enqueue 側も同じ cleanup を行い、HashMap 全体をコメントごとに走査しない。期限 FIFO が map entry を所有する不変条件により、FIFO の4096件の受理記録上限だけで map も上限内になる。
+- 保持する受理記録が4096件を超える場合は最も古い期限 record を退避する。退避した記録が現行の時刻を指していれば、そのユーザーの連投抑制が window より早く解除される。2秒と30秒の境界、接続 generation 切替、idle cleanup の注入 clock、大量ユニークユーザーの容量上限と分割 cleanup、古い expiry が新しい時刻を削除しないことをテストした。`CARGO_TARGET_DIR=/tmp/rice-issue-65-cargo-target cargo test --locked --no-default-features` は115件、default feature は161件、`cargo clippy --locked --all-targets -- -D warnings` は成功した。
+
 ## 2026-09-20 Issue #172: RustSec 修正版の依存更新
 
 - cargo-audit 0.22.2 と RustSec DB `d5c17953a895cf19e8d3ce66eaa42b6fcfe1fb16` で既存 lockfile の advisory を確認した。quinn-proto 0.11.15、rustls 0.23.45、anyhow 1.0.103、event-listener 5.4.2 と、plist 1.10.1 経由の quick-xml 0.42.0 へ互換更新した。rustls-webpki 0.103.15 と base64 0.23.1 はこれらに必要な推移的更新である。

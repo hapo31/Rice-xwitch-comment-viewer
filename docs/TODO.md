@@ -13,6 +13,10 @@
 
 - [x] Issue #175: npm audit の high 6件を互換範囲の依存更新で解消し、frontend と再監査を確認する。
 
+2026-09-20: Issue #65 でユーザーごとの連投抑制時刻を channel ID / 接続 generation ごとの期限付き cache に変更した。抑制なし・scope 切替は次の連投判定時に破棄し、background task の1秒 tick により期限30秒を1秒間隔で確認して解放する（実際の解放時刻はスケジューリングとmutex待ちの影響を受ける）。cache / expiry FIFO は4096件の受理記録、cleanup は一度に64件で、上限を超えて退避した記録が現行時刻ならそのユーザーは連投抑制を早く解除する。2秒と30秒の境界、接続 generation 切替、注入 clock の idle cleanup、期限 record の世代保護、大量ユニークユーザーでの上限制御を Rust テストで確認した。`cargo test --locked --no-default-features` は115件、default は161件、clippy が成功。
+
+- [x] Issue #65: 連投抑制のユーザー時刻を期限付きかつ上限付きで保持し、channel / EventSub session の切替時にリセットする。cleanup はコメントごとの全件走査を避ける。
+
 2026-09-20: Issue #172 で修正版のある RustSec 6 advisory を依存更新で解消した。quinn-proto 0.11.15、rustls 0.23.45、anyhow 1.0.103、event-listener 5.4.2、plist 1.10.1 / quick-xml 0.42.0 へ更新し、必要な推移的依存だけを lockfile に反映した。Rust 1.89 の default 156件/no-default 110件と Windows GNU check、現在の CI toolchain の clippy、frontend203件・typecheck/build が成功。保守終了等の7警告は #173 へ分離し、clean audit とは扱わない。
 
 - [x] Issue #172: RustSec が検出した quinn-proto / rustls / anyhow / event-listener と plist 経由の quick-xml を修正版へ更新し、既存機能と監査結果を検証する。
