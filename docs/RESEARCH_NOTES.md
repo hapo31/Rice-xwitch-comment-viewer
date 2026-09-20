@@ -15,6 +15,12 @@
 - `std::fs` の UNC 確認など、実行済み blocking worker を安全に強制停止できない操作は残る。呼び出し側は7秒で戻るが、停止した worker は終了まで permit を保持するため、同時に残留できる worker は全 Launcher 追加要求を合算して4件までである。permit が全て残留した場合、次の追加は6秒で混雑エラーを返す。
 - worker / timeout / extractor を本番共通関数へ注入し、停止 fake extractor が期限内に返ること、上限並列数、settings lock 非保持、最新 snapshot への merge、実際の停止 child process の kill/reap を Linux の回帰テストで確認する。Windows の PowerShell/COM/UNC 実機確認は TODO に残す。
 
+## 2026-09-20 Issue #67: Rust feature matrix
+
+- モデルと emitter の import 分離は既に main にあり、no-default でも formatter・packet・queue state のテストが実行できる。残っていた CI の両構成検証を専用 workflow へ追加した。
+- PR/main と手動実行で default/no-default を別 job にし、`fail-fast: false` で片方の失敗が他方の結果を隠さない。`RUSTFLAGS: -D unused-imports` で不要 import の再導入を拒否する。no-default job は GTK/WebKit をインストールしない。
+- `cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features` は102件、`mkdir -p dist` 後の default test は148件成功。不要 import warning はなし。YAML parse と `git diff --check` も成功。Windows の実機操作には変更なし。
+
 ## 2026-09-20: エージェント作業ルールの分離
 
 - `issue-fix-batch` は、サブエージェントの報告形式、一般的な修正の隔離方法、GitHub Issue 固有の選定／レビュー／PR 手順を一つのスキルに混在させていたため、用途別の `rules/` 文書へ分離してスキルを撤去した。

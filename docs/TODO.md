@@ -11,6 +11,10 @@
 
 2026-09-20: Issue #68 で Launcher の追加処理を設定 mutex の snapshot 後に最大4件の blocking worker へ移した。worker permit の取得待ちは6秒、実行開始後の各 worker は7秒で呼び出しを返す。PowerShell アイコン抽出は5秒で子プロセスを kill/reap する。複数選択は最大200件を4並列で処理するため、追加操作全体に7秒の上限はない。停止した同期 filesystem 操作そのものは強制取消できないため、実行中 worker は permit を保持し、残留数を全要求で最大4件に制限する。失敗時は汎用アイコンへフォールバックし、並行する設定変更は最新の Launcher 項目へ merge、抽出失敗の理由と所要時間は件数を制限して Logs へ残す。本番 worker に注入した fake extractor と停止 child process による timeout・終了確認・上限制御・競合・lock 非保持のテストを追加した。Windows で停止した shortcut と child process が残らないことの手動確認が必要。
 
+2026-09-20: Issue #67 の残作業として、PR/main で default/no-default を独立実行する Rust feature matrix を追加した。GUI 非依存構成102件と Tauri 有効構成148件が成功し、不要 import warning はなかった。
+
+- [x] Issue #67: Rust の default/no-default feature 構成を CI で検証し、GUI 非依存テストの型・import 境界を維持する。
+
 2026-09-20: `issue-fix-batch` スキルを撤去し、サブエージェント、修正作業、GitHub Issue 対応のルールへ分割した。`AGENTS.md` から作業内容に応じて必要なルールを読む構成へ移行し、関連する PR と Issue がすべて close されるまで worktree と修正用ブランチを保持する方針にした。
 
 2026-09-20: Issue #58 の共有 dispatcher を fake TCP server で再検証し、遅延した talk の後に pause / skip / clear が到着すること、control が先に開始された場合は talk 接続を開かないこと、pause / resume の wire・ローカル queue・成功 status/log の順序が一致することを確認した。制御 command 失敗時はローカル queue が未変更、棒読みちゃん側は到達不明と明示して Logs / status へ残し、最後の control 失敗解除で pending worker を再開する。app 無効の Rust テスト全102件、app 有効の Rust テスト全148件、全 target の clippy が成功。
