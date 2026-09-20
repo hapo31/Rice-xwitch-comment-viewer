@@ -72,7 +72,7 @@ pub struct BouyomiTalkConfig {
 実装ルール:
 
 - 読み上げごとに短いTCP接続を張る設計から始める。棒読みちゃん側の既存連携と相性がよい。
-- アプリ内の talk、テスト読み上げ、接続確認、無音プローブ、pause/resume/skip/clear は共有 async dispatcher を通す。短命TCP接続は維持するが、一つの送信が物理的に完了するまで次の接続を開始しない。特に pause/skip/clear の成功は、それ以前に dispatcher へ入った talk が後から到着しない送信 barrier とする。制御送信に失敗した場合はローカルキューを変更せず、棒読みちゃん側へ反映できなかったことをエラーとして返す。
+- アプリ内の talk、テスト読み上げ、接続確認、無音プローブ、pause/resume/skip/clear は共有 async dispatcher を通す。短命TCP接続は維持するが、一つの送信が物理的に完了するまで次の接続を開始しない。キューワーカーは dispatcher を取得してから pending を in-flight へ予約し、同じ guard のまま talk packet を書き込む。control は queue の control-in-progress を先に記録し、同じ dispatcher guard の中で packet 送信、ローカル queue 反映、成功 status/log の通知を行う。これにより、control が先に開始された場合に予約済みの talk が control 成功後に送られること、pause/resume の wire 順とローカル適用・通知順が入れ替わることを防ぐ。制御送信の失敗時はローカル queue が未変更で、棒読みちゃん側は到達不明と明示する。失敗した control が最後の barrier なら、保留中の自動読み上げ worker を再開する。送信後のローカル反映に失敗した場合は、棒読みちゃん側は送信済みでローカル状態だけが未反映と明示する。
 - 接続先は host と port を構造化して保持し、接続時は `(host, port)` の `ToSocketAddrs` を使う。これにより IPv4・DNS名・IPv6を同じ経路で解決する。`SocketAddr` 単体ではDNS名を保持できないため使わない。
 - host欄はIPv4、DNS名、または角括弧なしのIPv6アドレスを受け付ける。portをhost欄へ含めず、IPv6 zone identifierは初期実装では受け付けない。表示・diagnosticsではIPv6を `[::1]:50001` のように角括弧付きで表記する。
 - hostの妥当性検証とaddress構築はアダプタの一箇所に集約し、設定保存、queue、health、test、control、diagnosticsから共通して利用する。
@@ -167,7 +167,7 @@ Tauri Rust
 
 ## 送信中のキュー操作（Issue #55）
 
-送信開始時に pending から取り出して in-flight を1件保持する。最大200件は両者の合計とし、overflow は未送信の pending だけを落とす。スナップショットの待機件数には in-flight を含む。棒読みちゃん宛ての物理送信は共有 dispatcher が直列化するため、clear/pause/skip より前に開始した talk が制御成功後に到着することはない。
+送信開始時は、共有 dispatcher を取得して control-in-progress がないことを確認してから pending から取り出し、同じ dispatcher guard のまま talk packet を書き込む。最大200件は pending と in-flight の合計とし、overflow は未送信の pending だけを落とす。スナップショットの待機件数には in-flight を含む。棒読みちゃん宛ての物理送信と control のローカル反映・成功通知は同じ dispatcher 順序に入るため、clear/pause/skip より先に開始された talk が制御成功後に到着すること、pause/resume の反映順が wire 順と入れ替わることはない。control の失敗解除で processable な pending が残る場合は、その解除時に worker を再取得して読み上げを再開する。
 
 clear は in-flight と pending を取消、skip は in-flight を優先して1件取消、個別削除は指定IDを取消にする。取消項目は Skipped として履歴へ移し、ID が一致しない遅延完了・失敗は無効にする。送信済みの TCP byte を撤回する保証はなく、下流の制御順序は Issue #58、受付と発声完了の区別は Issue #56 で扱う。
 

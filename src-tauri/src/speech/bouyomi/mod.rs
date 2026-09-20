@@ -161,6 +161,7 @@ impl Default for BouyomiTalkConfig {
 }
 
 impl BouyomiAdapter {
+    #[cfg(test)]
     pub fn new(
         host: impl AsRef<str>,
         port: u16,
@@ -205,36 +206,49 @@ impl BouyomiAdapter {
 
     pub async fn speak(&self, text: &str) -> anyhow::Result<()> {
         let _dispatch_guard = self.dispatcher.lock().await;
+        self.send_talk_after_dispatch_lock(text).await
+    }
+
+    pub(crate) async fn acquire_dispatcher(&self) -> tokio::sync::OwnedMutexGuard<()> {
+        self.dispatcher.clone().lock_owned().await
+    }
+
+    pub(crate) async fn send_talk_after_dispatch_lock(&self, text: &str) -> anyhow::Result<()> {
         self.send_talk_unordered(text).await
     }
 
+    #[cfg(test)]
     /// Submit exactly one talk request and keep it locally in-flight until
     /// Bouyomi reports neither playback nor queued tasks. A tracking failure is
     /// distinct from a submission failure: callers must not resend an already
     /// accepted talk automatically because that could duplicate speech.
     pub async fn speak_and_wait(&self, text: &str) -> anyhow::Result<BouyomiPlaybackCompletion> {
         self.speak(text).await?;
+        Ok(self.wait_for_playback_completion().await)
+    }
+
+    pub(crate) async fn wait_for_playback_completion(&self) -> BouyomiPlaybackCompletion {
         tokio::time::sleep(PLAYBACK_SETTLE_DELAY).await;
         let started_at = Instant::now();
 
         loop {
             let state = self.playback_state().await;
             match state {
-                Ok((false, 0)) => return Ok(BouyomiPlaybackCompletion::Completed),
+                Ok((false, 0)) => return BouyomiPlaybackCompletion::Completed,
                 Ok(_) if started_at.elapsed() < PLAYBACK_TRACKING_TIMEOUT => {
                     tokio::time::sleep(PLAYBACK_POLL_INTERVAL).await;
                 }
                 Ok(_) => {
-                    return Ok(BouyomiPlaybackCompletion::Unconfirmed(
+                    return BouyomiPlaybackCompletion::Unconfirmed(
                         "棒読みちゃんは読み上げを受け付けましたが、5分以内に再生完了を確認できませんでした。再送すると重複する可能性があるため、自動再試行していません。"
                             .to_string(),
-                    ));
+                    );
                 }
                 Err(error) => {
-                    return Ok(BouyomiPlaybackCompletion::Unconfirmed(format!(
+                    return BouyomiPlaybackCompletion::Unconfirmed(format!(
                         "棒読みちゃんは読み上げを受け付けましたが、再生完了を確認できませんでした。再送すると重複する可能性があるため、自動再試行していません: {}",
                         to_user_message(error)
-                    )));
+                    ));
                 }
             }
         }
@@ -259,7 +273,26 @@ impl BouyomiAdapter {
 
     pub async fn control(&self, command: BouyomiControlCommand) -> anyhow::Result<()> {
         let _dispatch_guard = self.dispatcher.lock().await;
+        self.send_control_after_dispatch_lock(command).await
+    }
+
+    pub(crate) async fn send_control_after_dispatch_lock(
+        &self,
+        command: BouyomiControlCommand,
+    ) -> anyhow::Result<()> {
         self.send_packet_unordered(&command.packet()).await
+    }
+
+    pub(crate) async fn send_control_and_apply<T>(
+        &self,
+        command: BouyomiControlCommand,
+        apply_local: impl FnOnce() -> T,
+    ) -> anyhow::Result<T> {
+        let dispatch_guard = self.acquire_dispatcher().await;
+        self.send_control_after_dispatch_lock(command).await?;
+        let result = apply_local();
+        drop(dispatch_guard);
+        Ok(result)
     }
 
     async fn send_query_unordered(&self, command: BouyomiQueryCommand) -> anyhow::Result<u8> {
@@ -378,6 +411,19 @@ impl BouyomiControlCommand {
 
         command.to_le_bytes()
     }
+}
+
+fn control_failure_message(command: BouyomiControlCommand, error: &str) -> String {
+    let operation = match command {
+        BouyomiControlCommand::Pause => "一時停止",
+        BouyomiControlCommand::Resume => "再開",
+        BouyomiControlCommand::Skip => "スキップ",
+        BouyomiControlCommand::Clear => "クリア",
+    };
+
+    format!(
+        "棒読みちゃんへ{operation}を送信できなかったため、アプリ内の読み上げキューは変更していません。棒読みちゃん側には届いている可能性があるため、状態を確認してください: {error}"
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -543,20 +589,13 @@ pub async fn speech_pause(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<(), String> {
-    crate::speech::begin_queue_control(&app)?;
-    let result = control_from_settings(&state, BouyomiControlCommand::Pause).await;
-    if result.is_ok() {
-        let _ = pause_queue(&app);
-        emit_speech_status(
-            &app,
-            SpeechStatus::Paused,
-            Some("読み上げを一時停止しました。".to_string()),
-        );
-        emit_app_log(&app, AppLogLevel::Info, "読み上げを一時停止しました。");
-    } else {
-        let _ = crate::speech::cancel_queue_control(&app);
-    }
-    result
+    control_from_settings(
+        &state,
+        &app,
+        BouyomiControlCommand::Pause,
+        apply_pause_control,
+    )
+    .await
 }
 
 #[cfg(feature = "app")]
@@ -565,20 +604,13 @@ pub async fn speech_resume(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<(), String> {
-    crate::speech::begin_queue_control(&app)?;
-    let result = control_from_settings(&state, BouyomiControlCommand::Resume).await;
-    if result.is_ok() {
-        let _ = resume_queue(app.clone());
-        emit_speech_status(
-            &app,
-            SpeechStatus::Idle,
-            Some("読み上げを再開しました。".to_string()),
-        );
-        emit_app_log(&app, AppLogLevel::Info, "読み上げを再開しました。");
-    } else {
-        let _ = crate::speech::cancel_queue_control(&app);
-    }
-    result
+    control_from_settings(
+        &state,
+        &app,
+        BouyomiControlCommand::Resume,
+        apply_resume_control,
+    )
+    .await
 }
 
 #[cfg(feature = "app")]
@@ -587,24 +619,13 @@ pub async fn speech_skip(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<(), String> {
-    crate::speech::begin_queue_control(&app)?;
-    let result = control_from_settings(&state, BouyomiControlCommand::Skip).await;
-    if result.is_ok() {
-        let _ = skip_current_queue_item(&app);
-        emit_speech_status(
-            &app,
-            SpeechStatus::Idle,
-            Some("現在の読み上げをスキップしました。".to_string()),
-        );
-        emit_app_log(
-            &app,
-            AppLogLevel::Info,
-            "現在の読み上げをスキップしました。",
-        );
-    } else {
-        let _ = crate::speech::cancel_queue_control(&app);
-    }
-    result
+    control_from_settings(
+        &state,
+        &app,
+        BouyomiControlCommand::Skip,
+        apply_skip_control,
+    )
+    .await
 }
 
 #[cfg(feature = "app")]
@@ -613,29 +634,116 @@ pub async fn speech_clear(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<(), String> {
-    crate::speech::begin_queue_control(&app)?;
-    let result = control_from_settings(&state, BouyomiControlCommand::Clear).await;
-    if result.is_ok() {
-        let _ = clear_speech_queue(&app);
-        emit_speech_status(
-            &app,
-            SpeechStatus::Idle,
-            Some("読み上げキューをクリアしました。".to_string()),
-        );
-        emit_app_log(&app, AppLogLevel::Info, "読み上げキューをクリアしました。");
-    } else {
-        let _ = crate::speech::cancel_queue_control(&app);
-    }
-    result
+    control_from_settings(
+        &state,
+        &app,
+        BouyomiControlCommand::Clear,
+        apply_clear_control,
+    )
+    .await
+}
+
+#[cfg(feature = "app")]
+fn apply_pause_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
+    pause_queue(app)?;
+    emit_speech_status(
+        app,
+        SpeechStatus::Paused,
+        Some("読み上げを一時停止しました。".to_string()),
+    );
+    emit_app_log(app, AppLogLevel::Info, "読み上げを一時停止しました。");
+    Ok(())
+}
+
+#[cfg(feature = "app")]
+fn apply_resume_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
+    resume_queue(app)?;
+    emit_speech_status(
+        app,
+        SpeechStatus::Idle,
+        Some("読み上げを再開しました。".to_string()),
+    );
+    emit_app_log(app, AppLogLevel::Info, "読み上げを再開しました。");
+    Ok(())
+}
+
+#[cfg(feature = "app")]
+fn apply_skip_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
+    skip_current_queue_item(app)?;
+    emit_speech_status(
+        app,
+        SpeechStatus::Idle,
+        Some("現在の読み上げをスキップしました。".to_string()),
+    );
+    emit_app_log(app, AppLogLevel::Info, "現在の読み上げをスキップしました。");
+    Ok(())
+}
+
+#[cfg(feature = "app")]
+fn apply_clear_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
+    clear_speech_queue(app)?;
+    emit_speech_status(
+        app,
+        SpeechStatus::Idle,
+        Some("読み上げキューをクリアしました。".to_string()),
+    );
+    emit_app_log(app, AppLogLevel::Info, "読み上げキューをクリアしました。");
+    Ok(())
+}
+
+#[cfg(feature = "app")]
+fn control_failed(app: &tauri::AppHandle<tauri::Wry>, error: String) -> String {
+    emit_speech_status(app, SpeechStatus::Error, Some(error.clone()));
+    emit_app_log(app, AppLogLevel::Error, error.clone());
+    error
+}
+
+fn control_local_apply_failed(command: BouyomiControlCommand, error: String) -> String {
+    let operation = match command {
+        BouyomiControlCommand::Pause => "一時停止",
+        BouyomiControlCommand::Resume => "再開",
+        BouyomiControlCommand::Skip => "スキップ",
+        BouyomiControlCommand::Clear => "クリア",
+    };
+
+    format!(
+        "棒読みちゃんへ{operation}は送信済みですが、アプリ内の読み上げキューへ反映できませんでした。状態を確認してください: {error}"
+    )
 }
 
 #[cfg(feature = "app")]
 async fn control_from_settings(
     state: &tauri::State<'_, AppState>,
+    app: &tauri::AppHandle<tauri::Wry>,
     command: BouyomiControlCommand,
+    apply_local: fn(&tauri::AppHandle<tauri::Wry>) -> Result<(), String>,
 ) -> Result<(), String> {
-    let adapter = adapter_from_settings(state)?;
-    adapter.control(command).await.map_err(to_user_message)
+    crate::speech::begin_queue_control(app)?;
+    let adapter = match adapter_from_settings(state) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            let _ = crate::speech::cancel_queue_control(app);
+            return Err(control_failed(
+                app,
+                format!(
+                    "棒読みちゃんへ制御 command を送信していないため、アプリ内の読み上げキューは変更していません: {error}"
+                ),
+            ));
+        }
+    };
+    let result = match adapter
+        .send_control_and_apply(command, || apply_local(app))
+        .await
+    {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(control_local_apply_failed(command, error)),
+        Err(error) => {
+            let _ = crate::speech::cancel_queue_control(app);
+            Err(control_failure_message(command, &to_user_message(error)))
+        }
+    };
+
+    result.map_err(|error| control_failed(app, error))
 }
 
 #[cfg(feature = "app")]
@@ -727,7 +835,22 @@ fn build_diagnostic_recommendation(attempted: &[BouyomiConnectionAttempt]) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app_events::SpeechQueueItemStatus;
+    use crate::speech::{SpeechQueueDeliveryState, SpeechQueueItem, SpeechQueueState};
+    use std::sync::Mutex;
     use tokio::{io::AsyncReadExt, net::TcpListener};
+
+    fn queued_item(id: &str) -> SpeechQueueItem {
+        SpeechQueueItem {
+            id: id.to_string(),
+            source_message_id: None,
+            user_display_name: "viewer".to_string(),
+            text: "こんにちは".to_string(),
+            status: SpeechQueueItemStatus::Queued,
+            retry_count: 0,
+            delivery_state: SpeechQueueDeliveryState::Ready,
+        }
+    }
 
     #[test]
     fn builds_bouyomi_talk_packet() {
@@ -823,6 +946,15 @@ mod tests {
         );
     }
 
+    #[test]
+    fn control_failure_keeps_local_and_remote_state_distinguishable() {
+        let message = control_failure_message(BouyomiControlCommand::Clear, "write timed out");
+
+        assert!(message.contains("アプリ内の読み上げキューは変更していません"));
+        assert!(message.contains("棒読みちゃん側には届いている可能性"));
+        assert!(message.contains("write timed out"));
+    }
+
     #[tokio::test]
     async fn automatic_health_probe_sends_only_the_silent_status_query() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
@@ -841,8 +973,9 @@ mod tests {
         assert_eq!(received.await.unwrap(), 0x120_i16.to_le_bytes());
     }
 
-    #[tokio::test]
-    async fn shared_dispatcher_keeps_clear_behind_an_in_flight_talk() {
+    async fn shared_dispatcher_keeps_control_behind_an_in_flight_talk(
+        command: BouyomiControlCommand,
+    ) {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let dispatcher = BouyomiDispatcher::default();
@@ -854,23 +987,22 @@ mod tests {
         )
         .unwrap();
         talk_adapter.timeout = Duration::from_secs(5);
-        let mut clear_adapter = BouyomiAdapter::with_dispatcher(
+        let mut control_adapter = BouyomiAdapter::with_dispatcher(
             "127.0.0.1",
             port,
             BouyomiTalkConfig::default(),
             dispatcher,
         )
         .unwrap();
-        clear_adapter.timeout = Duration::from_secs(5);
+        control_adapter.timeout = Duration::from_secs(5);
 
         // A payload larger than the socket send buffer lets the fake server hold
-        // the first write open. The dispatcher must prevent clear from opening a
-        // second connection until that physical write has settled.
+        // the first write open. The dispatcher must prevent a barrier command
+        // from opening a second connection until that physical write has settled.
         let talk =
             tokio::spawn(async move { talk_adapter.speak(&"a".repeat(8 * 1024 * 1024)).await });
         let (mut talk_stream, _) = listener.accept().await.unwrap();
-        let clear =
-            tokio::spawn(async move { clear_adapter.control(BouyomiControlCommand::Clear).await });
+        let control = tokio::spawn(async move { control_adapter.control(command).await });
 
         assert!(timeout(Duration::from_millis(75), listener.accept())
             .await
@@ -882,13 +1014,159 @@ mod tests {
             bytes
         });
         talk.await.unwrap().unwrap();
-        let (mut clear_stream, _) = listener.accept().await.unwrap();
-        let mut clear_packet = [0_u8; 2];
-        clear_stream.read_exact(&mut clear_packet).await.unwrap();
-        clear.await.unwrap().unwrap();
+        let (mut control_stream, _) = listener.accept().await.unwrap();
+        let mut control_packet = [0_u8; 2];
+        control_stream
+            .read_exact(&mut control_packet)
+            .await
+            .unwrap();
+        control.await.unwrap().unwrap();
 
-        assert_eq!(clear_packet, BouyomiControlCommand::Clear.packet());
+        assert_eq!(control_packet, command.packet());
         assert_eq!(&drain.await.unwrap()[0..2], &1_i16.to_le_bytes());
+    }
+
+    #[tokio::test]
+    async fn shared_dispatcher_keeps_pause_behind_an_in_flight_talk() {
+        shared_dispatcher_keeps_control_behind_an_in_flight_talk(BouyomiControlCommand::Pause)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn shared_dispatcher_keeps_skip_behind_an_in_flight_talk() {
+        shared_dispatcher_keeps_control_behind_an_in_flight_talk(BouyomiControlCommand::Skip).await;
+    }
+
+    #[tokio::test]
+    async fn shared_dispatcher_keeps_clear_behind_an_in_flight_talk() {
+        shared_dispatcher_keeps_control_behind_an_in_flight_talk(BouyomiControlCommand::Clear)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn control_before_talk_keeps_the_reserved_talk_from_opening_a_connection() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let dispatcher = BouyomiDispatcher::default();
+        let control_adapter = BouyomiAdapter::with_dispatcher(
+            "127.0.0.1",
+            port,
+            BouyomiTalkConfig::default(),
+            dispatcher.clone(),
+        )
+        .unwrap();
+        let talk_adapter = BouyomiAdapter::with_dispatcher(
+            "127.0.0.1",
+            port,
+            BouyomiTalkConfig::default(),
+            dispatcher,
+        )
+        .unwrap();
+        let queue = Arc::new(Mutex::new(SpeechQueueState {
+            controls_in_progress: 1,
+            ..SpeechQueueState::default()
+        }));
+        {
+            let mut queue = queue.lock().unwrap();
+            queue.pending.push_back(queued_item("pending"));
+        }
+
+        let queue_for_control = queue.clone();
+        let control = tokio::spawn(async move {
+            control_adapter
+                .send_control_and_apply(BouyomiControlCommand::Pause, || {
+                    let mut queue = queue_for_control.lock().unwrap();
+                    queue.controls_in_progress = queue.controls_in_progress.saturating_sub(1);
+                    queue.paused = true;
+                })
+                .await
+        });
+        let (mut control_stream, _) = listener.accept().await.unwrap();
+        let mut control_packet = [0_u8; 2];
+        control_stream
+            .read_exact(&mut control_packet)
+            .await
+            .unwrap();
+        control.await.unwrap().unwrap();
+        assert_eq!(control_packet, BouyomiControlCommand::Pause.packet());
+
+        let talk = tokio::spawn(async move {
+            let dispatch_guard = talk_adapter.acquire_dispatcher().await;
+            let request = queue
+                .lock()
+                .unwrap()
+                .reserve_next_request_after_dispatch_lock();
+            drop(dispatch_guard);
+            request.is_some()
+        });
+
+        assert!(!talk.await.unwrap());
+        assert!(timeout(Duration::from_millis(75), listener.accept())
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn dispatcher_applies_pause_and_resume_in_wire_order() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let dispatcher = BouyomiDispatcher::default();
+        let pause_adapter = BouyomiAdapter::with_dispatcher(
+            "127.0.0.1",
+            port,
+            BouyomiTalkConfig::default(),
+            dispatcher.clone(),
+        )
+        .unwrap();
+        let resume_adapter = BouyomiAdapter::with_dispatcher(
+            "127.0.0.1",
+            port,
+            BouyomiTalkConfig::default(),
+            dispatcher.clone(),
+        )
+        .unwrap();
+        let local_applies = Arc::new(Mutex::new(Vec::new()));
+        let first_guard = dispatcher.lock().await;
+
+        let local_applies_for_pause = local_applies.clone();
+        let pause = tokio::spawn(async move {
+            pause_adapter
+                .send_control_and_apply(BouyomiControlCommand::Pause, || {
+                    local_applies_for_pause.lock().unwrap().push("pause");
+                })
+                .await
+        });
+        tokio::task::yield_now().await;
+        let local_applies_for_resume = local_applies.clone();
+        let resume = tokio::spawn(async move {
+            resume_adapter
+                .send_control_and_apply(BouyomiControlCommand::Resume, || {
+                    local_applies_for_resume.lock().unwrap().push("resume");
+                })
+                .await
+        });
+        tokio::task::yield_now().await;
+        drop(first_guard);
+
+        let mut packets = Vec::new();
+        for _ in 0..2 {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut packet = [0_u8; 2];
+            stream.read_exact(&mut packet).await.unwrap();
+            packets.push(packet);
+        }
+        pause.await.unwrap().unwrap();
+        resume.await.unwrap().unwrap();
+
+        let wire_order = packets
+            .iter()
+            .map(|packet| match *packet {
+                packet if packet == BouyomiControlCommand::Pause.packet() => "pause",
+                packet if packet == BouyomiControlCommand::Resume.packet() => "resume",
+                _ => unreachable!("unexpected control packet"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(*local_applies.lock().unwrap(), wire_order);
     }
 
     #[tokio::test]
