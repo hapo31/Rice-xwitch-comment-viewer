@@ -47,6 +47,7 @@ pub struct TwitchStatusEvent {
     pub connection_generation: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_connection: Option<TwitchActiveConnection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     pub occurred_at_ms: u64,
 }
@@ -93,6 +94,7 @@ pub struct SpeechStatusEvent {
     pub revision: u64,
     pub status: SpeechStatus,
     pub adapter_health: SpeechAdapterHealth,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     pub occurred_at_ms: u64,
 }
@@ -122,6 +124,7 @@ pub struct SpeechQueueUpdatedEvent {
     pub queued_count: usize,
     pub items: Vec<SpeechQueueItemEvent>,
     pub phase: SpeechQueuePhase,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
     pub occurred_at_ms: u64,
 }
@@ -130,6 +133,7 @@ pub struct SpeechQueueUpdatedEvent {
 #[serde(rename_all = "camelCase")]
 pub struct SpeechQueueItemEvent {
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source_message_id: Option<String>,
     pub user_display_name: String,
     pub text: String,
@@ -171,6 +175,7 @@ pub struct AppEventsSnapshot {
     pub revision: u64,
     pub logs: Vec<AppLogEvent>,
     pub twitch_statuses: Vec<TwitchStatusEvent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub speech_status: Option<SpeechStatusEvent>,
     pub emit_errors: Vec<AppEventEmitError>,
 }
@@ -626,6 +631,55 @@ mod tests {
             occurred_at_ms: 1,
         }
     }
+
+    #[test]
+    fn bridge_option_fields_are_omitted_when_absent() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../src/tauri/fixtures/bridge-contract.json"
+        ))
+        .unwrap();
+        let expected = &fixture["optionOmissions"];
+        let twitch = TwitchStatusEvent {
+            revision: 1,
+            domain: TwitchStatusDomain::Chat,
+            status: TwitchStatus::Disconnected,
+            reason: None,
+            connection_generation: None,
+            active_connection: None,
+            message: None,
+            occurred_at_ms: 1,
+        };
+        let speech = status(SpeechStatus::Idle);
+        let queue = SpeechQueueUpdatedEvent {
+            items: vec![SpeechQueueItemEvent {
+                id: "queue-1".into(),
+                source_message_id: None,
+                user_display_name: "viewer".into(),
+                text: "hello".into(),
+                status: SpeechQueueItemStatus::Queued,
+            }],
+            warning: None,
+            ..queue()
+        };
+        let snapshot = AppEventsSnapshot {
+            revision: 1,
+            logs: vec![],
+            twitch_statuses: vec![twitch],
+            speech_status: None,
+            emit_errors: vec![],
+        };
+
+        let twitch = serde_json::to_value(&snapshot.twitch_statuses[0]).unwrap();
+        let speech = serde_json::to_value(speech).unwrap();
+        let queue = serde_json::to_value(queue).unwrap();
+        let snapshot = serde_json::to_value(snapshot).unwrap();
+
+        assert_eq!(twitch, expected["twitchStatus"]);
+        assert_eq!(speech, expected["speechStatus"]);
+        assert_eq!(queue, expected["queue"]);
+        assert_eq!(snapshot, expected["snapshot"]);
+    }
+
     #[test]
     fn startup_logs_and_unvalidated_auth_are_replayable_and_bounded() {
         let state = AppEventState::default();

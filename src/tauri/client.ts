@@ -2,6 +2,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { formatBouyomiAddress } from "../validation";
 import { normalizeUtcTimestamp, utcNow, type UtcTimestamp } from "../time";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import {
+  rejectUnexpectedNulls,
+  parseAppEventsSnapshot,
+  parseSpeechQueueUpdatedEvent,
+  parseSpeechStateSnapshot,
+  parseSpeechStatusEvent,
+  parseTwitchAuthPollResult,
+  parseTwitchAuthValidationResult,
+  parseTwitchChatMessageWireEvent,
+  parseTwitchStatusEvent,
+  parseTwitchUserProfile,
+  type TwitchChatMessageWireEvent,
+} from "./bridge";
 import type {
   AppLogEvent,
   AppSettings,
@@ -51,9 +64,15 @@ const fallbackSettings: AppSettings = {
   launcher: {
     items: [],
   },
+  window: {},
 };
 
 const isTauriRuntime = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+function nullFreePayload<T>(payload: unknown, contract: string): T {
+  rejectUnexpectedNulls(payload, contract);
+  return payload as T;
+}
 
 export interface AppBuildInfo {
   version: string;
@@ -66,7 +85,7 @@ export async function getAppBuildInfo(): Promise<AppBuildInfo | undefined> {
     return undefined;
   }
 
-  return invoke<AppBuildInfo>("app_build_info");
+  return nullFreePayload<AppBuildInfo>(await invoke<unknown>("app_build_info"), "app_build_info");
 }
 
 function normalizeSettings(settings: Partial<AppSettings> | AppSettingsPatch | undefined): AppSettings {
@@ -94,7 +113,7 @@ export async function getSettings(): Promise<AppSettings> {
     return fallbackSettings;
   }
 
-  return normalizeSettings(await invoke<Partial<AppSettings>>("settings_get"));
+  return normalizeSettings(nullFreePayload<Partial<AppSettings>>(await invoke<unknown>("settings_get"), "settings_get"));
 }
 
 export async function getAppEventsSnapshot(): Promise<AppEventsSnapshot | undefined> {
@@ -102,7 +121,7 @@ export async function getAppEventsSnapshot(): Promise<AppEventsSnapshot | undefi
     return undefined;
   }
 
-  return invoke<AppEventsSnapshot>("app_events_snapshot");
+  return parseAppEventsSnapshot(await invoke<unknown>("app_events_snapshot"));
 }
 
 export async function takeSettingsRecoveryNotice(): Promise<SettingsRecoveryNotice | undefined> {
@@ -110,7 +129,10 @@ export async function takeSettingsRecoveryNotice(): Promise<SettingsRecoveryNoti
     return undefined;
   }
 
-  return (await invoke<SettingsRecoveryNotice | null>("settings_take_recovery_notice")) ?? undefined;
+  const notice = await invoke<unknown>("settings_take_recovery_notice");
+  return notice === null
+    ? undefined
+    : nullFreePayload<SettingsRecoveryNotice>(notice, "settings_take_recovery_notice");
 }
 
 export async function updateSettings(patch: AppSettingsPatch): Promise<AppSettings> {
@@ -118,7 +140,7 @@ export async function updateSettings(patch: AppSettingsPatch): Promise<AppSettin
     return normalizeSettings(patch);
   }
 
-  return normalizeSettings(await invoke<Partial<AppSettings>>("settings_update", { patch }));
+  return normalizeSettings(nullFreePayload<Partial<AppSettings>>(await invoke<unknown>("settings_update", { patch }), "settings_update"));
 }
 
 export async function launcherAdd(paths: string[]): Promise<LauncherItem[]> {
@@ -126,7 +148,7 @@ export async function launcherAdd(paths: string[]): Promise<LauncherItem[]> {
     return [];
   }
 
-  return invoke<LauncherItem[]>("launcher_add", { paths });
+  return nullFreePayload<LauncherItem[]>(await invoke<unknown>("launcher_add", { paths }), "launcher_add");
 }
 
 export async function launcherRemove(itemId: string): Promise<LauncherItem[]> {
@@ -134,7 +156,7 @@ export async function launcherRemove(itemId: string): Promise<LauncherItem[]> {
     return [];
   }
 
-  return invoke<LauncherItem[]>("launcher_remove", { itemId });
+  return nullFreePayload<LauncherItem[]>(await invoke<unknown>("launcher_remove", { itemId }), "launcher_remove");
 }
 
 export async function launcherLaunch(itemId: string): Promise<LauncherLaunchResult> {
@@ -142,7 +164,7 @@ export async function launcherLaunch(itemId: string): Promise<LauncherLaunchResu
     return { launchedCount: 1, failures: [] };
   }
 
-  return invoke<LauncherLaunchResult>("launcher_launch", { itemId });
+  return nullFreePayload<LauncherLaunchResult>(await invoke<unknown>("launcher_launch", { itemId }), "launcher_launch");
 }
 
 export async function launcherLaunchAll(): Promise<LauncherLaunchResult> {
@@ -150,7 +172,7 @@ export async function launcherLaunchAll(): Promise<LauncherLaunchResult> {
     return { launchedCount: 0, failures: [] };
   }
 
-  return invoke<LauncherLaunchResult>("launcher_launch_all");
+  return nullFreePayload<LauncherLaunchResult>(await invoke<unknown>("launcher_launch_all"), "launcher_launch_all");
 }
 
 export function isDesktopRuntime(): boolean {
@@ -189,7 +211,7 @@ export async function speechConnectionDiagnostics(): Promise<BouyomiConnectionDi
     };
   }
 
-  return invoke<BouyomiConnectionDiagnostics>("speech_connection_diagnostics");
+  return nullFreePayload<BouyomiConnectionDiagnostics>(await invoke<unknown>("speech_connection_diagnostics"), "speech_connection_diagnostics");
 }
 
 export async function speechTest(text: string): Promise<void> {
@@ -220,7 +242,7 @@ export async function speechQueueReload(): Promise<SpeechStateSnapshot | undefin
     return undefined;
   }
 
-  return invoke<SpeechStateSnapshot>("speech_queue_reload");
+  return parseSpeechStateSnapshot(await invoke<unknown>("speech_queue_reload"));
 }
 
 export async function speechQueueRemove(itemId: string): Promise<void> {
@@ -266,7 +288,7 @@ export async function twitchStartAuth(): Promise<TwitchDeviceAuthStart> {
     };
   }
 
-  return invoke<TwitchDeviceAuthStart>("twitch_start_auth");
+  return nullFreePayload<TwitchDeviceAuthStart>(await invoke<unknown>("twitch_start_auth"), "twitch_start_auth");
 }
 
 export async function twitchPollAuth(): Promise<TwitchAuthPollResult> {
@@ -278,7 +300,7 @@ export async function twitchPollAuth(): Promise<TwitchAuthPollResult> {
     };
   }
 
-  return invoke<TwitchAuthPollResult>("twitch_poll_auth");
+  return parseTwitchAuthPollResult(await invoke<unknown>("twitch_poll_auth"));
 }
 
 export async function twitchValidateAuth(): Promise<TwitchAuthValidationResult> {
@@ -293,7 +315,7 @@ export async function twitchValidateAuth(): Promise<TwitchAuthValidationResult> 
     };
   }
 
-  return invoke<TwitchAuthValidationResult>("twitch_validate_auth");
+  return parseTwitchAuthValidationResult(await invoke<unknown>("twitch_validate_auth"));
 }
 
 export async function twitchGetStoredAuth(): Promise<TwitchUserProfile | undefined> {
@@ -301,8 +323,8 @@ export async function twitchGetStoredAuth(): Promise<TwitchUserProfile | undefin
     return undefined;
   }
 
-  const profile = await invoke<TwitchUserProfile | null>("twitch_get_stored_auth");
-  return profile ?? undefined;
+  const profile = await invoke<unknown>("twitch_get_stored_auth");
+  return profile === null ? undefined : parseTwitchUserProfile(profile);
 }
 
 export async function twitchConnect(channelLogin?: string): Promise<void> {
@@ -354,7 +376,9 @@ export async function subscribeAppLogEvents(
     return () => {};
   }
 
-  return listen<AppLogEvent>("app://log", (event) => handler(event.payload));
+  return listen<unknown>("app://log", (event) =>
+    handler(nullFreePayload<AppLogEvent>(event.payload, "app://log")),
+  );
 }
 
 export async function subscribeTwitchStatusEvents(
@@ -364,7 +388,7 @@ export async function subscribeTwitchStatusEvents(
     return () => {};
   }
 
-  return listen<TwitchStatusEvent>("twitch://status", (event) => handler(event.payload));
+  return listen<unknown>("twitch://status", (event) => handler(parseTwitchStatusEvent(event.payload)));
 }
 
 export async function subscribeTwitchChatMessageEvents(
@@ -374,14 +398,10 @@ export async function subscribeTwitchChatMessageEvents(
     return () => {};
   }
 
-  return listen<TwitchChatMessageWireEvent>("twitch://chat-message", (event) =>
-    handler(normalizeTwitchChatMessageEvent(event.payload)),
+  return listen<unknown>("twitch://chat-message", (event) =>
+    handler(normalizeTwitchChatMessageEvent(parseTwitchChatMessageWireEvent(event.payload))),
   );
 }
-
-type TwitchChatMessageWireEvent = Omit<TwitchChatMessageEvent, "receivedAt"> & {
-  receivedAt?: unknown;
-};
 
 export function normalizeTwitchChatMessageEvent(
   payload: TwitchChatMessageWireEvent,
@@ -400,7 +420,7 @@ export async function subscribeSpeechStatusEvents(
     return () => {};
   }
 
-  return listen<SpeechStatusEvent>("speech://status", (event) => handler(event.payload));
+  return listen<unknown>("speech://status", (event) => handler(parseSpeechStatusEvent(event.payload)));
 }
 
 export async function subscribeSpeechQueueUpdatedEvents(
@@ -410,5 +430,5 @@ export async function subscribeSpeechQueueUpdatedEvents(
     return () => {};
   }
 
-  return listen<SpeechQueueUpdatedEvent>("speech://queue-updated", (event) => handler(event.payload));
+  return listen<unknown>("speech://queue-updated", (event) => handler(parseSpeechQueueUpdatedEvent(event.payload)));
 }

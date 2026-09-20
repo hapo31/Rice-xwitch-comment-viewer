@@ -27,6 +27,12 @@
 - unknown reject の構造化データと Error stack は Logs 用に保持する。循環参照、空値、throwing getter でもエラー表示自体を壊さない。起動時認証は system Chat と技術ログへ別々に出力する。
 - 文字列/Error/object の接続拒否、空値、部分成功の日本語説明、技術ログと通知の分離、循環参照、既知エラー、起動時認証を回帰テスト。frontend196件、typecheck、build、diff check が成功。実機の Windows 操作は未実施。
 
+## 2026-09-20: Issue #48 Tauri bridge の Option / field 名契約
+
+- Rust の struct field にある `Option<T>` は `None` を JSON `null` ではなく field omission として統一した。TypeScript 側は同じ field を `?: T` とし、property 存在確認後に `null` で例外になる穴をなくした。struct 全体を `Option<T>` として返す `settings_take_recovery_notice` と `twitch_get_stored_auth` だけは command result の `null` を維持し、client 層で `undefined` に変換する。
+- `TwitchAuthPollResult` は enum variant field にも `rename_all_fields = "camelCase"` を設定し、keyring 保存失敗時の `storageWarning` を Login の既存警告表示へ到達させた。Rust serializer test と TypeScript bridge test は同じ fixture を使い、field omission、camelCase、status message、queue warning / `sourceMessageId`、fragment option、authorized payload を検証する。shell が呼ぶ routing helper も Device Code の保存警告が notification と system Chat の両方へ届くことを確認する。
+- frontend は Tauri の generic を runtime validation とみなさず、client 層で主要 payload の required field・enum・任意 field を検証する。その他の command result は再帰的な null 排除だけで shape は検証しないため、新しい利用箇所で shape が必要になれば個別 parser を追加する。最新 main 上で Rust default 156件/no-default 110件、clippy `--all-targets -- -D warnings`、fmt、frontend 203件、typecheck、build、diff check が成功した。
+
 ## 2026-09-20: エージェント作業ルールの分離
 
 - `issue-fix-batch` は、サブエージェントの報告形式、一般的な修正の隔離方法、GitHub Issue 固有の選定／レビュー／PR 手順を一つのスキルに混在させていたため、用途別の `rules/` 文書へ分離してスキルを撤去した。

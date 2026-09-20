@@ -62,6 +62,7 @@ import {
   isDesktopRuntime,
 } from "./tauri/client";
 import { createSettingsMutationOrchestrator, dispatchDomainAction, restoreStartupAuth, subscribeDomainEvents } from "./orchestration/domainOrchestration";
+import { routeAuthStorageWarning } from "./orchestration/authWarnings";
 import type { AppSettings, AppSettingsPatch, BouyomiConnectionDiagnostics, LauncherLaunchResult, NotificationSeverity, NotificationSource } from "./types";
 
 const showStartupGuideForSession = claimStartupGuideForSession(window.sessionStorage);
@@ -207,10 +208,7 @@ export function AppShell() {
       if (auth.status === "authenticated") {
         dispatch({ type: "twitch.profile", profile: auth.result.profile });
         dispatch({ type: "twitch.authStatus", status: "authenticated" });
-        if (auth.result.storageWarning) {
-          reportNotification("warning", "system", auth.result.storageWarning);
-          addSystemChatMessage(auth.result.storageWarning);
-        }
+        routeAuthStorageWarning(auth.result, reportNotification, addSystemChatMessage);
         return;
       }
 
@@ -409,10 +407,7 @@ export function AppShell() {
         dispatch({ type: "twitch.profile", profile: result.profile });
         dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
         reportInfo(`Twitch に ${result.profile.login} としてログインしました。`);
-        if (result.storageWarning) {
-          reportNotification("warning", "system", result.storageWarning);
-          addSystemChatMessage(result.storageWarning);
-        }
+        routeAuthStorageWarning(result, reportNotification, addSystemChatMessage);
       } else {
         dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
         if (state.twitchAuthPrompt && (result.status === "pending" || result.status === "slowDown")) {
@@ -454,10 +449,7 @@ export function AppShell() {
       dispatch({ type: "twitch.profile", profile: result.profile });
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       reportInfo("Twitch 認証は有効です。");
-      if (result.storageWarning) {
-        reportNotification("warning", "system", result.storageWarning);
-        addSystemChatMessage(result.storageWarning);
-      }
+      routeAuthStorageWarning(result, reportNotification, addSystemChatMessage);
       return true;
     } catch (error) {
       if (!authOperations.current.isCurrent(operation)) return false;

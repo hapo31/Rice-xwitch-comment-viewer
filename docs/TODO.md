@@ -19,6 +19,8 @@
 
 - [x] Issue #46: command エラーを日本語の原因・復旧操作へ正規化し、技術詳細を Logs へ分離する。
 
+2026-09-20: Issue #48 で Tauri bridge の struct `Option` を JSON field omission に統一し、TypeScript の optional field と整合させた。認証、chat、status、queue、snapshot を runtime schema で検証し、Device Code 成功時の `storageWarning` を Rust enum variant field も含め camelCase で送る。Rust serialization と TypeScript が共通 fixture を検証し、Device Code の保存警告を通知と system Chat へ送る経路も回帰テストで確認した。
+
 2026-09-20: `issue-fix-batch` スキルを撤去し、サブエージェント、修正作業、GitHub Issue 対応のルールへ分割した。`AGENTS.md` から作業内容に応じて必要なルールを読む構成へ移行し、関連する PR と Issue がすべて close されるまで worktree と修正用ブランチを保持する方針にした。
 
 2026-09-20: Issue #58 の共有 dispatcher を fake TCP server で再検証し、遅延した talk の後に pause / skip / clear が到着すること、control が先に開始された場合は talk 接続を開かないこと、pause / resume の wire・ローカル queue・成功 status/log の順序が一致することを確認した。制御 command 失敗時はローカル queue が未変更、棒読みちゃん側は到達不明と明示して Logs / status へ残し、最後の control 失敗解除で pending worker を再開する。app 無効の Rust テスト全102件、app 有効の Rust テスト全148件、全 target の clippy が成功。
@@ -181,6 +183,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] TypeScript の store reducer テストを追加する。
 
 ## Phase 5: 配信運用向け仕上げ
+
+- [x] Issue #48: Tauri bridge の `Option` を JSON field omission に統一し、Rust/TypeScript の camelCase・nullability 契約、Device Code 後の保存警告経路を共通 fixture と runtime validation で検証する。
 
 - [x] `issue-fix-batch` スキルを用途別ルールへ分解し、`AGENTS.md` から必要時に参照する構成へ移行する。関連する PR／Issue の close 後に worktree と修正用ブランチを削除する。
 

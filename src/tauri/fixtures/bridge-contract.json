@@ -1,0 +1,69 @@
+{
+  "authorizedPoll": {
+    "status": "authorized",
+    "profile": {
+      "userId": "user-id",
+      "login": "viewer",
+      "scopes": ["user:read:chat"],
+      "expiresIn": 3600
+    },
+    "storageWarning": "認証情報は今回の起動中だけ有効です。"
+  },
+  "optionOmissions": {
+    "twitchStatus": {
+      "revision": 1,
+      "domain": "chat",
+      "status": "disconnected",
+      "occurredAtMs": 1
+    },
+    "speechStatus": {
+      "revision": 0,
+      "status": "idle",
+      "adapterHealth": "connected",
+      "occurredAtMs": 1
+    },
+    "queue": {
+      "revision": 0,
+      "queuedCount": 1,
+      "items": [
+        {
+          "id": "queue-1",
+          "userDisplayName": "viewer",
+          "text": "hello",
+          "status": "queued"
+        }
+      ],
+      "phase": "paused",
+      "occurredAtMs": 1
+    },
+    "snapshot": {
+      "revision": 1,
+      "logs": [],
+      "twitchStatuses": [
+        {
+          "revision": 1,
+          "domain": "chat",
+          "status": "disconnected",
+          "occurredAtMs": 1
+        }
+      ],
+      "emitErrors": []
+    },
+    "fragment": {
+      "type": "text",
+      "text": "hello"
+    },
+    "emote": {
+      "id": "25",
+      "emoteSetId": "0"
+    },
+    "authValidation": {
+      "profile": {
+        "userId": "user-id",
+        "login": "viewer",
+        "scopes": ["user:read:chat"],
+        "expiresIn": 3600
+      }
+    }
+  }
+}
