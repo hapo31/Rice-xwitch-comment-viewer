@@ -60,6 +60,7 @@ fn app_open_external_url(url: String) -> Result<(), String> {
 struct AppBuildInfo {
     version: &'static str,
     is_dev: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     commit_hash: Option<&'static str>,
 }
 

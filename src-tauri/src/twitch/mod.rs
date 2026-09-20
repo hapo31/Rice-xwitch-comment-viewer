@@ -90,7 +90,9 @@ pub struct MessageFragment {
     #[serde(rename = "type")]
     pub kind: String,
     pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub emote: Option<ChatEmote>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cheermote: Option<ChatCheermote>,
 }
 
@@ -102,6 +104,7 @@ pub struct ChatEmote {
     pub emote_set_id: String,
     #[serde(default)]
     #[serde(alias = "owner_id")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub owner_id: Option<String>,
 }
 
@@ -198,7 +201,11 @@ pub struct TwitchUserProfile {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "status", rename_all = "camelCase")]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum TwitchAuthPollResult {
     Pending {
         message: String,
@@ -210,6 +217,7 @@ pub enum TwitchAuthPollResult {
     },
     Authorized {
         profile: TwitchUserProfile,
+        #[serde(skip_serializing_if = "Option::is_none")]
         storage_warning: Option<String>,
     },
     Denied {
@@ -224,6 +232,7 @@ pub enum TwitchAuthPollResult {
 #[serde(rename_all = "camelCase")]
 pub struct TwitchAuthValidationResult {
     pub profile: TwitchUserProfile,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_warning: Option<String>,
 }
 
@@ -3079,14 +3088,15 @@ mod tests {
         retry_eventsub_subscription, AuthClearOutcome, AuthCredentialStore, AuthLoadResult,
         AuthSaveOutcome, AuthSecretStore, AuthStorage, EventSubReconnectBackoff, StoredTwitchAuth,
         SubscriptionRequestError, TokenResponse, TwitchAuthState, TwitchAuthStore,
-        TwitchConnectionHandle, TwitchToken, TwitchUserProfile,
-        EVENTSUB_BACKOFF_RESET_STABLE_DURATION, EVENTSUB_RECONNECT_HANDOVER_TIMEOUT,
-        TWITCH_WS_HANDSHAKE_TIMEOUT,
+        TwitchConnectionHandle, TwitchToken, EVENTSUB_BACKOFF_RESET_STABLE_DURATION,
+        EVENTSUB_RECONNECT_HANDOVER_TIMEOUT, TWITCH_WS_HANDSHAKE_TIMEOUT,
     };
     use super::{
         ensure_required_twitch_scopes, is_definitive_auth_failure, normalize_chat_message,
-        oauth_error_code, retry_backoff_seconds, EventSubEnvelope, MessageDedupe,
-        OAuthErrorResponse, TwitchApiError, TwitchAuthFailure, TWITCH_HTTP_TIMEOUT,
+        oauth_error_code, retry_backoff_seconds, ChatEmote, EventSubEnvelope, MessageDedupe,
+        MessageFragment, OAuthErrorResponse, TwitchApiError, TwitchAuthFailure,
+        TwitchAuthPollResult, TwitchAuthValidationResult, TwitchUserProfile, CHAT_READ_SCOPE,
+        TWITCH_HTTP_TIMEOUT,
     };
     use chrono::{DateTime, Utc};
     #[cfg(feature = "app")]
@@ -3810,6 +3820,51 @@ mod tests {
             message.received_at,
             utc_timestamp("2023-11-06T18:11:47.492253549Z")
         );
+    }
+
+    #[test]
+    fn bridge_option_fields_are_omitted_and_auth_warning_is_camel_case() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../src/tauri/fixtures/bridge-contract.json"
+        ))
+        .unwrap();
+        let expected = &fixture["optionOmissions"];
+        let fragment = MessageFragment {
+            kind: "text".into(),
+            text: "hello".into(),
+            emote: None,
+            cheermote: None,
+        };
+        let emote = ChatEmote {
+            id: "25".into(),
+            emote_set_id: "0".into(),
+            owner_id: None,
+        };
+        let profile = TwitchUserProfile {
+            user_id: "user-id".into(),
+            login: "viewer".into(),
+            client_id: "client-id".into(),
+            scopes: vec![CHAT_READ_SCOPE.into()],
+            expires_in: 3600,
+        };
+        let authorized = TwitchAuthPollResult::Authorized {
+            profile: profile.clone(),
+            storage_warning: Some("認証情報は今回の起動中だけ有効です。".into()),
+        };
+        let validation = TwitchAuthValidationResult {
+            profile,
+            storage_warning: None,
+        };
+
+        let fragment = serde_json::to_value(fragment).unwrap();
+        let emote = serde_json::to_value(emote).unwrap();
+        let authorized = serde_json::to_value(authorized).unwrap();
+        let validation = serde_json::to_value(validation).unwrap();
+
+        assert_eq!(fragment, expected["fragment"]);
+        assert_eq!(emote, expected["emote"]);
+        assert_eq!(authorized, fixture["authorizedPoll"]);
+        assert_eq!(validation, expected["authValidation"]);
     }
 
     #[test]

@@ -31,6 +31,7 @@ pub struct AppSettings {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<WindowPosition>,
 }
 

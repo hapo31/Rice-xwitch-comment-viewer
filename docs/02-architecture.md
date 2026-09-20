@@ -134,6 +134,12 @@ Events:
 - `speech://status`
 - `app://log`: `id` は Logs view の React key に使う表示用 ID として一意にする。受信時に ID が欠ける、または既存 ID と重複する場合は、frontend store が連番 suffix を付ける。ログ本文の重複排除は行わない。
 
+### Tauri bridge の JSON 契約
+
+Rust の struct field にある `Option<T>` は、Tauri command と event のすべてで `None` を field omission として送る。TypeScript は対応する field を `?: T` とし、`null` を許可しない。これには status の `message`、queue の `warning` / `sourceMessageId`、chat fragment の `emote` / `cheermote` / `ownerId`、認証結果の `storageWarning`、snapshot の `speechStatus`、Launcher の任意表示属性、window position、build info の `commitHash` を含む。
+
+struct 全体を `Option<T>` として返す command だけは JSON `null` を使う。現在は `settings_take_recovery_notice` と `twitch_get_stored_auth` が該当し、client 層で `undefined` に変換してから UI へ渡す。frontend は generic の `invoke<T>` / `listen<T>` を信頼せず、認証、chat、status、speech queue、snapshot の主要 payload では required field、enum、camelCase field 名まで検証する。その他の command result は再帰的な null 排除だけを行うため、shape の検証が必要な利用箇所を追加するときは個別 parser も同じ変更で追加する。
+
 ## Renderer のセキュリティ境界
 
 production の bundled window は `default-src 'self'` を起点とする CSP を使う。script は bundled asset と Tauri が build 時に付与する hash / nonce、通信は Tauri IPC の `ipc:` / `http://ipc.localhost`、画像は bundled asset と検証済みの PNG data URL だけを許可する。frame、object、worker、media、base、form は使用しないため拒否する。Twitch HTTP / WebSocket と棒読みちゃん TCP は Rust 側で処理し、renderer の `connect-src` へ外部 origin を追加しない。

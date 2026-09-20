@@ -50,6 +50,12 @@ export interface AppSettings {
     connectionSuccessSpeechText: string;
   };
   launcher: LauncherSettings;
+  window?: {
+    position?: {
+      x: number;
+      y: number;
+    };
+  };
 }
 
 export interface SettingsRecoveryNotice {
@@ -132,8 +138,8 @@ export interface TwitchChatMessageEvent {
 export interface TwitchMessageFragment {
   type: string;
   text: string;
-  emote?: TwitchChatEmote | null;
-  cheermote?: TwitchChatCheermote | null;
+  emote?: TwitchChatEmote;
+  cheermote?: TwitchChatCheermote;
 }
 
 export interface TwitchChatEmote {
