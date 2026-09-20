@@ -21,6 +21,12 @@
 - PR/main と手動実行で default/no-default を別 job にし、`fail-fast: false` で片方の失敗が他方の結果を隠さない。`RUSTFLAGS: -D unused-imports` で不要 import の再導入を拒否する。no-default job は GTK/WebKit をインストールしない。
 - `cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features` は102件、`mkdir -p dist` 後の default test は148件成功。不要 import warning はなし。YAML parse と `git diff --check` も成功。Windows の実機操作には変更なし。
 
+## 2026-09-20 Issue #46: command エラーの表示と詳細の分離
+
+- AppShell、起動時認証、Launcher の例外表示を `presentation/errors.ts` へ統一。接続拒否・期限切れ・認証無効・権限不足・対象不存在を説明し、settings/auth/chat/speech/queue/launcher 等の操作別復旧手順を付ける。backend が既に返す日本語の復旧案内は重複させない。
+- unknown reject の構造化データと Error stack は Logs 用に保持する。循環参照、空値、throwing getter でもエラー表示自体を壊さない。起動時認証は system Chat と技術ログへ別々に出力する。
+- 文字列/Error/object の接続拒否、空値、部分成功の日本語説明、技術ログと通知の分離、循環参照、既知エラー、起動時認証を回帰テスト。frontend196件、typecheck、build、diff check が成功。実機の Windows 操作は未実施。
+
 ## 2026-09-20: エージェント作業ルールの分離
 
 - `issue-fix-batch` は、サブエージェントの報告形式、一般的な修正の隔離方法、GitHub Issue 固有の選定／レビュー／PR 手順を一つのスキルに混在させていたため、用途別の `rules/` 文書へ分離してスキルを撤去した。
