@@ -1,5 +1,17 @@
 # 調査メモ
 
+## 2026-09-21 Issue #173: Tauri 上流由来 RustSec 指摘
+
+- 親レビューで `cargo-audit audit --file src-tauri/Cargo.lock --deny warnings` をonline実行し、RustSec DB `57ad4063bb49c1deb04b6fcee30cfbac6b508474` と crates.io index の取得を含めexit 0を確認した。これは7件の期限付き例外を適用した結果であり、依存自体の修正や警告の消滅を意味しない。
+
+- 参照: [glib advisory](https://rustsec.org/advisories/RUSTSEC-2024-0429.html)、[Tauri 2.11.6](https://crates.io/crates/tauri/2.11.6)、[tauri-runtime-wry 2.11.4](https://crates.io/crates/tauri-runtime-wry/2.11.4)、[tauri-utils 2.9.3](https://crates.io/crates/tauri-utils/2.9.3)。親レビューでも Windows MSVC target の glib 非選択、unic の build/runtime 経路、Linux の proc-macro-error 経路を確認した。#96 の validator に例外案を渡す独立検証では現日付で成功し、2026-10-22 で期限切れとして拒否された。cached audit（no-fetch/no-yanked）もexit 0だが、mainへの例外反映と完了判定は #96 の期限検証統合後とする。
+
+- 公式 crates.io API と crate manifest を online で確認した。Tauri 2 系の最新は 2.11.6、Tauri Runtime Wry 2 系の最新は 2.11.4 である。`cargo update --dry-run -p tauri --precise 2.11.6` は tauri / tauri-build / tauri-codegen / tauri-macros / tauri-runtime / tauri-runtime-wry / tauri-utils と tray-icon を更新候補として表示したが、advisory の経路を解消しないため lockfile 更新は行わない。Tauri 2.11.6 は tauri-runtime-wry 2.11.4 と tauri-utils 2.9.3 を要求する。前者は Linux target に GTK 0.18 と webkit2gtk =2.0 を、後者は urlpattern 0.3 を要求する。Wry の独立最新 0.57.0 は GTK 0.18 / webkit2gtk =2.0.2 を維持し、Tauri Runtime Wry 2.11.4 は Wry 0.55 系を要求する。webkit2gtk 2.0.2 は glib ^0.18、urlpattern 0.6.0 は公開済みでも tauri-utils の 0.3 制約と互換でない。Tauri 3.0.0-alpha.1 は Rust 1.95 が必要な pre-release であり、固定 Rust 1.89 の本アプリには更新候補としない。
+- 現在の `Cargo.lock` と `cargo tree --locked --offline` では、glib 0.18.5 と proc-macro-error 1.0.4 は Tauri/Wry の Linux GTK3 graph にある。Windows platform を指定した `cargo metadata --locked --offline --filter-platform x86_64-pc-windows-gnu` は gtk / glib / webkit2gtk / proc-macro-error を含まず、urlpattern 0.3.0 と unic-ucd-ident 0.9.0 は含む。したがって Windows runtime / build graph の unic 系5 package と、Linux target だけの GTK3系を区別するが、lockfile だけから実行時到達可能性を断定しない。
+- RUSTSEC-2024-0429 が示す unsound API は `glib::VariantStrIter::{next, nth, last, next_back, nth_back}` である。Rice source と lockfile の直近上流 source（tauri 2.11.2、tauri-runtime-wry 2.11.2、wry 0.55.1、webkit2gtk 2.0.2）を `rg` で調べ、この API / `g_variant_get_child` の呼出しは見つからなかった。ただし GTK3 graph 全体の非到達性を証明するものではない。Linux build/runtime がこの API を利用すれば undefined behavior / crash のリスクが残り、glib 0.20 への個別 override は Tauri/Wry / webkit2gtk の 0.18 API 制約を破る。
+- proc-macro-error と unic の6 advisory は patched release を持たない unmaintained advisory である。更新不能な7件は owner `hapo31`、期限 2026-10-21 として `.cargo/audit.toml` と `security/advisory-exceptions.json` に記録した。cargo-audit 0.22.2 を RustSec DB の取得済み snapshot で `audit --file src-tauri/Cargo.lock --no-fetch --no-yanked --deny warnings` 実行し、例外を読んで exit 0 となった。`cargo test --locked --no-default-features` は110件成功した。空の frontendDist directory を一時的に用意して `cargo check --locked --all-targets --target x86_64-pc-windows-gnu` を実行し、warning は既存の unused import だけで成功した。
+- Issue #96 の validator と release audit gate は main に未統合である。この Issue はそれらを複製しない。例外の owner / 根拠 / 期限を #96 の policy で検証し、期限前に Tauri/Wry または urlpattern の更新を再確認するまで、公開可能な clean audit と主張しない。
+
 ## 2026-09-20 Issue #172: RustSec 修正版の依存更新
 
 - cargo-audit 0.22.2 と RustSec DB `d5c17953a895cf19e8d3ce66eaa42b6fcfe1fb16` で既存 lockfile の advisory を確認した。quinn-proto 0.11.15、rustls 0.23.45、anyhow 1.0.103、event-listener 5.4.2 と、plist 1.10.1 経由の quick-xml 0.42.0 へ互換更新した。rustls-webpki 0.103.15 と base64 0.23.1 はこれらに必要な推移的更新である。

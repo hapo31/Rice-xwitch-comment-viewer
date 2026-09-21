@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "exceptions": [
+    {
+      "scope": "cargo",
+      "id": "RUSTSEC-2024-0370",
+      "rationale": "proc-macro-error 1.0.4 is pulled only by Tauri's Linux GTK3 proc-macro bindings. The advisory has no patched release; replacing it requires Tauri/Wry to remove that upstream GTK3 graph.",
+      "owner": "hapo31",
+      "expiresOn": "2026-10-21"
+    },
+    {
+      "scope": "cargo",
+      "id": "RUSTSEC-2024-0429",
+      "rationale": "glib 0.18.5 enters through Tauri/Wry's Linux GTK3 graph; GTK and webkit2gtk constrain glib to 0.18, excluding the fixed >=0.20 line. No VariantStrIter call was found in Rice or the inspected immediate upstream sources, but Linux transitive reachability is not proven absent; undefined behavior remains a risk until upstream migrates.",
+      "owner": "hapo31",
+      "expiresOn": "2026-10-21"
+    },
+    {
+      "scope": "cargo",
+      "id": "RUSTSEC-2025-0075",
+      "rationale": "unic-char-range 0.9.0 is an unmaintained transitive dependency of urlpattern through Tauri Utils. No patched release exists; updating it requires a compatible upstream Tauri/urlpattern dependency change.",
+      "owner": "hapo31",
+      "expiresOn": "2026-10-21"
+    },
+    {
+      "scope": "cargo",
+      "id": "RUSTSEC-2025-0080",
+      "rationale": "unic-common 0.9.0 is an unmaintained transitive dependency of urlpattern through Tauri Utils. No patched release exists; updating it requires a compatible upstream Tauri/urlpattern dependency change.",
+      "owner": "hapo31",
+      "expiresOn": "2026-10-21"
+    },
+    {
+      "scope": "cargo",
+      "id": "RUSTSEC-2025-0081",
+      "rationale": "unic-char-property 0.9.0 is an unmaintained transitive dependency of urlpattern through Tauri Utils. No patched release exists; updating it requires a compatible upstream Tauri/urlpattern dependency change.",
+      "owner": "hapo31",
+      "expiresOn": "2026-10-21"
+    },
+    {
+      "scope": "cargo",
+      "id": "RUSTSEC-2025-0098",
+      "rationale": "unic-ucd-version 0.9.0 is an unmaintained transitive dependency of urlpattern through Tauri Utils. No patched release exists; updating it requires a compatible upstream Tauri/urlpattern dependency change.",
+      "owner": "hapo31",
+      "expiresOn": "2026-10-21"
+    },
+    {
+      "scope": "cargo",
+      "id": "RUSTSEC-2025-0100",
+      "rationale": "unic-ucd-ident 0.9.0 is an unmaintained transitive dependency of urlpattern through Tauri Utils. No patched release exists; updating it requires a compatible upstream Tauri/urlpattern dependency change.",
+      "owner": "hapo31",
+      "expiresOn": "2026-10-21"
+    }
+  ]
+}

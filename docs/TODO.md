@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-09-20
+最終調査日: 2026-09-21
 
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
@@ -8,6 +8,10 @@
 調査メモは [`docs/RESEARCH_NOTES.md`](./RESEARCH_NOTES.md) に分離し、日付が新しいものほど上に追記してください。
 
 ## 現在の進捗サマリ
+
+2026-09-21: Issue #173 で RustSec の残存7件を Tauri 上流由来として再確認した。公式 crates.io の Tauri 2.11.6 候補も GTK3 0.18 / webkit2gtk 2.0 / urlpattern 0.3 の制約を残し、今回の lockfile 互換更新で解消しない。Windows graph に unic 系が残り、glib / proc-macro-error は Linux GTK3 graph に限られる。glib の unsound API と呼出し有無を調査し、実 audit は exception を読んで成功した。例外には owner・根拠・2026-10-21 の期限を記録したが、期限検証と release audit gate は未統合の Issue #96 が担当するため、この時点を公開可能な clean audit と扱わない。
+
+- [ ] Issue #173: Tauri 上流由来の残存 RustSec 指摘について互換更新と target/build/runtime 経路を確認し、解消不能なものは owner・根拠・期限付きの例外として検証可能に記録する。Issue #96 の validator / release audit gate が未統合のため、例外レビュー後に完了とする。
 
 2026-09-20: Issue #172 で修正版のある RustSec 6 advisory を依存更新で解消した。quinn-proto 0.11.15、rustls 0.23.45、anyhow 1.0.103、event-listener 5.4.2、plist 1.10.1 / quick-xml 0.42.0 へ更新し、必要な推移的依存だけを lockfile に反映した。Rust 1.89 の default 156件/no-default 110件と Windows GNU check、現在の CI toolchain の clippy、frontend203件・typecheck/build が成功。保守終了等の7警告は #173 へ分離し、clean audit とは扱わない。
 
