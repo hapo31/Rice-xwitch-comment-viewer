@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-09-20
+最終調査日: 2026-09-21
 
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
@@ -8,6 +8,10 @@
 調査メモは [`docs/RESEARCH_NOTES.md`](./RESEARCH_NOTES.md) に分離し、日付が新しいものほど上に追記してください。
 
 ## 現在の進捗サマリ
+
+2026-09-21: Issue #175 で Vite 8.0.16、PostCSS 8.5.18、nanoid 3.3.19、Browserslist 4.29.0 と関連する推移依存を更新した。npm audit の high 6件が解消し、high/critical は0件（low1件、moderate8件は残存）。frontend203件、typecheck/build、renderer security 検証が成功。
+
+- [x] Issue #175: npm audit の high 6件を互換範囲の依存更新で解消し、frontend と再監査を確認する。
 
 2026-09-20: Issue #172 で修正版のある RustSec 6 advisory を依存更新で解消した。quinn-proto 0.11.15、rustls 0.23.45、anyhow 1.0.103、event-listener 5.4.2、plist 1.10.1 / quick-xml 0.42.0 へ更新し、必要な推移的依存だけを lockfile に反映した。Rust 1.89 の default 156件/no-default 110件と Windows GNU check、現在の CI toolchain の clippy、frontend203件・typecheck/build が成功。保守終了等の7警告は #173 へ分離し、clean audit とは扱わない。
 
