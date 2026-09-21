@@ -1,5 +1,12 @@
 # 調査メモ
 
+## 2026-09-21 Issue #175: npm high advisory の互換更新
+
+- main ba44b3e の全依存監査で high 6件を確認した。Vite の Windows path 経由の deny bypass（GHSA-fx2h-pf6j-xcff）、nanoid の不正サイズ時 loop（GHSA-28wg-ghj8-5hjv / GHSA-2v37-7h3g-55p8）、PostCSS の source map path traversal（GHSA-r28c-9q8g-f849）、Browserslist の無制限 cache と custom stats 処理（GHSA-c83g-rgw3-j3cx / GHSA-73wf-gq98-2v4g）が対象。主に開発・ビルド依存であり、配布アプリでの到達を断定しない。
+- Vite 8.0.16、PostCSS 8.5.18、nanoid 3.3.19、Browserslist 4.29.0 へ互換更新し、関連する bundler / browser data の推移依存も lockfile に反映した。直接依存の宣言変更は Vite と PostCSS の最小版だけ。major upgrade や waiver は追加していない。
+- frozen install、frontend203件、typecheck、build、renderer security check、diff check が成功。pnpm audit --audit-level=high は exit 0。JSON audit の件数は high/critical 0、low1、moderate8であり、全指摘が解消したとは扱わない。Windows実機確認は未実施。
+
+
 ## 2026-09-20 Issue #172: RustSec 修正版の依存更新
 
 - cargo-audit 0.22.2 と RustSec DB `d5c17953a895cf19e8d3ce66eaa42b6fcfe1fb16` で既存 lockfile の advisory を確認した。quinn-proto 0.11.15、rustls 0.23.45、anyhow 1.0.103、event-listener 5.4.2 と、plist 1.10.1 経由の quick-xml 0.42.0 へ互換更新した。rustls-webpki 0.103.15 と base64 0.23.1 はこれらに必要な推移的更新である。
