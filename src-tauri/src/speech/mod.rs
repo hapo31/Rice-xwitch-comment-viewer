@@ -69,6 +69,29 @@ const DEFAULT_QUEUE_LIMIT: usize = 200;
 const DEFAULT_HISTORY_LIMIT: usize = DEFAULT_QUEUE_LIMIT;
 const DEFAULT_MAX_COMMENT_LENGTH: usize = 120;
 const RETRY_DELAY: Duration = Duration::from_millis(700);
+// Twitch の設定値は 30 秒までで、background cleanup は通常1秒以内に期限を観測する。
+// 実際の解放時刻は runtime のスケジューリングと mutex 待ちの影響を受ける。
+// cleanup は background task と enqueue の両方で固定件数だけ進め、休止後の大量コメントで
+// queue mutex を長時間保持しない。期限キューが map entry を所有するため、両方の保持量を
+// 同じ上限に固定できる。
+const MAX_REPEAT_SUPPRESSION_WINDOW: Duration = Duration::from_secs(30);
+const MAX_REPEAT_SUPPRESSION_ENTRIES: usize = 4_096;
+const REPEAT_SUPPRESSION_CLEANUP_BATCH: usize = 64;
+#[cfg(feature = "app")]
+const REPEAT_SUPPRESSION_CLEANUP_INTERVAL: Duration = Duration::from_secs(1);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RepeatSuppressionScope {
+    channel_id: String,
+    connection_generation: Option<u64>,
+}
+
+#[derive(Debug)]
+struct RepeatSuppressionExpiry {
+    expires_at: Instant,
+    user_id: String,
+    accepted_at: Instant,
+}
 
 #[derive(Debug)]
 pub struct SpeechQueueState {
@@ -76,6 +99,9 @@ pub struct SpeechQueueState {
     in_flight: Option<SpeechQueueItem>,
     history: VecDeque<SpeechQueueItem>,
     last_user_enqueue: HashMap<String, Instant>,
+    repeat_suppression_expirations: VecDeque<RepeatSuppressionExpiry>,
+    repeat_suppression_scope: Option<RepeatSuppressionScope>,
+    repeat_suppression_cleanup_scheduled: bool,
     next_id: u64,
     is_processing: bool,
     paused: bool,
@@ -89,6 +115,9 @@ impl Default for SpeechQueueState {
             in_flight: None,
             history: VecDeque::new(),
             last_user_enqueue: HashMap::new(),
+            repeat_suppression_expirations: VecDeque::new(),
+            repeat_suppression_scope: None,
+            repeat_suppression_cleanup_scheduled: false,
             next_id: 1,
             is_processing: false,
             paused: false,
@@ -131,6 +160,90 @@ enum SpeechDeliveryOutcome {
 }
 
 impl SpeechQueueState {
+    fn prepare_repeat_suppression(
+        &mut self,
+        message: &ChatMessage,
+        repeat_suppression_seconds: u16,
+        now: Instant,
+    ) {
+        let scope = RepeatSuppressionScope {
+            channel_id: message.channel_id.clone(),
+            connection_generation: message.connection_generation,
+        };
+        if self.repeat_suppression_scope.as_ref() != Some(&scope) {
+            self.clear_repeat_suppression_entries();
+            self.repeat_suppression_scope = Some(scope);
+        }
+
+        if repeat_suppression_seconds == 0 {
+            self.clear_repeat_suppression_entries();
+            return;
+        }
+
+        self.cleanup_expired_repeat_suppression_entries(now);
+    }
+
+    fn record_user_enqueue(&mut self, user_id: String, now: Instant) {
+        if self.repeat_suppression_expirations.len() == MAX_REPEAT_SUPPRESSION_ENTRIES {
+            self.remove_repeat_suppression_expiry();
+        }
+
+        self.last_user_enqueue.insert(user_id.clone(), now);
+        self.repeat_suppression_expirations
+            .push_back(RepeatSuppressionExpiry {
+                expires_at: now + MAX_REPEAT_SUPPRESSION_WINDOW,
+                user_id,
+                accepted_at: now,
+            });
+    }
+
+    fn clear_repeat_suppression_entries(&mut self) {
+        self.last_user_enqueue.clear();
+        self.repeat_suppression_expirations.clear();
+    }
+
+    fn cleanup_expired_repeat_suppression_entries(&mut self, now: Instant) {
+        for _ in 0..REPEAT_SUPPRESSION_CLEANUP_BATCH {
+            let Some(expiry) = self.repeat_suppression_expirations.front() else {
+                break;
+            };
+            if expiry.expires_at > now {
+                break;
+            }
+            self.remove_repeat_suppression_expiry();
+        }
+    }
+
+    fn remove_repeat_suppression_expiry(&mut self) {
+        let Some(expiry) = self.repeat_suppression_expirations.pop_front() else {
+            return;
+        };
+        if self.last_user_enqueue.get(&expiry.user_id) == Some(&expiry.accepted_at) {
+            self.last_user_enqueue.remove(&expiry.user_id);
+        }
+    }
+
+    fn claim_repeat_suppression_cleanup(&mut self) -> bool {
+        if self.repeat_suppression_cleanup_scheduled
+            || self.repeat_suppression_expirations.is_empty()
+        {
+            return false;
+        }
+        self.repeat_suppression_cleanup_scheduled = true;
+        true
+    }
+
+    /// Executes one bounded cleanup turn. `now` comes from the background task
+    /// in production and is injected by tests so idle expiry needs no new chat.
+    fn run_repeat_suppression_cleanup_turn(&mut self, now: Instant) -> Option<bool> {
+        self.cleanup_expired_repeat_suppression_entries(now);
+        let Some(expiry) = self.repeat_suppression_expirations.front() else {
+            self.repeat_suppression_cleanup_scheduled = false;
+            return None;
+        };
+        Some(expiry.expires_at <= now)
+    }
+
     fn cancel_in_flight(&mut self) -> bool {
         let Some(mut item) = self.in_flight.take() else {
             return false;
@@ -478,6 +591,7 @@ pub fn enqueue_chat_message_for_speech(
 
     let mut warning = None;
     let mut should_spawn = false;
+    let mut should_schedule_repeat_suppression_cleanup = false;
     {
         let mut queue = state
             .speech_queue
@@ -516,7 +630,10 @@ pub fn enqueue_chat_message_for_speech(
             }
         };
 
-        queue.last_user_enqueue.insert(message.user_id.clone(), now);
+        if speech_settings.repeat_suppression_seconds > 0 {
+            queue.record_user_enqueue(message.user_id.clone(), now);
+            should_schedule_repeat_suppression_cleanup = queue.claim_repeat_suppression_cleanup();
+        }
         if queue.make_pending_room() {
             warning = Some(
                 "読み上げキューが上限に達したため、古い未読チャットを落としました。".to_string(),
@@ -540,9 +657,37 @@ pub fn enqueue_chat_message_for_speech(
     }
 
     if should_spawn {
-        tokio::spawn(process_speech_queue(app));
+        tokio::spawn(process_speech_queue(app.clone()));
+    }
+    if should_schedule_repeat_suppression_cleanup {
+        tokio::spawn(process_repeat_suppression_cleanup(app));
     }
     Ok(())
+}
+
+#[cfg(feature = "app")]
+async fn process_repeat_suppression_cleanup(app: tauri::AppHandle<tauri::Wry>) {
+    loop {
+        let cleanup_is_due = {
+            let state = app.state::<AppState>();
+            let Ok(mut queue) = state.speech_queue.lock() else {
+                return;
+            };
+            queue.run_repeat_suppression_cleanup_turn(Instant::now())
+        };
+
+        let Some(cleanup_is_due) = cleanup_is_due else {
+            return;
+        };
+
+        // When more than one cleanup batch is already expired, release the mutex
+        // between batches instead of waiting another second for each one.
+        if cleanup_is_due {
+            tokio::task::yield_now().await;
+        } else {
+            tokio::time::sleep(REPEAT_SUPPRESSION_CLEANUP_INTERVAL).await;
+        }
+    }
 }
 
 fn is_repeat_suppressed(
@@ -562,6 +707,7 @@ fn suppress_repeated_message(
     message: &ChatMessage,
     now: Instant,
 ) -> Option<String> {
+    queue.prepare_repeat_suppression(message, settings.repeat_suppression_seconds, now);
     if !is_repeat_suppressed(
         queue.last_user_enqueue.get(&message.user_id).copied(),
         now,
@@ -1475,36 +1621,159 @@ mod tests {
         let mut queue = SpeechQueueState::default();
 
         settings.repeat_suppression_seconds = 0;
-        queue.last_user_enqueue.insert(message.user_id.clone(), now);
+        queue.record_user_enqueue(message.user_id.clone(), now);
         assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_none());
         assert!(queue.history.is_empty());
+        assert!(queue.last_user_enqueue.is_empty());
 
         settings.repeat_suppression_seconds = 1;
         let accepted_at = now - Duration::from_millis(999);
-        queue
-            .last_user_enqueue
-            .insert(message.user_id.clone(), accepted_at);
+        queue.record_user_enqueue(message.user_id.clone(), accepted_at);
         assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_some());
         assert_eq!(queue.history.len(), 1);
         assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Blocked);
         assert_eq!(queue.last_user_enqueue[&message.user_id], accepted_at);
 
+        queue.clear_repeat_suppression_entries();
         queue.history.clear();
-        queue
-            .last_user_enqueue
-            .insert(message.user_id.clone(), now - Duration::from_secs(1));
+        queue.record_user_enqueue(message.user_id.clone(), now - Duration::from_secs(1));
         assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_none());
 
         settings.repeat_suppression_seconds = 2;
-        queue
-            .last_user_enqueue
-            .insert(message.user_id.clone(), now - Duration::from_millis(1_999));
+        queue.clear_repeat_suppression_entries();
+        queue.record_user_enqueue(message.user_id.clone(), now - Duration::from_millis(1_999));
         assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_some());
+        queue.clear_repeat_suppression_entries();
         queue.history.clear();
-        queue
-            .last_user_enqueue
-            .insert(message.user_id.clone(), now - Duration::from_secs(2));
+        queue.record_user_enqueue(message.user_id.clone(), now - Duration::from_secs(2));
         assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_none());
+    }
+
+    #[test]
+    fn repeat_suppression_expires_entries_at_the_maximum_setting_boundary() {
+        let now = Instant::now();
+        let message = chat("最大期間の境界");
+        let mut settings = crate::settings::AppSettings::default().speech;
+        settings.repeat_suppression_seconds = 30;
+        let mut queue = SpeechQueueState::default();
+
+        assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_none());
+        queue.record_user_enqueue(
+            message.user_id.clone(),
+            now - MAX_REPEAT_SUPPRESSION_WINDOW + Duration::from_millis(1),
+        );
+        assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_some());
+
+        queue.clear_repeat_suppression_entries();
+        queue.record_user_enqueue(message.user_id.clone(), now - MAX_REPEAT_SUPPRESSION_WINDOW);
+        assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_none());
+        assert!(queue.last_user_enqueue.is_empty());
+        assert!(queue.repeat_suppression_expirations.is_empty());
+    }
+
+    #[test]
+    fn repeat_suppression_idle_cleanup_releases_expired_entries_with_an_injected_clock() {
+        let accepted_at = Instant::now();
+        let message = chat("待機中に期限切れ");
+        let settings = crate::settings::AppSettings::default().speech;
+        let mut queue = SpeechQueueState::default();
+
+        assert!(suppress_repeated_message(&mut queue, &settings, &message, accepted_at).is_none());
+        queue.record_user_enqueue(message.user_id.clone(), accepted_at);
+        assert!(queue.claim_repeat_suppression_cleanup());
+
+        // No incoming message is required for the scheduled cleanup path: its
+        // clock value is injected here just as it is by the background task.
+        assert_eq!(
+            queue.run_repeat_suppression_cleanup_turn(accepted_at),
+            Some(false)
+        );
+        assert_eq!(
+            queue.run_repeat_suppression_cleanup_turn(accepted_at + MAX_REPEAT_SUPPRESSION_WINDOW),
+            None
+        );
+        assert!(queue.last_user_enqueue.is_empty());
+        assert!(queue.repeat_suppression_expirations.is_empty());
+    }
+
+    #[test]
+    fn old_repeat_suppression_expiry_cannot_remove_a_newer_user_timestamp() {
+        let now = Instant::now();
+        let message = chat("設定変更後の受理");
+        let settings = crate::settings::AppSettings::default().speech;
+        let mut queue = SpeechQueueState::default();
+
+        assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_none());
+        queue.record_user_enqueue(message.user_id.clone(), now - MAX_REPEAT_SUPPRESSION_WINDOW);
+        let newer_accepted_at = now - Duration::from_secs(1);
+        queue.record_user_enqueue(message.user_id.clone(), newer_accepted_at);
+
+        assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_some());
+        assert_eq!(
+            queue.last_user_enqueue.get(&message.user_id),
+            Some(&newer_accepted_at)
+        );
+        assert_eq!(queue.repeat_suppression_expirations.len(), 1);
+    }
+
+    #[test]
+    fn repeat_suppression_resets_when_the_chat_session_changes() {
+        let now = Instant::now();
+        let mut first_message = chat("最初のコメント");
+        first_message.connection_generation = Some(1);
+        let mut next_session_message = first_message.clone();
+        next_session_message.id = "next-session".to_string();
+        next_session_message.connection_generation = Some(2);
+        let settings = crate::settings::AppSettings::default().speech;
+        let mut queue = SpeechQueueState::default();
+
+        assert!(suppress_repeated_message(&mut queue, &settings, &first_message, now).is_none());
+        queue.record_user_enqueue(first_message.user_id.clone(), now);
+        assert!(suppress_repeated_message(&mut queue, &settings, &first_message, now).is_some());
+        assert!(
+            suppress_repeated_message(&mut queue, &settings, &next_session_message, now).is_none()
+        );
+        assert!(queue.last_user_enqueue.is_empty());
+        assert_eq!(
+            queue.repeat_suppression_scope,
+            Some(RepeatSuppressionScope {
+                channel_id: next_session_message.channel_id,
+                connection_generation: Some(2),
+            })
+        );
+    }
+
+    #[test]
+    fn repeat_suppression_keeps_large_unique_input_bounded_without_full_map_cleanup() {
+        let now = Instant::now();
+        let message = chat("期限切れを掃除します");
+        let settings = crate::settings::AppSettings::default().speech;
+        let mut queue = SpeechQueueState::default();
+
+        assert!(suppress_repeated_message(&mut queue, &settings, &message, now).is_none());
+        for index in 0..MAX_REPEAT_SUPPRESSION_ENTRIES + 100 {
+            queue.record_user_enqueue(format!("viewer-{index}"), now);
+        }
+        assert_eq!(
+            queue.last_user_enqueue.len(),
+            MAX_REPEAT_SUPPRESSION_ENTRIES
+        );
+        assert_eq!(
+            queue.repeat_suppression_expirations.len(),
+            MAX_REPEAT_SUPPRESSION_ENTRIES
+        );
+
+        for _ in 0..MAX_REPEAT_SUPPRESSION_ENTRIES / REPEAT_SUPPRESSION_CLEANUP_BATCH {
+            assert!(suppress_repeated_message(
+                &mut queue,
+                &settings,
+                &message,
+                now + MAX_REPEAT_SUPPRESSION_WINDOW
+            )
+            .is_none());
+        }
+        assert!(queue.last_user_enqueue.is_empty());
+        assert!(queue.repeat_suppression_expirations.is_empty());
     }
 
     #[test]
