@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-09-23 Issue #173: 再開時の統合検証
+
+- 最新 main bb7f324 を既存 branch へ取り込み、並行した調査メモと TODO を保持した。cargo-audit 0.22.2 の online 監査は RustSec DB `1e640cd56d7604993e3a9ec392060666e3b95ccc` と registry 更新を含め成功した。7件の期限付き例外を適用した結果であり、上流指摘は残っている。
+- Issue #96 の validator で現在の例外を受理し、2026-10-22 では期限切れとして拒否することを確認した。GUI 非依存 Rust テスト115件、Tauri 有効構成161件が成功。最初の sandbox 内実行は loopback bind が拒否されたため、許可された環境で再実行した。#96 の main 統合後に完了を判定する。
+
 ## 2026-09-21 Issue #173: Tauri 上流由来 RustSec 指摘
 
 - 親レビューで `cargo-audit audit --file src-tauri/Cargo.lock --deny warnings` をonline実行し、RustSec DB `57ad4063bb49c1deb04b6fcee30cfbac6b508474` と crates.io index の取得を含めexit 0を確認した。これは7件の期限付き例外を適用した結果であり、依存自体の修正や警告の消滅を意味しない。
