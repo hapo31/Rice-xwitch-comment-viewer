@@ -6,6 +6,7 @@ cd "${repo_root}"
 
 expected_exceptions=(
   '!Dockerfile'
+  '!LICENSE'
   '!package.json'
   '!pnpm-lock.yaml'
   '!build/'
@@ -21,6 +22,7 @@ expected_exceptions=(
   '!scripts/verify-twitch-client-id.mjs'
   '!scripts/verify-release-build-inputs.mjs'
   '!scripts/record-build-materials.mjs'
+  '!scripts/verify-project-license.mjs'
   '!src/'
   '!src/**'
   '!src-tauri/'
@@ -38,12 +40,14 @@ expected_exceptions=(
 
 expected_copy_sources=(
   Dockerfile
+  LICENSE
   build/release-inputs.json
   index.html
   package.json
   pnpm-lock.yaml
   postcss.config.js
   scripts/record-build-materials.mjs
+  scripts/verify-project-license.mjs
   scripts/verify-release-build-inputs.mjs
   scripts/verify-twitch-client-id.mjs
   src
@@ -126,10 +130,12 @@ if ! diff -u \
 fi
 
 manifest_files=(
+  LICENSE
   Dockerfile
   build/release-inputs.json
   scripts/verify-release-build-inputs.mjs
   scripts/record-build-materials.mjs
+  scripts/verify-project-license.mjs
   package.json
   pnpm-lock.yaml
   index.html

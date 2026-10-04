@@ -2,7 +2,9 @@
 name = "rice"
 version = "0.2.3"
 description = "Twitch chat TTS desktop app"
-authors = ["rice"]
+authors = ["Rice contributors"]
+license = "MIT"
+repository = "https://github.com/hapo31/Rice-xwitch-comment-viewer"
 edition = "2021"
 
 [lib]

@@ -35,6 +35,10 @@ jobs:
           scripts/check-docker-context.sh
       - name: Check release workflow privilege boundary
         run: node scripts/verify-release-workflow-policy.mjs
+      - name: Verify project license consistency and packaging policy
+        run: |
+          node scripts/verify-project-license.mjs
+          node --test scripts/test-project-license.mjs
 
   frontend-unit:
     name: Frontend unit tests

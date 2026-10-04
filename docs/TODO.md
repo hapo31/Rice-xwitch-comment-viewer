@@ -9,6 +9,10 @@
 
 ## 現在の進捗サマリ
 
+- [x] Issue #101: 既存MIT正本にpackage/Cargo/bundle metadataを揃え、NSIS/portableへLICENSEを同梱し、contributionと自動検査を追加する。
+
+2026-10-05: Issue #101で権利者が既に配置したMIT正本を維持し、npm/Cargo/bundleとREADME、inbound=outboundの貢献条件を整合させた。NSIS license表示とinstalled resource、portable ZIP、直接Release assetへ同じLICENSEを同梱する。欠落/不一致/同梱漏れの7件のpolicy test、cargo check、Docker context/release guardsを確認した。Windows artifactの実行・同梱確認は配布smoke gateの検証と合わせて行う。
+
 - [x] Issue #99: 設定本体・backup・temporary・退避fileをowner-onlyで保存し、読込前に所有者・type・permissionを検証する。umask 022/000、過剰permission補正、リンク/非regular/foreign owner拒否を自動検証する。Windowsはuser profile ACL継承を使用する。
 
 2026-10-05: Issue #99 で settings storage のUnix permission invariantを実装した。共有ancestorを変更せず、読込前にowner-onlyへ補正する。Windows CIでは実ユーザーAppDataに本番SettingsStoreで保存し、directory、本体、backup、temporaryの所有者と許可SIDを検査する。packaged実機で独自profile ACLが設定された場合の確認は継続する。

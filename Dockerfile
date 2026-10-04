@@ -73,6 +73,8 @@ COPY scripts/verify-twitch-client-id.mjs ./scripts/verify-twitch-client-id.mjs
 RUN node scripts/verify-twitch-client-id.mjs
 
 COPY package.json pnpm-lock.yaml ./
+COPY LICENSE ./LICENSE
+COPY scripts/verify-project-license.mjs ./scripts/verify-project-license.mjs
 RUN pnpm install --frozen-lockfile
 
 COPY index.html postcss.config.js tailwind.config.js tsconfig.json vite.config.ts ./
@@ -82,19 +84,22 @@ COPY src-tauri/capabilities ./src-tauri/capabilities
 COPY src-tauri/icons ./src-tauri/icons
 COPY src-tauri/src ./src-tauri/src
 
+RUN node scripts/verify-project-license.mjs --bundle
 RUN pnpm tauri build --bundles nsis --runner cargo-xwin --target "${WINDOWS_TARGET}"
 
 RUN node scripts/verify-twitch-client-id.mjs "src-tauri/target/${WINDOWS_TARGET}/release/rice.exe"
 
 RUN mkdir /out \
+    && cp LICENSE /out/LICENSE \
     && find "src-tauri/target/${WINDOWS_TARGET}/release/bundle/nsis" \
         -maxdepth 1 \
         -type f \
         -exec cp {} /out/ \; \
     && app_version="$(node -p 'require("./package.json").version')" \
     && cd "src-tauri/target/${WINDOWS_TARGET}/release" \
-    && touch -d "@${SOURCE_DATE_EPOCH}" rice.exe \
-    && zip -X -9 "/out/Rice_${app_version}_${WINDOWS_TARGET}_portable.zip" rice.exe
+    && cp /work/LICENSE LICENSE \
+    && touch -d "@${SOURCE_DATE_EPOCH}" rice.exe LICENSE \
+    && zip -X -9 "/out/Rice_${app_version}_${WINDOWS_TARGET}_portable.zip" rice.exe LICENSE
 
 RUN node scripts/record-build-materials.mjs && test -s /out/BUILD-MATERIALS.json
 

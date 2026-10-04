@@ -5,6 +5,7 @@
 
 # Dockerfile release inputs.
 !Dockerfile
+!LICENSE
 !package.json
 !pnpm-lock.yaml
 !build/
@@ -20,6 +21,7 @@
 !scripts/verify-twitch-client-id.mjs
 !scripts/verify-release-build-inputs.mjs
 !scripts/record-build-materials.mjs
+!scripts/verify-project-license.mjs
 !src/
 !src/**
 !src-tauri/

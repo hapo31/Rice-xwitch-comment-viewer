@@ -32,6 +32,8 @@ jobs:
 
       - name: Test release guards
         run: |
+          node scripts/verify-project-license.mjs
+          node --test scripts/test-project-license.mjs
           node scripts/test-twitch-client-id.mjs
           bash scripts/test-publish-release.sh
 
@@ -157,6 +159,7 @@ jobs:
           test -n "$(find release-artifacts -maxdepth 1 -type f -name '*.zip' -print -quit)"
           test -s release-artifacts/BUILD-MATERIALS.json
           test -s release-artifacts/Rice.sbom.cdx.json
+          cmp LICENSE release-artifacts/LICENSE
           (cd release-artifacts && sha256sum * > SHA256SUMS.txt)
 
       - name: Upload release artifact bundle
