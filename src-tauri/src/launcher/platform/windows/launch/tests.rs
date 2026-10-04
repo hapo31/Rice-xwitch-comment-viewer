@@ -24,7 +24,11 @@ impl Fixture {
                 .as_nanos()
         ));
         fs::create_dir(&path).unwrap();
-        Self(path)
+        // WSH expects DOS/UNC paths, not the Win32 verbatim form. Use the same
+        // normalization as production target resolution before creating links.
+        Self(crate::launcher::platform::normalize_canonical_path(
+            path.canonicalize().unwrap(),
+        ))
     }
     fn cleanup(&self) -> Result<(), std::io::Error> {
         std::env::remove_var("RICE_LAUNCH_PROBE_OUT");
@@ -71,7 +75,8 @@ $ErrorActionPreference = 'Stop'
 [Console]::Error.WriteLine('fixture-stage: PowerShell started')
 $link = (New-Object -ComObject WScript.Shell).CreateShortcut($env:RICE_TEST_LINK)
 [Console]::Error.WriteLine('fixture-stage: COM link created')
-$link.TargetPath = $env:RICE_TEST_TARGET
+[Console]::Error.WriteLine('fixture-target: ' + $env:RICE_TEST_TARGET + '; exists=' + [IO.File]::Exists($env:RICE_TEST_TARGET))
+$link.TargetPath = [string]$env:RICE_TEST_TARGET
 $link.Arguments = $env:RICE_TEST_ARGS
 $link.WorkingDirectory = $env:RICE_TEST_CWD
 $link.IconLocation = $env:RICE_TEST_TARGET + ',0'
@@ -134,6 +139,17 @@ async fn real_links_validate_target_arguments_workdir_permissions_and_partial_su
         .arg("-o")
         .arg(&executable);
     capture_bounded(compile, Duration::from_secs(30), 4096).unwrap();
+    assert!(
+        executable.is_file(),
+        "probe compiler must create the expected executable: {}",
+        executable.display()
+    );
+    assert_eq!(&fs::read(&executable).unwrap()[..2], b"MZ");
+    println!(
+        "fixture executable={} (UTF-16 units={})",
+        executable.display(),
+        executable.to_string_lossy().encode_utf16().count()
+    );
     let valid = fixture.0.join("valid link.lnk");
     let args = "\"日本語 空白\" & | < > ^ % $";
     make_link(&valid, &executable, args, &work_dir);
