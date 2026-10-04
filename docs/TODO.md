@@ -1,8 +1,8 @@
 # 実装 TODO
 
-- [ ] Issue #85: blocked/skipped/errorの型付き理由・安全な日本語説明・復旧操作・発生時刻を項目へ保持し、snapshot/reload/late subscriberとChatへ伝える。Queue/Chatの詳細導線、item ID付きwarning/log、履歴上限と機微情報非複製を契約/DOM/fake-workerで検証する。
+- [x] Issue #85: blocked/skipped/errorの型付き理由・安全な日本語説明・復旧操作・発生時刻を項目へ保持し、snapshot/reload/late subscriberとChatへ伝える。Queue/Chatの詳細導線、item ID付きwarning/log、履歴上限と機微情報非複製を契約/DOM/fake-workerで検証する。
 
-2026-10-05: Issue #85で全21codeのkind別outcomeを導入し、formatter/連投/overflow/skip/remove/clear/adapter failureへ付与した。自動retry中は直前理由を保持し、manual retry/正常完了で消す。safe日本語へNG一致語/adapter detailをコピーせず、warning/logにitem IDを付ける。Chatの同status理由更新・非modal詳細paneとfocus、Queueのskip履歴toggle/削除・復旧routeを追加した。共通fixture、最新snapshot/reload/late subscriber、200件上限、取消/遅延結果9順序と6,144操作列を含むRust all-features219件/no-default168件、frontend279件、strict clippy/fmt、format/lint/typecheck/build/security/licenseとquality policy3件が成功。Windows/Linux継続CIの結果確認までは未完了とする。
+2026-10-05: Issue #85で全21codeのkind別outcomeを導入し、formatter/連投/overflow/skip/remove/clear/adapter failureへ付与した。自動retry中は直前理由を保持し、manual retry/正常完了で消す。safe日本語へNG一致語/adapter detailをコピーせず、warning/logにitem IDを付ける。Chatの同status理由更新・非modal詳細paneとfocus、Queueのskip履歴toggle/削除・復旧routeを追加した。共通fixture、最新snapshot/reload/late subscriber、200件上限、取消/遅延結果9順序と6,144操作列を含むRust all-features219件/no-default168件、frontend279件、strict clippy/fmt、format/lint/typecheck/build/security/licenseとquality policy3件が成功。[Windows/Linux契約CI](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37235933123)、[品質全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37235933304)、[feature matrix](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37235933100)、[Windows実動focus](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37235933133)も成功した。実棒読みちゃん/配布物全般のsmokeは#91と区別し、既知npm Highによるrelease blockは維持する。
 
 - [x] Issue #66: 多重起動禁止を正式方針とし、2回目起動で既存main windowを復元/focusする。設定のprocess-lifetime writer lockを読込前に取得し、全saveを同じ所有権で保護する。2 processの競合と終了後の解放を自動検証する。
 

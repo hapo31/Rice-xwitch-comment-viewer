@@ -5,6 +5,7 @@
 - 一時warningだけへ保存していたformatter/連投理由をBlockedReasonへ、取消を4つのSkippedReasonへ、worker失敗を既存FailureCodeへ統一した。outcomeはkindで判別する共通契約とし、安全な固定日本語、retryable/recoveryAction、遷移時刻をbounded item/historyへ持たせる。adapter detailやNG一致語を理由へコピーせず、warning/logへitem IDを付ける。
 - auto retry中は直前の失敗を保持し、manual retry/正常完了で消す。取消後に到着する結果は理由も変更しない。occurredAtMsはUTC wall clockの説明用値で、既存のmonotonic revision/IDによる順序を変更しない。
 - Queueは既定のskip非表示を維持しつつ履歴toggleを追加する。Chatは状態buttonから非modal下部詳細paneを開き、既存の行高さを保つ。復旧routeはfrontendに留め、keyboard opening/Escape/return focus、同status理由更新、理由消失時のfocus、snapshot/reload/late subscriptionをDOMとbridge/storeで検証する。
+- 最終コード2c5182eでRust all-features219件/no-default168件、frontend279件、strict clippy/fmtと全frontend/build/security/license検査、quality policy3件を確認した。[Windows/Linux CI](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37235933123)では各platformの新outcome6件とlatest snapshot1件を明示実行し、本番worker/既存操作列も成功した。[quality全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37235933304)と[Windows実動single-instance](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37235933133)も成功した。依存追加はなく、既知advisoryのrelease blockを変更しない。
 
 ## 2026-10-05 Issue #66: 多重起動禁止と設定writer所有権
 
