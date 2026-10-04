@@ -1376,6 +1376,9 @@ foreach ($path in @($env:RICE_ACL_DIRECTORY, $env:RICE_ACL_FILE, $env:RICE_ACL_B
 "#;
         let output = std::process::Command::new("powershell.exe")
             .args(["-NoProfile", "-NonInteractive", "-Command", check])
+            // A parent PowerShell 7 process exports its module path. Windows
+            // PowerShell must rebuild its own compatible built-in module path.
+            .env_remove("PSModulePath")
             .env("RICE_ACL_DIRECTORY", &directory)
             .env("RICE_ACL_FILE", &path)
             .env("RICE_ACL_BACKUP", backup_path(&path))
