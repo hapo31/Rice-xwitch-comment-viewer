@@ -8,7 +8,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, IsIconic, ShowWindow, SW_MINIMIZE,
+    GetForegroundWindow, IsIconic, PostMessageW, ShowWindow, SW_MINIMIZE, WM_CLOSE,
 };
 
 const FIXTURE: &str = "single_instance::windows_tests::native_instance_fixture";
@@ -83,6 +83,26 @@ fn wait_until(mut predicate: impl FnMut() -> bool, message: &str) {
     while !predicate() {
         assert!(Instant::now() < deadline, "{message}");
         std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn remove_fixture_directory(root: &std::path::Path) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        match std::fs::remove_dir_all(root) {
+            Ok(()) => return,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            // WebView2 browser processes release the isolated user-data folder
+            // asynchronously after the host closes. Retry only Windows sharing,
+            // lock and nonempty-directory races, and never hide a cleanup failure.
+            Err(error)
+                if matches!(error.raw_os_error(), Some(32 | 33 | 145))
+                    && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(error) => panic!("remove exact isolated fixture directory: {error}"),
+        }
     }
 }
 
@@ -169,7 +189,19 @@ fn native_two_process_restore_and_focus() {
         before,
         "second launch never writes stale settings"
     );
+    // Let the production window/WebView shutdown path release browser storage,
+    // rather than abruptly killing its host after successful assertions.
+    assert_ne!(unsafe { PostMessageW(hwnd, WM_CLOSE, 0, 0) }, 0);
+    let mut owner_status = None;
+    wait_until(
+        || {
+            owner_status = owner.0.try_wait().expect("owner shutdown status");
+            owner_status.is_some()
+        },
+        "owner closes normally",
+    );
+    assert!(owner_status.expect("owner exit status").success());
     drop(contender);
     drop(owner);
-    std::fs::remove_dir_all(&root).expect("remove exact isolated fixture directory");
+    remove_fixture_directory(&root);
 }
