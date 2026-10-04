@@ -99,6 +99,7 @@ Rust:
 - WebSocket再接続状態遷移のユニットテスト
 - ランチャー項目の拡張子、重複、順序、旧設定互換のユニットテスト
 - 設定JSONの原子的保存、disk full/replace failure、破損本体/backup復旧のユニットテスト
+- 設定writerの別OS process間排他、正常終了/異常終了後の解放、再読込後の別section更新保持。Windows CIではproduction builderによる2回目起動の正常終了、実main windowの最小化解除/foreground、設定bytes非変更も検証する。
 
 TypeScript:
 

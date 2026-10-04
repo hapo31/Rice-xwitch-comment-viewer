@@ -181,6 +181,7 @@ backend は bounded な operational log ring と Twitch（auth/chat）/speech �
 ## 永続化
 
 - 一般設定: Tauriのapp data配下にJSON保存。同一ディレクトリの一時ファイルへ書き込み・`sync_all` した後、OSごとの atomic replace で `settings.json` を更新する。直前の正常版は `settings.json.bak` 1世代だけ保持する。
+- 多重起動: 正式方針は同一アプリの複数起動禁止。最初にsingle-instance pluginを登録し、2回目は既存main windowをshow/unminimize/focusして終了する。起動setup完了前の通知は保留して完了時に処理し、引数/cwdをcommandとして解釈しない。設定の読込・初期作成・破損復旧より前に、同じapp dataの固定`settings.writer.lock`を非blockingで排他lockし、process lifetimeのmanaged stateが保持する。全Settings/Launcher/window保存で同じ所有権と保存先を確認する。pluginの通知が失敗しても2つ目のwriterは設定に触れる前に失敗する。lock fileは削除/atomic replaceしない（inodeの分裂を防ぐ）；OSが正常終了/異常終了で所有権を解放する。手動lock削除による起動回避は非サポートであり、他ユーザー/同一ユーザーの悪意あるprocessの隔離機構ではない。
 - ウィンドウ位置: `settings.json` の `window.position` に物理ピクセル座標を保存する。終了要求時とアプリ内の終了操作で保存し、次回起動時は現在のいずれかのモニター作業領域にタイトルバー相当（64 x 32px）以上が残る位置だけを復元する。モニター構成の変更で画面外になる位置は復元せず、初期の中央配置を使う。
 - 設定復旧: 起動時に本体のJSON構文または検証対象の設定値が不正なら backup を同じ契約で検証して復旧する。backup も不正または不在なら、無効なファイルを `settings.json.corrupt-<timestamp>-<suffix>` として退避して既定値で起動する。復旧理由・内容・退避先は Logs、system Chat、警告通知に日本語で表示する。
 - ランチャー項目: 一般設定の `launcher.items` に保存する。`kind`, `target`, `displayName`, `order` と、将来用の `backgroundColor`, `groupId`, `iconDataUrl` を境界として持つ。

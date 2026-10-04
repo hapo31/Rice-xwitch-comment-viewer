@@ -1,6 +1,8 @@
 mod app_events;
 mod launcher;
 mod settings;
+#[cfg(feature = "app")]
+mod single_instance;
 mod speech;
 mod twitch;
 
@@ -84,9 +86,26 @@ fn app_build_info() -> AppBuildInfo {
 
 #[cfg(feature = "app")]
 pub fn run() {
+    app_builder()
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
+#[cfg(feature = "app")]
+fn app_builder() -> tauri::Builder<tauri::Wry> {
+    app_builder_with_state(AppState::default())
+}
+
+#[cfg(feature = "app")]
+fn app_builder_with_state(state: AppState) -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
+        // The ownership plugin must be first, before other plugins and setup.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            single_instance::request_activation(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState::default())
+        .manage(single_instance::PendingActivation::default())
+        .manage(state)
         .manage(AppEventState::default())
         .invoke_handler(tauri::generate_handler![
             app_exit,
@@ -196,6 +215,7 @@ pub fn run() {
                     );
                 }
             }
+            single_instance::mark_ready(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -203,8 +223,6 @@ pub fn run() {
                 persist_main_window_position(window.app_handle());
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
 }
 
 #[cfg(feature = "app")]

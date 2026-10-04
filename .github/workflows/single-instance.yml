@@ -1,0 +1,48 @@
+name: Native single instance
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-focus:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Read reviewed compiler inputs
+        id: inputs
+        run: |
+          $inputs = Get-Content build/release-inputs.json -Raw | ConvertFrom-Json
+          "node=$($inputs.nodeVersion)" >> $env:GITHUB_OUTPUT
+          "rust=$($inputs.rustVersion)" >> $env:GITHUB_OUTPUT
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ steps.inputs.outputs.node }}
+      - name: Build the real embedded frontend
+        run: |
+          corepack enable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          corepack prepare pnpm@8.11.0 --activate
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm install --frozen-lockfile --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Use reviewed Rust
+        env:
+          REVIEWED_RUST: ${{ steps.inputs.outputs.rust }}
+        run: |
+          rustup toolchain install $env:REVIEWED_RUST --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup override set $env:REVIEWED_RUST
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify real second launch exits, preserves settings and restores foreground window
+        # This explicitly runs the headful test. Missing WebView2/desktop or
+        # failed restoration is a failure, never a skipped smoke result.
+        run: cargo test --locked --all-features --manifest-path src-tauri/Cargo.toml single_instance::windows_tests::native_two_process_restore_and_focus -- --exact --ignored --nocapture

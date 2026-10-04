@@ -23,3 +23,5 @@ jobs:
           rustup override set $releaseRust
       - name: Verify application settings directory, replacement, backup and temporary ACLs
         run: cargo test --locked --no-default-features --manifest-path src-tauri/Cargo.toml settings::tests::settings_in_app_data_inherit_only_current_user_and_system_acl -- --exact
+      - name: Verify process-lifetime writer ownership, normal exit and crash release
+        run: cargo test --locked --no-default-features --manifest-path src-tauri/Cargo.toml settings::writer::tests

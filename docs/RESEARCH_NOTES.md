@@ -1,5 +1,12 @@
 # 調査メモ
 
+## 2026-10-05 Issue #66: 多重起動禁止と設定writer所有権
+
+- ownerの[多重起動禁止の判断](https://github.com/hapo31/Rice-xwitch-comment-viewer/issues/66#issuecomment-5154957888)に従う。CASや複数profile機能は追加しない。[Tauri公式single-instance手順](https://v2.tauri.app/plugin/single-instance/)に従い最初のpluginとして登録する。公式plugin 2.5.2のmanifestでMSRV 1.90 / Apache-2.0 OR MITを確認し、既存固定compilerに合わせて版を固定した。新規Linux zbus系を含む10依存も許可済みpermissive licenseを確認した。
+- pluginのWindows/Linux実装を確認した。通知可能な既存ownerへcallbackを送って2回目を終了する一方、Windowsの初期化競合やLinuxのDBus登録失敗ではpluginだけで設定排他を保証できない。固定lock fileの所有権をsettings loadの前に取得し、所有者でないsaveも拒否する。終了時にlock fileを削除すると別inodeへの二重lockを許すため削除しない。[std File::try_lock](https://doc.rust-lang.org/std/fs/struct.File.html#method.try_lock)はRust 1.89以降、Unix flock / Windows LockFileExに対応し、Fileをprocess lifetimeのmanaged stateで保持する。
+- native Windows CIはproduction builder/plugin/setupと実embedded frontendを使う。最小化した実HWNDの復元・foreground一致、2回目の正常終了、設定bytes非変更をassertする。desktop/WebView2不足は失敗として扱う。Windowsのknown-folder APIはAPPDATA環境変数だけでは隔離できないため、[Tauri appDirectoriesOverride](https://v2.tauri.app/reference/config/#appdirectoriesoverride)をtest contextだけで指定し、全app directory/WebView保存先を固有tempへ隔離する。資格情報は既存store injectionへ空のfake backendを渡し、実keyringへ触れない。production command/capabilityやtest環境変数による本番設定変更は追加しない。
+- headlessの別OS process検証はownerがNG設定を保存後、contenderを読込前に拒否し、正常終了/kill後のsuccessorが再読込して別sectionを更新してもNGを維持する。lockの保存先一致、Unix permission/link拒否も検証する。native focusの成否とWindows runtime全般・配布物のsmoke（#91）は区別する。
+
 ## 2026-10-05 Issue #173: Tauri 2.12への更新と例外縮小
 
 - 最新の公式crates.io indexでTauri 2.12.1 / Tauri Utils 2.10.1が公開済みであることを確認した。両者のMSRVはRust 1.90。Utilsのurlpatternが0.6へ更新されたため、Rust/compilerの固定policyとdevcontainer bootstrapを同じimmutable Rust 1.90.0 image digestへ変更し、Tauriを2.12.1へ更新した。依存解決によりunic系5crateがlockfileから除去された。

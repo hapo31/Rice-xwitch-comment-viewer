@@ -1,5 +1,9 @@
 # 実装 TODO
 
+- [ ] Issue #66: 多重起動禁止を正式方針とし、2回目起動で既存main windowを復元/focusする。設定のprocess-lifetime writer lockを読込前に取得し、全saveを同じ所有権で保護する。2 processの競合と終了後の解放を自動検証する。
+
+2026-10-05: Issue #66でsingle-instance pluginを最初に登録し、setup前のactivationを保留してshow/unminimize/focusする。固定lockを設定読込/初期化/復旧の前に取得してprocess lifetimeで保持し、全保存経路で所有権を確認する。別OS processによる競合、正常終了/kill後の解放、別section更新の保持、保存先/permission/link拒否を追加した。Rust all-features210件/no-default159件、strict clippy/fmt、frontend238件、format/lint/typecheck/build/security/license検査が成功。Windows native CIへ実HWND復元/foreground、2回目の正常終了、設定非変更の明示実行を追加し、結果確認までは未完了とする。更新後の依存監査はRust既知例外2件だけで追加指摘なし；npm braces High1件によるrelease blockは維持する。
+
 - [x] Issue #72: 本番enqueue/control/workerをfake adapter・clock・sinkで再生し、200件overflow・複数ユーザーの連投境界・取消と遅延結果・pause/resume・並行enqueue・復旧/手動再試行・snapshotと操作列の不変条件を網羅する。
 
 2026-10-05: Issue #72で本番enqueue/control mutationをTauri wrapperから抽出し、#70のfake workerへ16シナリオを追加した。送信中を保持する200件overflow、0/1/2/30秒と複数ユーザー、取消/遅延結果9順序、pause/resumeと複数barrier、699/700msとretry待ち中clear、復旧後の手動再試行、async 2世代/20 native threadの単一worker、固定3seedの6,144操作、snapshot/NG/自動OFFを検証した。テストで満杯の手動再試行が201件になる不具合を再現し、空きがなければ履歴を保持して拒否するよう修正した。Rust all-features203件/no-default154件、strict clippy/fmt/build/securityが成功。Windows/Linux CIにもfake workerと純粋model検証を追加した。実棒読みちゃん/Windows配布WebViewの手動smokeは別に追跡する。

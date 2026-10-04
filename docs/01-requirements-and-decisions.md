@@ -45,11 +45,13 @@ Twitch chat -> Tauri app -> Speech adapter -> bouyomichan or VOICEROID2
 | 読み上げMVP | 棒読みちゃんTCP | 既存の配信環境に近く、RustからTCPで実装しやすい。棒読みちゃん側の辞書、SAPI連携、VOICEROID2連携資産を活かせる。 |
 | VOICEROID2直接連携 | 実験的アダプタ | RemoteControl.VoiceroidやUI Automation実装例はあるが、Windows/.NET/製品バージョン依存が強い。MVPの安定性を優先して分離する。 |
 | ランチャー | アプリパスを一般設定に保存し、Rust command経由で起動 | 起動対象の検証をWebViewへ委ねず、将来の色・グループ・並べ替え・Webリンク追加に備えた項目モデルを使う。 |
+| 多重起動 | 禁止し、2回目は既存ウィンドウを復元して前面へ出す | 同じapp dataの設定を1 processだけが所有し、NG設定とLauncher等の無関係な変更がstale snapshotで失われることを防ぐ。 |
 
 ## 非目標
 
 - 配信映像やOBS操作を直接管理する。
 - 複数配信サイトを最初からサポートする。
+- 同じ設定を共有する複数のRice processや、複数profileの同時運用。
 - VOICEROID2のライセンス制約を迂回する。
 - Twitchチャットへの投稿機能をMVPに含める。
 - ランチャー初期実装ではWebサイト登録、タイル色の編集、グループ編集、ドラッグによる並べ替えを含めない。ただしデータモデルとUI境界には拡張余地を残す。

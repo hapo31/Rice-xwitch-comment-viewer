@@ -15,6 +15,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(feature = "app")]
 use tauri::Manager;
 
+mod writer;
+
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -281,6 +283,7 @@ impl SettingsStore {
     #[cfg(feature = "app")]
     pub fn load<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyhow::Result<LoadedSettings> {
         let path = settings_path(app)?;
+        writer::initialize(app, &path)?;
         Self::load_from_path(&path)
     }
 
@@ -312,6 +315,7 @@ impl SettingsStore {
         settings: &AppSettings,
     ) -> anyhow::Result<()> {
         let path = settings_path(app)?;
+        writer::require_owned(app, &path)?;
         Self::save_to_path(&path, settings)
     }
 
@@ -853,7 +857,7 @@ mod tests {
 
     static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    fn settings_path_for_test(name: &str) -> PathBuf {
+    pub(super) fn settings_path_for_test(name: &str) -> PathBuf {
         let counter = TEST_DIRECTORY_COUNTER.fetch_add(1, Ordering::Relaxed);
         let directory = std::env::temp_dir().join(format!(
             "rice-settings-{name}-{}-{counter}",
@@ -869,7 +873,7 @@ mod tests {
         settings
     }
 
-    fn cleanup(path: &std::path::Path) {
+    pub(super) fn cleanup(path: &std::path::Path) {
         fs::remove_dir_all(path.parent().expect("test path parent"))
             .expect("remove test directory");
     }
