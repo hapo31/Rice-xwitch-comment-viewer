@@ -166,7 +166,7 @@ export function AppShell() {
       dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
     }
     if (hasPendingSpeech && results[1].status === "fulfilled") {
-      dispatch({ type: "speech.status", status: "idle" });
+      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "idle" });
     }
     for (const result of results) {
       if (result.status === "rejected") reportError(result.reason, "exit");
@@ -399,12 +399,12 @@ export function AppShell() {
   async function handleSpeechTest(text?: string) {
     try {
       const speechText = typeof text === "string" ? text : "テスト読み上げです。";
-      dispatch({ type: "speech.status", status: "speaking" });
+      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "speaking" });
       await speechTest(speechText);
-      dispatch({ type: "speech.status", status: "idle" });
+      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "idle" });
       reportInfo("テスト読み上げを送信しました。");
     } catch (error) {
-      dispatch({ type: "speech.status", status: "error" });
+      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "error" });
       reportError(error, "speech");
     }
   }
@@ -412,10 +412,10 @@ export function AppShell() {
   async function handleSpeechHealthCheck() {
     try {
       const message = await speechHealthCheck();
-      dispatch({ type: "speech.status", status: "idle" });
+      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "idle" });
       reportInfo(message);
     } catch (error) {
-      dispatch({ type: "speech.status", status: "disconnected" });
+      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "disconnected" });
       reportError(error, "speech");
     }
   }
@@ -628,9 +628,10 @@ export function AppShell() {
 
     try {
       await speechControl(command);
-      dispatch({ type: "speech.status", status: command === "pause" ? "paused" : "idle" });
+      if (!isDesktopRuntime())
+        dispatch({ type: "speech.status", status: command === "pause" ? "paused" : "idle" });
     } catch (error) {
-      dispatch({ type: "speech.status", status: "error" });
+      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "error" });
       reportError(error, "speech");
     }
   }

@@ -152,7 +152,7 @@ enum SpeechQueueFailureTransition {
 #[cfg(feature = "app")]
 enum SpeechDeliveryOutcome {
     Completed,
-    SubmittedUnconfirmed(String),
+    SubmittedUnconfirmed(bouyomi::SpeechFailure),
 }
 
 impl SpeechQueueState {
@@ -378,7 +378,16 @@ impl SpeechQueueState {
         true
     }
 
+    #[cfg(test)]
     fn fail_request(&mut self, request_id: &str) -> SpeechQueueFailureTransition {
+        self.fail_request_with_retry(request_id, true)
+    }
+
+    fn fail_request_with_retry(
+        &mut self,
+        request_id: &str,
+        retryable: bool,
+    ) -> SpeechQueueFailureTransition {
         if self
             .in_flight
             .as_ref()
@@ -387,7 +396,7 @@ impl SpeechQueueState {
             return SpeechQueueFailureTransition::Ignored;
         }
         let mut item = self.in_flight.take().expect("in-flight checked");
-        if item.retry_count == 0 {
+        if retryable && item.retry_count == 0 {
             item.retry_count = 1;
             item.status = SpeechQueueItemStatus::Queued;
             item.delivery_state = SpeechQueueDeliveryState::RetryScheduled;
@@ -1020,7 +1029,8 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                 queue.complete_request(&request.id);
                 emit_queue_snapshot(&app, &queue, None);
             }
-            Ok(SpeechDeliveryOutcome::SubmittedUnconfirmed(message)) => {
+            Ok(SpeechDeliveryOutcome::SubmittedUnconfirmed(failure)) => {
+                let message = failure.user_message.clone();
                 let state = app.state::<AppState>();
                 let mut queue = match state.speech_queue.lock() {
                     Ok(queue) => queue,
@@ -1030,8 +1040,8 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                     }
                 };
                 if queue.fail_after_acceptance(&request.id) {
-                    emit_speech_status(&app, SpeechStatus::Error, Some(message.clone()));
-                    emit_app_log(&app, AppLogLevel::Error, message.clone());
+                    emit_speech_status(&app, failure.status, Some(message.clone()));
+                    emit_app_log(&app, AppLogLevel::Error, failure.log_message());
                     emit_queue_snapshot(&app, &queue, Some(message));
                 } else {
                     emit_app_log(
@@ -1041,7 +1051,8 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                     );
                 }
             }
-            Err(error_message) => {
+            Err(failure) => {
+                let error_message = &failure.user_message;
                 let transition;
                 {
                     let state = app.state::<AppState>();
@@ -1052,24 +1063,36 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                             return;
                         }
                     };
-                    transition = queue.fail_request(&request.id);
+                    transition = queue.fail_request_with_retry(&request.id, failure.retryable);
                     if transition == SpeechQueueFailureTransition::Ignored {
                         emit_app_log(
                             &app,
                             AppLogLevel::Warning,
-                            format!("取消済みの読み上げ送信が失敗しました: {error_message}"),
+                            format!(
+                                "取消済みの読み上げ送信が失敗しました: {}",
+                                failure.log_message()
+                            ),
                         );
                         continue;
                     }
                     let queue_message = match transition {
                         SpeechQueueFailureTransition::RetryScheduled => error_message.clone(),
-                        SpeechQueueFailureTransition::RetryExhausted => format!(
-                            "{error_message} 自動再試行を終了し、エラー履歴へ移しました。Queue の「再試行」で明示的に復旧できます。"
-                        ),
+                        SpeechQueueFailureTransition::RetryExhausted => {
+                            let note = if failure.retryable {
+                                "自動再試行を終了しました。"
+                            } else {
+                                "安全な自動再試行はできないため、再送していません。"
+                            };
+                            format!("{error_message} {note} エラー履歴へ移しました。状態を確認してからQueueの「再試行」を使ってください。")
+                        }
                         SpeechQueueFailureTransition::Ignored => error_message.clone(),
                     };
-                    emit_speech_status(&app, SpeechStatus::Error, Some(queue_message.clone()));
-                    emit_app_log(&app, AppLogLevel::Error, queue_message.clone());
+                    emit_speech_status(&app, failure.status, Some(queue_message.clone()));
+                    emit_app_log(
+                        &app,
+                        AppLogLevel::Error,
+                        format!("{queue_message} {}", failure.log_message()),
+                    );
                     emit_queue_snapshot(&app, &queue, Some(queue_message));
                 }
                 if transition == SpeechQueueFailureTransition::RetryScheduled {
@@ -1140,10 +1163,13 @@ async fn wait_for_queue_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<()
 async fn submit_speech_request_from_settings(
     app: &tauri::AppHandle<tauri::Wry>,
     request: &SpeechRequest,
-) -> Result<bouyomi::BouyomiAdapter, String> {
+) -> Result<bouyomi::BouyomiAdapter, bouyomi::SpeechFailure> {
     let state = app.state::<AppState>();
     let (host, port, defaults) = {
-        let settings = state.settings.lock().map_err(|error| error.to_string())?;
+        let settings = state
+            .settings
+            .lock()
+            .map_err(|error| bouyomi::SpeechFailure::unknown(error.to_string()))?;
         (
             settings.speech.bouyomi_host.clone(),
             settings.speech.bouyomi_port,
@@ -1162,11 +1188,12 @@ async fn submit_speech_request_from_settings(
         port,
         defaults,
         state.bouyomi_dispatcher.clone(),
-    )?;
+    )
+    .map_err(bouyomi::SpeechFailure::configuration)?;
     adapter
         .send_talk_after_dispatch_lock(&request.text)
         .await
-        .map_err(bouyomi::to_user_message)?;
+        .map_err(bouyomi::classify_error)?;
     Ok(adapter)
 }
 
@@ -1805,6 +1832,22 @@ mod tests {
         assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Skipped);
         assert_eq!(queue.history[1].id, "blocked");
         assert!(!queue.remove_pending_item("blocked"));
+    }
+
+    #[test]
+    fn uncertain_delivery_failure_is_not_scheduled_for_automatic_retry() {
+        let mut queue = SpeechQueueState::default();
+        queue.pending.push_back(queued_item("uncertain"));
+        let request = queue.reserve_next_request_after_dispatch_lock().unwrap();
+        let failure = bouyomi::classify_error(bouyomi::BouyomiError::WriteTimeout.into());
+        assert_eq!(
+            queue.fail_request_with_retry(&request.id, failure.retryable),
+            SpeechQueueFailureTransition::RetryExhausted
+        );
+        assert!(queue.pending.is_empty());
+        assert!(queue.in_flight.is_none());
+        assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Error);
+        assert_eq!(queue.history[0].retry_count, 0);
     }
 
     #[test]

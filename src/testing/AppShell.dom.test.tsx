@@ -250,6 +250,43 @@ it("command rejection is handled and remains visible in Logs", async () => {
   ).toBeInTheDocument();
 });
 
+it.each([
+  ["speech_health_check", "接続確認", "disconnected"],
+  ["speech_health_check", "接続確認", "error"],
+  ["speech_test", "テスト読み上げ", "disconnected"],
+  ["speech_test", "テスト読み上げ", "error"],
+  ["speech_pause", "一時停止", "disconnected"],
+  ["speech_pause", "一時停止", "error"],
+] as const)(
+  "native %s (%s) failure retains classified %s state",
+  async (command, button, status) => {
+    tauriMock.setCommand(command, () => {
+      tauriMock.emit("speech://status", {
+        revision: 10,
+        status,
+        adapterHealth: status,
+        occurredAtMs: 1,
+        message: "型付きの原因と復旧案内",
+      });
+      throw new Error("型付きの原因と復旧案内");
+    });
+    const user = userEvent.setup();
+    const { stores } = mountApp("/settings");
+    await ready(stores);
+    await user.click(screen.getByRole("button", { name: button }));
+    await waitFor(() =>
+      expect(stores.logs.getState().notifications.some((entry) => entry.severity === "error")).toBe(
+        true,
+      ),
+    );
+    expect(stores.connection.getState()).toMatchObject({
+      speechStatus: status,
+      speechAdapterHealth: status,
+      speechRevision: 10,
+    });
+  },
+);
+
 it("StrictMode keeps one subscription and one update per event after delayed registration", async () => {
   tauriMock.delaySubscriptions();
   const { stores, unmount } = mountApp("/chat", true);

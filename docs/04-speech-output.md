@@ -88,6 +88,16 @@ pub struct BouyomiTalkConfig {
 - 正規化（制御文字・空白・emote 除外など）の後に本文が空なら、ユーザー名読み上げの ON/OFF にかかわらず理由 `読み上げる本文がありません。` で `Blocked` とする。空の talk packet やユーザー名だけの読み上げは送信しない。
 - 棒読みちゃんタグを許可するかは設定で切り替える。初期値は安全側で「チャット由来タグを無効化/エスケープ」する。
 
+## 通信失敗の分類
+
+connect/write/responseのtimeoutとI/O、設定不正、非互換応答を`BouyomiError`で区別する。OSの表示文やerror番号の部分一致では判定しない。`io::ErrorKind`から共通のfailure code、status、再試行可否、日本語短文を導出し、queue・接続確認・無音probe・test・control・diagnosticsで同じ原因に同じ分類を使う。接続拒否、接続timeout、切断は`Disconnected`、設定不正や非互換応答は`Error`。元のcause chainはLogsへ残し、UIへ低レベルの英語文を混ぜない。
+
+talkの自動再試行は、packetを書き始める前の一時的な接続失敗だけに限る。write失敗/timeoutや受付後のresponse失敗は届いた可能性があるため自動再送しない。履歴へ保持し、利用者が状態を確認してから明示的に再試行する。制御失敗はローカルqueue未変更と相手側の到達不明を付記するが、根本原因のstatusと復旧案内は同じ分類を使う。
+
+`SpeechAdapter::health_check`は無音probeを行う。transportの未接続は`Ok(SpeechHealth::Disconnected)`、設定/protocol/unknownは型付きfailureを保持した`Err`とする。Windows/Linuxのnative error→ErrorKind→分類、表示localeに依存しないmapping、fake transport、write timeoutを`bouyomi-errors.yml`で継続検証する。healthとqueue phaseの独立保持は#69、アダプタ注入境界は#70で扱う。
+
+参考: [Rust ErrorKind](https://doc.rust-lang.org/std/io/enum.ErrorKind.html)、[Tokio write_allのキャンセル安全性](https://docs.rs/tokio/1.52.3/tokio/io/trait.AsyncWriteExt.html#method.write_all)。write_allは途中まで書いた状態で中断され得るため、timeoutを「未送信」と解釈しない。
+
 ## VOICEROID2直接連携
 
 候補は3つある。

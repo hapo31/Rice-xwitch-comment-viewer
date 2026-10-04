@@ -9,6 +9,10 @@
 
 ## 現在の進捗サマリ
 
+- [x] Issue #77: connect/write/response/config/protocolを型付きerrorで区別し、queue・health・test・controlの状態と短い日本語案内を統一する。詳細原因はLogs、再試行は未送信の一時的接続失敗だけとする。
+
+2026-10-05: Issue #77でBouyomiErrorと共通classificationを導入し、表示文/OS番号の部分一致を除去した。接続拒否は全経路でDisconnected、設定/protocol/unknownはError、connect/write/response timeoutは別codeとする。nativeの分類をfrontendの楽観的statusで上書きしない。cause chainはLogsへ保持し、write失敗/timeoutと受付後失敗は重複防止のため自動再送しない。Rust all-features176件/no-default129件、fmt・strict clippy、frontend227件（native reject分類6件を含む）・format/lint/typecheck/build/securityが成功。Windows/LinuxのErrorKind/native mappingとfake transportの継続CIを追加した。health/queueの独立保持は#69で追跡する。
+
 - [x] Issue #92: Node unitとjsdom component projectを分離し、共通Tauri mock/cleanup・全routeのrender・フォーム操作/validation/focus・StrictModeの1event/1更新を検証する。
 
 2026-10-05: Issue #92でVitestのNode/jsdom projectを分離し、同じpnpm testと共通CI gateで実行する構成を追加した。全7 route、Settings/Filterの入力・Tab・validation・保存・キャンセル/破棄、Launcherの部分成功/非Windows、Queue snapshot、command rejectのLogs表示、StrictModeの1 event/1 store更新/1 Chat行と遅延購読のcleanupを検証する。cleanup前のresetでlistener漏れを隠さず、未処理Promiseも失敗にする。unit209件+DOM12件、format/lint/typecheck/build/security、quality policy3件が成功。viewportは固定mockであり、実WebView/Windows smokeは#91で扱う。
