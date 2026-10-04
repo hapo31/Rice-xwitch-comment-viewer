@@ -8,6 +8,7 @@
 - 新COM処理でUI threadを塞がないようcommand/serviceをasync化し、OS作業を共有4-worker poolへ移す。order/部分成功/lock非保持は維持する。timeout後もpermitを実終了まで保持し、cancel/deadlineをOS呼出し前に再確認する。実行中CreateProcessの強制取消は保証せず、不確定な起動はfailure/画面確認を案内して自動再試行しない。仮想時計＋channelのテストで遅延resolverがprocessを起動しないことを確認する。
 - Stateを借用するasync commandが単純なDTO returnだとTauri macroのlifetime検査で失敗した。[公式async commandのResult回避策](https://v2.tauri.app/develop/calling-rust/#async-commands)に従ってOkへ包み、frontendの解決済みJSON契約は変えない。本番ACL/command名/依存版は変更しない。
 - Windows integrationはreviewedなstandalone Rust probeを隔離directoryへcompileし、実WSH COMでlinkを作成して本番serviceから起動する。正常link、日本語/空白/メタ文字引数、cwd/空欄fallback、登録後のlink編集、missing/moved target、missing cwd、RunAsUser拒否、直接exeとbulk部分成功を検査し、成功probeの実args/cwdと失敗の成功件数0/marker非生成を比較する。これは対話的UAC承認/外部アプリready/配布物smokeの証拠ではない。Windows実行結果を確認するまでIssue/TODOは未完了とする。
+- 初回native Windows run37244260983は39件が成功し、実link fixtureの最初のPowerShell作成処理が5秒timeoutで失敗した。childの終了とpipe回収は確認したが、実link成功とは扱わない。helperのstdinをWindows NULから起動直後に閉じるpipe（明示EOF）へ変更し、fixtureの4つの段階だけをstderrへ記録してtimeout時に最大400文字を回収する。timeout/並列/メモリ予算の引き上げやskipは行わず、再検証する。
 
 ## 2026-10-05 Issue #82: Launcherのレイヤと依存注入
 

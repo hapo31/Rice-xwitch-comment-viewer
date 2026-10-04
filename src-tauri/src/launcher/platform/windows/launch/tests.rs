@@ -68,12 +68,16 @@ fn make_link(path: &Path, target: &Path, arguments: &str, cwd: &Path) {
             "-Command",
             r#"
 $ErrorActionPreference = 'Stop'
+[Console]::Error.WriteLine('fixture-stage: PowerShell started')
 $link = (New-Object -ComObject WScript.Shell).CreateShortcut($env:RICE_TEST_LINK)
+[Console]::Error.WriteLine('fixture-stage: COM link created')
 $link.TargetPath = $env:RICE_TEST_TARGET
 $link.Arguments = $env:RICE_TEST_ARGS
 $link.WorkingDirectory = $env:RICE_TEST_CWD
 $link.IconLocation = $env:RICE_TEST_TARGET + ',0'
+[Console]::Error.WriteLine('fixture-stage: properties assigned')
 $link.Save()
+[Console]::Error.WriteLine('fixture-stage: link saved')
 "#,
         ])
         .creation_flags(0x0800_0000)

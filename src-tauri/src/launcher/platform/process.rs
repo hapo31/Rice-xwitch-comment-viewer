@@ -12,11 +12,14 @@ pub(in crate::launcher) fn capture_bounded(
 ) -> Result<Vec<u8>, String> {
     use std::process::Stdio;
     let mut child = command
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("ショートカット確認を開始できませんでした: {error}"))?;
+    // A closed pipe is an explicit EOF, not Windows' NUL device. Never leave
+    // an input writer open in a noninteractive helper (including PowerShell).
+    drop(child.stdin.take());
     let stdout = child.stdout.take().expect("configured stdout pipe");
     let stderr = child.stderr.take().expect("configured stderr pipe");
     let stdout_reader = std::thread::spawn(move || read_pipe_bounded(stdout, stdout_limit));
@@ -29,7 +32,11 @@ pub(in crate::launcher) fn capture_bounded(
                     let output = stdout_reader.join();
                     let errors = stderr_reader.join();
                     if matches!(output, Ok(Ok(_))) && matches!(errors, Ok(Ok(_))) {
-                        Err("ショートカット確認がタイムアウトしました。確認用processの終了・出力回収を確認しました。".into())
+                        let details = match &errors {
+                            Ok(Ok(bytes)) => String::from_utf8_lossy(bytes).chars().take(400).collect::<String>(),
+                            _ => String::new(),
+                        };
+                        Err(format!("ショートカット確認がタイムアウトしました。確認用processの終了・出力回収を確認しました。{details}"))
                     } else {
                         Err("ショートカット確認がタイムアウトしました。確認用processは終了しましたが、出力回収を確認できませんでした。".into())
                     }
