@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { LauncherItem } from "../types";
 import {
   launcherLaunchSummary,
   launcherTileColor,
   partitionApplicationPaths,
   sortLauncherItems,
 } from "./launcher";
-import type { LauncherItem } from "../types";
 
 const item = (overrides: Partial<LauncherItem>): LauncherItem => ({
   id: "item",
@@ -47,6 +47,21 @@ describe("launcher presentation", () => {
         launchedCount: 2,
         failures: [{ itemId: "3", displayName: "Broken", message: "見つかりません" }],
       }),
-    ).toBe("2 件を起動し、1 件は起動できませんでした（Broken）。");
+    ).toBe(
+      "2 件の起動プロセスを開始し、1 件は起動できませんでした（Broken）。アプリの準備完了は未確認です。",
+    );
+  });
+
+  it("does not describe process creation as application readiness", () => {
+    expect(launcherLaunchSummary({ launchedCount: 1, failures: [] })).toContain("準備完了は未確認");
+    expect(launcherLaunchSummary({ launchedCount: 0, failures: [] })).toBe(
+      "起動するアプリがありません。",
+    );
+    expect(
+      launcherLaunchSummary({
+        launchedCount: 0,
+        failures: [{ itemId: "a", displayName: "失敗", message: "原因" }],
+      }),
+    ).toBe("1 件のアプリを起動できませんでした（失敗）。");
   });
 });

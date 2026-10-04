@@ -414,6 +414,7 @@ pub struct LauncherLaunchFailure {
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct LauncherLaunchResult {
+    /// Verified target process creation only; not shell acceptance/app readiness.
     pub launched_count: usize,
     pub failures: Vec<LauncherLaunchFailure>,
 }

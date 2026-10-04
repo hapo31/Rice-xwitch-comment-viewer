@@ -1,14 +1,14 @@
-import { StrictMode } from "react";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { AppShell } from "../AppShell";
 import { appRoutes } from "../routes";
 import { createDomainStores, DomainProvider } from "../stores/domainStores";
-import { defaultSettings, tauriMock } from "./tauriMock";
-import type { AppSettingsPatch } from "../types";
 import outcomeFixture from "../tauri/fixtures/queue-outcomes.json";
+import type { AppSettingsPatch } from "../types";
+import { defaultSettings, tauriMock } from "./tauriMock";
 
 function mountApp(path = "/chat", strict = false) {
   const stores = createDomainStores();
@@ -326,9 +326,37 @@ it("Windows Launcher selects applications and displays partial launch failures",
     paths: ["C:\\valid.exe", "C:\\missing.lnk"],
   });
   await user.click(screen.getByRole("button", { name: "一斉に起動" }));
-  expect(await screen.findByText(/1 件を起動し、1 件は起動できませんでした/)).toHaveTextContent(
-    "壊れたアプリ",
+  expect(
+    await screen.findByText(/1 件の起動プロセスを開始し、1 件は起動できませんでした/),
+  ).toHaveTextContent("壊れたアプリ");
+  const failures = screen.getByRole("region", { name: "起動できなかったアプリ" });
+  expect(failures).toHaveTextContent("壊れたアプリ");
+  expect(failures).toHaveTextContent("ショートカットを修正してください。");
+  expect(failures).toHaveTextContent("正しいアプリを再登録してください");
+  expect(screen.getByText(/アプリの準備完了は未確認です/)).toBeVisible();
+  tauriMock.setCommand("launcher_launch", {
+    launchedCount: 0,
+    failures: [
+      { itemId: "app-2", displayName: "壊れたアプリ", message: "リンク先が見つかりません。" },
+    ],
+  });
+  await user.click(screen.getByRole("button", { name: "壊れたアプリ を起動" }));
+  await waitFor(() =>
+    expect(screen.getByRole("region", { name: "起動できなかったアプリ" })).toHaveTextContent(
+      "リンク先が見つかりません。",
+    ),
   );
+  expect(screen.getByRole("region", { name: "起動できなかったアプリ" })).toHaveTextContent(
+    "ショートカットのプロパティ",
+  );
+  tauriMock.setCommand("launcher_launch", { launchedCount: 1, failures: [] });
+  await user.click(screen.getByRole("button", { name: "有効なアプリ を起動" }));
+  expect(
+    await screen.findByText(
+      "有効なアプリ の起動プロセスを開始しました。アプリの準備完了は未確認です。",
+    ),
+  ).toBeVisible();
+  expect(screen.queryByRole("region", { name: "起動できなかったアプリ" })).not.toBeInTheDocument();
 });
 
 it("Queue restores a paused snapshot with item-specific accessible controls", async () => {

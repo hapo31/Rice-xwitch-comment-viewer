@@ -46,7 +46,7 @@ export function launcherLaunchSummary(result: LauncherLaunchResult): string {
     return "起動するアプリがありません。";
   }
   if (result.failures.length === 0) {
-    return `${result.launchedCount} 件のアプリを起動しました。`;
+    return `${result.launchedCount} 件の起動プロセスを開始しました。アプリの準備完了は未確認です。`;
   }
   const failedNames = result.failures
     .slice(0, 2)
@@ -58,5 +58,5 @@ export function launcherLaunchSummary(result: LauncherLaunchResult): string {
   if (result.launchedCount === 0) {
     return `${result.failures.length} 件のアプリを起動できませんでした（${failureDetail}）。`;
   }
-  return `${result.launchedCount} 件を起動し、${result.failures.length} 件は起動できませんでした（${failureDetail}）。`;
+  return `${result.launchedCount} 件の起動プロセスを開始し、${result.failures.length} 件は起動できませんでした（${failureDetail}）。アプリの準備完了は未確認です。`;
 }

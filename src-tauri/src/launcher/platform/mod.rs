@@ -2,7 +2,7 @@
 use super::model::LauncherCapabilities;
 #[cfg(any(not(feature = "app"), not(target_os = "windows")))]
 use super::model::UNSUPPORTED_LAUNCHER_MESSAGE;
-use super::ports::{ApplicationLauncher, IconExtractionError, IconExtractor};
+use super::ports::{ApplicationLauncher, IconExtractionError, IconExtractor, LaunchContext};
 use super::service::LauncherRuntime;
 use super::workers::LauncherWorkerConfig;
 use std::path::Path;
@@ -12,6 +12,8 @@ use tokio::sync::Semaphore;
 
 #[cfg(any(all(feature = "app", target_os = "windows"), test))]
 pub(super) mod process;
+#[cfg(any(all(feature = "app", target_os = "windows"), test))]
+pub(super) mod shortcut;
 mod target;
 #[cfg(all(feature = "app", target_os = "windows"))]
 mod windows;
@@ -36,14 +38,14 @@ impl IconExtractor for SystemIconExtractor {
 
 struct SystemApplicationLauncher;
 impl ApplicationLauncher for SystemApplicationLauncher {
-    fn launch(&self, target: &Path) -> Result<(), String> {
+    fn launch(&self, target: &Path, context: &LaunchContext) -> Result<(), String> {
         #[cfg(all(feature = "app", target_os = "windows"))]
         {
-            windows::launch::spawn_application(target).map_err(|error| error.to_string())
+            windows::launch::spawn_application(target, context)
         }
         #[cfg(any(not(feature = "app"), not(target_os = "windows")))]
         {
-            let _ = target;
+            let _ = (target, context);
             Err(UNSUPPORTED_LAUNCHER_MESSAGE.into())
         }
     }

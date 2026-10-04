@@ -60,7 +60,8 @@ struct FakeLauncher {
     calls: Mutex<Vec<PathBuf>>,
 }
 impl ApplicationLauncher for FakeLauncher {
-    fn launch(&self, target: &Path) -> Result<(), String> {
+    fn launch(&self, target: &Path, context: &LaunchContext) -> Result<(), String> {
+        context.ensure_active()?;
         self.calls.lock().unwrap().push(target.into());
         if target.ends_with("denied.exe") {
             return Err("spawn failure fixture".into());
@@ -239,7 +240,7 @@ async fn broken_shortcut_rejects_registration_before_save_and_maps_launch_failur
     assert!(events.added.lock().unwrap().is_empty());
     repository.settings.lock().unwrap().launcher.items =
         vec![item("broken", "/fake/broken.lnk", 0)];
-    let result = runtime.service(&repository, &events).launch("broken");
+    let result = runtime.service(&repository, &events).launch("broken").await;
     assert_eq!(result.launched_count, 0);
     assert_eq!(result.failures[0].item_id, "broken");
     assert!(result.failures[0].message.contains("参照先"));
@@ -248,8 +249,8 @@ async fn broken_shortcut_rejects_registration_before_save_and_maps_launch_failur
     assert_eq!(*events.launched.lock().unwrap(), [result]);
 }
 
-#[test]
-fn launch_all_keeps_selection_order_and_partial_failures_without_website_adapter_dispatch() {
+#[tokio::test]
+async fn launch_all_keeps_selection_order_and_partial_failures_without_website_adapter_dispatch() {
     let (runtime, resolver, launcher) =
         runtime(true, Arc::new(FakeExtractor(Ok(None))), workers(1));
     let repository = FakeRepository::default();
@@ -262,7 +263,7 @@ fn launch_all_keeps_selection_order_and_partial_failures_without_website_adapter
         item("broken", "/fake/broken.lnk", 1),
     ];
     let events = RecordingEvents::default();
-    let result = runtime.service(&repository, &events).launch_all();
+    let result = runtime.service(&repository, &events).launch_all().await;
     assert_eq!(result.launched_count, 1);
     assert_eq!(
         result
@@ -301,7 +302,7 @@ async fn unsupported_platform_calls_no_os_adapters_but_still_removes_saved_items
         .await
         .unwrap_err()
         .contains("Windows版"));
-    assert!(service.launch("old").failures[0]
+    assert!(service.launch("old").await.failures[0]
         .message
         .contains("Windows版"));
     assert!(resolver.calls.lock().unwrap().is_empty());
@@ -311,18 +312,18 @@ async fn unsupported_platform_calls_no_os_adapters_but_still_removes_saved_items
     assert_eq!(*events.removed.lock().unwrap(), ["old"]);
 }
 
-#[test]
-fn missing_item_and_repository_read_failure_use_the_same_service_result_contract() {
+#[tokio::test]
+async fn missing_item_and_repository_read_failure_use_the_same_service_result_contract() {
     let (runtime, _, launcher) = runtime(true, Arc::new(FakeExtractor(Ok(None))), workers(1));
     let repository = FakeRepository::default();
     let events = RecordingEvents::default();
     let service = runtime.service(&repository, &events);
-    let missing = service.launch("unknown");
+    let missing = service.launch("unknown").await;
     assert_eq!(missing.failures[0].item_id, "unknown");
     assert!(missing.failures[0].message.contains("見つかりません"));
     assert!(service.remove("unknown").is_err());
     repository.fail_read.store(true, Ordering::SeqCst);
-    for result in [service.launch("known"), service.launch_all()] {
+    for result in [service.launch("known").await, service.launch_all().await] {
         assert_eq!(result.launched_count, 0);
         assert!(result.failures[0].message.contains("読み込み失敗fixture"));
     }
@@ -335,6 +336,63 @@ struct GatedExtractor {
     started: Mutex<Option<oneshot::Sender<()>>>,
     release: Mutex<mpsc::Receiver<()>>,
     exited: Mutex<Option<oneshot::Sender<()>>>,
+}
+
+struct GatedResolver {
+    gate: Arc<GatedExtractor>,
+}
+impl ApplicationTargetResolver for GatedResolver {
+    fn resolve(&self, raw: &str) -> Result<PathBuf, String> {
+        self.gate
+            .extract(Path::new(raw))
+            .map_err(|error| format!("{error:?}"))?;
+        Ok(raw.into())
+    }
+}
+
+#[tokio::test]
+async fn launch_timeout_retains_permit_and_cancels_late_resolver_before_process_start() {
+    let (gate, started, exited, mut release) = gated();
+    let config = workers(1);
+    let pool = config.worker_pool.clone();
+    let launcher = Arc::new(FakeLauncher::default());
+    let runtime = LauncherRuntime::new(
+        LauncherCapabilities::for_platform(true),
+        Arc::new(GatedResolver { gate }),
+        Arc::new(FakeExtractor(Ok(None))),
+        launcher.clone(),
+        config,
+    );
+    let repository = FakeRepository::default();
+    repository.settings.lock().unwrap().launcher.items = vec![item("slow", "/fake/slow.lnk", 0)];
+    let events = RecordingEvents::default();
+    let service = runtime.service(&repository, &events);
+    let mut launch = Box::pin(service.launch("slow"));
+    tokio::select! { result = &mut launch => panic!("premature result: {result:?}"), ready = started => ready.unwrap() }
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_millis(7001)).await;
+    let result = launch.await;
+    assert_eq!(result.launched_count, 0);
+    assert!(result.failures[0]
+        .message
+        .contains("既に起動している可能性"));
+    assert_eq!(pool.available_permits(), 0);
+    let mut second = Box::pin(service.launch("slow"));
+    assert!(futures_util::poll!(&mut second).is_pending());
+    tokio::time::advance(Duration::from_millis(6001)).await;
+    let busy = second.await;
+    assert_eq!(busy.launched_count, 0);
+    assert!(busy.failures[0]
+        .message
+        .contains("起動要求は送っていません"));
+    release.release();
+    exited.await.unwrap();
+    // Acquire the permit rather than merely waiting for the resolver's signal:
+    // it is released only after the cancelled worker itself has returned.
+    let _permit = pool.acquire().await.unwrap();
+    assert!(launcher.calls.lock().unwrap().is_empty());
+    assert!(repository.saved.lock().unwrap().is_empty());
+    assert_eq!(*events.launched.lock().unwrap(), [result, busy]);
 }
 impl IconExtractor for GatedExtractor {
     fn extract(&self, _: &Path) -> Result<Option<String>, IconExtractionError> {

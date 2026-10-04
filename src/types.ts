@@ -133,6 +133,7 @@ export interface LauncherLaunchFailure {
 }
 
 export interface LauncherLaunchResult {
+  /** Target process creation confirmed; not application readiness or shell acceptance. */
   launchedCount: number;
   failures: LauncherLaunchFailure[];
 }

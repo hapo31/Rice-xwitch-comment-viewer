@@ -1,5 +1,14 @@
 # 調査メモ
 
+## 2026-10-05 Issue #76: shortcutの受付と対象process生成
+
+- Explorerのspawn成功を対象アプリの成功へ換算していた。通常exeへのlinkだけを起動都度解決し、target/cwdを再検証した上で直接CreateProcessする。結果のlaunchedCountはprocess生成確認だけと定義し、UIに準備完了未確認と全failureの名前・原因・修復/再登録を表示する。設定に解決targetをcacheしない。
+- [Microsoft Shell Links](https://learn.microsoft.com/ja-jp/windows/win32/shell/links)のtarget/arguments/working directory/icon sourceを構造化する。[MS-SHLLINK header](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-shllink/c3376b21-0931-45e4-b2fc-a48ac0e60d15)の76bytes/CLSID/flagsと[LinkFlags](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-shllink/ae350202-3ba9-4790-9e9e-98935f4ee5af)に基づき、HasDarwinID/RunAsUserをCOM読込前に拒否する。Resolve/installer修復/UAC promptを呼ばない。URL/仮想folder/入れ子linkはunsupportedとして手動起動/通常exe登録を案内する。
+- argumentsは[標準CommandExt::raw_arg](https://doc.rust-lang.org/std/os/windows/process/trait.CommandExt.html)でliteral tailを渡す。static PowerShellのscriptへ利用者のpath/引数を埋め込まない。最大1MiB link/96KiB JSON/4096byte path/16Ki UTF-16 argument、5秒child timeout/bounded pipeを設ける。[CreateProcessのUAC error740](https://learn.microsoft.com/en-us/windows/win32/dxtecharts/user-account-control-for-game-developers)を固定日本語で案内し、OS errorの英語/日本語textには依存しない。
+- 新COM処理でUI threadを塞がないようcommand/serviceをasync化し、OS作業を共有4-worker poolへ移す。order/部分成功/lock非保持は維持する。timeout後もpermitを実終了まで保持し、cancel/deadlineをOS呼出し前に再確認する。実行中CreateProcessの強制取消は保証せず、不確定な起動はfailure/画面確認を案内して自動再試行しない。仮想時計＋channelのテストで遅延resolverがprocessを起動しないことを確認する。
+- Stateを借用するasync commandが単純なDTO returnだとTauri macroのlifetime検査で失敗した。[公式async commandのResult回避策](https://v2.tauri.app/develop/calling-rust/#async-commands)に従ってOkへ包み、frontendの解決済みJSON契約は変えない。本番ACL/command名/依存版は変更しない。
+- Windows integrationはreviewedなstandalone Rust probeを隔離directoryへcompileし、実WSH COMでlinkを作成して本番serviceから起動する。正常link、日本語/空白/メタ文字引数、cwd/空欄fallback、登録後のlink編集、missing/moved target、missing cwd、RunAsUser拒否、直接exeとbulk部分成功を検査し、成功probeの実args/cwdと失敗の成功件数0/marker非生成を比較する。これは対話的UAC承認/外部アプリready/配布物smokeの証拠ではない。Windows実行結果を確認するまでIssue/TODOは未完了とする。
+
 ## 2026-10-05 Issue #82: Launcherのレイヤと依存注入
 
 - model/ports/service/workers/repository/commands/eventsとplatformのtarget/process/windows icon/launchを分離した。pure model/normalizationとserviceはTauri、PowerShell、filesystem/process実装をimportしない。AppStateの1つのLauncherRuntimeで全commandがadapter/poolを共有し、commandsはborrowed IPC変換・wiring・service呼出しだけを担当する。ApplicationLauncherにはkindを渡さず、Website dispatchの予約/拒否をservice側に置く。

@@ -69,9 +69,9 @@ fn unsupported_platform_rejects_registration_and_target_changes_but_allows_remov
 
 #[cfg(not(target_os = "windows"))]
 #[cfg(feature = "app")]
-#[test]
-fn unsupported_launch_is_rejected_before_filesystem_access() {
-    let result = launch_items(&[item(0)]);
+#[tokio::test]
+async fn unsupported_launch_is_rejected_before_filesystem_access() {
+    let result = launch_items(&[item(0)]).await;
     assert_eq!(result.launched_count, 0);
     assert_eq!(result.failures.len(), 1);
     assert!(result.failures[0].message.contains("Windows版"));

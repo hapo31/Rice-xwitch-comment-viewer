@@ -44,24 +44,26 @@ pub fn launcher_remove(
 }
 
 #[tauri::command]
-pub fn launcher_launch(
+pub async fn launcher_launch(
     app: tauri::AppHandle<tauri::Wry>,
     state: tauri::State<'_, AppState>,
     item_id: String,
-) -> LauncherLaunchResult {
-    state
+) -> Result<LauncherLaunchResult, String> {
+    Ok(state
         .launcher_runtime
         .service(&repository(&app, &state), &AppEventSink(&app))
         .launch(&item_id)
+        .await)
 }
 
 #[tauri::command]
-pub fn launcher_launch_all(
+pub async fn launcher_launch_all(
     app: tauri::AppHandle<tauri::Wry>,
     state: tauri::State<'_, AppState>,
-) -> LauncherLaunchResult {
-    state
+) -> Result<LauncherLaunchResult, String> {
+    Ok(state
         .launcher_runtime
         .service(&repository(&app, &state), &AppEventSink(&app))
         .launch_all()
+        .await)
 }

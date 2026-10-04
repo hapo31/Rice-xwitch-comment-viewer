@@ -1,8 +1,8 @@
 //! Registration/launch use cases: no Tauri, concrete persistence or OS APIs.
 use super::model::*;
 use super::ports::{
-    ApplicationLauncher, ApplicationTargetResolver, IconExtractor, LauncherEventSink,
-    SettingsRepository,
+    ApplicationLauncher, ApplicationTargetResolver, IconExtractor, LaunchContext,
+    LauncherEventSink, SettingsRepository,
 };
 use super::workers::{
     build_new_items_in_workers_with_adapters, BuiltLauncherItems, LauncherWorkerConfig,
@@ -48,19 +48,22 @@ impl LauncherRuntime {
         }
     }
 
-    fn launch_items(&self, items: &[LauncherItem]) -> LauncherLaunchResult {
+    async fn launch_items(&self, items: &[LauncherItem]) -> LauncherLaunchResult {
         let mut result = LauncherLaunchResult::default();
         for item in items {
             // Kind dispatch belongs here. An Application adapter never sees a
             // Website and cannot accidentally open it via an executable shell.
-            let launched = self.capabilities.ensure_supported().and_then(|()| match item.kind {
-                LauncherItemKind::Application => self.resolver.resolve(&item.target).and_then(|target| {
-                    self.launcher.launch(&target).map_err(|error| format!(
-                        "アプリを起動できませんでした。ファイルの場所や実行権限を確認してください: {error}"
-                    ))
-                }),
-                LauncherItemKind::Website => Err("この種類のランチャー項目はまだ起動できません。".into()),
-            });
+            let launched = match self.capabilities.ensure_supported() {
+                Err(error) => Err(error),
+                Ok(()) => match item.kind {
+                    LauncherItemKind::Application => {
+                        self.launch_application(item.target.clone()).await
+                    }
+                    LauncherItemKind::Website => {
+                        Err("この種類のランチャー項目はまだ起動できません。".into())
+                    }
+                },
+            };
             match launched {
                 Ok(()) => result.launched_count += 1,
                 Err(message) => result.failures.push(LauncherLaunchFailure {
@@ -71,6 +74,41 @@ impl LauncherRuntime {
             }
         }
         result
+    }
+
+    async fn launch_application(&self, raw_target: String) -> Result<(), String> {
+        let permit = tokio::time::timeout(
+            self.workers.acquire_timeout,
+            self.workers.worker_pool.clone().acquire_owned(),
+        ).await
+            .map_err(|_| "起動確認が混み合っています。この項目の起動要求は送っていません。しばらく待ってから再度お試しください。".to_string())?
+            .map_err(|_| "起動確認を開始できません。この項目の起動要求は送っていません。".to_string())?;
+        let context = LaunchContext::new(self.workers.job_timeout);
+        // Also cancel if the command future itself is dropped. Permit lifetime
+        // remains tied to the actual blocking task, never to the timeout future.
+        struct CancelOnDrop(LaunchContext);
+        impl Drop for CancelOnDrop {
+            fn drop(&mut self) {
+                self.0.cancel();
+            }
+        }
+        let _cancel = CancelOnDrop(context.clone());
+        let resolver = self.resolver.clone();
+        let launcher = self.launcher.clone();
+        let task = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            context.ensure_active()?;
+            let target = resolver.resolve(&raw_target)?;
+            context.ensure_active()?;
+            launcher.launch(&target, &context)
+        });
+        match tokio::time::timeout(self.workers.job_timeout, task).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(error)) => Err(format!("起動確認処理に失敗しました: {error}。正しいアプリを再登録してください。")),
+            // CreateProcess itself cannot be safely cancelled. Do not retry or
+            // count an uncertain outcome as successful; tell the user to check.
+            Err(_) => Err("起動確認がタイムアウトしました。アプリが既に起動している可能性があります。画面を確認してから、ショートカットを修復・再登録してください。自動再試行はしていません。".into()),
+        }
     }
 }
 
@@ -128,10 +166,10 @@ impl LauncherService<'_> {
         Ok(items)
     }
 
-    pub fn launch(&self, item_id: &str) -> LauncherLaunchResult {
+    pub async fn launch(&self, item_id: &str) -> LauncherLaunchResult {
         let result = match self.repository.snapshot() {
             Ok(items) => match items.into_iter().find(|item| item.id == item_id.trim()) {
-                Some(item) => self.runtime.launch_items(&[item]),
+                Some(item) => self.runtime.launch_items(&[item]).await,
                 None => load_failure(
                     item_id,
                     "アプリ",
@@ -148,11 +186,11 @@ impl LauncherService<'_> {
         result
     }
 
-    pub fn launch_all(&self) -> LauncherLaunchResult {
+    pub async fn launch_all(&self) -> LauncherLaunchResult {
         let result = match self.repository.snapshot() {
             Ok(mut items) => {
                 items.sort_by_key(|item| item.order);
-                self.runtime.launch_items(&items)
+                self.runtime.launch_items(&items).await
             }
             Err(error) => load_failure(
                 "",
@@ -213,8 +251,8 @@ pub(super) fn merge_new_launcher_items(
 }
 
 #[cfg(all(test, feature = "app", not(target_os = "windows")))]
-pub(super) fn launch_items(items: &[LauncherItem]) -> LauncherLaunchResult {
-    LauncherRuntime::default().launch_items(items)
+pub(super) async fn launch_items(items: &[LauncherItem]) -> LauncherLaunchResult {
+    LauncherRuntime::default().launch_items(items).await
 }
 
 #[cfg(test)]

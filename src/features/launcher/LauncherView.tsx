@@ -1,19 +1,24 @@
-import { presentError } from "../../presentation/errors";
-import { useDomainStores } from "../../stores/domainStores";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { AppWindow, Ellipsis, ExternalLink, Layers3, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { subscribeLauncherDragDrop, type LauncherDragDropHandlers } from "./dragDropListener";
+import { presentError } from "../../presentation/errors";
 import {
   launcherLaunchSummary,
   launcherTileColor,
   partitionApplicationPaths,
   sortLauncherItems,
 } from "../../presentation/launcher";
-import { getLauncherCapabilities, isDesktopRuntime } from "../../tauri/client";
-import type { LauncherCapabilities, LauncherItem, LauncherLaunchResult } from "../../types";
 import { routeHeadingId } from "../../routeAccessibility";
+import { useDomainStores } from "../../stores/domainStores";
+import { getLauncherCapabilities, isDesktopRuntime } from "../../tauri/client";
+import type {
+  LauncherCapabilities,
+  LauncherItem,
+  LauncherLaunchFailure,
+  LauncherLaunchResult,
+} from "../../types";
+import { type LauncherDragDropHandlers, subscribeLauncherDragDrop } from "./dragDropListener";
 
 interface LauncherViewProps {
   items: LauncherItem[];
@@ -77,6 +82,7 @@ export function LauncherView({
   const [busyAction, setBusyAction] = useState<string>();
   const [isDragActive, setIsDragActive] = useState(false);
   const [notice, setNotice] = useState(defaultLauncherNotice);
+  const [launchFailures, setLaunchFailures] = useState<LauncherLaunchFailure[]>([]);
   const [capabilities, setCapabilities] = useState<LauncherCapabilities>({
     canRegisterApplications: false,
     canLaunchApplications: false,
@@ -256,11 +262,13 @@ export function LauncherView({
     }
     closeMenu();
     setBusyAction(`launch:${item.id}`);
+    setLaunchFailures([]);
     try {
       const result = await onLaunch(item.id);
+      setLaunchFailures(result.failures);
       setNotice(
-        result.failures.length === 0
-          ? `${item.displayName} を起動しました。`
+        result.launchedCount > 0 && result.failures.length === 0
+          ? `${item.displayName} の起動プロセスを開始しました。アプリの準備完了は未確認です。`
           : `${item.displayName} を起動できませんでした: ${result.failures[0]?.message ?? "起動エラー"}`,
       );
     } catch (error) {
@@ -276,8 +284,11 @@ export function LauncherView({
       return;
     }
     setBusyAction("launch-all");
+    setLaunchFailures([]);
     try {
-      setNotice(launcherLaunchSummary(await onLaunchAll()));
+      const result = await onLaunchAll();
+      setLaunchFailures(result.failures);
+      setNotice(launcherLaunchSummary(result));
     } catch (error) {
       setNotice(readableError(error));
     } finally {
@@ -335,7 +346,25 @@ export function LauncherView({
             {capabilities.reason}
           </p>
         )}
-        <div className="min-h-0 flex-1 overflow-auto p-5 pb-16">
+        <div className="min-h-0 flex-1 overflow-auto p-5">
+          {launchFailures.length > 0 && (
+            <section
+              aria-label="起動できなかったアプリ"
+              className="mb-4 border border-amber-700 bg-amber-950/30 p-3 text-xs text-amber-200"
+            >
+              <h2 className="mb-2 font-semibold">起動できなかったアプリ</h2>
+              <ul className="space-y-2">
+                {launchFailures.map((failure) => (
+                  <li key={failure.itemId} className="break-words">
+                    <span className="font-semibold">{failure.displayName}</span>: {failure.message}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3">
+                ショートカットのプロパティでリンク先・作業フォルダーを修正するか、正しいアプリを再登録してください。権限が必要なアプリはWindowsから手動で起動してください。
+              </p>
+            </section>
+          )}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(132px,156px))] auto-rows-[156px] gap-3">
             {orderedItems.map((item) => {
               const isBusy = busyAction?.endsWith(item.id) ?? false;
@@ -485,8 +514,8 @@ export function LauncherView({
           </div>
         </div>
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex min-h-10 items-center justify-between gap-4 border-t border-zinc-800 bg-zinc-900/95 px-5 py-2 text-[11px] text-zinc-400">
-          <p className="truncate" aria-live="polite">
+        <div className="flex min-h-10 shrink-0 items-center justify-between gap-4 border-t border-zinc-800 bg-zinc-900/95 px-5 py-2 text-[11px] text-zinc-400">
+          <p className="break-words" aria-live="polite">
             {notice}
           </p>
           <p className="hidden shrink-0 items-center gap-1.5 text-zinc-400 lg:flex">
