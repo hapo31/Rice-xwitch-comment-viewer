@@ -1,5 +1,14 @@
 # 調査メモ
 
+## 2026-10-05 Issue #82: Launcherのレイヤと依存注入
+
+- model/ports/service/workers/repository/commands/eventsとplatformのtarget/process/windows icon/launchを分離した。pure model/normalizationとserviceはTauri、PowerShell、filesystem/process実装をimportしない。AppStateの1つのLauncherRuntimeで全commandがadapter/poolを共有し、commandsはborrowed IPC変換・wiring・service呼出しだけを担当する。ApplicationLauncherにはkindを渡さず、Website dispatchの予約/拒否をservice側に置く。
+- repositoryはLauncher item mutationを最新AppSettings candidateへ1回だけ適用し、既存settings transactionの検証/保存後に公開する。serviceがsettings全体や具象SettingsStoreへ依存しない。save失敗は成功ログ・fallback通知も発行しない。追加workerのtimeout後もpermitを実終了まで保持し、遅延した結果をsaveしない。
+- fake resolver/icon extractor/application launcher/repository/sinkで9件の本番serviceテストを追加した。icon timeout/failure fallback、invalid/resource-limit拒否、shortcut解決失敗、spawn部分成功、read/save failure、全section rollback、同時add/remove・重複target・別section更新の保持、非対応OS・WebsiteのOS adapter非呼出しを確認する。実filesystem/canonical pathとUnix child kill/reapは別境界として維持する。
+- 仮想timeoutテストの初回は待機したまま停止し、検証processだけを終了して原因を調べた。使用中のTokio 1.52.3 sourceと[公式pause説明](https://docs.rs/tokio/latest/tokio/time/fn.pause.html)でblocking taskによるauto-advance停止を確認した。開始channel handshake後にpauseし、job/permitの両deadlineを明示advanceする。millisecondに丸められるtimerを1ms越えて待つ。壁時計sleepやbusy loop、production timeout/並列上限の変更は行わず、9件が0.00秒で成功した。
+- 既存worker integrationのdummy exe/lnkにはfake NoIconExtractorを使い、Windowsで実PowerShellを誤って起動するtest fixture couplingを除去した。本番SystemIconExtractor/PowerShell/Explorerの処理自体は分割前の動作を維持する。Windows native CIで本番featureの全Launcher suiteを明示実行し、既存200 tile/IPC拒否・2process focusも再検証する。
+- ローカルのRust all-features239件/no-default188件、strict clippy/fmt、frontend281件、format/lint/typecheck/build/security/license、quality policy3件、Docker contextが成功。最大JSON8MiBの200件roundtripは3.95秒・追加Rust heap39.4MiBで元の5秒/40MiB予算以内。Windows CIの結果は確認後に追記する。実shortcutのbroken/moved/引数/UACの意味論は#76、実配布物の検証は#91に残す。依存・本番ACL/command manifestは変更せず、既知npm Highの配布停止も維持する。
+
 ## 2026-10-05 Issue #71: Launcherと設定の資源境界
 
 - 設定取得も本番IPCで初回/拒否要求後の2回を測定し、それぞれ2秒以内を予算とする。

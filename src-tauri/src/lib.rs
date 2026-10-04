@@ -14,7 +14,7 @@ use app_events::{
     TwitchStatusDomain,
 };
 #[cfg(feature = "app")]
-use launcher::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
+use launcher::commands::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
 use serde::Serialize;
 #[cfg(feature = "app")]
 use settings::{

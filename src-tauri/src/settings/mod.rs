@@ -168,6 +168,8 @@ pub(crate) fn default_twitch_client_id() -> String {
 #[derive(Default)]
 pub struct AppState {
     pub settings: SharedSettings<AppSettings>,
+    /// Shared launcher adapters and bounded worker pool, used by every command.
+    pub launcher_runtime: crate::launcher::LauncherRuntime,
     pub settings_recovery_notice: SharedSettings<Option<SettingsRecoveryNotice>>,
     #[cfg(feature = "app")]
     pub twitch_auth: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,

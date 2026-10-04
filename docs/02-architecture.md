@@ -61,6 +61,18 @@ Rust backend
 
 Launcherのアプリ登録・起動はWindows専用。`app_build_info.launcher`で`canRegisterApplications/canLaunchApplications/reason`を型付きで返す。UIは取得成功まで安全側に無効化し、非対応OSでは選択・DnD購読・単体/一斉起動を提供しない。backendも登録commandと設定patchによる新規登録/target変更を保存前に拒否し、起動をfilesystem操作前に拒否する。既存設定の項目は他OSでも表示・並び替え/表示名変更・削除でき、OS標準ランチャーまたはWindows版を案内する（Issue #79）。
 
+## Launcherの実行境界
+
+`launcher/model.rs`は永続DTO・編集DTO・quota/PNG検証・正規化・path identity/ID/orderのpureな境界とする。Tauri、filesystem確認、PowerShell、process起動をimportしない。`ports.rs`の小さなobject-safe traitを通じて、`service.rs`の登録/削除/単体・一斉起動へresolver、icon extractor、application launcher、repository、event sinkを注入する。
+
+`AppState.launcher_runtime`がアプリ全体で1つのworker poolとadapterを保持する。`commands.rs`はborrowed IPCのpreflight/DTO変換、repository/event sinkのwiring、service呼出しだけを行う。`repository.rs`は共有設定の最新candidateへmutationを1回適用し、既存のsettings transactionで検証・永続化した後だけメモリへ公開する。Launcher以外のsectionも保持する。保存失敗時は追加/削除の成功ログやicon fallback通知を発行しない。filesystem/COM処理中にsettings lockを保持しない。
+
+`workers.rs`は最大4つのblocking taskを共通poolで制限する。取得待ち6秒・job待ち7秒を維持し、timeout後も実workerが終了するまでpermitを返さない。`platform/target.rs`だけが実ファイルの存在/種類/canonical pathを確認し、WindowsではDOS/UNCへ変換する。`platform/windows/icon.rs`はPowerShell/COMの5秒timeout、kill/reap、bounded pipe回収を担当する。`platform/windows/launch.rs`はapplication pathだけを受け取り、Launcherのkindを解釈しない。Websiteの予約/拒否と将来のdispatch追加はservice/modelに閉じる。
+
+Windowsの現行supported caseは存在する`.exe`と`.lnk`（拡張子の大文字小文字を区別しない）。`.exe`はshellを経由せずpathをCreateProcessへ渡し、parentをworking directoryにする。`.lnk`はExplorerへpathを渡す。空白/日本語をcommand scriptへ展開せず、icon用pathはenvironmentへ渡す。Explorer/OSへのspawn受付と参照先アプリの起動完了は同じではない。壊れた/移動したshortcut、引数・working directory、UAC等の実起動意味論は#76で扱い、本Issueのfake broken-shortcutテストを実COM対応の完了証拠としない。
+
+全OSの`launcher::service::tests`は本番と同じserviceへfake resolver/extractor/launcher/repository/sinkを注入し、icon timeout/failureのfallback、job/permit timeout、invalid/resource-limit icon、broken shortcut、spawn部分失敗、保存rollback、同時add/removeと別section保持、Websiteのadapter非呼出しを検証する。blocking adapterの開始/解放はchannelで同期し、時計はTokioのtest clockを明示advanceする（blocking taskはauto-advanceを止める）。実filesystem/canonical pathと子process kill/reapは別integration test層に残す。Windows native CIは本番feature/builder/ACLのcompileと200 tile/IPC拒否・2process focusを確認するが、PowerShell/COM/UNC停止、installer/portableと実アプリ起動の検証は#76/#91の実動境界として区別する。
+
 ## SpeechAdapterの実行境界
 
 ```rust

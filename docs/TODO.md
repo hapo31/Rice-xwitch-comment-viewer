@@ -1,5 +1,9 @@
 # 実装 TODO
 
+- [ ] Issue #82: Launcherをpure model・service・repository・commands・Windows icon/launch adapterへ分離し、本番serviceへ小さなtraitを注入する。timeout・抽出/shortcut/spawn/保存失敗・同時更新を全OSのfake adapterで再現し、Windows実動境界を文書化する。
+
+2026-10-05: #82の責務分割と本番serviceの依存注入を実装した。9つのfake serviceテストを追加し、Rust all-features239件/no-default188件、strict clippy/fmt、frontend281件と全frontend/build/security/license gate、quality policy3件、Docker context検査が成功。元の200件/quota/atomic保存/4-worker・timeout境界とIPC契約を維持する。Windows CIへ本番featureのLauncher suiteを追加し、実WebView/IPC回帰と両OS suiteの結果を待って完了を判定する。実shortcutの意味論は#76、packaged smokeは#91と区別し、既知npm Highの配布停止を維持する。
+
 - [x] Issue #71: Launcher request/文字列/PNG encoded・decoded/dimensions/合計icon量/settings JSONへ上限を設け、renderer編集DTOからbackend生成ID/target/iconを変更できないようにする。巨大・不正入力、重複path、quota境界、200件の予算、上限超過時のdisk/memory非変更を検証する。
 
 2026-10-05: #71の資源上限、borrowed Request preflight、編集DTO、bounded読込/serializer、quota超過の全体拒否を実装した。Rust all-features230件/no-default179件、frontend281件とstrict clippy、frontend全gate、quality policy3件が成功。最大200件（icon合計4MiB、128×128 RGBA16 PNG200種類）の保存/backup/loadは、JSON自体8MiBでもlocal3.93秒/追加Rust heap39.4MiB、[Windows/Linux CI](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37239996196)でWindows2.69秒・Linux2.44秒だった（5秒/最大JSON40MiB予算）。[実native Windows](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37239996083)は200 tile/image decode完了617ms、最大設定IPC取得734ms、JS heap差分43.2MiBで2秒/64MiB以内、不正4要求の拒否と設定非変更・正常終了を確認した。同commit fd8a00aの[quality全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37239996525)、feature matrix、Windows writer/permissionも成功。JS heapは診断用推定であり全WebView RSS/GPUの保証ではない。frameworkの最初のIPC parse/実配布物smokeは別境界で、既知npm Highによる配布停止は維持する。

@@ -66,6 +66,12 @@ jobs:
           if (-not $mt) { throw "Windows SDK manifest tool is required" }
           & $mt.FullName -manifest src-tauri/tests/native-windows.manifest "-outputresource:$($env:RICE_NATIVE_TEST_BINARY);#1"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify Launcher service and filesystem boundary with production features
+        env:
+          RICE_NATIVE_TEST_BINARY: ${{ steps.harness.outputs.binary }}
+        run: |
+          & $env:RICE_NATIVE_TEST_BINARY launcher:: --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify real second launch exits, preserves settings and restores foreground window
         # This explicitly runs the headful test. Missing WebView2/desktop or
         # failed restoration is a failure, never a skipped smoke result.
