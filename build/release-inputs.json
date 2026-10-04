@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "rustVersion": "1.89.0",
+  "nodeVersion": "22.22.0",
+  "rustImage": "rust:1.89.0-bookworm@sha256:948f9b08a66e7fe01b03a98ef1c7568292e07ec2e4fe90d88c07bb14563c84ff",
+  "nodeImage": "node:22.22.0-bookworm-slim@sha256:dd9d21971ec4395903fa6143c2b9267d048ae01ca6d3ea96f16cb30df6187d94",
+  "debianSnapshot": "20260921T000000Z",
+  "pnpmVersion": "8.11.0",
+  "cargoXwinVersion": "0.22.0",
+  "windowsTarget": "x86_64-pc-windows-msvc",
+  "remainingNondeterminism": [
+    "MSVC SDK/CRT feeds selected by cargo-xwin: downloaded cache files are inventoried with SHA-256 in BUILD-MATERIALS.json.",
+    "NSIS and PE linker metadata can prevent byte-for-byte reproducibility; fixed inputs alone do not prove reproducible binaries."
+  ]
+}

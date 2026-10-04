@@ -9,6 +9,10 @@
 
 ## 現在の進捗サマリ
 
+- [x] Issue #93: release build の base image / Debian snapshot / toolchain を固定し、時刻と build material を記録・検証する。SDK/CRT feed と NSIS/PE metadata の非決定性は material inventory と文書で明示する。
+
+2026-10-05: Issue #93 で release の immutable input manifest、test/build の compiler policy、commit時刻のZIP正規化と build material inventory を追加した。完全な byte 再現性を保証せず、残る非決定要因を文書化した。
+
 2026-09-21: Issue #175 で Vite 8.0.16、PostCSS 8.5.18、nanoid 3.3.19、Browserslist 4.29.0 と関連する推移依存を更新した。npm audit の high 6件が解消し、high/critical は0件（low1件、moderate8件は残存）。frontend203件、typecheck/build、renderer security 検証が成功。
 
 - [x] Issue #175: npm audit の high 6件を互換範囲の依存更新で解消し、frontend と再監査を確認する。
