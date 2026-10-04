@@ -9,6 +9,10 @@
 
 ## 現在の進捗サマリ
 
+- [x] Issue #92: Node unitとjsdom component projectを分離し、共通Tauri mock/cleanup・全routeのrender・フォーム操作/validation/focus・StrictModeの1event/1更新を検証する。
+
+2026-10-05: Issue #92でVitestのNode/jsdom projectを分離し、同じpnpm testと共通CI gateで実行する構成を追加した。全7 route、Settings/Filterの入力・Tab・validation・保存・キャンセル/破棄、Launcherの部分成功/非Windows、Queue snapshot、command rejectのLogs表示、StrictModeの1 event/1 store更新/1 Chat行と遅延購読のcleanupを検証する。cleanup前のresetでlistener漏れを隠さず、未処理Promiseも失敗にする。unit209件+DOM12件、format/lint/typecheck/build/security、quality policy3件が成功。viewportは固定mockであり、実WebView/Windows smokeは#91で扱う。
+
 - [x] Issue #79: backendの型付きplatform capabilityでLauncher登録/起動を制限し、非Windowsは保存前に拒否する。UIも選択・DnD・起動を無効化し、既存項目の表示/削除は維持する。
 
 2026-10-05: Issue #79でapp_build_infoへ型付きLauncher capabilityを追加した。非Windowsは登録commandと設定patch経由の新規/target変更を保存前に拒否し、起動もfilesystem確認前に拒否する。UIは取得失敗/未取得時も安全側で無効化し、OS標準ランチャー/Windows版を案内する。native/browser/malformed契約6件、Windows/非Windows分岐と保存非変更を含むRust169件、frontend209件、fmt/clippy/typecheck/build/securityが成功。Windows実機smokeは#91で追跡する。

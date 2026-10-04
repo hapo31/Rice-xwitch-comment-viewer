@@ -8,6 +8,8 @@ Issue/PRには問題、変更範囲、検証結果を書いてください。pac
 
 ## ローカルの品質検査
 
+`pnpm test`はNode unitとjsdom componentの両projectを実行します。個別実行、Tauri mockの使い方、DOM検証の境界は[component testガイド](./docs/component-tests.md)を参照してください。
+
 `pnpm install --frozen-lockfile`後、`pnpm run format:check`、`pnpm run lint`、`pnpm run typecheck`、`pnpm test`、`pnpm build`を実行します。format修正は`pnpm run format`です。Biomeはlockfileで2.5.15へ固定し、TS/TSXの空白・改行・引用符を統一します。lintは型検査の別名ではなく、到達不能コード、未宣言変数、hookの条件呼出し、debugger、重複key/parameter、非厳密比較、危険なHTML/evalをエラーとして検出します。スタイル変更による機能修正を混ぜないため、選択したcorrectness/securityルールを明示管理します。
 
 Rustは`build/release-inputs.json`のcompiler（現在1.90.0）とrustfmt/clippyを使います。`cargo fmt --check --manifest-path src-tauri/Cargo.toml`、`cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings`、`cargo test --locked --manifest-path src-tauri/Cargo.toml --all-features`が必須です。
