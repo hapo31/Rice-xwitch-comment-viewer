@@ -1,8 +1,8 @@
 # 実装 TODO
 
-- [ ] Issue #71: Launcher request/文字列/PNG encoded・decoded/dimensions/合計icon量/settings JSONへ上限を設け、renderer編集DTOからbackend生成ID/target/iconを変更できないようにする。巨大・不正入力、重複path、quota境界、200件の予算、上限超過時のdisk/memory非変更を検証する。
+- [x] Issue #71: Launcher request/文字列/PNG encoded・decoded/dimensions/合計icon量/settings JSONへ上限を設け、renderer編集DTOからbackend生成ID/target/iconを変更できないようにする。巨大・不正入力、重複path、quota境界、200件の予算、上限超過時のdisk/memory非変更を検証する。
 
-2026-10-05: #71の資源上限、borrowed Request preflight、編集DTO、bounded読込/serializer、quota超過の全体拒否を実装した。Rust all-features230件/no-default179件、frontend281件とstrict clippy、frontend全gate、quality policy3件が成功。別processの最大200件（icon合計4MiB、128×128 RGBA16 PNG200種類）で保存/backup/loadは3.64秒/追加Rust heap約19.3MiB、JSONも8MiBの最大構成で3.93秒/約39.4MiBだった（5秒/通常32MiB・最大JSON40MiBの予算）。実native Windows200tile描画/JS heap/拒否IPCはCI実行待ちのため、まだ完了扱いにしない。
+2026-10-05: #71の資源上限、borrowed Request preflight、編集DTO、bounded読込/serializer、quota超過の全体拒否を実装した。Rust all-features230件/no-default179件、frontend281件とstrict clippy、frontend全gate、quality policy3件が成功。最大200件（icon合計4MiB、128×128 RGBA16 PNG200種類）の保存/backup/loadは、JSON自体8MiBでもlocal3.93秒/追加Rust heap39.4MiB、[Windows/Linux CI](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37239996196)でWindows2.69秒・Linux2.44秒だった（5秒/最大JSON40MiB予算）。[実native Windows](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37239996083)は200 tile/image decode完了617ms、最大設定IPC取得734ms、JS heap差分43.2MiBで2秒/64MiB以内、不正4要求の拒否と設定非変更・正常終了を確認した。同commit fd8a00aの[quality全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37239996525)、feature matrix、Windows writer/permissionも成功。JS heapは診断用推定であり全WebView RSS/GPUの保証ではない。frameworkの最初のIPC parse/実配布物smokeは別境界で、既知npm Highによる配布停止は維持する。
 
 - [x] Issue #85: blocked/skipped/errorの型付き理由・安全な日本語説明・復旧操作・発生時刻を項目へ保持し、snapshot/reload/late subscriberとChatへ伝える。Queue/Chatの詳細導線、item ID付きwarning/log、履歴上限と機微情報非複製を契約/DOM/fake-workerで検証する。
 

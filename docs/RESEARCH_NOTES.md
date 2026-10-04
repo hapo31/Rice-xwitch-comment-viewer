@@ -1,10 +1,11 @@
 # 調査メモ
 
-## 2026-10-05 Issue #71: Launcherと設定の資源境界（作業中）
+## 2026-10-05 Issue #71: Launcherと設定の資源境界
 
 - 設定取得も本番IPCで初回/拒否要求後の2回を測定し、それぞれ2秒以内を予算とする。
 - 最初のWindows/Linux契約CI 37239473912ではLinuxが成功し、Windowsの既存concurrent-merge fixtureがverbatim prefix付きcanonical pathを期待して失敗した。本番は既にDOS/UNCへ正規化するため、fixtureもその保存形式を厳密に期待するよう修正し、WindowsのDOS/UNC変換を別のpure testで明示する。失敗をskip/ignoreに置換しない。
 - native run 37239473874で実200tileは617ms、最大設定IPC取得940ms、4つの不正要求の拒否/設定非変更が成功した一方、JS heap差分79,513,898bytesで64MiB予算を超えた。fixtureの比較が最大JSONを2回stringifyし、Unicodeを含む巨大な追加bufferを作っていたため、field/型/array/key/valueを厳密に比較する再帰処理へ変更して、その計測専用の全量複製をなくす。sampling範囲/64MiB予算は維持し、GC強制や測定停止で失敗を隠さない。
+- 最終コードfd8a00aの[native Windows run 37239996083](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37239996083)が成功した。200個のimage.decodeと2frame描画616.9ms、最大設定の2回のIPC取得の最大734.2ms、JS heap差分45,296,687bytes（43.2MiB）。不正4要求は全て拒否し、field/key/array/valueの完全一致、正常終了・隔離storage削除を確認した。通常の2process復元/focusも再度成功した。[Windows/Linux run 37239996196](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37239996196)では全Launcher/resource/rollback/recoveryを成功し、8MiB最大JSONのtransaction/backup/loadがWindows2689ms・Linux2439ms、追加Rust heap約39.4MiBだった。quality全9jobs/feature matrix/Windows writerも同commitで成功した。依存版や本番ACLは変更せず、既知braces High1によるaudit/release blockは維持する。
 - Tauri 2.12.1のCommandItemはIPCでparse済みのValueを借用し、Requestもbodyを借用することを公式crate sourceで確認した。Launcher追加と設定patchはRequest経由で、owned DTOへのclone/deserialize前にJSON byte/node/depthとpath件数/総量を検査する。framework自身の最初のIPC parseをアプリ側で制限できたとは扱わない。handler manifest/ACLを広げない。
 - 既存の検証済みPNG data URLとassetProtocol無効を維持し、per-icon encoded/decoded/dimensionと合計quotaを下げる。renderer patchはbackend生成ID/target/iconを持たない編集DTOへ分離する。元の永続modelは互換を維持する。quota超過はtransaction保存前に拒否し、同時更新のmergeでも部分保存しない。
 - settingsの読込とserializerは8MiBを上限にし、bounded readとwriterで上限超過file/stringの全量複製を避ける。最大200件・合計4MiB・128×128 RGBA16の200種類のCRC-valid PNG・最大文字列を使う別processで保存/backup/loadを測る。通常は5秒/追加Rust heap32MiB、JSON自体8MiBの最悪構成は5秒/40MiBを予算にする。test-only System allocator wrapperは[標準allocator API](https://doc.rust-lang.org/std/alloc/struct.System.html)へ同じpointer/layoutを委譲し、Rust-owned live heapだけを計測する（RSS/native library/GPUは含めない）。
