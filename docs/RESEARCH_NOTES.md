@@ -1,5 +1,11 @@
 # 調査メモ
 
+## 2026-10-05 Issue #173: Tauri 2.12への更新と例外縮小
+
+- 最新の公式crates.io indexでTauri 2.12.1 / Tauri Utils 2.10.1が公開済みであることを確認した。両者のMSRVはRust 1.90。Utilsのurlpatternが0.6へ更新されたため、Rust/compilerの固定policyとdevcontainer bootstrapを同じimmutable Rust 1.90.0 image digestへ変更し、Tauriを2.12.1へ更新した。依存解決によりunic系5crateがlockfileから除去された。
+- cargo-audit 0.22.2をignore前のreportで実行し、Rust警告が7件からLinux GTK3のglib/proc-macro-errorの2件へ減ったことを確認した。残る2件は互換範囲のglib更新ができず、ownerと2026-10-21の期限付き例外だけを維持する。これらが解消したという意味ではない。Windowsの非選択も別途graphで確認する。
+- 共通監査ゲートは新規npm braces Highを理由に停止する。Rust例外の正常評価と、全依存のclean auditは区別する。npm例外を勝手に追加しない。
+
 ## 2026-09-23 Issue #173: 再開時の統合検証
 
 - 最新 main bb7f324 を既存 branch へ取り込み、並行した調査メモと TODO を保持した。cargo-audit 0.22.2 の online 監査は RustSec DB `1e640cd56d7604993e3a9ec392060666e3b95ccc` と registry 更新を含め成功した。7件の期限付き例外を適用した結果であり、上流指摘は残っている。

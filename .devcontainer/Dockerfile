@@ -19,7 +19,7 @@ RUN apt-get update \
   install_npm_tarball pnpm; \
   rm -rf /var/lib/apt/lists/* /tmp/codex.tgz /tmp/pnpm.tgz
 
-FROM rust:1.89.0-bookworm@sha256:948f9b08a66e7fe01b03a98ef1c7568292e07ec2e4fe90d88c07bb14563c84ff AS rust-bootstrap
+FROM rust:1.90.0-bookworm@sha256:3914072ca0c3b8aad871db9169a651ccfce30cf58303e5d6f2db16d1d8a7e58f AS rust-bootstrap
 
 RUN rustup component add rustfmt clippy
 

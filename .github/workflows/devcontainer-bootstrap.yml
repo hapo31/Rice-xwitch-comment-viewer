@@ -39,7 +39,8 @@ jobs:
             expected_codex="$(jq -r .packages.codex.version /usr/local/share/rice-devcontainer/bootstrap-lock.json)"
             test "$(codex --version)" = "codex-cli ${expected_codex}"
             test "$(pnpm --version)" = "8.11.0"
-            test "$(rustc --version | awk '\''{ print $2 }'\'')" = "1.89.0"
+            expected_rust="$(jq -r .toolchains.rust.version /usr/local/share/rice-devcontainer/bootstrap-lock.json)"
+            test "$(rustc --version | awk '\''{ print $2 }'\'')" = "${expected_rust}"
           '
           docker run --rm --entrypoint bash -v "${GITHUB_WORKSPACE}:/workspaces/rice" -w /workspaces/rice "${image}" -lc '
             set -euo pipefail

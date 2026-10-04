@@ -10,8 +10,8 @@
       "digest": "sha256:6db5e436948af8f0244488a1f658c2c8e55a3ae51ca2e1686ed042be8f25f70a"
     },
     "rustBootstrap": {
-      "reference": "docker.io/library/rust:1.89.0-bookworm",
-      "digest": "sha256:948f9b08a66e7fe01b03a98ef1c7568292e07ec2e4fe90d88c07bb14563c84ff"
+      "reference": "docker.io/library/rust:1.90.0-bookworm",
+      "digest": "sha256:3914072ca0c3b8aad871db9169a651ccfce30cf58303e5d6f2db16d1d8a7e58f"
     }
   },
   "packages": {
@@ -30,7 +30,7 @@
   },
   "toolchains": {
     "rust": {
-      "version": "1.89.0",
+      "version": "1.90.0",
       "components": ["rustfmt", "clippy"],
       "image": "rustBootstrap"
     }
