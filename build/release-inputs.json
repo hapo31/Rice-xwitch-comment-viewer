@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "rustVersion": "1.89.0",
+  "rustVersion": "1.90.0",
   "nodeVersion": "22.22.0",
-  "rustImage": "rust:1.89.0-bookworm@sha256:948f9b08a66e7fe01b03a98ef1c7568292e07ec2e4fe90d88c07bb14563c84ff",
+  "rustImage": "rust:1.90.0-bookworm@sha256:3914072ca0c3b8aad871db9169a651ccfce30cf58303e5d6f2db16d1d8a7e58f",
   "nodeImage": "node:22.22.0-bookworm-slim@sha256:dd9d21971ec4395903fa6143c2b9267d048ae01ca6d3ea96f16cb30df6187d94",
   "debianSnapshot": "20260921T000000Z",
   "pnpmVersion": "8.11.0",

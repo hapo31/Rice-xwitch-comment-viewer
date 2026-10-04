@@ -1,6 +1,6 @@
 # 実装 TODO
 
-最終調査日: 2026-09-21
+最終調査日: 2026-10-05
 
 
 この TODO は `docs/06-implementation-roadmap.md` の Phase に沿って、現在の実装状況と次に進める作業を追跡するためのものです。作業を始める前後に該当項目を更新してください。
@@ -8,6 +8,12 @@
 調査メモは [`docs/RESEARCH_NOTES.md`](./RESEARCH_NOTES.md) に分離し、日付が新しいものほど上に追記してください。
 
 ## 現在の進捗サマリ
+
+2026-09-21: Issue #173 で RustSec の残存7件を Tauri 上流由来として再確認した。公式 crates.io の Tauri 2.11.6 候補も GTK3 0.18 / webkit2gtk 2.0 / urlpattern 0.3 の制約を残し、今回の lockfile 互換更新で解消しない。Windows graph に unic 系が残り、glib / proc-macro-error は Linux GTK3 graph に限られる。glib の unsound API と呼出し有無を調査し、実 audit は exception を読んで成功した。例外には owner・根拠・2026-10-21 の期限を記録したが、期限検証と release audit gate は未統合の Issue #96 が担当するため、この時点を公開可能な clean audit と扱わない。
+
+- [x] Issue #173: Tauri 2.12.1 / Utils 2.10.1と固定Rust 1.90.0への更新でunic系5警告を解消し、残るLinux GTK3の2警告だけをowner・根拠・2026-10-21の期限付き例外として検証する。
+
+2026-10-05: Issue #173でTauri 2.12.1 / urlpattern 0.6へ更新し、unic系5crateと対応する例外を除去した。compilerのMSRV更新に伴いrelease/devcontainerのRust 1.90.0 imageをdigest固定した。Rust default163件/no-default117件、例外/immutable input/ bootstrap policy検査が成功。Windows MSVC graph306 nodeにglib/gtk/proc-macro-errorとunicはないことを確認した。RustSecの2件はLinux GTK3由来の残存リスクであり解消扱いにしない。全dependency監査は別のnpm braces Highで停止しており、公開可能なclean auditではない。
 
 - [x] Issue #101: 既存MIT正本にpackage/Cargo/bundle metadataを揃え、NSIS/portableへLICENSEを同梱し、contributionと自動検査を追加する。
 

@@ -17,7 +17,9 @@ jobs:
           persist-credentials: false
       - name: Use supported release Rust
         run: |
-          rustup toolchain install 1.89.0 --profile minimal
-          rustup override set 1.89.0
+          $releaseRust = (Get-Content build/release-inputs.json -Raw | ConvertFrom-Json).rustVersion
+          rustup toolchain install $releaseRust --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup override set $releaseRust
       - name: Verify application settings directory, replacement, backup and temporary ACLs
         run: cargo test --locked --no-default-features --manifest-path src-tauri/Cargo.toml settings::tests::settings_in_app_data_inherit_only_current_user_and_system_acl -- --exact
