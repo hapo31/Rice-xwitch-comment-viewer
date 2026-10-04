@@ -287,6 +287,8 @@ impl SettingsStore {
     }
 
     fn load_from_path(path: &Path) -> anyhow::Result<LoadedSettings> {
+        protect_storage(path)?;
+        protect_existing_file(&backup_path(path))?;
         if !path.exists() {
             let settings = AppSettings::default();
             Self::save_to_path(path, &settings)?;
@@ -329,9 +331,8 @@ impl SettingsStore {
     }
 
     fn save_text_to_path(path: &Path, text: &str, fault: SaveFault) -> anyhow::Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
+        protect_storage(path)?;
+        protect_existing_file(&backup_path(path))?;
 
         let temporary_path = write_temp_file(path, text.as_bytes(), fault)?;
         let result = (|| {
@@ -423,6 +424,7 @@ fn backup_path(path: &Path) -> PathBuf {
 }
 
 fn quarantine_file(path: &Path) -> anyhow::Result<PathBuf> {
+    protect_existing_file(path)?;
     let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S%3f");
     let file_name = path
         .file_name()
@@ -447,9 +449,7 @@ fn quarantine_file(path: &Path) -> anyhow::Result<PathBuf> {
 }
 
 fn atomic_write(path: &Path, contents: &[u8], fault: SaveFault) -> anyhow::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
+    protect_storage(path)?;
     let temporary_path = write_temp_file(path, contents, fault)?;
     let result =
         replace_file(&temporary_path, path, fault).and_then(|_| sync_parent_directory(path));
@@ -471,11 +471,14 @@ fn write_temp_file(path: &Path, contents: &[u8], fault: SaveFault) -> anyhow::Re
     for _ in 0..1000 {
         let counter = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
         let temporary_path = parent.join(format!(".{file_name}.{counter}.tmp"));
-        let mut file = match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary_path)
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
         {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = match options.open(&temporary_path) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(error.into()),
@@ -502,11 +505,86 @@ fn write_temp_file(path: &Path, contents: &[u8], fault: SaveFault) -> anyhow::Re
 }
 
 fn replace_file(source: &Path, destination: &Path, fault: SaveFault) -> anyhow::Result<()> {
+    protect_existing_file(source)?;
+    protect_existing_file(destination)?;
     if fault == SaveFault::Replace {
         return Err(anyhow::anyhow!("fault injected: atomic replace failed"));
     }
 
     atomic_replace(source, destination)?;
+    protect_existing_file(destination)?;
+    Ok(())
+}
+
+/// Only the application-specific directory is hardened. Never chmod shared
+/// ancestors such as HOME, /tmp, or the platform's app-data root.
+fn protect_storage(path: &Path) -> anyhow::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .ok_or_else(|| anyhow::anyhow!("設定専用フォルダーを取得できません。"))?;
+    match fs::symlink_metadata(parent) {
+        Ok(metadata) => {
+            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                return Err(anyhow::anyhow!(
+                    "設定フォルダーにリンクや通常以外の種類は使用できません。"
+                ));
+            }
+            protect_metadata(parent, &metadata, 0o700)?;
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let mut builder = fs::DirBuilder::new();
+            builder.recursive(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            builder.create(parent)?;
+            protect_metadata(parent, &fs::symlink_metadata(parent)?, 0o700)?;
+        }
+        Err(error) => return Err(error.into()),
+    }
+    protect_existing_file(path)
+}
+
+fn protect_existing_file(path: &Path) -> anyhow::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err(anyhow::anyhow!("設定ファイルにリンクや通常以外の種類は使用できません。設定の保存場所を確認してください。"));
+            }
+            protect_metadata(path, &metadata, 0o600)
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(unix)]
+fn validate_owner(metadata: &fs::Metadata, expected: u32) -> anyhow::Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    if metadata.uid() != expected || (metadata.is_file() && metadata.nlink() != 1) {
+        return Err(anyhow::anyhow!("設定の所有者が現在のユーザーと異なるか、複数のリンクがあります。所有者と保存場所を確認してください。"));
+    }
+    Ok(())
+}
+
+fn protect_metadata(path: &Path, metadata: &fs::Metadata, mode: u32) -> anyhow::Result<()> {
+    if metadata.file_type().is_symlink() {
+        return Err(anyhow::anyhow!("設定の保存先にリンクは使用できません。"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // geteuid has no pointer arguments or failure mode.
+        validate_owner(metadata, unsafe { libc::geteuid() })?;
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(|error| {
+            anyhow::anyhow!("設定のアクセス権を安全に変更できません。所有者と保存場所を確認してください: {error}")
+        })?;
+    }
+    #[cfg(not(unix))]
+    let _ = (path, metadata, mode);
     Ok(())
 }
 
@@ -783,6 +861,74 @@ mod tests {
     fn cleanup(path: &std::path::Path) {
         fs::remove_dir_all(path.parent().expect("test path parent"))
             .expect("remove test directory");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn settings_permissions_are_owner_only_under_both_umasks() {
+        use std::os::unix::fs::PermissionsExt;
+        if std::env::var_os("RICE_PERMISSION_TEST_CHILD").is_none() {
+            for mask in ["022", "000"] {
+                let status = std::process::Command::new("sh")
+                    .args(["-c", "umask \"$1\"; exec \"$2\" --exact settings::tests::settings_permissions_are_owner_only_under_both_umasks", "rice-permissions", mask])
+                    .arg(std::env::current_exe().unwrap())
+                    .env("RICE_PERMISSION_TEST_CHILD", "1")
+                    .status()
+                    .expect("run isolated umask test");
+                assert!(status.success(), "umask {mask}");
+            }
+            return;
+        }
+        let path = settings_path_for_test("private-mode");
+        fs::remove_dir(path.parent().unwrap()).unwrap();
+        SettingsStore::save_to_path(&path, &AppSettings::default()).unwrap();
+        let mode =
+            |path: &std::path::Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(path.parent().unwrap()), 0o700);
+        assert_eq!(mode(&path), 0o600);
+        let temporary = super::write_temp_file(&path, b"private", SaveFault::None).unwrap();
+        assert_eq!(mode(&temporary), 0o600);
+        fs::remove_file(temporary).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o666)).unwrap();
+        fs::set_permissions(path.parent().unwrap(), fs::Permissions::from_mode(0o777)).unwrap();
+        SettingsStore::load_from_path(&path).unwrap();
+        assert_eq!(mode(&path), 0o600);
+        assert_eq!(mode(path.parent().unwrap()), 0o700);
+        SettingsStore::save_to_path(&path, &settings_with_channel("updated")).unwrap();
+        assert_eq!(mode(&path), 0o600);
+        assert_eq!(mode(&backup_path(&path)), 0o600);
+        fs::write(&path, "broken").unwrap();
+        SettingsStore::load_from_path(&path).unwrap();
+        for entry in fs::read_dir(path.parent().unwrap()).unwrap() {
+            assert_eq!(mode(&entry.unwrap().path()), 0o600);
+        }
+        cleanup(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn settings_reject_symlinks_non_regular_files_and_foreign_owners() {
+        use std::os::unix::fs::{symlink, MetadataExt};
+        let path = settings_path_for_test("unsafe-path");
+        let outside = path.parent().unwrap().join("outside.json");
+        fs::write(&outside, "private").unwrap();
+        symlink(&outside, &path).unwrap();
+        assert!(SettingsStore::load_from_path(&path).is_err());
+        assert!(SettingsStore::save_to_path(&path, &AppSettings::default()).is_err());
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "private");
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        assert!(SettingsStore::load_from_path(&path).is_err());
+        fs::remove_dir(&path).unwrap();
+        let metadata = fs::metadata(&outside).unwrap();
+        assert!(super::validate_owner(&metadata, metadata.uid().wrapping_add(1)).is_err());
+        let linked = path.parent().unwrap().join("linked.json");
+        fs::hard_link(&outside, &linked).unwrap();
+        assert!(super::protect_existing_file(&linked).is_err());
+        let directory_link = path.parent().unwrap().join("directory-link");
+        symlink(path.parent().unwrap(), &directory_link).unwrap();
+        assert!(SettingsStore::load_from_path(&directory_link.join("settings.json")).is_err());
+        cleanup(&path);
     }
 
     #[test]
@@ -1195,5 +1341,51 @@ mod tests {
             saved.launcher.items[0].target
         );
         cleanup(&path);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn settings_in_app_data_inherit_only_current_user_and_system_acl() {
+        let root = PathBuf::from(std::env::var_os("APPDATA").expect("Windows user app data"));
+        let directory = root.join(format!(
+            "dev.rice.tts-permission-test-{}-{}",
+            std::process::id(),
+            TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        let path = directory.join("settings.json");
+        let settings = AppSettings::default();
+        SettingsStore::save_to_path(&path, &settings).expect("save in actual user app data");
+        SettingsStore::save_to_path(&path, &settings).expect("atomic replace and backup");
+        let temporary = write_temp_file(&path, b"test", SaveFault::None).expect("temporary file");
+        let check = r#"
+$ErrorActionPreference = 'Stop'
+$user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$allowed = @($user, 'S-1-5-18', 'S-1-5-32-544')
+foreach ($path in @($env:RICE_ACL_DIRECTORY, $env:RICE_ACL_FILE, $env:RICE_ACL_BACKUP, $env:RICE_ACL_TEMP)) {
+  $acl = Get-Acl -LiteralPath $path
+  $owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+  if ($owner -notin $allowed) { throw "Unexpected owner for $path" }
+  foreach ($rule in $acl.Access) {
+    $sid = $rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+    if ($rule.AccessControlType -eq 'Allow' -and $sid -notin $allowed) {
+      throw "Unexpected access for $sid on $path"
+    }
+  }
+}
+"#;
+        let output = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", check])
+            .env("RICE_ACL_DIRECTORY", &directory)
+            .env("RICE_ACL_FILE", &path)
+            .env("RICE_ACL_BACKUP", backup_path(&path))
+            .env("RICE_ACL_TEMP", &temporary)
+            .output()
+            .expect("inspect Windows ACLs");
+        fs::remove_dir_all(&directory).expect("remove only isolated permission-test directory");
+        assert!(
+            output.status.success(),
+            "Windows user profile ACL: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

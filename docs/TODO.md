@@ -9,6 +9,10 @@
 
 ## 現在の進捗サマリ
 
+- [x] Issue #99: 設定本体・backup・temporary・退避fileをowner-onlyで保存し、読込前に所有者・type・permissionを検証する。umask 022/000、過剰permission補正、リンク/非regular/foreign owner拒否を自動検証する。Windowsはuser profile ACL継承を使用する。
+
+2026-10-05: Issue #99 で settings storage のUnix permission invariantを実装した。共有ancestorを変更せず、読込前にowner-onlyへ補正する。Windows CIでは実ユーザーAppDataに本番SettingsStoreで保存し、directory、本体、backup、temporaryの所有者と許可SIDを検査する。packaged実機で独自profile ACLが設定された場合の確認は継続する。
+
 - [x] Issue #93: release build の base image / Debian snapshot / toolchain を固定し、時刻と build material を記録・検証する。SDK/CRT feed と NSIS/PE metadata の非決定性は material inventory と文書で明示する。
 
 2026-10-05: Issue #93 で release の immutable input manifest、test/build の compiler policy、commit時刻のZIP正規化と build material inventory を追加した。完全な byte 再現性を保証せず、残る非決定要因を文書化した。
