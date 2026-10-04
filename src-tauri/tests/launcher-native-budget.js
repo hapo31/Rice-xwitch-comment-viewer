@@ -21,6 +21,15 @@
     catch (error) { if (!String(error).length) throw new Error("missing recovery message"); return; }
     throw new Error(`${command} accepted an invalid payload`);
   };
+  // Exact structural comparison, without creating two additional 8MiB JSON
+  // strings solely for instrumentation (Unicode would widen their buffers).
+  const equal = (left, right) => {
+    if (left === right) return true;
+    if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
+    if (Array.isArray(left) !== Array.isArray(right)) return false;
+    const keys = Object.keys(left);
+    return keys.length === Object.keys(right).length && keys.every((key) => Object.hasOwn(right, key) && equal(left[key], right[key]));
+  };
   let result;
   try {
     await wait(() => window.__TAURI_INTERNALS__?.invoke && document.querySelector('a[aria-label="Launcher"]'));
@@ -50,7 +59,7 @@
     const secondGetStart = performance.now();
     const after = await invoke("settings_get");
     getMs = Math.max(getMs, performance.now() - secondGetStart);
-    if (JSON.stringify(before) !== JSON.stringify(after)) throw new Error("invalid requests mutated settings");
+    if (!equal(before, after)) throw new Error("invalid requests mutated settings");
     peak = Math.max(peak, performance.memory.usedJSHeapSize);
     result = { count: 200, getMs, renderMs, incrementalJsHeap: Math.max(0, peak - baseline), baselineJsHeap: baseline, peakJsHeap: peak, rejected: 4, unchanged: true };
   } catch (error) {

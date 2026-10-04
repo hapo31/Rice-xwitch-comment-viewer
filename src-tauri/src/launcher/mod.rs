@@ -1711,6 +1711,19 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn canonical_windows_paths_use_dos_and_unc_forms_without_verbatim_prefixes() {
+        assert_eq!(
+            super::normalize_canonical_path(PathBuf::from(r"\\?\C:\Apps\app.exe")),
+            PathBuf::from(r"C:\Apps\app.exe")
+        );
+        assert_eq!(
+            super::normalize_canonical_path(PathBuf::from(r"\\?\UNC\server\share\app.exe")),
+            PathBuf::from(r"\\server\share\app.exe")
+        );
+    }
+
     #[test]
     fn next_order_follows_highest_existing_value() {
         assert_eq!(next_order(&[]), 0);
@@ -1896,6 +1909,7 @@ mod tests {
             merged[0].target,
             new.0
                 .canonicalize()
+                .map(super::normalize_canonical_path)
                 .expect("canonical path")
                 .to_string_lossy()
         );
