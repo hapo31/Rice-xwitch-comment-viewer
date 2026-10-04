@@ -96,12 +96,10 @@ pub struct SpeechRequest {
     pub id: uuid::Uuid,
     pub source_message_id: Option<String>,
     pub text: String,
-    pub voice: Option<String>,
-    pub speed: Option<i16>,
-    pub tone: Option<i16>,
-    pub volume: Option<i16>,
 }
 ```
+
+MVPの`SpeechRequest`は本文と追跡IDだけを持つ。項目単位の`voice/speed/tone/volume` overrideは未対応のためモデルに公開せず、JSONで指定された未知の項目もdeserialize時に拒否する。声質はアダプタ設定からのみ取得する（Issue #81）。将来overrideを追加する際は型、許容範囲、優先順位とpacket契約を同時に実装する。
 
 `ChatMessage.received_at` はアプリ内部で常に `DateTime<Utc>` とする。Tauri event では serde の camelCase 規約により `receivedAt` として、UTC の RFC 3339（末尾 `Z`、小数秒は nanosecond 精度まで保持）を送る。frontend は bridge 受信時にこの契約を検証し、`UtcTimestamp` として store へ渡す。欠落・空文字・タイムゾーンなし・非文字列を含む不正値、および JavaScript の `Date` / `Intl` が表現できない leap second は backend で WebSocket frame を取り出した時刻へフォールバックして warning log を残し、frontend の境界でも受信時刻を使って防御する。Chat view は保存値を変えず利用者のローカルタイムゾーンで表示し、表示不能な値では `--:--:--` を表示する。
 

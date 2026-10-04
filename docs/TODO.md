@@ -9,6 +9,10 @@
 
 ## 現在の進捗サマリ
 
+- [x] Issue #81: MVPのSpeechRequestから未実装の項目単位音声overrideを除外し、未知の項目を明示拒否する。設定単位の声質は維持し、request/adapter契約をテストする。
+
+2026-10-05: Issue #81で未使用の4つのrequest overrideを除外し、各項目の数値・文字列・null入力を拒否すること、およびtrait経由のTCP送信で設定された全声質値がpacketへ反映されることを確認した。Rust 1.90のdefault165件/no-default119件とfmtが成功。既存clippy違反4件は#86で対応する。
+
 2026-09-21: Issue #173 で RustSec の残存7件を Tauri 上流由来として再確認した。公式 crates.io の Tauri 2.11.6 候補も GTK3 0.18 / webkit2gtk 2.0 / urlpattern 0.3 の制約を残し、今回の lockfile 互換更新で解消しない。Windows graph に unic 系が残り、glib / proc-macro-error は Linux GTK3 graph に限られる。glib の unsound API と呼出し有無を調査し、実 audit は exception を読んで成功した。例外には owner・根拠・2026-10-21 の期限を記録したが、期限検証と release audit gate は未統合の Issue #96 が担当するため、この時点を公開可能な clean audit と扱わない。
 
 - [x] Issue #173: Tauri 2.12.1 / Utils 2.10.1と固定Rust 1.90.0への更新でunic系5警告を解消し、残るLinux GTK3の2警告だけをowner・根拠・2026-10-21の期限付き例外として検証する。

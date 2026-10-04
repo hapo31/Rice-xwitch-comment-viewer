@@ -23,15 +23,11 @@ use std::time::{Duration, Instant};
 use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SpeechRequest {
     pub id: String,
     pub source_message_id: Option<String>,
     pub text: String,
-    pub voice: Option<String>,
-    pub speed: Option<i16>,
-    pub tone: Option<i16>,
-    pub volume: Option<i16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -356,10 +352,6 @@ impl SpeechQueueState {
             id: item.id.clone(),
             source_message_id: item.source_message_id.clone(),
             text: item.text.clone(),
-            voice: None,
-            speed: None,
-            tone: None,
-            volume: None,
         };
         self.in_flight = Some(item);
         Some(request)
@@ -1588,6 +1580,29 @@ fn push_history(queue: &mut SpeechQueueState, item: SpeechQueueItem) {
 mod tests {
     use super::*;
     use crate::twitch::Platform;
+
+    #[test]
+    fn speech_request_rejects_each_unsupported_override_instead_of_ignoring_it() {
+        let base = serde_json::json!({"id": "1", "sourceMessageId": null, "text": "こんにちは"});
+        assert!(serde_json::from_value::<SpeechRequest>(base.clone()).is_ok());
+        for field in ["voice", "speed", "tone", "volume"] {
+            for value in [
+                serde_json::json!(100),
+                serde_json::json!("default"),
+                serde_json::Value::Null,
+            ] {
+                let mut request = base.clone();
+                request[field] = value;
+                let error = serde_json::from_value::<SpeechRequest>(request).unwrap_err();
+                assert!(error.to_string().contains("unknown field"));
+                assert!(error.to_string().contains(field));
+            }
+        }
+        let serialized =
+            serde_json::to_value(serde_json::from_value::<SpeechRequest>(base.clone()).unwrap())
+                .unwrap();
+        assert_eq!(serialized, base);
+    }
 
     fn queued_item(id: &str) -> SpeechQueueItem {
         SpeechQueueItem {

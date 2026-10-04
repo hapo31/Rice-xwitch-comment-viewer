@@ -973,6 +973,39 @@ mod tests {
         assert_eq!(received.await.unwrap(), 0x120_i16.to_le_bytes());
     }
 
+    #[tokio::test]
+    async fn domain_request_sends_all_configured_voice_values_without_hidden_overrides() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let received = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut packet = Vec::new();
+            stream.read_to_end(&mut packet).await.unwrap();
+            packet
+        });
+        let config = BouyomiTalkConfig {
+            speed: 300,
+            tone: 50,
+            volume: 0,
+            voice: 10001,
+            code: 0,
+        };
+        let adapter = BouyomiAdapter::new("127.0.0.1", port, config.clone()).unwrap();
+        let request = SpeechRequest {
+            id: "1".into(),
+            source_message_id: None,
+            text: "こんにちは".into(),
+        };
+        assert!(matches!(
+            SpeechAdapter::speak(&adapter, request).await.unwrap(),
+            SpeechResult::Accepted
+        ));
+        assert_eq!(
+            received.await.unwrap(),
+            build_talk_packet(&config, "こんにちは")
+        );
+    }
+
     async fn shared_dispatcher_keeps_control_behind_an_in_flight_talk(
         command: BouyomiControlCommand,
     ) {

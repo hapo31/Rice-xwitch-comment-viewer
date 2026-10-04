@@ -48,6 +48,8 @@ MVPでは棒読みちゃんTCPアダプタを正式採用する。VOICEROID2直�
 
 ## 棒読みちゃんアダプタ設計
 
+MVPでは項目単位の音声overrideを提供しない。`SpeechRequest`に`voice/speed/tone/volume`を指定すると未知の項目として拒否する。すべてのtalk packetは設定単位の`BouyomiTalkConfig`を使い、requestとのmergeや暗黙の変換は行わない。voiceはこの設定内の`i16`数値ID（0が既定、1〜8がAquesTalk、10001以上がSAPI系）であり、汎用文字列voice IDは公開しない。
+
 ```rust
 pub struct BouyomiAdapter {
     address: BouyomiAddress,
