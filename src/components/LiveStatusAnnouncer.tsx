@@ -1,14 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { speechStatusLabel } from "../presentation/chat";
+import { speechHealthLabels, speechQueuePhaseLabels } from "../presentation/speech";
 import type { AppState } from "../stores/appStore";
-import type { AuthStatus, SpeechStatus, TwitchChatConnectionStatus } from "../types";
+import type {
+  AuthStatus,
+  SpeechAdapterHealth,
+  SpeechQueuePhase,
+  TwitchChatConnectionStatus,
+} from "../types";
 
 type AnnouncementPriority = "status" | "alert";
 
 export interface LiveStatusSnapshot {
   twitchAuthStatus: AuthStatus;
   twitchConnectionStatus: TwitchChatConnectionStatus;
-  speechStatus: SpeechStatus;
+  speechAdapterHealth: SpeechAdapterHealth;
+  speechQueuePhase: SpeechQueuePhase;
   latestWarning?: string;
 }
 
@@ -41,7 +47,8 @@ export function toLiveStatusSnapshot(state: AppState): LiveStatusSnapshot {
   return {
     twitchAuthStatus: state.twitchAuthStatus,
     twitchConnectionStatus: state.twitchConnectionStatus,
-    speechStatus: state.speechStatus,
+    speechAdapterHealth: state.speechAdapterHealth,
+    speechQueuePhase: state.speechQueuePhase,
     latestWarning: state.notifications.find((notification) => notification.severity === "warning")
       ?.message,
   };
@@ -76,9 +83,12 @@ export function getLiveStatusAnnouncement(
     };
   }
 
-  if (previous.speechStatus !== current.speechStatus && isSpeechError(current.speechStatus)) {
+  if (
+    previous.speechAdapterHealth !== current.speechAdapterHealth &&
+    isSpeechError(current.speechAdapterHealth)
+  ) {
     return {
-      message: `棒読みちゃん: ${speechStatusLabel(current.speechStatus)}`,
+      message: `棒読みちゃん: ${speechHealthLabels[current.speechAdapterHealth]}`,
       priority: "alert",
     };
   }
@@ -104,10 +114,17 @@ export function getLiveStatusAnnouncement(
     };
   }
 
-  if (previous.speechStatus !== current.speechStatus) {
+  if (previous.speechAdapterHealth !== current.speechAdapterHealth) {
     return {
-      message: `棒読みちゃん: ${speechStatusLabel(current.speechStatus)}`,
+      message: `棒読みちゃん: ${speechHealthLabels[current.speechAdapterHealth]}`,
       priority: "status",
+    };
+  }
+
+  if (previous.speechQueuePhase !== current.speechQueuePhase) {
+    return {
+      message: `読み上げキュー: ${speechQueuePhaseLabels[current.speechQueuePhase]}`,
+      priority: current.speechQueuePhase === "error" ? "alert" : "status",
     };
   }
 }
@@ -126,7 +143,8 @@ export function LiveStatusAnnouncer({ state }: { state: AppState }) {
   }, [
     snapshot.twitchAuthStatus,
     snapshot.twitchConnectionStatus,
-    snapshot.speechStatus,
+    snapshot.speechAdapterHealth,
+    snapshot.speechQueuePhase,
     snapshot.latestWarning,
   ]);
 
@@ -150,6 +168,6 @@ function isConnectionError(status: TwitchChatConnectionStatus): boolean {
   return status === "authRequired" || status === "error";
 }
 
-function isSpeechError(status: SpeechStatus): boolean {
+function isSpeechError(status: SpeechAdapterHealth): boolean {
   return status === "disconnected" || status === "error";
 }

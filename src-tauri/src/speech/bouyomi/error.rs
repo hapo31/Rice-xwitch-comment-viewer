@@ -1,4 +1,4 @@
-use crate::app_events::SpeechStatus;
+use crate::app_events::{SpeechAdapterHealth, SpeechStatus};
 use std::io::{Error, ErrorKind};
 
 #[derive(Debug, thiserror::Error)]
@@ -49,6 +49,13 @@ pub(crate) struct SpeechFailure {
 }
 
 impl SpeechFailure {
+    pub fn adapter_health(&self) -> SpeechAdapterHealth {
+        if self.status == SpeechStatus::Disconnected {
+            SpeechAdapterHealth::Disconnected
+        } else {
+            SpeechAdapterHealth::Error
+        }
+    }
     pub fn configuration(detail: String) -> Self {
         classify_error(BouyomiError::Configuration(detail).into())
     }

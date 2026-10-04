@@ -26,6 +26,8 @@ export interface AppState {
   twitchActiveConnection?: TwitchActiveConnection;
   twitchConnectionGeneration: number;
   speechStatus: SpeechStatus;
+  speechAdapterHealth: SpeechAdapterHealth;
+  speechQueuePhase: SpeechQueuePhase;
   settings?: AppSettings;
   chatMessages: ChatMessage[];
   queueItems: QueueItem[];
@@ -65,6 +67,8 @@ export const initialAppState: AppState = {
   twitchConnectionStatus: "disconnected",
   twitchConnectionGeneration: 0,
   speechStatus: "disconnected",
+  speechAdapterHealth: "unknown",
+  speechQueuePhase: "idle",
   chatMessages: [],
   queueItems: [],
   logs: [],
@@ -92,7 +96,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "twitch.profile":
       return { ...state, twitchProfile: action.profile };
     case "speech.status":
-      return { ...state, speechStatus: action.status };
+      return {
+        ...state,
+        speechStatus: action.status,
+        speechAdapterHealth: action.adapterHealth ?? state.speechAdapterHealth,
+      };
     case "chat.message":
       return {
         ...state,
@@ -105,6 +113,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         queueItems: action.items,
+        speechQueuePhase: action.phase ?? state.speechQueuePhase,
         chatMessages: syncChatMessageStatuses(state.chatMessages, action.items),
       };
     case "launcher.changed":

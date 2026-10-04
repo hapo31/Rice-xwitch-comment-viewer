@@ -250,6 +250,53 @@ it("command rejection is handled and remains visible in Logs", async () => {
   ).toBeInTheDocument();
 });
 
+it("keeps paused queue state while periodic probes detect disconnect and recovery", async () => {
+  const intervals = vi.spyOn(globalThis, "setInterval");
+  tauriMock.setCommand("speech_queue_reload", {
+    revision: 3,
+    status: { revision: 2, status: "paused", adapterHealth: "connected", occurredAtMs: 1 },
+    queue: { revision: 3, phase: "paused", items: [], queuedCount: 0, occurredAtMs: 1 },
+  });
+  tauriMock.setCommand("speech_health_probe", () => {
+    tauriMock.emit("speech://status", {
+      revision: 10,
+      status: "disconnected",
+      adapterHealth: "disconnected",
+      occurredAtMs: 1,
+      message: "棒読みちゃんが未接続です。",
+    });
+    throw new Error("native failure");
+  });
+  const { stores } = mountApp("/queue");
+  await ready(stores);
+  await waitFor(() =>
+    expect(stores.connection.getState().speechAdapterHealth).toBe("disconnected"),
+  );
+  expect(stores.queue.getState().phase).toBe("paused");
+  const footer = screen.getByRole("contentinfo");
+  expect(footer).toHaveTextContent("棒読みちゃん: 未接続");
+  expect(footer).toHaveTextContent("キュー: 一時停止中");
+  tauriMock.setCommand("speech_health_probe", () => {
+    tauriMock.emit("speech://status", {
+      revision: 11,
+      status: "idle",
+      adapterHealth: "connected",
+      occurredAtMs: 2,
+      message: "棒読みちゃんの接続を確認しました。",
+    });
+    return "接続が復旧しました。";
+  });
+  const poll = intervals.mock.calls.find(([, delay]) => delay === 5000)?.[0];
+  expect(typeof poll).toBe("function");
+  await act(async () => {
+    if (typeof poll === "function") poll();
+  });
+  await waitFor(() => expect(stores.connection.getState().speechAdapterHealth).toBe("connected"));
+  expect(stores.queue.getState().phase).toBe("paused");
+  expect(footer).toHaveTextContent("棒読みちゃん: 接続確認済み");
+  expect(footer).toHaveTextContent("キュー: 一時停止中");
+});
+
 it.each([
   ["speech_health_check", "接続確認", "disconnected"],
   ["speech_health_check", "接続確認", "error"],

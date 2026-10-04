@@ -112,6 +112,7 @@ pub enum SpeechStatus {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum SpeechAdapterHealth {
+    Unknown,
     Connected,
     Disconnected,
     Error,
@@ -257,6 +258,22 @@ impl AppEventState {
         let Ok(mut inner) = self.inner.lock() else {
             return payload;
         };
+        payload.revision = Self::next_revision(&mut inner);
+        inner.speech_status = Some(payload.clone());
+        payload
+    }
+
+    // Activity changes do not prove that the adapter is reachable. Only an
+    // explicit health result may change the independently retained health.
+    fn record_speech_activity(&self, mut payload: SpeechStatusEvent) -> SpeechStatusEvent {
+        let Ok(mut inner) = self.inner.lock() else {
+            return payload;
+        };
+        payload.adapter_health = inner
+            .speech_status
+            .as_ref()
+            .map(|previous| previous.adapter_health.clone())
+            .unwrap_or(SpeechAdapterHealth::Unknown);
         payload.revision = Self::next_revision(&mut inner);
         inner.speech_status = Some(payload.clone());
         payload
@@ -441,12 +458,35 @@ pub fn emit_speech_status<R: Runtime>(
     status: SpeechStatus,
     message: Option<String>,
 ) {
-    let adapter_health = match status {
-        SpeechStatus::Disconnected => SpeechAdapterHealth::Disconnected,
-        SpeechStatus::Error => SpeechAdapterHealth::Error,
-        SpeechStatus::Idle | SpeechStatus::Speaking | SpeechStatus::Paused => {
-            SpeechAdapterHealth::Connected
+    let payload = SpeechStatusEvent {
+        revision: 0,
+        status,
+        adapter_health: SpeechAdapterHealth::Unknown,
+        message,
+        occurred_at_ms: current_timestamp_ms(),
+    };
+    if let Some(state) = app_event_state(app) {
+        let payload = state.record_speech_activity(payload);
+        emit_payload(app, SPEECH_STATUS_EVENT, payload);
+    } else {
+        emit_payload(app, SPEECH_STATUS_EVENT, payload);
+    }
+}
+
+#[cfg(feature = "app")]
+pub fn emit_speech_adapter_health<R: Runtime>(
+    app: &AppHandle<R>,
+    adapter_health: SpeechAdapterHealth,
+    message: Option<String>,
+) {
+    // `status` remains a legacy activity/error projection. Consumers must use
+    // adapterHealth plus the independently revisioned queue snapshot.
+    let status = match adapter_health {
+        SpeechAdapterHealth::Connected => SpeechStatus::Idle,
+        SpeechAdapterHealth::Unknown | SpeechAdapterHealth::Disconnected => {
+            SpeechStatus::Disconnected
         }
+        SpeechAdapterHealth::Error => SpeechStatus::Error,
     };
     let payload = SpeechStatusEvent {
         revision: 0,
@@ -455,12 +495,12 @@ pub fn emit_speech_status<R: Runtime>(
         message,
         occurred_at_ms: current_timestamp_ms(),
     };
-    if let Some(state) = app_event_state(app) {
-        let payload = state.record_speech_status(payload);
-        emit_payload(app, SPEECH_STATUS_EVENT, payload);
+    let payload = if let Some(state) = app_event_state(app) {
+        state.record_speech_status(payload)
     } else {
-        emit_payload(app, SPEECH_STATUS_EVENT, payload);
-    }
+        payload
+    };
+    emit_payload(app, SPEECH_STATUS_EVENT, payload);
 }
 
 #[cfg(feature = "app")]
@@ -747,6 +787,69 @@ mod tests {
         assert_eq!(current.queue.revision, new.revision);
         assert!(current.queue.items.is_empty());
         assert_eq!(current.status.revision, old.status.revision);
+    }
+
+    #[test]
+    fn health_activity_and_queue_replay_the_shared_independence_contract() {
+        let cases: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../src/tauri/fixtures/speech-independent-states.json"
+        ))
+        .unwrap();
+        for case in cases.as_array().unwrap() {
+            let state = AppEventState::default();
+            state.record_speech_status(SpeechStatusEvent {
+                adapter_health: SpeechAdapterHealth::Unknown,
+                ..status(SpeechStatus::Idle)
+            });
+            state.record_speech_queue(SpeechQueueUpdatedEvent {
+                items: vec![],
+                queued_count: 0,
+                phase: SpeechQueuePhase::Idle,
+                ..queue()
+            });
+            for step in case["steps"].as_array().unwrap() {
+                if let Some(health) = step.get("health") {
+                    let health = match health.as_str().unwrap() {
+                        "connected" => SpeechAdapterHealth::Connected,
+                        "disconnected" => SpeechAdapterHealth::Disconnected,
+                        "error" => SpeechAdapterHealth::Error,
+                        _ => SpeechAdapterHealth::Unknown,
+                    };
+                    state.record_speech_status(SpeechStatusEvent {
+                        adapter_health: health,
+                        ..status(SpeechStatus::Idle)
+                    });
+                } else {
+                    let phase = match step["phase"].as_str().unwrap() {
+                        "paused" => SpeechQueuePhase::Paused,
+                        "speaking" => SpeechQueuePhase::Speaking,
+                        "error" => SpeechQueuePhase::Error,
+                        _ => SpeechQueuePhase::Idle,
+                    };
+                    state.record_speech_queue(SpeechQueueUpdatedEvent {
+                        items: vec![],
+                        queued_count: 0,
+                        phase,
+                        ..queue()
+                    });
+                    // Queue activity arriving after a health result cannot
+                    // replace that result with a fabricated Connected value.
+                    state.record_speech_activity(status(SpeechStatus::Paused));
+                }
+            }
+            let snapshot = serde_json::to_value(state.speech_state_snapshot().unwrap()).unwrap();
+            assert_eq!(
+                snapshot["status"]["adapterHealth"], case["expected"]["adapterHealth"],
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                snapshot["queue"]["phase"], case["expected"]["phase"],
+                "{}",
+                case["name"]
+            );
+            assert!(snapshot["queue"]["items"].as_array().unwrap().is_empty());
+        }
     }
     #[test]
     fn emit_errors_are_bounded_and_have_replay_ids() {

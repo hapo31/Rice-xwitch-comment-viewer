@@ -82,6 +82,7 @@ import {
   subscribeDomainEvents,
 } from "./orchestration/domainOrchestration";
 import { routeAuthStorageWarning } from "./orchestration/authWarnings";
+import { startSpeechHealthMonitor } from "./orchestration/speechHealthMonitor";
 import type {
   AppSettings,
   AppSettingsPatch,
@@ -98,10 +99,16 @@ export function AppShell() {
   const [eventsRestored, setEventsRestored] = useState(false);
   const connection = useConnectionSelector((value) => value);
   const settings = useSettingsSelector((value) => value.settings);
-  const queueItems = useQueueSelector((value) => value.items);
+  const queue = useQueueSelector((value) => value);
   const state = useMemo(
-    () => ({ ...initialAppState, ...connection, settings, queueItems }),
-    [connection, settings, queueItems],
+    () => ({
+      ...initialAppState,
+      ...connection,
+      settings,
+      queueItems: queue.items,
+      speechQueuePhase: queue.phase,
+    }),
+    [connection, settings, queue],
   );
   const dispatch = useCallback(
     (action: AppAction) => dispatchDomainAction(stores, action),
@@ -145,10 +152,10 @@ export function AppShell() {
   );
   const activeUnsavedChange = [...unsavedChanges.current.values()].find((change) => change.isDirty);
   const hasActiveChat = hasActiveTwitchChat(state.twitchConnectionStatus);
-  const hasPendingSpeech = hasPendingSpeechWork(state.speechStatus, state.queueItems);
+  const hasPendingSpeech = hasPendingSpeechWork(state.speechQueuePhase, state.queueItems);
   const exitConfirmationRequired = requiresExitConfirmation(
     state.twitchConnectionStatus,
-    state.speechStatus,
+    state.speechQueuePhase,
     state.queueItems,
     Boolean(activeUnsavedChange),
   );
@@ -361,40 +368,17 @@ export function AppShell() {
   ]);
 
   useEffect(() => {
-    const shouldPoll =
-      eventsRestored &&
-      state.settings &&
-      (state.speechStatus === "disconnected" || state.speechStatus === "error");
-
-    if (!shouldPoll) {
-      return;
-    }
-
-    let cancelled = false;
-    const pollSpeechHealth = async () => {
-      try {
-        const message = await speechHealthProbe();
-        if (cancelled) {
-          return;
-        }
-        if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "idle" });
+    if (!eventsRestored || !state.settings || !isDesktopRuntime()) return;
+    return startSpeechHealthMonitor({
+      probe: speechHealthProbe,
+      getHealth: () => stores.connection.getState().speechAdapterHealth,
+      onRecovered: (message) => {
         reportInfo(message, "event");
-        routeSystemTimelineEvent(speechRecoveryTimelineEvent(message, "idle"));
-      } catch {
-        // Keep the existing error visible while waiting for BouyomiChan to become reachable.
-      }
-    };
-
-    void pollSpeechHealth();
-    const intervalId = window.setInterval(() => {
-      void pollSpeechHealth();
-    }, 5000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [eventsRestored, state.settings, state.speechStatus]);
+        const phase = stores.queue.getState().phase;
+        routeSystemTimelineEvent(speechRecoveryTimelineEvent(message, phase));
+      },
+    });
+  }, [eventsRestored, state.settings?.speech.bouyomiHost, state.settings?.speech.bouyomiPort]);
 
   async function handleSpeechTest(text?: string) {
     try {
@@ -638,7 +622,7 @@ export function AppShell() {
 
   useStreamHotkeys({
     onToggleSpeech: () => {
-      void handleSpeechControl(state.speechStatus === "paused" ? "resume" : "pause");
+      void handleSpeechControl(state.speechQueuePhase === "paused" ? "resume" : "pause");
     },
     onSkipSpeech: () => {
       void handleSpeechControl("skip");

@@ -6,9 +6,9 @@ mod twitch;
 
 #[cfg(feature = "app")]
 use app_events::{
-    app_events_snapshot, emit_app_log, emit_speech_status, emit_twitch_auth_required,
-    emit_twitch_status, AppEventState, AppLogLevel, SpeechStatus, TwitchAuthRequiredReason,
-    TwitchStatus, TwitchStatusDomain,
+    app_events_snapshot, emit_app_log, emit_speech_adapter_health, emit_twitch_auth_required,
+    emit_twitch_status, AppEventState, AppLogLevel, TwitchAuthRequiredReason, TwitchStatus,
+    TwitchStatusDomain,
 };
 #[cfg(feature = "app")]
 use launcher::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
@@ -145,9 +145,9 @@ pub fn run() {
                 TwitchStatus::Disconnected,
                 Some("Twitch は未接続です。".to_string()),
             );
-            emit_speech_status(
+            emit_speech_adapter_health(
                 app.handle(),
-                SpeechStatus::Disconnected,
+                app_events::SpeechAdapterHealth::Unknown,
                 Some("棒読みちゃん接続を確認してください。".to_string()),
             );
             if let Err(error) = emit_current_queue(app.handle()) {

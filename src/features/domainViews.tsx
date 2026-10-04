@@ -25,17 +25,24 @@ export function DomainChatView({ showStartupGuide }: { showStartupGuide: boolean
   const messages = useChatSelector((state) => state.messages);
   const settings = useSettingsSelector((state) => state.settings);
   const connection = useConnectionSelector((state) => state);
+  const speechQueuePhase = useQueueSelector((state) => state.phase);
   const state = useMemo(
     () => ({
       ...initialAppState,
       chatMessages: messages,
       settings,
+      twitchAuthStatus: connection.twitchAuthStatus,
+      speechAdapterHealth: connection.speechAdapterHealth,
+      speechQueuePhase,
       twitchConnectionStatus: connection.twitchConnectionStatus,
       twitchActiveConnection: connection.twitchActiveConnection,
       twitchConnectionGeneration: connection.twitchConnectionGeneration,
       twitchProfile: connection.twitchProfile,
     }),
     [
+      connection.twitchAuthStatus,
+      connection.speechAdapterHealth,
+      speechQueuePhase,
       connection.twitchActiveConnection,
       connection.twitchConnectionGeneration,
       connection.twitchConnectionStatus,
@@ -48,8 +55,11 @@ export function DomainChatView({ showStartupGuide }: { showStartupGuide: boolean
 }
 
 export function DomainQueueView(props: Omit<React.ComponentProps<typeof QueueView>, "state">) {
-  const queueItems = useQueueSelector((state) => state.items);
-  const state = useMemo(() => ({ ...initialAppState, queueItems }), [queueItems]);
+  const queue = useQueueSelector((state) => state);
+  const state = useMemo(
+    () => ({ ...initialAppState, queueItems: queue.items, speechQueuePhase: queue.phase }),
+    [queue],
+  );
   return <QueueView {...props} state={state} />;
 }
 

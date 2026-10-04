@@ -1,5 +1,6 @@
 import type { AppState } from "../stores/appStore";
 import type { UtcTimestamp } from "../time";
+import { isSpeechReady, speechQueuePhaseLabels } from "./speech";
 
 const startupGuideSessionKey = "rice.startup-guide-shown";
 
@@ -33,7 +34,8 @@ export function getStartupGuideMessages(
 ): StartupGuideMessage[] {
   const isAuthenticated = state.twitchAuthStatus === "authenticated";
   const channelLogin = state.settings?.twitch.channelLogin.trim() ?? "";
-  const isBouyomiConnected = ["idle", "speaking", "paused"].includes(state.speechStatus);
+  const isBouyomiConnected = state.speechAdapterHealth === "connected";
+  const isReady = isSpeechReady(state);
   const messages: StartupGuideMessage[] = [
     message("startup-check", receivedAt, "Twitchと棒読みちゃんの状態を確認しています…"),
     isAuthenticated
@@ -60,7 +62,11 @@ export function getStartupGuideMessages(
       ? message(
           "startup-bouyomi",
           receivedAt,
-          "棒読みちゃんとの接続を確認しました。チャットを読み上げる準備ができています。",
+          isReady
+            ? "棒読みちゃんとの接続を確認しました。チャットを読み上げる準備ができています。"
+            : state.settings?.speech.autoSpeak === false
+              ? "棒読みちゃんとの接続を確認しました。自動読み上げはOFFです。"
+              : `棒読みちゃんとの接続を確認しました。キューは${speechQueuePhaseLabels[state.speechQueuePhase]}です。Queueで状態を確認してください。`,
         )
       : message(
           "startup-bouyomi",
@@ -69,7 +75,7 @@ export function getStartupGuideMessages(
         ),
   ];
 
-  if (isAuthenticated && channelLogin && isBouyomiConnected) {
+  if (isAuthenticated && channelLogin && isReady) {
     messages.push(
       message(
         "startup-ready",

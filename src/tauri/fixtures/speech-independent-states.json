@@ -1,0 +1,7 @@
+[
+  { "name": "recovery preserves pause", "steps": [{"health":"connected"},{"phase":"paused"},{"health":"disconnected"},{"health":"connected"}], "expected": {"adapterHealth":"connected","phase":"paused"} },
+  { "name": "pause does not invent a connection", "steps": [{"health":"disconnected"},{"phase":"paused"}], "expected": {"adapterHealth":"disconnected","phase":"paused"} },
+  { "name": "recovery leaves manual retry pending", "steps": [{"phase":"error"},{"health":"disconnected"},{"health":"connected"}], "expected": {"adapterHealth":"connected","phase":"error"} },
+  { "name": "late activity does not hide disconnect", "steps": [{"health":"connected"},{"phase":"speaking"},{"health":"disconnected"},{"phase":"paused"}], "expected": {"adapterHealth":"disconnected","phase":"paused"} },
+  { "name": "explicit queue transition clears retry wait", "steps": [{"health":"connected"},{"phase":"error"},{"phase":"idle"}], "expected": {"adapterHealth":"connected","phase":"idle"} }
+]

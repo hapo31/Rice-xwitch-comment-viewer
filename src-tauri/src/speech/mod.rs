@@ -4,8 +4,9 @@ use crate::app_events::SpeechQueueItemStatus;
 
 #[cfg(feature = "app")]
 use crate::app_events::{
-    emit_app_log, emit_speech_queue_updated, emit_speech_status, AppEventState, AppLogLevel,
-    SpeechQueueItemEvent, SpeechQueuePhase, SpeechStateSnapshot, SpeechStatus,
+    emit_app_log, emit_speech_adapter_health, emit_speech_queue_updated, emit_speech_status,
+    AppEventState, AppLogLevel, SpeechQueueItemEvent, SpeechQueuePhase, SpeechStateSnapshot,
+    SpeechStatus,
 };
 #[cfg(feature = "app")]
 use crate::settings::AppState;
@@ -1040,7 +1041,11 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                     }
                 };
                 if queue.fail_after_acceptance(&request.id) {
-                    emit_speech_status(&app, failure.status, Some(message.clone()));
+                    emit_speech_adapter_health(
+                        &app,
+                        failure.adapter_health(),
+                        Some(message.clone()),
+                    );
                     emit_app_log(&app, AppLogLevel::Error, failure.log_message());
                     emit_queue_snapshot(&app, &queue, Some(message));
                 } else {
@@ -1087,7 +1092,11 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
                         }
                         SpeechQueueFailureTransition::Ignored => error_message.clone(),
                     };
-                    emit_speech_status(&app, failure.status, Some(queue_message.clone()));
+                    emit_speech_adapter_health(
+                        &app,
+                        failure.adapter_health(),
+                        Some(queue_message.clone()),
+                    );
                     emit_app_log(
                         &app,
                         AppLogLevel::Error,
@@ -1243,11 +1252,8 @@ fn queue_event_snapshot(
         SpeechQueuePhase::Paused
     } else if queue.in_flight.is_some() {
         SpeechQueuePhase::Speaking
-    } else if queue
-        .pending
-        .iter()
-        .any(|item| item.status == SpeechQueueItemStatus::Error)
-        || queue
+    } else if queue.pending.is_empty()
+        && queue
             .history
             .iter()
             .any(|item| item.status == SpeechQueueItemStatus::Error)
@@ -1848,6 +1854,37 @@ mod tests {
         assert!(queue.in_flight.is_none());
         assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Error);
         assert_eq!(queue.history[0].retry_count, 0);
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn failed_history_waits_for_manual_retry_without_stopping_later_pending_work() {
+        let mut queue = SpeechQueueState::default();
+        queue
+            .history
+            .push_back(history_item("failed", SpeechQueueItemStatus::Error));
+        assert_eq!(
+            queue_event_snapshot(&queue, None).phase,
+            SpeechQueuePhase::Error
+        );
+        queue.pending.push_back(queued_item("later"));
+        assert_eq!(
+            queue_event_snapshot(&queue, None).phase,
+            SpeechQueuePhase::Idle
+        );
+        assert_eq!(
+            queue.reserve_next_request_after_dispatch_lock().unwrap().id,
+            "later"
+        );
+        assert_eq!(
+            queue_event_snapshot(&queue, None).phase,
+            SpeechQueuePhase::Speaking
+        );
+        queue.paused = true;
+        assert_eq!(
+            queue_event_snapshot(&queue, None).phase,
+            SpeechQueuePhase::Paused
+        );
     }
 
     #[test]

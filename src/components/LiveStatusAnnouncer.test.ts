@@ -9,10 +9,24 @@ import {
 const initial: LiveStatusSnapshot = {
   twitchAuthStatus: "authenticated",
   twitchConnectionStatus: "disconnected",
-  speechStatus: "idle",
+  speechAdapterHealth: "connected",
+  speechQueuePhase: "idle",
 };
 
 describe("getLiveStatusAnnouncement", () => {
+  it("announces queue retry wait without describing a connected adapter as failed", () => {
+    expect(getLiveStatusAnnouncement(initial, { ...initial, speechQueuePhase: "error" })).toEqual({
+      message: "読み上げキュー: 手動再試行待ち",
+      priority: "alert",
+    });
+    const paused = { ...initial, speechQueuePhase: "paused" as const };
+    expect(
+      getLiveStatusAnnouncement(paused, { ...paused, speechAdapterHealth: "disconnected" }),
+    ).toEqual({
+      message: "棒読みちゃん: 未接続",
+      priority: "alert",
+    });
+  });
   it("uses the latest warning notification from the structured notification store", () => {
     const snapshot = toLiveStatusSnapshot({
       ...initialAppState,

@@ -1,5 +1,8 @@
 #[cfg(feature = "app")]
-use crate::app_events::{emit_app_log, emit_speech_status, AppLogLevel, SpeechStatus};
+use crate::app_events::{
+    emit_app_log, emit_speech_adapter_health, emit_speech_status, AppLogLevel, SpeechAdapterHealth,
+    SpeechStatus,
+};
 #[cfg(feature = "app")]
 use crate::settings::AppState;
 #[cfg(feature = "app")]
@@ -506,7 +509,7 @@ pub async fn speech_health_check(
         "棒読みちゃんに接続できました。応答時間 {}ms",
         elapsed.as_millis()
     );
-    emit_speech_status(&app, SpeechStatus::Idle, Some(message.clone()));
+    emit_speech_adapter_health(&app, SpeechAdapterHealth::Connected, Some(message.clone()));
     emit_app_log(&app, AppLogLevel::Info, message.clone());
     Ok(message)
 }
@@ -523,20 +526,9 @@ pub async fn speech_health_probe(
         .await
         .map_err(classify_error)
         .map_err(|failure| report_failure(&app, failure))?;
-    let queue = state
-        .speech_queue
-        .lock()
-        .map_err(|error| error.to_string())?;
-    let status = if queue.paused {
-        SpeechStatus::Paused
-    } else if queue.in_flight.is_some() {
-        SpeechStatus::Speaking
-    } else {
-        SpeechStatus::Idle
-    };
-    emit_speech_status(
+    emit_speech_adapter_health(
         &app,
-        status,
+        SpeechAdapterHealth::Connected,
         Some("棒読みちゃんの接続を確認しました。".to_string()),
     );
     Ok(format!(
@@ -697,7 +689,11 @@ fn apply_clear_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String>
 
 #[cfg(feature = "app")]
 pub(crate) fn report_failure(app: &tauri::AppHandle<tauri::Wry>, failure: SpeechFailure) -> String {
-    emit_speech_status(app, failure.status, Some(failure.user_message.clone()));
+    emit_speech_adapter_health(
+        app,
+        failure.adapter_health(),
+        Some(failure.user_message.clone()),
+    );
     let level = if failure.status == SpeechStatus::Disconnected {
         AppLogLevel::Warning
     } else {

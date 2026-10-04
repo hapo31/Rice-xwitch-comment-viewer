@@ -13,17 +13,18 @@ import {
 function useShellState() {
   const connection = useConnectionSelector((state) => state);
   const settings = useSettingsSelector((state) => state.settings);
-  const queueItems = useQueueSelector((state) => state.items);
+  const queue = useQueueSelector((state) => state);
   const notifications = useLogsSelector((state) => state.notifications);
   return useMemo(
     () => ({
       ...initialAppState,
       ...connection,
       settings,
-      queueItems,
+      queueItems: queue.items,
+      speechQueuePhase: queue.phase,
       notifications,
     }),
-    [connection, settings, queueItems, notifications],
+    [connection, settings, queue, notifications],
   );
 }
 

@@ -9,6 +9,10 @@
 
 ## 現在の進捗サマリ
 
+- [x] Issue #69: adapter healthとqueue phaseをbackend/frontendで独立保持し、paused中も無音probeを継続する。復旧は失敗項目を自動再送せず、UIの接続/準備完了を両状態から導出する。
+
+2026-10-05: Issue #69でqueue活動から接続状態を推測する処理を除去し、明示的なhealth結果だけがadapterHealthを更新するようにした。無音probeはconnected/paused中も5秒周期で継続し、重複probeと終了後の遅延通知を防ぐ。復旧してもpaused/失敗項目の手動再試行待ちは維持し、失敗履歴があるだけで後続pendingを停止しない。Status Bar/Side Panel/live announcementは両状態を分離表示し、起動ガイドはhealth・phase・自動読み上げONから準備完了を判定する。終了保護とhotkeyもqueue phaseを使う。共通fixture5順序、paused中の切断/復旧DOM、probeのfake clockを含むfrontend238件、Rust all-features178件/no-default130件、fmt/clippy/format/lint/typecheck/build/securityとquality policy3件が成功。
+
 - [x] Issue #77: connect/write/response/config/protocolを型付きerrorで区別し、queue・health・test・controlの状態と短い日本語案内を統一する。詳細原因はLogs、再試行は未送信の一時的接続失敗だけとする。
 
 2026-10-05: Issue #77でBouyomiErrorと共通classificationを導入し、表示文/OS番号の部分一致を除去した。接続拒否は全経路でDisconnected、設定/protocol/unknownはError、connect/write/response timeoutは別codeとする。nativeの分類をfrontendの楽観的statusで上書きしない。cause chainはLogsへ保持し、write失敗/timeoutと受付後失敗は重複防止のため自動再送しない。Rust all-features176件/no-default129件、fmt・strict clippy、frontend227件（native reject分類6件を含む）・format/lint/typecheck/build/securityが成功。Windows/LinuxのErrorKind/native mappingとfake transportの継続CIを追加した。health/queueの独立保持は#69で追跡する。

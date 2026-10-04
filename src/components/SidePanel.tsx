@@ -1,7 +1,7 @@
 import { Pause, Play, Radio, RotateCcw, SkipForward, Square, Trash2 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { countIncompleteQueueItems } from "../presentation/queue";
-import { speechStatusLabel } from "../presentation/chat";
+import { speechHealthLabels, speechQueuePhaseLabels } from "../presentation/speech";
 import { getRouteLabel, settingsRoute } from "../routes";
 import { warningNotifications, type AppState } from "../stores/appStore";
 
@@ -106,15 +106,11 @@ export function SidePanel({
             />
             <PanelRow
               label="読み上げ"
-              value={speechStatusLabel(state.speechStatus)}
-              tone={state.speechStatus === "idle" ? "ok" : "muted"}
-              to={
-                state.speechStatus === "disconnected" || state.speechStatus === "error"
-                  ? settingsRoute.path
-                  : undefined
-              }
+              value={`${speechHealthLabels[state.speechAdapterHealth]} / ${speechQueuePhaseLabels[state.speechQueuePhase]}`}
+              tone={state.speechAdapterHealth === "connected" ? "ok" : "muted"}
+              to={state.speechAdapterHealth !== "connected" ? settingsRoute.path : undefined}
               title={
-                state.speechStatus === "disconnected" || state.speechStatus === "error"
+                state.speechAdapterHealth !== "connected"
                   ? `${settingsRoute.label} 画面の［診断］を開く`
                   : undefined
               }

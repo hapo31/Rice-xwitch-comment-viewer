@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { countIncompleteQueueItems } from "../presentation/queue";
-import { speechStatusLabel } from "../presentation/chat";
+import { speechHealthLabels, speechQueuePhaseLabels } from "../presentation/speech";
 import { warningNotifications, type AppState } from "../stores/appStore";
 import { getAppBuildInfo, type AppBuildInfo } from "../tauri/client";
 import { formatBouyomiAddress } from "../validation";
@@ -47,9 +47,12 @@ export function StatusBar({ state }: StatusBarProps) {
         <StatusItem label="Twitch" value={`${twitchAuthLabel} / ${twitchConnectionLabel}`} />
         <StatusItem
           label="棒読みちゃん"
-          value={`${speechStatusLabel(state.speechStatus)} ${formatBouyomiAddress(host, port)}`}
+          value={`${speechHealthLabels[state.speechAdapterHealth]} ${formatBouyomiAddress(host, port)}`}
         />
-        <StatusItem label="キュー" value={String(queuedCount)} />
+        <StatusItem
+          label="キュー"
+          value={`${speechQueuePhaseLabels[state.speechQueuePhase]} ${queuedCount}`}
+        />
         <StatusItem
           label="Warnings"
           value={String(warningCount)}

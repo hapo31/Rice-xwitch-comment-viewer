@@ -35,6 +35,22 @@ const settings: AppSettings = {
 };
 
 describe("startup guide messages", () => {
+  it.each(["paused", "error"] as const)(
+    "does not announce readiness on connected + %s",
+    (speechQueuePhase) => {
+      const state = {
+        ...initialAppState,
+        twitchAuthStatus: "authenticated" as const,
+        settings,
+        speechStatus: "idle" as const,
+        speechAdapterHealth: "connected" as const,
+        speechQueuePhase,
+      };
+      const messages = getStartupGuideMessages(state, receivedAt);
+      expect(messages.some((message) => message.id === "startup-ready")).toBe(false);
+      expect(messages.find((message) => message.id === "startup-bouyomi")?.text).toContain("Queue");
+    },
+  );
   it("is claimed only once during a session", () => {
     const values = new Map<string, string>();
     const storage = {
@@ -64,6 +80,7 @@ describe("startup guide messages", () => {
       ...initialAppState,
       twitchAuthStatus: "authenticated",
       speechStatus: "idle",
+      speechAdapterHealth: "connected",
       settings,
     };
 

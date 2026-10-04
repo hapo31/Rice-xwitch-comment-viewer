@@ -90,6 +90,18 @@ pub struct BouyomiTalkConfig {
 
 ## 通信失敗の分類
 
+### 接続healthとqueue phaseの独立性
+
+`SpeechAdapterHealth`（unknown/connected/disconnected/error）と`SpeechQueuePhase`（idle/speaking/paused/error）は別々に保存し、それぞれのrevision付きevent/snapshotから復元する。queue活動の通知は最後のhealthを保持し、Idle/Speaking/Pausedを接続確認と解釈しない。無音probe・接続確認の成功はhealthだけを更新し、pausedや失敗項目の手動再試行待ちを解除しない。
+
+自動probeは接続中・paused中も5秒周期で継続し、未解決probeがあれば重ねない。終了後の遅延応答はfrontend通知を発生させない。定期probeは無音であり、失敗項目の再送やworkerの起動を行わない。
+
+復旧policyは既存の「失敗した項目は手動再試行」を維持する。queueのerror phaseは、処理可能なpending/in-flightがなく、失敗履歴が手動対応を待っている状態を指す。新着/後続pendingは失敗履歴に妨げられず処理できる。履歴があるだけで実行中のqueueをerrorとしない。利用者の再試行/履歴削除だけがその待ち状態を変える。
+
+Status Bar・Side Panel・live announcementは接続とqueue状態を別表示する。起動ガイドの準備完了はhealth=connected、queue=idle/speaking、自動読み上げONの組合せから判定し、接続復旧だけで準備完了としない。終了保護とpause/resume hotkeyもlegacy statusではなくqueue phase/itemsを使う。`SpeechStatusEvent.status`は互換用の活動/エラー投影として残すが、接続/準備完了/操作可否の根拠にはしない。
+
+共通の`src/tauri/fixtures/speech-independent-states.json`をRustの保存/serializationとfrontendのbridge parse/reducerで再生し、health・pause・失敗・復旧の到着順とsnapshot復元の不変条件を検証する。
+
 connect/write/responseのtimeoutとI/O、設定不正、非互換応答を`BouyomiError`で区別する。OSの表示文やerror番号の部分一致では判定しない。`io::ErrorKind`から共通のfailure code、status、再試行可否、日本語短文を導出し、queue・接続確認・無音probe・test・control・diagnosticsで同じ原因に同じ分類を使う。接続拒否、接続timeout、切断は`Disconnected`、設定不正や非互換応答は`Error`。元のcause chainはLogsへ残し、UIへ低レベルの英語文を混ぜない。
 
 talkの自動再試行は、packetを書き始める前の一時的な接続失敗だけに限る。write失敗/timeoutや受付後のresponse失敗は届いた可能性があるため自動再送しない。履歴へ保持し、利用者が状態を確認してから明示的に再試行する。制御失敗はローカルqueue未変更と相手側の到達不明を付記するが、根本原因のstatusと復旧案内は同じ分類を使う。
