@@ -1342,19 +1342,27 @@ mod tests {
                 failure.status,
                 crate::app_events::SpeechStatus::Disconnected
             );
-            assert_eq!(failure.code, error::FailureCode::ConnectionRefused);
+            // Windows can retry a closed loopback endpoint beyond our deadline.
+            // A domain deadline must stay ConnectTimeout, not be relabeled by
+            // guessing that an eventual native error would have been refused.
+            assert!(matches!(
+                failure.code,
+                error::FailureCode::ConnectionRefused | error::FailureCode::ConnectTimeout
+            ));
             assert!(failure.retryable);
-            assert_eq!(failure.user_message, failures[0].user_message);
-            assert!(failure.log_message().contains("connect failed"));
+            for same_cause in failures.iter().filter(|other| other.code == failure.code) {
+                assert_eq!(failure.user_message, same_cause.user_message);
+            }
+            assert!(failure.log_message().contains("connect"));
         }
         match SpeechAdapter::health_check(&adapter).await.unwrap() {
-            SpeechHealth::Disconnected { message } => assert_eq!(message, failures[0].user_message),
+            SpeechHealth::Disconnected { message } => assert!(message.contains("［診断］")),
             SpeechHealth::Connected => panic!("refused endpoint must not be connected"),
         }
         assert!(adapter.health_probe().await.is_err());
         let result = adapter.diagnose().await;
         assert_eq!(result.attempted[0].status, BouyomiConnectionStatus::Failed);
-        assert!(result.attempted[0].message.contains("起動中"));
+        assert!(result.attempted[0].message.contains("［診断］"));
     }
 
     #[tokio::test]
