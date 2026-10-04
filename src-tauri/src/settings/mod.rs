@@ -1346,11 +1346,12 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn settings_in_app_data_inherit_only_current_user_and_system_acl() {
+        use super::write_temp_file;
         let root = PathBuf::from(std::env::var_os("APPDATA").expect("Windows user app data"));
         let directory = root.join(format!(
             "dev.rice.tts-permission-test-{}-{}",
             std::process::id(),
-            TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
+            TEST_DIRECTORY_COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
         let path = directory.join("settings.json");
         let settings = AppSettings::default();
