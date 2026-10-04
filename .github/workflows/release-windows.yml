@@ -32,6 +32,8 @@ jobs:
 
       - name: Test release guards
         run: |
+          node scripts/verify-project-license.mjs
+          node --test scripts/test-project-license.mjs
           node scripts/test-twitch-client-id.mjs
           bash scripts/test-publish-release.sh
 
@@ -65,6 +67,27 @@ jobs:
       - name: Verify manifest and tag versions
         run: scripts/verify-release-version.sh "${GITHUB_REF_NAME#v}" --tag "${GITHUB_REF_NAME}"
 
+      - name: Read reviewed release inputs
+        id: build-inputs
+        run: |
+          node scripts/verify-release-build-inputs.mjs
+          node --test scripts/test-release-build-inputs.mjs
+          echo "node=$(jq -r .nodeVersion build/release-inputs.json)" >> "$GITHUB_OUTPUT"
+          echo "rust=$(jq -r .rustVersion build/release-inputs.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up release Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ steps.build-inputs.outputs.node }}
+
+      - name: Set up release Rust
+        env:
+          RELEASE_RUST: ${{ steps.build-inputs.outputs.rust }}
+        run: |
+          rustup toolchain install "$RELEASE_RUST" --profile minimal
+          rustup override set "$RELEASE_RUST"
+          node scripts/verify-release-build-inputs.mjs --runtime
+
       - name: Enable pinned pnpm
         run: |
           set -euo pipefail
@@ -73,6 +96,21 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Enforce reviewed dependency advisory policy
+        run: |
+          cargo install --locked --version 0.22.2 cargo-audit
+          node --test scripts/test-audit-policy.mjs scripts/test-sbom.mjs
+          node scripts/dependency-audit.mjs
+
+      - name: Retain dependency audit results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dependency-audit-${{ github.run_id }}
+          path: audit-reports/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Test frontend and run TypeScript build
         run: |
@@ -103,10 +141,15 @@ jobs:
           docker build \
             --pull \
             --no-cache \
+            --build-arg RICE_GIT_COMMIT="${GITHUB_SHA}" \
+            --build-arg SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)" \
             --build-arg RICE_TWITCH_CLIENT_ID="${RICE_TWITCH_CLIENT_ID}" \
             --target artifacts \
             --output type=local,dest=release-artifacts \
             .
+
+      - name: Generate artifact-bound CycloneDX SBOM
+        run: node scripts/generate-sbom.mjs release-artifacts
 
       - name: Verify artifacts and write checksums
         run: |
@@ -114,6 +157,9 @@ jobs:
           find release-artifacts -maxdepth 1 -type f -print
           test -n "$(find release-artifacts -maxdepth 1 -type f -name '*.exe' -print -quit)"
           test -n "$(find release-artifacts -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          test -s release-artifacts/BUILD-MATERIALS.json
+          test -s release-artifacts/Rice.sbom.cdx.json
+          cmp LICENSE release-artifacts/LICENSE
           (cd release-artifacts && sha256sum * > SHA256SUMS.txt)
 
       - name: Upload release artifact bundle

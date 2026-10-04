@@ -7,6 +7,7 @@ dist/
 dist-ssr/
 .vite/
 release-artifacts/
+audit-reports/
 
 # Rust/Tauri build output
 src-tauri/target/

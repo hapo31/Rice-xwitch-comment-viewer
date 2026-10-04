@@ -61,6 +61,10 @@
   },
   "bundle": {
     "active": true,
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
+    "copyright": "Copyright (c) 2026 Rice contributors",
+    "resources": { "../LICENSE": "LICENSE" },
     "targets": "all",
     "icon": ["icons/icon.ico", "icons/icon.png"]
   }

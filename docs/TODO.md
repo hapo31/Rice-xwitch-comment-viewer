@@ -13,6 +13,22 @@
 
 - [ ] Issue #173: Tauri 上流由来の残存 RustSec 指摘について互換更新と target/build/runtime 経路を確認し、解消不能なものは owner・根拠・期限付きの例外として検証可能に記録する。Issue #96 の validator / release audit gate が未統合のため、例外レビュー後に完了とする。
 
+- [x] Issue #101: 既存MIT正本にpackage/Cargo/bundle metadataを揃え、NSIS/portableへLICENSEを同梱し、contributionと自動検査を追加する。
+
+2026-10-05: Issue #101で権利者が既に配置したMIT正本を維持し、npm/Cargo/bundleとREADME、inbound=outboundの貢献条件を整合させた。NSIS license表示とinstalled resource、portable ZIP、直接Release assetへ同じLICENSEを同梱する。欠落/不一致/同梱漏れの7件のpolicy test、cargo check、Docker context/release guardsを確認した。Windows artifactの実行・同梱確認は配布smoke gateの検証と合わせて行う。
+
+- [x] Issue #99: 設定本体・backup・temporary・退避fileをowner-onlyで保存し、読込前に所有者・type・permissionを検証する。umask 022/000、過剰permission補正、リンク/非regular/foreign owner拒否を自動検証する。Windowsはuser profile ACL継承を使用する。
+
+2026-10-05: Issue #99 で settings storage のUnix permission invariantを実装した。共有ancestorを変更せず、読込前にowner-onlyへ補正する。Windows CIでは実ユーザーAppDataに本番SettingsStoreで保存し、directory、本体、backup、temporaryの所有者と許可SIDを検査する。packaged実機で独自profile ACLが設定された場合の確認は継続する。
+
+- [x] Issue #96: pnpm/Cargoの監査・期限付き例外validator・定期scan・dependency更新PR・release SBOMを導入する。
+
+2026-10-05: Issue #96でPR/main/weekly/releaseの共通advisory gate、期限/owner/根拠を必須とする例外validator、Dependabot、artifact digestとexact commitへ結び付けたCycloneDX 1.5 SBOMを追加した。policy/SBOMのunit10件と実installed graphのintegration1件を確認。RustSec DB ef6173cbc5c50ec8166f9a5b28f07834144373ee（1290 advisory）でRust警告7件、npm High1件をblockingとして検出した。gateが正常に失敗することを確認しており、clean auditではない。新規releaseの実配布は未実施。
+
+- [x] Issue #93: release build の base image / Debian snapshot / toolchain を固定し、時刻と build material を記録・検証する。SDK/CRT feed と NSIS/PE metadata の非決定性は material inventory と文書で明示する。
+
+2026-10-05: Issue #93 で release の immutable input manifest、test/build の compiler policy、commit時刻のZIP正規化と build material inventory を追加した。完全な byte 再現性を保証せず、残る非決定要因を文書化した。
+
 2026-09-21: Issue #175 で Vite 8.0.16、PostCSS 8.5.18、nanoid 3.3.19、Browserslist 4.29.0 と関連する推移依存を更新した。npm audit の high 6件が解消し、high/critical は0件（low1件、moderate8件は残存）。frontend203件、typecheck/build、renderer security 検証が成功。
 
 - [x] Issue #175: npm audit の high 6件を互換範囲の依存更新で解消し、frontend と再監査を確認する。

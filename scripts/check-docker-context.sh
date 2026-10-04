@@ -6,8 +6,13 @@ cd "${repo_root}"
 
 expected_exceptions=(
   '!Dockerfile'
+  '!LICENSE'
   '!package.json'
   '!pnpm-lock.yaml'
+  '!build/'
+  '!build/release-inputs.json'
+  '!.devcontainer/bootstrap-lock.json'
+  '!.devcontainer/devcontainer-lock.json'
   '!index.html'
   '!postcss.config.js'
   '!tailwind.config.js'
@@ -15,6 +20,9 @@ expected_exceptions=(
   '!vite.config.ts'
   '!scripts/'
   '!scripts/verify-twitch-client-id.mjs'
+  '!scripts/verify-release-build-inputs.mjs'
+  '!scripts/record-build-materials.mjs'
+  '!scripts/verify-project-license.mjs'
   '!src/'
   '!src/**'
   '!src-tauri/'
@@ -31,10 +39,16 @@ expected_exceptions=(
 )
 
 expected_copy_sources=(
+  Dockerfile
+  LICENSE
+  build/release-inputs.json
   index.html
   package.json
   pnpm-lock.yaml
   postcss.config.js
+  scripts/record-build-materials.mjs
+  scripts/verify-project-license.mjs
+  scripts/verify-release-build-inputs.mjs
   scripts/verify-twitch-client-id.mjs
   src
   src-tauri/Cargo.lock
@@ -116,7 +130,12 @@ if ! diff -u \
 fi
 
 manifest_files=(
+  LICENSE
   Dockerfile
+  build/release-inputs.json
+  scripts/verify-release-build-inputs.mjs
+  scripts/record-build-materials.mjs
+  scripts/verify-project-license.mjs
   package.json
   pnpm-lock.yaml
   index.html

@@ -1,0 +1,41 @@
+name: Dependency audit
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22.22.0"
+      - name: Install fixed audit tools
+        run: |
+          npm install --global pnpm@8.11.0
+          cargo install --locked --version 0.22.2 cargo-audit
+      - name: Validate exception policy and run advisory scans
+        run: |
+          node --test scripts/test-audit-policy.mjs scripts/test-sbom.mjs
+          node scripts/dependency-audit.mjs
+      - name: Preserve findings even when policy blocks release
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dependency-audit-${{ github.run_id }}
+          path: audit-reports/
+          if-no-files-found: warn
+          retention-days: 30

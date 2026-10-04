@@ -107,6 +107,12 @@ pub struct SpeechRequest {
 
 ## Tauri command/event案
 
+### 設定ファイルのプライバシー境界
+
+一般設定も非公開データとして扱う。Twitch channel、NGユーザー/ワード、Launcherの実行ファイルpath/icon、棒読みちゃん接続先はOAuth tokenを含まなくても利用者固有の情報である。Unixではアプリ専用directoryを0700、settings本体・backup・temporary・破損退避fileを0600にする。load/saveの前に既存permissionを補正し、補正できない場合は内容を読まず失敗する。現在のeffective UID以外のowner、symlink、非regular file、複数hardlinkは拒否する。共有するHOME/app-data rootやancestorのpermissionは変更しない。
+
+Windowsでは現在のユーザーのAppData（Roaming、`%APPDATA%`）のACL継承を使用する。通常のユーザーprofileでは本人、SYSTEM、Administratorsが管理する。共有directoryへの移動や独自のACL設定をサポートするという意味ではない。Windows CIとpackaged実機では、保存先にUsers/Everyone等への不要なwrite権限がないことを確認する。同一ユーザーの別processやadministratorの侵害は、このpermission制限だけでは隔離できない。
+
 Commands:
 
 - `twitch_start_auth()`

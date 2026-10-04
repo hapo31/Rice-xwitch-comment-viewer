@@ -5,8 +5,11 @@
 
 # Dockerfile release inputs.
 !Dockerfile
+!LICENSE
 !package.json
 !pnpm-lock.yaml
+!build/
+!build/release-inputs.json
 !.devcontainer/bootstrap-lock.json
 !.devcontainer/devcontainer-lock.json
 !index.html
@@ -16,6 +19,9 @@
 !vite.config.ts
 !scripts/
 !scripts/verify-twitch-client-id.mjs
+!scripts/verify-release-build-inputs.mjs
+!scripts/record-build-materials.mjs
+!scripts/verify-project-license.mjs
 !src/
 !src/**
 !src-tauri/
