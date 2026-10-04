@@ -15,11 +15,13 @@ enum Submission {
     Accept,
     Fail(SpeechFailure),
     Wait(oneshot::Receiver<()>),
+    WaitResult(oneshot::Receiver<Result<(), SpeechFailure>>),
 }
 enum Completion {
     Complete,
     Unconfirmed(SpeechFailure),
     Wait(oneshot::Receiver<()>),
+    WaitResult(oneshot::Receiver<SpeechPlaybackCompletion>),
 }
 
 #[derive(Default)]
@@ -29,11 +31,13 @@ struct FakeAdapter {
     calls: Mutex<Vec<String>>,
     submission_started: Notify,
     completion_started: Notify,
+    controls: Mutex<VecDeque<Result<(), SpeechFailure>>>,
 }
 impl FakeAdapter {
     fn control(&self, name: &str) -> SpeechFuture<'_, Result<(), SpeechFailure>> {
         self.calls.lock().unwrap().push(name.to_string());
-        Box::pin(async { Ok(()) })
+        let result = self.controls.lock().unwrap().pop_front().unwrap_or(Ok(()));
+        Box::pin(async move { result })
     }
 }
 impl SpeechAdapter for FakeAdapter {
@@ -62,6 +66,10 @@ impl SpeechAdapter for FakeAdapter {
                 Submission::Fail(failure) => Err(failure),
                 Submission::Wait(release) => {
                     release.await.expect("release submission");
+                    Ok(SpeechResult::Accepted)
+                }
+                Submission::WaitResult(release) => {
+                    release.await.expect("release submission")?;
                     Ok(SpeechResult::Accepted)
                 }
             }
@@ -96,6 +104,7 @@ impl SpeechAdapter for FakeAdapter {
                     release.await.expect("release completion");
                     SpeechPlaybackCompletion::Completed
                 }
+                Completion::WaitResult(release) => release.await.expect("release completion"),
             }
         })
     }
@@ -132,9 +141,12 @@ impl SpeechClock for FakeClock {
     }
     fn sleep(&self, delay: Duration) -> SpeechFuture<'_, ()> {
         Box::pin(async move {
-            let mut state = self.state.lock().unwrap();
-            state.0 += delay;
-            state.1.push(delay);
+            {
+                let mut state = self.state.lock().unwrap();
+                state.0 += delay;
+                state.1.push(delay);
+            }
+            tokio::task::yield_now().await;
         })
     }
 }
@@ -169,6 +181,8 @@ struct Harness {
     clock: Arc<FakeClock>,
     events: Arc<FakeEvents>,
 }
+
+mod scenarios;
 fn queued(id: &str) -> SpeechQueueItem {
     SpeechQueueItem {
         id: id.to_string(),

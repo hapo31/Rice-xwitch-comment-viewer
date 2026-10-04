@@ -110,6 +110,21 @@ talkの自動再試行は、packetを書き始める前の一時的な接続失�
 
 Issue #70のfactory/session境界は`docs/02-architecture.md`を参照。queue workerと共通commandsは具体adapter・host/port・声質を参照しない。設定snapshotの解釈はfactory、protocol/diagnostics/完了queryはbouyomi、再試行・履歴・FIFOはqueueという責務を保つ。fake adapter/clock/sinkによる本番workerの成功・遅延・失敗・再試行・受付後未確認と共通制御のテストを追加した。キュー操作列と並行enqueueの網羅性は別のIssue #72で確認する。
 
+### 決定的なキュー検証（Issue #72）
+
+`speech/worker/tests.rs`と`tests/scenarios.rs`は、本番のenqueue/control/workerへfake adapter・clock・event sinkを注入する。sleepで順序を推測せず、oneshot/Notify/barrierで送信・完了・制御の境界を固定する。実時間のtimeoutは停止したテストを検出するwatchdogに限り、再試行や連投の時刻判定には使わない。
+
+| 検証対象 | 自動検証する不変条件 |
+| --- | --- |
+| FIFO・200件上限 | 送信中項目を保持し、最古の未送信だけをoverflowで落とす。満杯の手動再試行は履歴を移動せず拒否する。 |
+| 連投・整形 | 0/1/2/30秒の直前と境界、ユーザー別時刻、NG/URL/空本文、自動読み上げOFFを確認する。 |
+| 失敗・復旧 | 初回成功、1回再試行、上限、受付後未確認の非再送、699ms/700ms、接続復旧後の手動再試行とbudget復元を確認する。 |
+| 取消・制御 | clear/skip/removeと成功・送信失敗・完了未確認の9順序、完了後の操作、pause前後の予約、複数control barrier、retry待ち中clearを確認する。 |
+| 並行enqueue | async barrierの2世代と20 native threadでworkerの単一所有権と空キュー終了前後の処理継続を確認する。 |
+| 操作列・snapshot | 固定3seedの計6,144操作でIDの所属一意性、pending/in-flight/history上限、retry budget、worker所有権、件数/status/source IDの整合とwarningを検査する。 |
+
+既存の純粋state/formatterテストに加え、上記fake-worker検証はWindows/Linux CIでも実行する。実棒読みちゃんの音声出力やWindowsの実配布WebViewは代替せず、実機/配布smokeを別に扱う。
+
 参考: [Rust ErrorKind](https://doc.rust-lang.org/std/io/enum.ErrorKind.html)、[Tokio write_allのキャンセル安全性](https://docs.rs/tokio/1.52.3/tokio/io/trait.AsyncWriteExt.html#method.write_all)。write_allは途中まで書いた状態で中断され得るため、timeoutを「未送信」と解釈しない。
 
 ## VOICEROID2直接連携

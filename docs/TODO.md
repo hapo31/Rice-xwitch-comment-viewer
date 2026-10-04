@@ -1,5 +1,9 @@
 # 実装 TODO
 
+- [x] Issue #72: 本番enqueue/control/workerをfake adapter・clock・sinkで再生し、200件overflow・複数ユーザーの連投境界・取消と遅延結果・pause/resume・並行enqueue・復旧/手動再試行・snapshotと操作列の不変条件を網羅する。
+
+2026-10-05: Issue #72で本番enqueue/control mutationをTauri wrapperから抽出し、#70のfake workerへ16シナリオを追加した。送信中を保持する200件overflow、0/1/2/30秒と複数ユーザー、取消/遅延結果9順序、pause/resumeと複数barrier、699/700msとretry待ち中clear、復旧後の手動再試行、async 2世代/20 native threadの単一worker、固定3seedの6,144操作、snapshot/NG/自動OFFを検証した。テストで満杯の手動再試行が201件になる不具合を再現し、空きがなければ履歴を保持して拒否するよう修正した。Rust all-features203件/no-default154件、strict clippy/fmt/build/securityが成功。Windows/Linux CIにもfake workerと純粋model検証を追加した。実棒読みちゃん/Windows配布WebViewの手動smokeは別に追跡する。
+
 - [x] Issue #70: object-safeなSpeechAdapterとapp stateのfactory/共通dispatch境界を導入し、queue workerへadapter・clock・event sinkを注入する。health/test/controlも同じ選択を使い、fake adapterで成功・失敗・遅延・再試行を検証する。
 
 2026-10-05: Issue #70でboxed futureのadapter、共通failure/completion/control、設定factoryとsession境界を導入した。workerはTauri/実TCP/具体adapterから独立し、同じ本番schedulerへfake adapter/clock/sinkを注入する。FIFO、1回再試行と上限、到達不明/受付後未確認の非再送、送信待ちの所有権/gate、完了待ち中の制御、全operationの共通選択、選択失敗の9件を追加した。設定された声質の実packet契約もsession経由で保持する。Rust all-features187件/no-default138件、strict clippy、fmt、frontend238件、format/lint/typecheck/build/securityが成功。操作列・並行enqueueの追加網羅はIssue #72で行う。

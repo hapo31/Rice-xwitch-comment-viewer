@@ -35,6 +35,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features speech::bouyomi::
+      - name: Test deterministic queue and model contracts on both platforms
+        shell: pwsh
+        run: |
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features speech::worker::tests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features speech::tests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test native Windows error mapping and transport phases
         # #77 owns typed/native errors, bounded writes and protocol responses.
         # Full Windows dispatcher/launcher/runtime coverage remains #91.

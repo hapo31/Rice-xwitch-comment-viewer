@@ -22,7 +22,6 @@ use crate::app_events::{SpeechQueueItemEvent, SpeechQueuePhase, SpeechStatus};
 #[cfg(feature = "app")]
 use crate::settings::AppState;
 use crate::settings::SpeechSettings;
-#[cfg(feature = "app")]
 use crate::settings::UrlHandling;
 use crate::twitch::{ChatMessage, MessageFragment};
 #[cfg(test)]
@@ -177,6 +176,20 @@ enum SpeechQueueFailureTransition {
 }
 
 impl SpeechQueueState {
+    fn begin_control(&mut self) {
+        self.controls_in_progress = self.controls_in_progress.saturating_add(1);
+    }
+
+    fn apply_control(&mut self, command: SpeechControl) -> bool {
+        self.controls_in_progress = self.controls_in_progress.saturating_sub(1);
+        match command {
+            SpeechControl::Pause => self.paused = true,
+            SpeechControl::Resume => self.paused = false,
+            SpeechControl::Skip => self.skip_current(),
+            SpeechControl::Clear => self.clear_pending(),
+        }
+        matches!(command, SpeechControl::Resume | SpeechControl::Skip) && self.claim_worker()
+    }
     fn prepare_repeat_suppression(
         &mut self,
         message: &ChatMessage,
@@ -462,6 +475,9 @@ impl SpeechQueueState {
     }
 
     fn retry_exhausted_item(&mut self, item_id: &str) -> bool {
+        if !self.has_retry_capacity() {
+            return false;
+        }
         let Some(index) = self.history.iter().position(|item| {
             item.id == item_id
                 && item.status == SpeechQueueItemStatus::Error
@@ -476,6 +492,10 @@ impl SpeechQueueState {
         item.delivery_state = SpeechQueueDeliveryState::Ready;
         self.pending.push_back(item);
         true
+    }
+
+    fn has_retry_capacity(&self) -> bool {
+        self.pending.len() + usize::from(self.in_flight.is_some()) < DEFAULT_QUEUE_LIMIT
     }
 }
 
@@ -578,7 +598,6 @@ impl SpeechFormatter {
     }
 }
 
-#[cfg(feature = "app")]
 impl From<&crate::settings::SpeechSettings> for SpeechFormatterOptions {
     fn from(settings: &crate::settings::SpeechSettings) -> Self {
         Self {
@@ -592,6 +611,83 @@ impl From<&crate::settings::SpeechSettings> for SpeechFormatterOptions {
             blocked_words: settings.blocked_words.clone(),
         }
     }
+}
+
+#[cfg(any(feature = "app", test))]
+#[derive(Default)]
+struct QueueEnqueueOutcome {
+    warning: Option<String>,
+    should_spawn: bool,
+    should_schedule_cleanup: bool,
+}
+
+/// The same mutation path is used by Tauri and the deterministic scheduler
+/// harness. The caller takes the settings snapshot/formatter before queue lock.
+#[cfg(any(feature = "app", test))]
+fn enqueue_message(
+    queue: &mut SpeechQueueState,
+    speech_settings: &SpeechSettings,
+    formatter: &SpeechFormatter,
+    message: ChatMessage,
+    now: Instant,
+) -> QueueEnqueueOutcome {
+    let mut outcome = QueueEnqueueOutcome::default();
+    if !speech_settings.auto_speak {
+        return outcome;
+    }
+    if let Some(warning_message) = suppress_repeated_message(queue, speech_settings, &message, now)
+    {
+        outcome.warning = Some(warning_message);
+        return outcome;
+    }
+
+    let formatted_text = match formatter.format_chat_message(&message) {
+        SpeechFormatDecision::Speak(text) => text,
+        SpeechFormatDecision::Blocked(reason) => {
+            let warning_message = format!(
+                "{} のチャットを読み上げません: {reason}",
+                message.user_display_name
+            );
+            let id = next_queue_id(queue);
+            push_history(
+                queue,
+                SpeechQueueItem {
+                    id,
+                    source_message_id: Some(message.id.clone()),
+                    user_display_name: message.user_display_name.clone(),
+                    text: message.text.clone(),
+                    status: SpeechQueueItemStatus::Blocked,
+                    retry_count: 0,
+                    delivery_state: SpeechQueueDeliveryState::Ready,
+                },
+            );
+            outcome.warning = Some(warning_message);
+            return outcome;
+        }
+    };
+
+    if speech_settings.repeat_suppression_seconds > 0 {
+        queue.record_user_enqueue(message.user_id.clone(), now);
+        outcome.should_schedule_cleanup = queue.claim_repeat_suppression_cleanup();
+    }
+    if queue.make_pending_room() {
+        outcome.warning =
+            Some("読み上げキューが上限に達したため、古い未読チャットを落としました。".to_string());
+    }
+
+    let item = SpeechQueueItem {
+        id: next_queue_id(queue),
+        source_message_id: Some(message.id),
+        user_display_name: message.user_display_name,
+        text: formatted_text,
+        status: SpeechQueueItemStatus::Queued,
+        retry_count: 0,
+        delivery_state: SpeechQueueDeliveryState::Ready,
+    };
+    queue.pending.push_back(item);
+    outcome.should_spawn = queue.claim_worker();
+
+    outcome
 }
 
 #[cfg(feature = "app")]
@@ -610,78 +706,25 @@ pub fn enqueue_chat_message_for_speech(
             settings.speech.clone(),
         )
     };
-
-    let mut warning = None;
-    let mut should_spawn = false;
-    let mut should_schedule_repeat_suppression_cleanup = false;
-    {
+    let outcome = {
         let mut queue = state
             .speech_queue
             .lock()
             .map_err(|error| error.to_string())?;
-        let now = state.speech_runtime.clock.now();
-        if let Some(warning_message) =
-            suppress_repeated_message(&mut queue, &speech_settings, &message, now)
-        {
-            emit_queue_snapshot(&app, &queue, Some(warning_message));
-            return Ok(());
-        }
-
-        let formatted_text = match formatter.format_chat_message(&message) {
-            SpeechFormatDecision::Speak(text) => text,
-            SpeechFormatDecision::Blocked(reason) => {
-                let warning_message = format!(
-                    "{} のチャットを読み上げません: {reason}",
-                    message.user_display_name
-                );
-                let id = next_queue_id(&mut queue);
-                push_history(
-                    &mut queue,
-                    SpeechQueueItem {
-                        id,
-                        source_message_id: Some(message.id.clone()),
-                        user_display_name: message.user_display_name.clone(),
-                        text: message.text.clone(),
-                        status: SpeechQueueItemStatus::Blocked,
-                        retry_count: 0,
-                        delivery_state: SpeechQueueDeliveryState::Ready,
-                    },
-                );
-                emit_queue_snapshot(&app, &queue, Some(warning_message));
-                return Ok(());
-            }
-        };
-
-        if speech_settings.repeat_suppression_seconds > 0 {
-            queue.record_user_enqueue(message.user_id.clone(), now);
-            should_schedule_repeat_suppression_cleanup = queue.claim_repeat_suppression_cleanup();
-        }
-        if queue.make_pending_room() {
-            warning = Some(
-                "読み上げキューが上限に達したため、古い未読チャットを落としました。".to_string(),
-            );
-        }
-
-        let item = SpeechQueueItem {
-            id: next_queue_id(&mut queue),
-            source_message_id: Some(message.id),
-            user_display_name: message.user_display_name,
-            text: formatted_text,
-            status: SpeechQueueItemStatus::Queued,
-            retry_count: 0,
-            delivery_state: SpeechQueueDeliveryState::Ready,
-        };
-        queue.pending.push_back(item);
-        if queue.claim_worker() {
-            should_spawn = true;
-        }
-        emit_queue_snapshot(&app, &queue, warning);
-    }
-
-    if should_spawn {
+        let outcome = enqueue_message(
+            &mut queue,
+            &speech_settings,
+            &formatter,
+            message,
+            state.speech_runtime.clock.now(),
+        );
+        emit_queue_snapshot(&app, &queue, outcome.warning.clone());
+        outcome
+    };
+    if outcome.should_spawn {
         tokio::spawn(process_speech_queue(app.clone()));
     }
-    if should_schedule_repeat_suppression_cleanup {
+    if outcome.should_schedule_cleanup {
         tokio::spawn(process_repeat_suppression_cleanup(app));
     }
     Ok(())
@@ -772,37 +815,12 @@ pub fn emit_current_queue(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), Stri
 
 #[cfg(feature = "app")]
 pub fn clear_speech_queue(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
-    let state = app.state::<AppState>();
-    let mut queue = state
-        .speech_queue
-        .lock()
-        .map_err(|error| error.to_string())?;
-    queue.controls_in_progress = queue.controls_in_progress.saturating_sub(1);
-    queue.clear_pending();
-    emit_queue_snapshot(app, &queue, None);
-    Ok(())
+    apply_queue_control(app, SpeechControl::Clear)
 }
 
 #[cfg(feature = "app")]
 pub fn skip_current_queue_item(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
-    let state = app.state::<AppState>();
-    let mut should_spawn = false;
-    {
-        let mut queue = state
-            .speech_queue
-            .lock()
-            .map_err(|error| error.to_string())?;
-        queue.controls_in_progress = queue.controls_in_progress.saturating_sub(1);
-        queue.skip_current();
-        if queue.claim_worker() {
-            should_spawn = true;
-        }
-        emit_queue_snapshot(app, &queue, None);
-    }
-    if should_spawn {
-        tokio::spawn(process_speech_queue(app.clone()));
-    }
-    Ok(())
+    apply_queue_control(app, SpeechControl::Skip)
 }
 
 #[cfg(feature = "app")]
@@ -902,6 +920,9 @@ pub fn speech_queue_retry(
             .speech_queue
             .lock()
             .map_err(|error| error.to_string())?;
+        if !queue.has_retry_capacity() {
+            return Err("読み上げキューは上限の200件です。待機項目が減ってから再試行してください。エラー履歴はそのまま保持しています。".to_string());
+        }
         if !queue.retry_exhausted_item(&item_id) {
             return Err(
                 "このエラー項目は再試行できません。キューを再読込して状態を確認してください。"
@@ -927,33 +948,29 @@ pub fn speech_queue_retry(
 
 #[cfg(feature = "app")]
 pub fn pause_queue(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
-    let state = app.state::<AppState>();
-    let mut queue = state
-        .speech_queue
-        .lock()
-        .map_err(|error| error.to_string())?;
-    queue.controls_in_progress = queue.controls_in_progress.saturating_sub(1);
-    queue.paused = true;
-    emit_queue_snapshot(app, &queue, None);
-    Ok(())
+    apply_queue_control(app, SpeechControl::Pause)
 }
 
 #[cfg(feature = "app")]
 pub fn resume_queue(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
+    apply_queue_control(app, SpeechControl::Resume)
+}
+
+#[cfg(feature = "app")]
+fn apply_queue_control(
+    app: &tauri::AppHandle<tauri::Wry>,
+    command: SpeechControl,
+) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let mut should_spawn = false;
-    {
+    let should_spawn = {
         let mut queue = state
             .speech_queue
             .lock()
             .map_err(|error| error.to_string())?;
-        queue.controls_in_progress = queue.controls_in_progress.saturating_sub(1);
-        queue.paused = false;
-        if queue.claim_worker() {
-            should_spawn = true;
-        }
+        let should_spawn = queue.apply_control(command);
         emit_queue_snapshot(app, &queue, None);
-    }
+        should_spawn
+    };
     if should_spawn {
         tokio::spawn(process_speech_queue(app.clone()));
     }
@@ -1002,7 +1019,7 @@ pub(crate) fn begin_queue_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<
         .speech_queue
         .lock()
         .map_err(|error| error.to_string())?;
-    queue.controls_in_progress = queue.controls_in_progress.saturating_add(1);
+    queue.begin_control();
     Ok(())
 }
 
