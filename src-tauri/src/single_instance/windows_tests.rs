@@ -53,32 +53,21 @@ fn native_instance_fixture() {
         .any_thread()
         .build(context)
         .expect("native production app setup");
-    // A second instance must exit in the production plugin, before setup or
-    // settings/keyring IO. Reaching here is an error for the contender.
-    assert_eq!(
-        std::env::var("RICE_NATIVE_TEST_ROLE").expect("role"),
-        "owner"
-    );
-    let window = app
-        .get_webview_window("main")
-        .expect("production main window");
-    let hwnd = window.hwnd().expect("native HWND").0 as usize;
-    let mut settings = app
-        .state::<AppState>()
-        .settings
-        .lock()
-        .expect("settings")
-        .clone();
-    settings.speech.blocked_words = vec!["preserve-native-owner".into()];
-    SettingsStore::save(app.handle(), &settings).expect("production owned save");
-    println!(
-        "RICE_NATIVE_READY {}",
-        serde_json::json!({
+    // Tauri creates configured windows and runs setup on the event loop's Ready
+    // event, not in build(). A contender must exit in the plugin before Ready.
+    app.run(|app, event| {
+        if !matches!(event, tauri::RunEvent::Ready) { return; }
+        assert_eq!(std::env::var("RICE_NATIVE_TEST_ROLE").expect("role"), "owner");
+        let window = app.get_webview_window("main").expect("production main window");
+        let hwnd = window.hwnd().expect("native HWND").0 as usize;
+        let mut settings = app.state::<AppState>().settings.lock().expect("settings").clone();
+        settings.speech.blocked_words = vec!["preserve-native-owner".into()];
+        SettingsStore::save(app, &settings).expect("production owned save");
+        println!("RICE_NATIVE_READY {}", serde_json::json!({
             "hwnd": hwnd, "settingsPath": app.path().app_data_dir().expect("app data").join("settings.json")
-        })
-    );
-    std::io::stdout().flush().expect("flush readiness");
-    app.run(|_, _| {});
+        }));
+        std::io::stdout().flush().expect("flush readiness");
+    });
 }
 
 struct NativeChild(Child);
