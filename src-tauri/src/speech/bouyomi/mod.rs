@@ -1,19 +1,14 @@
 #[cfg(feature = "app")]
-use crate::app_events::{
-    emit_app_log, emit_speech_adapter_health, emit_speech_status, AppLogLevel, SpeechAdapterHealth,
-    SpeechStatus,
-};
-#[cfg(feature = "app")]
 use crate::settings::AppState;
 #[cfg(feature = "app")]
-use crate::speech::{clear_speech_queue, pause_queue, resume_queue, skip_current_queue_item};
+use crate::speech::commands::report_failure;
 use crate::speech::{SpeechAdapter, SpeechHealth, SpeechRequest, SpeechResult};
 
 mod error;
-pub(crate) use error::{classify_error, BouyomiError, SpeechFailure};
+use crate::speech::{SpeechFailure, SpeechFuture, SpeechPlaybackCompletion};
+pub(crate) use error::{classify_error, BouyomiError};
 use serde::Serialize;
 use std::net::IpAddr;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -21,18 +16,14 @@ use tokio::{
     time::{timeout, Instant},
 };
 
-pub type BouyomiDispatcher = Arc<tokio::sync::Mutex<()>>;
+pub type BouyomiDispatcher = crate::speech::runtime::SpeechDispatcher;
 
 pub const DEFAULT_CONNECTION_SUCCESS_MESSAGE: &str = "棒読みちゃんと接続しました";
 const PLAYBACK_SETTLE_DELAY: Duration = Duration::from_millis(50);
 const PLAYBACK_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const PLAYBACK_TRACKING_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum BouyomiPlaybackCompletion {
-    Completed,
-    Unconfirmed(SpeechFailure),
-}
+pub(crate) use crate::speech::SpeechPlaybackCompletion as BouyomiPlaybackCompletion;
 
 #[derive(Debug, Clone)]
 pub struct BouyomiAddress {
@@ -194,11 +185,13 @@ impl BouyomiAdapter {
         self.health_check(false, "").await
     }
 
+    #[cfg(test)]
     pub async fn speak(&self, text: &str) -> anyhow::Result<()> {
         let _dispatch_guard = self.dispatcher.lock().await;
         self.send_talk_after_dispatch_lock(text).await
     }
 
+    #[cfg(test)]
     pub(crate) async fn acquire_dispatcher(&self) -> tokio::sync::OwnedMutexGuard<()> {
         self.dispatcher.clone().lock_owned().await
     }
@@ -280,6 +273,7 @@ impl BouyomiAdapter {
         self.send_packet_unordered(&command.packet()).await
     }
 
+    #[cfg(test)]
     pub(crate) async fn send_control_and_apply<T>(
         &self,
         command: BouyomiControlCommand,
@@ -375,55 +369,66 @@ impl BouyomiAdapter {
 }
 
 impl SpeechAdapter for BouyomiAdapter {
-    async fn health_check(&self) -> anyhow::Result<SpeechHealth> {
-        match self.health_probe().await {
-            Ok(_) => Ok(SpeechHealth::Connected),
-            Err(error) => {
-                let failure = classify_error(error);
-                if failure.status == crate::app_events::SpeechStatus::Disconnected {
-                    Ok(SpeechHealth::Disconnected {
-                        message: failure.user_message,
-                    })
-                } else {
-                    Err(failure.into())
+    fn health_check(&self) -> SpeechFuture<'_, Result<SpeechHealth, SpeechFailure>> {
+        Box::pin(async move {
+            match self
+                .send_query_unordered(BouyomiQueryCommand::IsNowPlaying)
+                .await
+            {
+                Ok(_) => Ok(SpeechHealth::Connected),
+                Err(error) => {
+                    let failure = classify_error(error);
+                    if failure.status == crate::app_events::SpeechStatus::Disconnected {
+                        Ok(SpeechHealth::Disconnected { failure })
+                    } else {
+                        Err(failure)
+                    }
                 }
             }
-        }
+        })
     }
-
-    async fn speak(&self, request: SpeechRequest) -> anyhow::Result<SpeechResult> {
-        BouyomiAdapter::speak(self, &request.text).await?;
-        Ok(SpeechResult::Accepted)
+    fn speak(
+        &self,
+        request: SpeechRequest,
+    ) -> SpeechFuture<'_, Result<SpeechResult, SpeechFailure>> {
+        Box::pin(async move {
+            self.send_talk_after_dispatch_lock(&request.text)
+                .await
+                .map_err(classify_error)?;
+            Ok(SpeechResult::Accepted)
+        })
     }
-
-    async fn pause(&self) -> anyhow::Result<()> {
-        self.send_control_and_apply(BouyomiControlCommand::Pause, || ())
-            .await
+    fn pause(&self) -> SpeechFuture<'_, Result<(), SpeechFailure>> {
+        self.control_future(BouyomiControlCommand::Pause)
     }
-
-    async fn resume(&self) -> anyhow::Result<()> {
-        self.send_control_and_apply(BouyomiControlCommand::Resume, || ())
-            .await
+    fn resume(&self) -> SpeechFuture<'_, Result<(), SpeechFailure>> {
+        self.control_future(BouyomiControlCommand::Resume)
     }
-
-    async fn skip(&self) -> anyhow::Result<()> {
-        self.send_control_and_apply(BouyomiControlCommand::Skip, || ())
-            .await
+    fn skip(&self) -> SpeechFuture<'_, Result<(), SpeechFailure>> {
+        self.control_future(BouyomiControlCommand::Skip)
     }
-
-    async fn clear(&self) -> anyhow::Result<()> {
-        self.send_control_and_apply(BouyomiControlCommand::Clear, || ())
-            .await
+    fn clear(&self) -> SpeechFuture<'_, Result<(), SpeechFailure>> {
+        self.control_future(BouyomiControlCommand::Clear)
+    }
+    fn wait_for_completion(&self) -> SpeechFuture<'_, SpeechPlaybackCompletion> {
+        Box::pin(self.wait_for_playback_completion())
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum BouyomiControlCommand {
-    Pause,
-    Resume,
-    Skip,
-    Clear,
+impl BouyomiAdapter {
+    fn control_future(
+        &self,
+        command: BouyomiControlCommand,
+    ) -> SpeechFuture<'_, Result<(), SpeechFailure>> {
+        Box::pin(async move {
+            self.send_control_after_dispatch_lock(command)
+                .await
+                .map_err(classify_error)
+        })
+    }
 }
+
+pub use crate::speech::SpeechControl as BouyomiControlCommand;
 
 impl BouyomiControlCommand {
     fn packet(self) -> [u8; 2] {
@@ -436,19 +441,6 @@ impl BouyomiControlCommand {
 
         command.to_le_bytes()
     }
-}
-
-fn control_failure_message(command: BouyomiControlCommand, error: &str) -> String {
-    let operation = match command {
-        BouyomiControlCommand::Pause => "一時停止",
-        BouyomiControlCommand::Resume => "再開",
-        BouyomiControlCommand::Skip => "スキップ",
-        BouyomiControlCommand::Clear => "クリア",
-    };
-
-    format!(
-        "棒読みちゃんへ{operation}を送信できなかったため、アプリ内の読み上げキューは変更していません。棒読みちゃん側には届いている可能性があるため、状態を確認してください: {error}"
-    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -493,52 +485,6 @@ pub fn normalize_connection_success_message(text: &str) -> &str {
 
 #[cfg(feature = "app")]
 #[tauri::command]
-pub async fn speech_health_check(
-    state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle<tauri::Wry>,
-) -> Result<String, String> {
-    let adapter = adapter_from_settings(&state).map_err(|failure| report_failure(&app, failure))?;
-    let (speak_on_success, success_message) =
-        connection_success_settings(&state).map_err(|failure| report_failure(&app, failure))?;
-    let elapsed = adapter
-        .health_check(speak_on_success, &success_message)
-        .await
-        .map_err(classify_error)
-        .map_err(|failure| report_failure(&app, failure))?;
-    let message = format!(
-        "棒読みちゃんに接続できました。応答時間 {}ms",
-        elapsed.as_millis()
-    );
-    emit_speech_adapter_health(&app, SpeechAdapterHealth::Connected, Some(message.clone()));
-    emit_app_log(&app, AppLogLevel::Info, message.clone());
-    Ok(message)
-}
-
-#[cfg(feature = "app")]
-#[tauri::command]
-pub async fn speech_health_probe(
-    state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle<tauri::Wry>,
-) -> Result<String, String> {
-    let adapter = adapter_from_settings(&state).map_err(|failure| report_failure(&app, failure))?;
-    let elapsed = adapter
-        .health_probe()
-        .await
-        .map_err(classify_error)
-        .map_err(|failure| report_failure(&app, failure))?;
-    emit_speech_adapter_health(
-        &app,
-        SpeechAdapterHealth::Connected,
-        Some("棒読みちゃんの接続を確認しました。".to_string()),
-    );
-    Ok(format!(
-        "棒読みちゃんに接続できました。応答時間 {}ms",
-        elapsed.as_millis()
-    ))
-}
-
-#[cfg(feature = "app")]
-#[tauri::command]
 pub async fn speech_connection_diagnostics(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
@@ -552,255 +498,14 @@ pub async fn speech_connection_diagnostics(
 }
 
 #[cfg(feature = "app")]
-#[tauri::command]
-pub async fn speech_test(
-    state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle<tauri::Wry>,
-    text: String,
-) -> Result<(), String> {
-    let adapter = adapter_from_settings(&state).map_err(|failure| report_failure(&app, failure))?;
-    let text = normalize_test_text(&text);
-    emit_speech_status(
-        &app,
-        SpeechStatus::Speaking,
-        Some("テスト読み上げを送信しています。".to_string()),
-    );
-    adapter
-        .speak(&text)
-        .await
-        .map_err(classify_error)
-        .map_err(|failure| report_failure(&app, failure))?;
-    emit_speech_status(
-        &app,
-        SpeechStatus::Idle,
-        Some("テスト読み上げを送信しました。".to_string()),
-    );
-    emit_app_log(&app, AppLogLevel::Info, "テスト読み上げを送信しました。");
-    Ok(())
-}
-
-#[cfg(feature = "app")]
-#[tauri::command]
-pub async fn speech_pause(
-    state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle<tauri::Wry>,
-) -> Result<(), String> {
-    control_from_settings(
-        &state,
-        &app,
-        BouyomiControlCommand::Pause,
-        apply_pause_control,
-    )
-    .await
-}
-
-#[cfg(feature = "app")]
-#[tauri::command]
-pub async fn speech_resume(
-    state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle<tauri::Wry>,
-) -> Result<(), String> {
-    control_from_settings(
-        &state,
-        &app,
-        BouyomiControlCommand::Resume,
-        apply_resume_control,
-    )
-    .await
-}
-
-#[cfg(feature = "app")]
-#[tauri::command]
-pub async fn speech_skip(
-    state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle<tauri::Wry>,
-) -> Result<(), String> {
-    control_from_settings(
-        &state,
-        &app,
-        BouyomiControlCommand::Skip,
-        apply_skip_control,
-    )
-    .await
-}
-
-#[cfg(feature = "app")]
-#[tauri::command]
-pub async fn speech_clear(
-    state: tauri::State<'_, AppState>,
-    app: tauri::AppHandle<tauri::Wry>,
-) -> Result<(), String> {
-    control_from_settings(
-        &state,
-        &app,
-        BouyomiControlCommand::Clear,
-        apply_clear_control,
-    )
-    .await
-}
-
-#[cfg(feature = "app")]
-fn apply_pause_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
-    pause_queue(app)?;
-    emit_speech_status(
-        app,
-        SpeechStatus::Paused,
-        Some("読み上げを一時停止しました。".to_string()),
-    );
-    emit_app_log(app, AppLogLevel::Info, "読み上げを一時停止しました。");
-    Ok(())
-}
-
-#[cfg(feature = "app")]
-fn apply_resume_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
-    resume_queue(app)?;
-    emit_speech_status(
-        app,
-        SpeechStatus::Idle,
-        Some("読み上げを再開しました。".to_string()),
-    );
-    emit_app_log(app, AppLogLevel::Info, "読み上げを再開しました。");
-    Ok(())
-}
-
-#[cfg(feature = "app")]
-fn apply_skip_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
-    skip_current_queue_item(app)?;
-    emit_speech_status(
-        app,
-        SpeechStatus::Idle,
-        Some("現在の読み上げをスキップしました。".to_string()),
-    );
-    emit_app_log(app, AppLogLevel::Info, "現在の読み上げをスキップしました。");
-    Ok(())
-}
-
-#[cfg(feature = "app")]
-fn apply_clear_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
-    clear_speech_queue(app)?;
-    emit_speech_status(
-        app,
-        SpeechStatus::Idle,
-        Some("読み上げキューをクリアしました。".to_string()),
-    );
-    emit_app_log(app, AppLogLevel::Info, "読み上げキューをクリアしました。");
-    Ok(())
-}
-
-#[cfg(feature = "app")]
-pub(crate) fn report_failure(app: &tauri::AppHandle<tauri::Wry>, failure: SpeechFailure) -> String {
-    emit_speech_adapter_health(
-        app,
-        failure.adapter_health(),
-        Some(failure.user_message.clone()),
-    );
-    let level = if failure.status == SpeechStatus::Disconnected {
-        AppLogLevel::Warning
-    } else {
-        AppLogLevel::Error
-    };
-    emit_app_log(app, level, failure.log_message());
-    failure.user_message
-}
-
-fn control_local_apply_failed(command: BouyomiControlCommand, error: String) -> String {
-    let operation = match command {
-        BouyomiControlCommand::Pause => "一時停止",
-        BouyomiControlCommand::Resume => "再開",
-        BouyomiControlCommand::Skip => "スキップ",
-        BouyomiControlCommand::Clear => "クリア",
-    };
-
-    format!(
-        "棒読みちゃんへ{operation}は送信済みですが、アプリ内の読み上げキューへ反映できませんでした。状態を確認してください: {error}"
-    )
-}
-
-#[cfg(feature = "app")]
-async fn control_from_settings(
-    state: &tauri::State<'_, AppState>,
-    app: &tauri::AppHandle<tauri::Wry>,
-    command: BouyomiControlCommand,
-    apply_local: fn(&tauri::AppHandle<tauri::Wry>) -> Result<(), String>,
-) -> Result<(), String> {
-    crate::speech::begin_queue_control(app)
-        .map_err(|error| report_failure(app, SpeechFailure::unknown(error)))?;
-    let adapter = match adapter_from_settings(state) {
-        Ok(adapter) => adapter,
-        Err(mut failure) => {
-            let _ = crate::speech::cancel_queue_control(app);
-            failure.user_message = format!(
-                "制御は送信しておらず、キューは変更していません。 {}",
-                failure.user_message
-            );
-            return Err(report_failure(app, failure));
-        }
-    };
-    match adapter
-        .send_control_and_apply(command, || apply_local(app))
-        .await
-    {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(error)) => {
-            let mut failure = SpeechFailure::unknown(control_local_apply_failed(command, error));
-            failure.user_message = "制御は送信済みですが、アプリ内のキューへ反映できませんでした。棒読みちゃんとキューの状態、Logsの詳細を確認してください。".to_string();
-            Err(report_failure(app, failure))
-        }
-        Err(error) => {
-            let _ = crate::speech::cancel_queue_control(app);
-            let mut failure = classify_error(error);
-            failure.user_message = control_failure_message(command, &failure.user_message);
-            Err(report_failure(app, failure))
-        }
-    }
-}
-
-#[cfg(feature = "app")]
-pub(crate) fn adapter_from_settings(
+fn adapter_from_settings(
     state: &tauri::State<'_, AppState>,
 ) -> Result<BouyomiAdapter, SpeechFailure> {
     let settings = state
         .settings
         .lock()
         .map_err(|error| SpeechFailure::unknown(error.to_string()))?;
-    let defaults = BouyomiTalkConfig {
-        speed: settings.speech.bouyomi_speed,
-        tone: settings.speech.bouyomi_tone,
-        volume: settings.speech.bouyomi_volume,
-        voice: settings.speech.bouyomi_voice,
-        code: 0,
-    };
-
-    BouyomiAdapter::with_dispatcher(
-        &settings.speech.bouyomi_host,
-        settings.speech.bouyomi_port,
-        defaults,
-        state.bouyomi_dispatcher.clone(),
-    )
-    .map_err(SpeechFailure::configuration)
-}
-
-#[cfg(feature = "app")]
-fn connection_success_settings(
-    state: &tauri::State<'_, AppState>,
-) -> Result<(bool, String), SpeechFailure> {
-    let settings = state
-        .settings
-        .lock()
-        .map_err(|error| SpeechFailure::unknown(error.to_string()))?;
-    Ok((
-        settings.speech.connection_success_speech_enabled,
-        settings.speech.connection_success_speech_text.clone(),
-    ))
-}
-
-fn normalize_test_text(text: &str) -> String {
-    let text = text.trim();
-    if text.is_empty() {
-        "テスト読み上げです。".to_string()
-    } else {
-        text.chars().take(120).collect()
-    }
+    super::factory::bouyomi_from_settings(&settings.speech, state.speech_runtime.dispatcher())
 }
 
 #[cfg(test)]
@@ -846,7 +551,7 @@ mod tests {
     use super::*;
     use crate::app_events::SpeechQueueItemStatus;
     use crate::speech::{SpeechQueueDeliveryState, SpeechQueueItem, SpeechQueueState};
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
     use tokio::{io::AsyncReadExt, net::TcpListener};
 
     fn queued_item(id: &str) -> SpeechQueueItem {
@@ -955,15 +660,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn control_failure_keeps_local_and_remote_state_distinguishable() {
-        let message = control_failure_message(BouyomiControlCommand::Clear, "write timed out");
-
-        assert!(message.contains("アプリ内の読み上げキューは変更していません"));
-        assert!(message.contains("棒読みちゃん側には届いている可能性"));
-        assert!(message.contains("write timed out"));
-    }
-
     #[tokio::test]
     async fn automatic_health_probe_sends_only_the_silent_status_query() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
@@ -999,14 +695,23 @@ mod tests {
             voice: 10001,
             code: 0,
         };
-        let adapter = BouyomiAdapter::new("127.0.0.1", port, config.clone()).unwrap();
+        let mut settings = crate::settings::AppSettings::default().speech;
+        settings.bouyomi_host = "127.0.0.1".to_string();
+        settings.bouyomi_port = port;
+        settings.bouyomi_speed = config.speed;
+        settings.bouyomi_tone = config.tone;
+        settings.bouyomi_volume = config.volume;
+        settings.bouyomi_voice = config.voice;
+        let runtime = crate::speech::runtime::SpeechRuntime::default();
+        let selected = runtime.select(&settings).unwrap();
+        let session = selected.lock().await;
         let request = SpeechRequest {
             id: "1".into(),
             source_message_id: None,
             text: "こんにちは".into(),
         };
         assert!(matches!(
-            SpeechAdapter::speak(&adapter, request).await.unwrap(),
+            session.speak(request).await.unwrap(),
             SpeechResult::Accepted
         ));
         assert_eq!(
@@ -1352,7 +1057,9 @@ mod tests {
             assert!(failure.log_message().contains("connect"));
         }
         match SpeechAdapter::health_check(&adapter).await.unwrap() {
-            SpeechHealth::Disconnected { message } => assert!(message.contains("［診断］")),
+            SpeechHealth::Disconnected { failure } => {
+                assert!(failure.user_message.contains("［診断］"))
+            }
             SpeechHealth::Connected => panic!("refused endpoint must not be connected"),
         }
         assert!(adapter.health_probe().await.is_err());

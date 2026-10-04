@@ -1,13 +1,24 @@
 pub mod bouyomi;
+#[cfg(feature = "app")]
+pub mod commands;
+mod factory;
+mod failure;
+pub mod runtime;
+#[cfg(any(feature = "app", test))]
+mod worker;
+
+pub use failure::{FailureCode, SpeechFailure};
+pub type SpeechFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 
 use crate::app_events::SpeechQueueItemStatus;
 
 #[cfg(feature = "app")]
 use crate::app_events::{
     emit_app_log, emit_speech_adapter_health, emit_speech_queue_updated, emit_speech_status,
-    AppEventState, AppLogLevel, SpeechQueueItemEvent, SpeechQueuePhase, SpeechStateSnapshot,
-    SpeechStatus,
+    AppEventState, AppLogLevel, SpeechStateSnapshot,
 };
+#[cfg(any(feature = "app", test))]
+use crate::app_events::{SpeechQueueItemEvent, SpeechQueuePhase, SpeechStatus};
 #[cfg(feature = "app")]
 use crate::settings::AppState;
 use crate::settings::SpeechSettings;
@@ -31,11 +42,10 @@ pub struct SpeechRequest {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub enum SpeechHealth {
     Connected,
-    Disconnected { message: String },
+    Disconnected { failure: SpeechFailure },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,19 +54,35 @@ pub enum SpeechResult {
     Accepted,
 }
 
-#[allow(dead_code)]
+/// Object-safe protocol boundary. Production callers use SpeechRuntime's locked
+/// session; methods send without taking the common dispatch gate a second time.
 pub trait SpeechAdapter: Send + Sync {
-    fn health_check(
-        &self,
-    ) -> impl std::future::Future<Output = anyhow::Result<SpeechHealth>> + Send;
+    fn health_check(&self) -> SpeechFuture<'_, Result<SpeechHealth, SpeechFailure>>;
     fn speak(
         &self,
         request: SpeechRequest,
-    ) -> impl std::future::Future<Output = anyhow::Result<SpeechResult>> + Send;
-    fn pause(&self) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
-    fn resume(&self) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
-    fn skip(&self) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
-    fn clear(&self) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
+    ) -> SpeechFuture<'_, Result<SpeechResult, SpeechFailure>>;
+    fn pause(&self) -> SpeechFuture<'_, Result<(), SpeechFailure>>;
+    fn resume(&self) -> SpeechFuture<'_, Result<(), SpeechFailure>>;
+    fn skip(&self) -> SpeechFuture<'_, Result<(), SpeechFailure>>;
+    fn clear(&self) -> SpeechFuture<'_, Result<(), SpeechFailure>>;
+    /// Called after releasing the submission gate, so controls remain possible.
+    /// Adapters serialize their individual polling requests through that gate.
+    fn wait_for_completion(&self) -> SpeechFuture<'_, SpeechPlaybackCompletion>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpeechControl {
+    Pause,
+    Resume,
+    Skip,
+    Clear,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpeechPlaybackCompletion {
+    Completed,
+    Unconfirmed(SpeechFailure),
 }
 
 const DEFAULT_QUEUE_LIMIT: usize = 200;
@@ -148,12 +174,6 @@ enum SpeechQueueFailureTransition {
     RetryScheduled,
     RetryExhausted,
     Ignored,
-}
-
-#[cfg(feature = "app")]
-enum SpeechDeliveryOutcome {
-    Completed,
-    SubmittedUnconfirmed(bouyomi::SpeechFailure),
 }
 
 impl SpeechQueueState {
@@ -421,7 +441,7 @@ impl SpeechQueueState {
         let mut item = self.in_flight.take().expect("in-flight checked");
         item.status = SpeechQueueItemStatus::Error;
         item.delivery_state = SpeechQueueDeliveryState::RetryExhausted;
-        // The request reached Bouyomi, so consuming the automatic retry budget
+        // The adapter accepted the request, so consuming the automatic retry budget
         // prevents a duplicate utterance. A user may still explicitly retry it.
         item.retry_count = 1;
         push_history(self, item);
@@ -599,7 +619,7 @@ pub fn enqueue_chat_message_for_speech(
             .speech_queue
             .lock()
             .map_err(|error| error.to_string())?;
-        let now = Instant::now();
+        let now = state.speech_runtime.clock.now();
         if let Some(warning_message) =
             suppress_repeated_message(&mut queue, &speech_settings, &message, now)
         {
@@ -675,7 +695,7 @@ async fn process_repeat_suppression_cleanup(app: tauri::AppHandle<tauri::Wry>) {
             let Ok(mut queue) = state.speech_queue.lock() else {
                 return;
             };
-            queue.run_repeat_suppression_cleanup_turn(Instant::now())
+            queue.run_repeat_suppression_cleanup_turn(state.speech_runtime.clock.now())
         };
 
         let Some(cleanup_is_due) = cleanup_is_due else {
@@ -687,7 +707,11 @@ async fn process_repeat_suppression_cleanup(app: tauri::AppHandle<tauri::Wry>) {
         if cleanup_is_due {
             tokio::task::yield_now().await;
         } else {
-            tokio::time::sleep(REPEAT_SUPPRESSION_CLEANUP_INTERVAL).await;
+            app.state::<AppState>()
+                .speech_runtime
+                .clock
+                .sleep(REPEAT_SUPPRESSION_CLEANUP_INTERVAL)
+                .await;
         }
     }
 }
@@ -938,187 +962,36 @@ pub fn resume_queue(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
 
 #[cfg(feature = "app")]
 async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
-    loop {
-        let dispatcher = app.state::<AppState>().bouyomi_dispatcher.clone();
-        let dispatch_guard = dispatcher.lock_owned().await;
-        let mut control_pending = false;
-        let request = {
-            let state = app.state::<AppState>();
-            let mut queue = match state.speech_queue.lock() {
-                Ok(queue) => queue,
-                Err(error) => {
-                    emit_app_log(&app, AppLogLevel::Error, error.to_string());
-                    return;
-                }
-            };
-            if queue.controls_in_progress > 0 {
-                control_pending = true;
-                None
-            } else if queue.paused {
-                queue.is_processing = false;
-                emit_speech_status(
-                    &app,
-                    SpeechStatus::Paused,
-                    Some("読み上げキューを一時停止しました。".to_string()),
-                );
-                emit_queue_snapshot(&app, &queue, None);
-                return;
-            } else if queue.pending.is_empty() {
-                queue.is_processing = false;
-                emit_speech_status(
-                    &app,
-                    SpeechStatus::Idle,
-                    Some("読み上げキューは空です。".to_string()),
-                );
-                emit_queue_snapshot(&app, &queue, None);
-                return;
-            } else {
-                let Some(request) = queue.reserve_next_request_after_dispatch_lock() else {
-                    queue.is_processing = false;
-                    emit_queue_snapshot(&app, &queue, None);
-                    return;
-                };
-                emit_queue_snapshot(&app, &queue, None);
-                Some(request)
-            }
-        };
+    let state = app.state::<AppState>();
+    let selector_app = app.clone();
+    let worker = worker::SpeechQueueWorker {
+        queue: state.speech_queue.clone(),
+        dispatcher: state.speech_runtime.dispatcher(),
+        clock: state.speech_runtime.clock.clone(),
+        select: std::sync::Arc::new(move || {
+            let state = selector_app.state::<AppState>();
+            state.speech_runtime.select_from_state(&state)
+        }),
+        events: std::sync::Arc::new(TauriSpeechQueueEvents(app.clone())),
+    };
+    worker.run().await;
+}
 
-        let Some(request) = request else {
-            drop(dispatch_guard);
-            if control_pending {
-                if let Err(error) = wait_for_queue_control(&app).await {
-                    emit_app_log(&app, AppLogLevel::Error, error);
-                    return;
-                }
-                continue;
-            }
-            return;
-        };
-
-        emit_speech_status(
-            &app,
-            SpeechStatus::Speaking,
-            Some("チャットを読み上げています。".to_string()),
-        );
-        let submitted = submit_speech_request_from_settings(&app, &request).await;
-        drop(dispatch_guard);
-        let result = match submitted {
-            Ok(adapter) => match adapter.wait_for_playback_completion().await {
-                bouyomi::BouyomiPlaybackCompletion::Completed => {
-                    Ok(SpeechDeliveryOutcome::Completed)
-                }
-                bouyomi::BouyomiPlaybackCompletion::Unconfirmed(message) => {
-                    Ok(SpeechDeliveryOutcome::SubmittedUnconfirmed(message))
-                }
-            },
-            Err(error) => Err(error),
-        };
-        if let Err(error) = wait_for_queue_control(&app).await {
-            emit_app_log(&app, AppLogLevel::Error, error);
-            return;
-        }
-        match result {
-            Ok(SpeechDeliveryOutcome::Completed) => {
-                let state = app.state::<AppState>();
-                let mut queue = match state.speech_queue.lock() {
-                    Ok(queue) => queue,
-                    Err(error) => {
-                        emit_app_log(&app, AppLogLevel::Error, error.to_string());
-                        return;
-                    }
-                };
-                queue.complete_request(&request.id);
-                emit_queue_snapshot(&app, &queue, None);
-            }
-            Ok(SpeechDeliveryOutcome::SubmittedUnconfirmed(failure)) => {
-                let message = failure.user_message.clone();
-                let state = app.state::<AppState>();
-                let mut queue = match state.speech_queue.lock() {
-                    Ok(queue) => queue,
-                    Err(error) => {
-                        emit_app_log(&app, AppLogLevel::Error, error.to_string());
-                        return;
-                    }
-                };
-                if queue.fail_after_acceptance(&request.id) {
-                    emit_speech_adapter_health(
-                        &app,
-                        failure.adapter_health(),
-                        Some(message.clone()),
-                    );
-                    emit_app_log(&app, AppLogLevel::Error, failure.log_message());
-                    emit_queue_snapshot(&app, &queue, Some(message));
-                } else {
-                    emit_app_log(
-                        &app,
-                        AppLogLevel::Warning,
-                        "取消済みの読み上げは棒読みちゃん側の完了を確認できませんでした。",
-                    );
-                }
-            }
-            Err(failure) => {
-                let error_message = &failure.user_message;
-                let transition;
-                {
-                    let state = app.state::<AppState>();
-                    let mut queue = match state.speech_queue.lock() {
-                        Ok(queue) => queue,
-                        Err(error) => {
-                            emit_app_log(&app, AppLogLevel::Error, error.to_string());
-                            return;
-                        }
-                    };
-                    transition = queue.fail_request_with_retry(&request.id, failure.retryable);
-                    if transition == SpeechQueueFailureTransition::Ignored {
-                        emit_app_log(
-                            &app,
-                            AppLogLevel::Warning,
-                            format!(
-                                "取消済みの読み上げ送信が失敗しました: {}",
-                                failure.log_message()
-                            ),
-                        );
-                        continue;
-                    }
-                    let queue_message = match transition {
-                        SpeechQueueFailureTransition::RetryScheduled => error_message.clone(),
-                        SpeechQueueFailureTransition::RetryExhausted => {
-                            let note = if failure.retryable {
-                                "自動再試行を終了しました。"
-                            } else {
-                                "安全な自動再試行はできないため、再送していません。"
-                            };
-                            format!("{error_message} {note} エラー履歴へ移しました。状態を確認してからQueueの「再試行」を使ってください。")
-                        }
-                        SpeechQueueFailureTransition::Ignored => error_message.clone(),
-                    };
-                    emit_speech_adapter_health(
-                        &app,
-                        failure.adapter_health(),
-                        Some(queue_message.clone()),
-                    );
-                    emit_app_log(
-                        &app,
-                        AppLogLevel::Error,
-                        format!("{queue_message} {}", failure.log_message()),
-                    );
-                    emit_queue_snapshot(&app, &queue, Some(queue_message));
-                }
-                if transition == SpeechQueueFailureTransition::RetryScheduled {
-                    tokio::time::sleep(RETRY_DELAY).await;
-                    let state = app.state::<AppState>();
-                    let mut queue = match state.speech_queue.lock() {
-                        Ok(queue) => queue,
-                        Err(error) => {
-                            emit_app_log(&app, AppLogLevel::Error, error.to_string());
-                            return;
-                        }
-                    };
-                    queue.activate_scheduled_retry(&request.id);
-                    emit_queue_snapshot(&app, &queue, None);
-                }
-            }
-        }
+#[cfg(feature = "app")]
+struct TauriSpeechQueueEvents(tauri::AppHandle<tauri::Wry>);
+#[cfg(feature = "app")]
+impl worker::SpeechQueueEvents for TauriSpeechQueueEvents {
+    fn snapshot(&self, queue: &SpeechQueueState, warning: Option<String>) {
+        emit_queue_snapshot(&self.0, queue, warning);
+    }
+    fn activity(&self, status: SpeechStatus, message: Option<String>) {
+        emit_speech_status(&self.0, status, message);
+    }
+    fn health(&self, health: crate::app_events::SpeechAdapterHealth, message: Option<String>) {
+        emit_speech_adapter_health(&self.0, health, message);
+    }
+    fn log(&self, level: AppLogLevel, message: String) {
+        emit_app_log(&self.0, level, message);
     }
 }
 
@@ -1150,63 +1023,6 @@ pub(crate) fn cancel_queue_control(app: &tauri::AppHandle<tauri::Wry>) -> Result
 }
 
 #[cfg(feature = "app")]
-async fn wait_for_queue_control(app: &tauri::AppHandle<tauri::Wry>) -> Result<(), String> {
-    loop {
-        let controls_in_progress = {
-            let state = app.state::<AppState>();
-            let controls_in_progress = state
-                .speech_queue
-                .lock()
-                .map_err(|error| error.to_string())?
-                .controls_in_progress;
-            controls_in_progress
-        };
-        if controls_in_progress == 0 {
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-}
-
-#[cfg(feature = "app")]
-async fn submit_speech_request_from_settings(
-    app: &tauri::AppHandle<tauri::Wry>,
-    request: &SpeechRequest,
-) -> Result<bouyomi::BouyomiAdapter, bouyomi::SpeechFailure> {
-    let state = app.state::<AppState>();
-    let (host, port, defaults) = {
-        let settings = state
-            .settings
-            .lock()
-            .map_err(|error| bouyomi::SpeechFailure::unknown(error.to_string()))?;
-        (
-            settings.speech.bouyomi_host.clone(),
-            settings.speech.bouyomi_port,
-            bouyomi::BouyomiTalkConfig {
-                speed: settings.speech.bouyomi_speed,
-                tone: settings.speech.bouyomi_tone,
-                volume: settings.speech.bouyomi_volume,
-                voice: settings.speech.bouyomi_voice,
-                code: 0,
-            },
-        )
-    };
-
-    let adapter = bouyomi::BouyomiAdapter::with_dispatcher(
-        &host,
-        port,
-        defaults,
-        state.bouyomi_dispatcher.clone(),
-    )
-    .map_err(bouyomi::SpeechFailure::configuration)?;
-    adapter
-        .send_talk_after_dispatch_lock(&request.text)
-        .await
-        .map_err(bouyomi::classify_error)?;
-    Ok(adapter)
-}
-
-#[cfg(feature = "app")]
 fn emit_queue_snapshot(
     app: &tauri::AppHandle<tauri::Wry>,
     queue: &SpeechQueueState,
@@ -1222,7 +1038,7 @@ fn emit_queue_snapshot(
     );
 }
 
-#[cfg(feature = "app")]
+#[cfg(any(feature = "app", test))]
 fn queue_event_snapshot(
     queue: &SpeechQueueState,
     warning: Option<String>,
@@ -1272,7 +1088,7 @@ fn queue_event_snapshot(
     }
 }
 
-#[cfg(feature = "app")]
+#[cfg(any(feature = "app", test))]
 fn to_queue_event_item(item: &SpeechQueueItem) -> SpeechQueueItemEvent {
     SpeechQueueItemEvent {
         id: item.id.clone(),
@@ -1845,7 +1661,13 @@ mod tests {
         let mut queue = SpeechQueueState::default();
         queue.pending.push_back(queued_item("uncertain"));
         let request = queue.reserve_next_request_after_dispatch_lock().unwrap();
-        let failure = bouyomi::classify_error(bouyomi::BouyomiError::WriteTimeout.into());
+        let failure = SpeechFailure {
+            code: FailureCode::WriteTimeout,
+            status: crate::app_events::SpeechStatus::Disconnected,
+            retryable: false,
+            user_message: "送信の到達が不明です。".to_string(),
+            detail: "fake write timeout".to_string(),
+        };
         assert_eq!(
             queue.fail_request_with_retry(&request.id, failure.retryable),
             SpeechQueueFailureTransition::RetryExhausted

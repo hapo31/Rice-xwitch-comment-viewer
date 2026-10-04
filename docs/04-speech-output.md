@@ -106,7 +106,9 @@ connect/write/responseのtimeoutとI/O、設定不正、非互換応答を`Bouyo
 
 talkの自動再試行は、packetを書き始める前の一時的な接続失敗だけに限る。write失敗/timeoutや受付後のresponse失敗は届いた可能性があるため自動再送しない。履歴へ保持し、利用者が状態を確認してから明示的に再試行する。制御失敗はローカルqueue未変更と相手側の到達不明を付記するが、根本原因のstatusと復旧案内は同じ分類を使う。
 
-`SpeechAdapter::health_check`は無音probeを行う。transportの未接続は`Ok(SpeechHealth::Disconnected)`、設定/protocol/unknownは型付きfailureを保持した`Err`とする。Windows/Linuxのnative error→ErrorKind→分類、表示localeに依存しないmapping、fake transport、write timeoutを`bouyomi-errors.yml`で継続検証する。healthとqueue phaseの独立保持は#69、アダプタ注入境界は#70で扱う。
+`SpeechAdapter::health_check`は無音probeを行う。transportの未接続は型付きfailureを保持した`Ok(SpeechHealth::Disconnected { failure })`、設定/protocol/unknownは`Err(SpeechFailure)`とする。共通command境界が同じfailureをUI/Logsへ報告し、分類を失わない。Windows/Linuxのnative error→ErrorKind→分類、表示localeに依存しないmapping、fake transport、write timeoutを`bouyomi-errors.yml`で継続検証する。healthとqueue phaseの独立保持は#69で導入した。
+
+Issue #70のfactory/session境界は`docs/02-architecture.md`を参照。queue workerと共通commandsは具体adapter・host/port・声質を参照しない。設定snapshotの解釈はfactory、protocol/diagnostics/完了queryはbouyomi、再試行・履歴・FIFOはqueueという責務を保つ。fake adapter/clock/sinkによる本番workerの成功・遅延・失敗・再試行・受付後未確認と共通制御のテストを追加した。キュー操作列と並行enqueueの網羅性は別のIssue #72で確認する。
 
 参考: [Rust ErrorKind](https://doc.rust-lang.org/std/io/enum.ErrorKind.html)、[Tokio write_allのキャンセル安全性](https://docs.rs/tokio/1.52.3/tokio/io/trait.AsyncWriteExt.html#method.write_all)。write_allは途中まで書いた状態で中断され得るため、timeoutを「未送信」と解釈しない。
 

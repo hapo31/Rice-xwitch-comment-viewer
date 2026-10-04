@@ -19,9 +19,11 @@ use settings::{
     SettingsStore, WindowPosition,
 };
 #[cfg(feature = "app")]
-use speech::bouyomi::{
-    speech_clear, speech_connection_diagnostics, speech_health_check, speech_health_probe,
-    speech_pause, speech_resume, speech_skip, speech_test,
+use speech::bouyomi::speech_connection_diagnostics;
+#[cfg(feature = "app")]
+use speech::commands::{
+    speech_clear, speech_health_check, speech_health_probe, speech_pause, speech_resume,
+    speech_skip, speech_test,
 };
 #[cfg(feature = "app")]
 use speech::{

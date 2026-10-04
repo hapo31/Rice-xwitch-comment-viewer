@@ -61,21 +61,31 @@ Rust backend
 
 Launcherのアプリ登録・起動はWindows専用。`app_build_info.launcher`で`canRegisterApplications/canLaunchApplications/reason`を型付きで返す。UIは取得成功まで安全側に無効化し、非対応OSでは選択・DnD購読・単体/一斉起動を提供しない。backendも登録commandと設定patchによる新規登録/target変更を保存前に拒否し、起動をfilesystem操作前に拒否する。既存設定の項目は他OSでも表示・並び替え/表示名変更・削除でき、OS標準ランチャーまたはWindows版を案内する（Issue #79）。
 
-## SpeechAdapter trait案
+## SpeechAdapterの実行境界
 
 ```rust
-#[async_trait::async_trait]
+pub type SpeechFuture<'a, T> =
+    Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
 pub trait SpeechAdapter: Send + Sync {
-    async fn health_check(&self) -> anyhow::Result<SpeechHealth>;
-    async fn speak(&self, request: SpeechRequest) -> anyhow::Result<SpeechResult>;
-    async fn pause(&self) -> anyhow::Result<()>;
-    async fn resume(&self) -> anyhow::Result<()>;
-    async fn skip(&self) -> anyhow::Result<()>;
-    async fn clear(&self) -> anyhow::Result<()>;
+    fn health_check(&self) -> SpeechFuture<'_, Result<SpeechHealth, SpeechFailure>>;
+    fn speak(&self, request: SpeechRequest)
+        -> SpeechFuture<'_, Result<SpeechResult, SpeechFailure>>;
+    fn pause(&self) -> SpeechFuture<'_, Result<(), SpeechFailure>>;
+    fn resume(&self) -> SpeechFuture<'_, Result<(), SpeechFailure>>;
+    fn skip(&self) -> SpeechFuture<'_, Result<(), SpeechFailure>>;
+    fn clear(&self) -> SpeechFuture<'_, Result<(), SpeechFailure>>;
+    fn wait_for_completion(&self) -> SpeechFuture<'_, SpeechPlaybackCompletion>;
 }
 ```
 
-`BouyomiAdapter` と `VoiceroidAdapter` はこのtraitだけを実装する。UIやキューは具体的な読み上げ先を知らない。
+boxed futureにより`Arc<dyn SpeechAdapter>`として差し替えられる（[Rust Reference: dyn compatibility](https://doc.rust-lang.org/reference/items/traits.html#dyn-compatibility)）。MVPの実装は`BouyomiAdapter`のみで、VOICEROID2は未実装のままとする。
+
+app stateの`SpeechRuntime`がfactory・共通dispatch gate・clockを保持する。factoryだけが設定snapshotから具体adapterを構築し、棒読みちゃんのhost/port/声質を解釈する。health、無音probe、test、queue、pause/resume/skip/clearは同じ選択を通る。`SelectedSpeechAdapter::lock`から得るsessionを介して呼び出し、raw traitの送信は既にgateを所有している前提で再lockしない。
+
+workerは共通gateを取得してから項目を予約し、session内で送信する。controlはremote送信からlocal queue反映・成功通知まで同じsessionを保持する。受付後の完了待ちはsessionを解放して共通の`Completed / Unconfirmed(SpeechFailure)`を待つため、完了待ち中にもcontrolを送れる。adapter側の完了確認queryは同じgateで短時間ずつ直列化する。受付済みと再生完了を混同せず、未確認の要求は自動再送しない。
+
+`SpeechFailure`は共通のcode・health・再試行可否・日本語案内・技術詳細を持つ。BouyomiErrorからの写像と固有diagnosticsはbouyomi側に閉じ込め、workerはprotocolや日本語文から分類しない。workerへqueue、選択callback、clock、event sinkを注入でき、Tauri/WebView/実TCPなしで本番schedulerを再生する。snapshot通知は従来どおりqueue mutex内で実行し、revision採取との整合を保つ。
 
 ## ドメインモデル案
 

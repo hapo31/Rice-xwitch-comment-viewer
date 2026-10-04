@@ -1,4 +1,4 @@
-use crate::app_events::{SpeechAdapterHealth, SpeechStatus};
+use crate::app_events::SpeechStatus;
 use std::io::{Error, ErrorKind};
 
 #[derive(Debug, thiserror::Error)]
@@ -21,56 +21,7 @@ pub(crate) enum BouyomiError {
     InvalidResponse(u8),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FailureCode {
-    Configuration,
-    ConnectionRefused,
-    ConnectTimeout,
-    ConnectFailed,
-    ConnectionLost,
-    PermissionDenied,
-    WriteTimeout,
-    WriteFailed,
-    ResponseTimeout,
-    ResponseFailed,
-    ProtocolMismatch,
-    Unknown,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{user_message}")]
-pub(crate) struct SpeechFailure {
-    pub code: FailureCode,
-    pub status: SpeechStatus,
-    /// Safe to retry a talk only if connection failed before any packet write.
-    pub retryable: bool,
-    pub user_message: String,
-    pub detail: String,
-}
-
-impl SpeechFailure {
-    pub fn adapter_health(&self) -> SpeechAdapterHealth {
-        if self.status == SpeechStatus::Disconnected {
-            SpeechAdapterHealth::Disconnected
-        } else {
-            SpeechAdapterHealth::Error
-        }
-    }
-    pub fn configuration(detail: String) -> Self {
-        classify_error(BouyomiError::Configuration(detail).into())
-    }
-
-    pub fn unknown(detail: String) -> Self {
-        classify_error(anyhow::anyhow!(detail))
-    }
-
-    pub fn log_message(&self) -> String {
-        format!(
-            "{} [code={:?}, retryable={}]: {}",
-            self.user_message, self.code, self.retryable, self.detail
-        )
-    }
-}
+pub(crate) use crate::speech::{FailureCode, SpeechFailure};
 
 pub(crate) fn classify_error(error: anyhow::Error) -> SpeechFailure {
     if let Some(failure) = error.downcast_ref::<SpeechFailure>() {
