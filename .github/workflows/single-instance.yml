@@ -42,7 +42,35 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           rustup override set $env:REVIEWED_RUST
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build the native library test harness
+        id: harness
+        run: |
+          $records = cargo test --locked --all-features --lib --no-run --message-format=json --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $binaries = @($records | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object {
+            $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'rice_lib' -and $_.profile.test -and $_.executable
+          } | ForEach-Object { $_.executable })
+          if ($binaries.Count -ne 1) { throw "Expected exactly one native library test binary" }
+          "binary=$($binaries[0])" >> $env:GITHUB_OUTPUT
+      - name: Embed the same Common Controls v6 requirement used by the production app
+        env:
+          RICE_NATIVE_TEST_BINARY: ${{ steps.harness.outputs.binary }}
+        run: |
+          # tauri-build links its manifest into normal binaries, not the libtest
+          # harness. rfd's TaskDialogIndirect requires Common Controls v6 before
+          # test main; a default v5 DLL would cause STATUS_ENTRYPOINT_NOT_FOUND.
+          $sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $mt = Get-ChildItem -LiteralPath $sdkBin -Filter mt.exe -Recurse -File |
+            Where-Object { $_.DirectoryName -match '\\x64$' } |
+            Sort-Object FullName | Select-Object -Last 1
+          if (-not $mt) { throw "Windows SDK manifest tool is required" }
+          & $mt.FullName -manifest src-tauri/tests/native-windows.manifest "-outputresource:$($env:RICE_NATIVE_TEST_BINARY);#1"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify real second launch exits, preserves settings and restores foreground window
         # This explicitly runs the headful test. Missing WebView2/desktop or
         # failed restoration is a failure, never a skipped smoke result.
-        run: cargo test --locked --all-features --manifest-path src-tauri/Cargo.toml single_instance::windows_tests::native_two_process_restore_and_focus -- --exact --ignored --nocapture
+        env:
+          RICE_NATIVE_TEST_BINARY: ${{ steps.harness.outputs.binary }}
+        run: |
+          & $env:RICE_NATIVE_TEST_BINARY single_instance::windows_tests::native_two_process_restore_and_focus --exact --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
