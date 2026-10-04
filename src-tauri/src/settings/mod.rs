@@ -682,7 +682,20 @@ pub fn settings_update(
     let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
     update_settings_transaction(
         &mut settings,
-        |candidate| apply_patch(candidate, patch),
+        |candidate| {
+            if let Some(incoming) = patch
+                .launcher
+                .as_ref()
+                .and_then(|launcher| launcher.items.as_ref())
+            {
+                crate::launcher::validate_platform_registration_changes(
+                    &crate::launcher::LauncherCapabilities::current(),
+                    &candidate.launcher.items,
+                    incoming,
+                )?;
+            }
+            apply_patch(candidate, patch)
+        },
         |candidate| SettingsStore::save(&app, candidate).map_err(|error| error.to_string()),
     )?;
     emit_app_log(&app, AppLogLevel::Info, "設定を保存しました。");

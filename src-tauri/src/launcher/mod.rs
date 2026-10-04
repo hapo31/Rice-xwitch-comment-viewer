@@ -23,6 +23,59 @@ use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
 
 const MAX_LAUNCHER_ITEMS: usize = 200;
+const UNSUPPORTED_LAUNCHER_MESSAGE: &str = "アプリの登録・起動はWindows版でのみ利用できます。このOSでは標準のランチャーから起動してください。保存済み項目の表示・削除はできます。";
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherCapabilities {
+    pub can_register_applications: bool,
+    pub can_launch_applications: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+impl LauncherCapabilities {
+    pub fn current() -> Self {
+        Self::for_platform(cfg!(target_os = "windows"))
+    }
+
+    fn for_platform(windows: bool) -> Self {
+        Self {
+            can_register_applications: windows,
+            can_launch_applications: windows,
+            reason: (!windows).then(|| UNSUPPORTED_LAUNCHER_MESSAGE.to_string()),
+        }
+    }
+
+    fn ensure_supported(&self) -> Result<(), String> {
+        if self.can_register_applications && self.can_launch_applications {
+            Ok(())
+        } else {
+            Err(UNSUPPORTED_LAUNCHER_MESSAGE.to_string())
+        }
+    }
+}
+
+pub(crate) fn validate_platform_registration_changes(
+    capabilities: &LauncherCapabilities,
+    existing: &[LauncherItem],
+    incoming: &[LauncherItem],
+) -> Result<(), String> {
+    if !capabilities.can_register_applications
+        && incoming.iter().any(|item| {
+            item.kind == LauncherItemKind::Application
+                && !existing.iter().any(|old| {
+                    old.id == item.id
+                        && old.kind == item.kind
+                        && path_identity_key(Path::new(&old.target))
+                            == path_identity_key(Path::new(&item.target))
+                })
+        })
+    {
+        return Err(UNSUPPORTED_LAUNCHER_MESSAGE.to_string());
+    }
+    Ok(())
+}
 const LAUNCHER_ICON_DATA_URL_PREFIX: &str = "data:image/png;base64,";
 const MAX_ICON_BASE64_LENGTH: usize = 2_000_000;
 const MAX_ICON_FILE_BYTES: usize = 1_500_000;
@@ -771,6 +824,7 @@ pub async fn launcher_add(
     state: tauri::State<'_, AppState>,
     paths: Vec<String>,
 ) -> Result<Vec<LauncherItem>, String> {
+    LauncherCapabilities::current().ensure_supported()?;
     // Snapshot only: filesystem and COM work must never run while the settings
     // mutex is held, because that mutex is also used by chat and speech commands.
     let existing = launcher_items_snapshot(&state.settings)?;
@@ -965,6 +1019,7 @@ fn launch_items(items: &[LauncherItem]) -> LauncherLaunchResult {
 
 #[cfg(feature = "app")]
 fn launch_item(item: &LauncherItem) -> Result<(), String> {
+    LauncherCapabilities::current().ensure_supported()?;
     if item.kind != LauncherItemKind::Application {
         return Err("この種類のランチャー項目はまだ起動できません。".to_string());
     }
@@ -1042,6 +1097,8 @@ fn log_launch_result(app: &tauri::AppHandle<tauri::Wry>, result: &LauncherLaunch
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(feature = "app", not(target_os = "windows")))]
+    use super::launch_items;
     use super::{
         build_new_items_in_workers_with_extractor, derive_display_name,
         is_supported_application_path, launcher_items_snapshot, merge_new_launcher_items,
@@ -1049,6 +1106,7 @@ mod tests {
         wait_for_child_exit, ChildExitWaitError, LauncherIconExtractor, LauncherItem,
         LauncherItemKind, LauncherWorkerConfig, SystemIconExtractor,
     };
+    use super::{validate_platform_registration_changes, LauncherCapabilities};
     use crate::settings::AppSettings;
     use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
     use std::fs;
@@ -1059,6 +1117,106 @@ mod tests {
     use tokio::sync::Semaphore;
 
     static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn launcher_platform_capabilities_allow_windows_and_reject_other_platforms() {
+        let windows = LauncherCapabilities::for_platform(true);
+        assert!(windows.can_register_applications && windows.can_launch_applications);
+        assert!(windows.ensure_supported().is_ok());
+        assert!(windows.reason.is_none());
+        let unsupported = LauncherCapabilities::for_platform(false);
+        assert!(!unsupported.can_register_applications && !unsupported.can_launch_applications);
+        assert!(unsupported
+            .ensure_supported()
+            .unwrap_err()
+            .contains("Windows版"));
+        let json = serde_json::to_value(&unsupported).unwrap();
+        assert_eq!(json["canRegisterApplications"], false);
+        assert_eq!(json["canLaunchApplications"], false);
+        assert!(json["reason"]
+            .as_str()
+            .unwrap()
+            .contains("標準のランチャー"));
+        assert_eq!(
+            LauncherCapabilities::current().can_register_applications,
+            cfg!(target_os = "windows")
+        );
+    }
+
+    #[test]
+    fn unsupported_platform_rejects_registration_and_target_changes_but_allows_removal() {
+        let old = item(0);
+        let unsupported = LauncherCapabilities::for_platform(false);
+        assert!(validate_platform_registration_changes(
+            &unsupported,
+            &[],
+            std::slice::from_ref(&old)
+        )
+        .is_err());
+        assert!(validate_platform_registration_changes(
+            &unsupported,
+            std::slice::from_ref(&old),
+            &[]
+        )
+        .is_ok());
+        let mut edited = old.clone();
+        edited.display_name = "表示名変更".into();
+        assert!(validate_platform_registration_changes(
+            &unsupported,
+            std::slice::from_ref(&old),
+            std::slice::from_ref(&edited)
+        )
+        .is_ok());
+        edited.target = "C:\\moved.exe".into();
+        assert!(validate_platform_registration_changes(
+            &unsupported,
+            std::slice::from_ref(&old),
+            std::slice::from_ref(&edited)
+        )
+        .is_err());
+        assert!(validate_platform_registration_changes(
+            &LauncherCapabilities::for_platform(true),
+            &[],
+            &[edited]
+        )
+        .is_ok());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[cfg(feature = "app")]
+    #[test]
+    fn unsupported_launch_is_rejected_before_filesystem_access() {
+        let result = launch_items(&[item(0)]);
+        assert_eq!(result.launched_count, 0);
+        assert_eq!(result.failures.len(), 1);
+        assert!(result.failures[0].message.contains("Windows版"));
+    }
+
+    #[test]
+    fn unsupported_registration_does_not_mutate_or_persist_settings() {
+        let mut settings = AppSettings::default();
+        let persisted = AtomicBool::new(false);
+        let incoming = vec![item(0)];
+        let result = crate::settings::update_settings_transaction(
+            &mut settings,
+            |candidate| {
+                validate_platform_registration_changes(
+                    &LauncherCapabilities::for_platform(false),
+                    &candidate.launcher.items,
+                    &incoming,
+                )?;
+                candidate.launcher.items = incoming;
+                Ok(())
+            },
+            |_| {
+                persisted.store(true, Ordering::SeqCst);
+                Ok(())
+            },
+        );
+        assert!(result.is_err());
+        assert!(settings.launcher.items.is_empty());
+        assert!(!persisted.load(Ordering::SeqCst));
+    }
 
     struct TemporaryFile(PathBuf);
 

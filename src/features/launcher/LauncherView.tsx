@@ -11,8 +11,8 @@ import {
   partitionApplicationPaths,
   sortLauncherItems,
 } from "../../presentation/launcher";
-import { isDesktopRuntime } from "../../tauri/client";
-import type { LauncherItem, LauncherLaunchResult } from "../../types";
+import { getLauncherCapabilities, isDesktopRuntime } from "../../tauri/client";
+import type { LauncherCapabilities, LauncherItem, LauncherLaunchResult } from "../../types";
 import { routeHeadingId } from "../../routeAccessibility";
 
 interface LauncherViewProps {
@@ -77,6 +77,13 @@ export function LauncherView({
   const [busyAction, setBusyAction] = useState<string>();
   const [isDragActive, setIsDragActive] = useState(false);
   const [notice, setNotice] = useState(defaultLauncherNotice);
+  const [capabilities, setCapabilities] = useState<LauncherCapabilities>({
+    canRegisterApplications: false,
+    canLaunchApplications: false,
+    reason: "ランチャーのOS対応状況を確認しています。",
+  });
+  const capabilitiesRef = useRef(capabilities);
+  capabilitiesRef.current = capabilities;
   const menuTriggers = useRef(new Map<string, HTMLButtonElement>());
   const focusMenuOnOpen = useRef(false);
   const orderedItems = useMemo(() => sortLauncherItems(items), [items]);
@@ -87,6 +94,26 @@ export function LauncherView({
   isReadyRef.current = isReady;
   itemsCountRef.current = items.length;
   onAddRef.current = onAdd;
+
+  useEffect(() => {
+    let active = true;
+    void getLauncherCapabilities().then(
+      (value) => {
+        if (active) setCapabilities(value);
+      },
+      () => {
+        if (active)
+          setCapabilities({
+            canRegisterApplications: false,
+            canLaunchApplications: false,
+            reason: "ランチャーのOS対応状況を確認できません。アプリを再起動してください。",
+          });
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const openMenu = useCallback((itemId: string, shouldFocusMenu = true) => {
     focusMenuOnOpen.current = shouldFocusMenu;
@@ -116,6 +143,10 @@ export function LauncherView({
   }, [openMenuId]);
 
   const addPaths = useCallback(async (paths: string[]) => {
+    if (!capabilitiesRef.current.canRegisterApplications) {
+      setNotice(capabilitiesRef.current.reason ?? "このOSではアプリを登録できません。");
+      return;
+    }
     if (!isReadyRef.current) {
       setNotice("設定を読み込んでいます。少し待ってからもう一度お試しください。");
       return;
@@ -166,7 +197,7 @@ export function LauncherView({
   };
 
   useEffect(() => {
-    if (!isDesktopRuntime()) {
+    if (!isDesktopRuntime() || !capabilities.canRegisterApplications) {
       return;
     }
 
@@ -175,7 +206,7 @@ export function LauncherView({
       dragDropHandlersRef,
       () => setNotice("ドラッグ＆ドロップの監視に失敗しました。画面を再読み込みしてください。"),
     );
-  }, []);
+  }, [capabilities.canRegisterApplications]);
 
   useEffect(() => {
     if (!openMenuId) {
@@ -189,6 +220,10 @@ export function LauncherView({
   }, [closeMenu, openMenuId]);
 
   async function selectApplications() {
+    if (!capabilities.canRegisterApplications) {
+      setNotice(capabilities.reason ?? "このOSではアプリを登録できません。");
+      return;
+    }
     if (!isDesktopRuntime()) {
       setNotice("アプリの選択は Tauri デスクトップ版で利用できます。");
       return;
@@ -215,6 +250,10 @@ export function LauncherView({
   }
 
   async function launchItem(item: LauncherItem) {
+    if (!capabilities.canLaunchApplications) {
+      setNotice(capabilities.reason ?? "このOSではアプリを起動できません。");
+      return;
+    }
     closeMenu();
     setBusyAction(`launch:${item.id}`);
     try {
@@ -232,6 +271,10 @@ export function LauncherView({
   }
 
   async function launchAll() {
+    if (!capabilities.canLaunchApplications) {
+      setNotice(capabilities.reason ?? "このOSではアプリを起動できません。");
+      return;
+    }
     setBusyAction("launch-all");
     try {
       setNotice(launcherLaunchSummary(await onLaunchAll()));
@@ -272,7 +315,12 @@ export function LauncherView({
         </div>
         <button
           type="button"
-          disabled={!isReady || items.length === 0 || Boolean(busyAction)}
+          disabled={
+            !isReady ||
+            !capabilities.canLaunchApplications ||
+            items.length === 0 ||
+            Boolean(busyAction)
+          }
           onClick={() => void launchAll()}
           className="flex h-8 shrink-0 items-center gap-2 border border-sky-600 bg-sky-700 px-3 text-xs font-medium text-white transition-colors hover:bg-sky-600 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-400"
         >
@@ -282,6 +330,11 @@ export function LauncherView({
       </header>
 
       <section className="relative flex h-[calc(100%-3.5rem)] min-h-0 flex-col">
+        {capabilities.reason && (
+          <p role="note" className="border-b border-zinc-800 px-5 py-3 text-xs text-amber-300">
+            {capabilities.reason}
+          </p>
+        )}
         <div className="min-h-0 flex-1 overflow-auto p-5 pb-16">
           <div className="grid grid-cols-[repeat(auto-fill,minmax(132px,156px))] auto-rows-[156px] gap-3">
             {orderedItems.map((item) => {
@@ -295,7 +348,7 @@ export function LauncherView({
                 >
                   <button
                     type="button"
-                    disabled={Boolean(busyAction)}
+                    disabled={!capabilities.canLaunchApplications || Boolean(busyAction)}
                     onClick={() => void launchItem(item)}
                     aria-label={`${item.displayName} を起動`}
                     className="flex h-full w-full flex-col items-center justify-center px-3 pb-9 pt-3 text-center transition-[filter,transform] hover:brightness-110 active:scale-[0.98] disabled:cursor-wait disabled:opacity-70"
@@ -419,7 +472,7 @@ export function LauncherView({
 
             <button
               type="button"
-              disabled={!isReady || Boolean(busyAction)}
+              disabled={!isReady || !capabilities.canRegisterApplications || Boolean(busyAction)}
               onClick={() => void selectApplications()}
               aria-label="アプリをランチャーに追加"
               className="group flex h-[156px] w-full flex-col items-center justify-center border border-dashed border-zinc-700 bg-zinc-900/60 text-zinc-400 transition-colors hover:border-sky-500 hover:bg-zinc-900 hover:text-sky-300 disabled:cursor-wait disabled:opacity-60"

@@ -60,6 +60,7 @@ fn app_open_external_url(url: String) -> Result<(), String> {
 struct AppBuildInfo {
     version: &'static str,
     is_dev: bool,
+    launcher: launcher::LauncherCapabilities,
     #[serde(skip_serializing_if = "Option::is_none")]
     commit_hash: Option<&'static str>,
 }
@@ -68,6 +69,7 @@ fn app_build_info_value() -> AppBuildInfo {
     AppBuildInfo {
         version: env!("CARGO_PKG_VERSION"),
         is_dev: cfg!(debug_assertions),
+        launcher: launcher::LauncherCapabilities::current(),
         commit_hash: option_env!("RICE_GIT_COMMIT"),
     }
 }

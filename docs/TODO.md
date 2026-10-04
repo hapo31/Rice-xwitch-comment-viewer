@@ -9,6 +9,10 @@
 
 ## 現在の進捗サマリ
 
+- [x] Issue #79: backendの型付きplatform capabilityでLauncher登録/起動を制限し、非Windowsは保存前に拒否する。UIも選択・DnD・起動を無効化し、既存項目の表示/削除は維持する。
+
+2026-10-05: Issue #79でapp_build_infoへ型付きLauncher capabilityを追加した。非Windowsは登録commandと設定patch経由の新規/target変更を保存前に拒否し、起動もfilesystem確認前に拒否する。UIは取得失敗/未取得時も安全側で無効化し、OS標準ランチャー/Windows版を案内する。native/browser/malformed契約6件、Windows/非Windows分岐と保存非変更を含むRust169件、frontend209件、fmt/clippy/typecheck/build/securityが成功。Windows実機smokeは#91で追跡する。
+
 - [x] Issue #86: PR/main/releaseで共通のfrontend format・lint・typecheck・test・buildとRust fmt・all-features clippy/testを独立jobで実行する。固定toolchainで既存静的検査違反を解消する。
 
 2026-10-05: Issue #86で共通workflowとquality-gate.shを導入した。Biome 2.5.15のformatter/linterを型検査から分離し、TS/TSXを機械整形した。frontend203件とformat/lint/typecheck/build、quality policy/負例3件、Rust 1.90 fmt・all-targets/all-features clippy（warnings deny）・165テストが成功。no-default詳細遷移、Windows実機検査、advisory gateは独立した検査として継続する。

@@ -61,7 +61,11 @@ export function StatusBar({ state }: StatusBarProps) {
   );
 }
 
-export function formatBuildLabel({ version, isDev, commitHash }: AppBuildInfo): string {
+export function formatBuildLabel({
+  version,
+  isDev,
+  commitHash,
+}: Pick<AppBuildInfo, "version" | "isDev" | "commitHash">): string {
   if (!isDev) {
     return `Rice ${version}`;
   }

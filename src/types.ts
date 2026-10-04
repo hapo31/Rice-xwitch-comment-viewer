@@ -308,3 +308,8 @@ export type TwitchAuthPollResult =
     }
   | { status: "denied"; message: string }
   | { status: "expired"; message: string };
+export interface LauncherCapabilities {
+  canRegisterApplications: boolean;
+  canLaunchApplications: boolean;
+  reason?: string;
+}

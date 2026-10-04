@@ -21,6 +21,7 @@ import type {
   AppSettingsPatch,
   BouyomiConnectionDiagnostics,
   LauncherItem,
+  LauncherCapabilities,
   LauncherLaunchResult,
   SpeechQueueUpdatedEvent,
   SpeechStateSnapshot,
@@ -77,7 +78,28 @@ function nullFreePayload<T>(payload: unknown, contract: string): T {
 export interface AppBuildInfo {
   version: string;
   isDev: boolean;
+  launcher: LauncherCapabilities;
   commitHash?: string;
+}
+
+export async function getLauncherCapabilities(): Promise<LauncherCapabilities> {
+  if (!isTauriRuntime) {
+    return {
+      canRegisterApplications: false,
+      canLaunchApplications: false,
+      reason: "アプリの登録・起動はWindowsのTauriデスクトップ版で利用できます。",
+    };
+  }
+  const capabilities = (await getAppBuildInfo())?.launcher;
+  if (
+    !capabilities ||
+    typeof capabilities.canRegisterApplications !== "boolean" ||
+    typeof capabilities.canLaunchApplications !== "boolean" ||
+    (capabilities.reason !== undefined && typeof capabilities.reason !== "string")
+  ) {
+    throw new Error("ランチャーのOS対応状況を確認できません。アプリを再起動してください。");
+  }
+  return capabilities;
 }
 
 export async function getAppBuildInfo(): Promise<AppBuildInfo | undefined> {
