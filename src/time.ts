@@ -3,7 +3,8 @@ declare const utcTimestampBrand: unique symbol;
 /** RFC 3339 timestamp normalized to the UTC `Z` representation. */
 export type UtcTimestamp = string & { readonly [utcTimestampBrand]: true };
 
-const rfc3339WithOffset = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/;
+const rfc3339WithOffset =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/;
 
 export function parseUtcTimestamp(value: unknown): UtcTimestamp | undefined {
   if (typeof value !== "string") {
@@ -15,7 +16,8 @@ export function parseUtcTimestamp(value: unknown): UtcTimestamp | undefined {
     return undefined;
   }
 
-  const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction, offset] = match;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction, offset] =
+    match;
   const year = Number(yearText);
   const month = Number(monthText);
   const day = Number(dayText);
@@ -26,10 +28,15 @@ export function parseUtcTimestamp(value: unknown): UtcTimestamp | undefined {
   const offsetMinutes = offset === "Z" ? 0 : Number(offset.slice(4, 6));
 
   if (
-    month < 1 || month > 12 ||
-    day < 1 || day > daysInMonth(year, month) ||
-    hour > 23 || minute > 59 || second > 59 ||
-    offsetHours > 23 || offsetMinutes > 59
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInMonth(year, month) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHours > 23 ||
+    offsetMinutes > 59
   ) {
     return undefined;
   }

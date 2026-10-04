@@ -9,6 +9,10 @@
 
 ## 現在の進捗サマリ
 
+- [x] Issue #86: PR/main/releaseで共通のfrontend format・lint・typecheck・test・buildとRust fmt・all-features clippy/testを独立jobで実行する。固定toolchainで既存静的検査違反を解消する。
+
+2026-10-05: Issue #86で共通workflowとquality-gate.shを導入した。Biome 2.5.15のformatter/linterを型検査から分離し、TS/TSXを機械整形した。frontend203件とformat/lint/typecheck/build、quality policy/負例3件、Rust 1.90 fmt・all-targets/all-features clippy（warnings deny）・165テストが成功。no-default詳細遷移、Windows実機検査、advisory gateは独立した検査として継続する。
+
 - [x] Issue #81: MVPのSpeechRequestから未実装の項目単位音声overrideを除外し、未知の項目を明示拒否する。設定単位の声質は維持し、request/adapter契約をテストする。
 
 2026-10-05: Issue #81で未使用の4つのrequest overrideを除外し、各項目の数値・文字列・null入力を拒否すること、およびtrait経由のTCP送信で設定された全声質値がpacketへ反映されることを確認した。Rust 1.90のdefault165件/no-default119件とfmtが成功。既存clippy違反4件は#86で対応する。

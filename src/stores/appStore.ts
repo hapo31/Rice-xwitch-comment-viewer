@@ -36,10 +36,21 @@ export interface AppState {
 export type AppAction =
   | { type: "settings.loaded"; settings: AppSettings }
   | { type: "twitch.authStatus"; status: AuthStatus; revision?: number }
-  | { type: "twitch.connectionStatus"; status: TwitchChatConnectionStatus; revision?: number; connectionGeneration?: number; activeConnection?: TwitchActiveConnection }
+  | {
+      type: "twitch.connectionStatus";
+      status: TwitchChatConnectionStatus;
+      revision?: number;
+      connectionGeneration?: number;
+      activeConnection?: TwitchActiveConnection;
+    }
   | { type: "twitch.authPrompt"; prompt?: TwitchDeviceAuthStart }
   | { type: "twitch.profile"; profile?: TwitchUserProfile }
-  | { type: "speech.status"; status: SpeechStatus; revision?: number; adapterHealth?: SpeechAdapterHealth }
+  | {
+      type: "speech.status";
+      status: SpeechStatus;
+      revision?: number;
+      adapterHealth?: SpeechAdapterHealth;
+    }
   | { type: "speech.snapshot"; snapshot: SpeechStateSnapshot }
   | { type: "chat.message"; message: ChatMessage }
   | { type: "queue.changed"; items: QueueItem[]; revision?: number; phase?: SpeechQueuePhase }
@@ -71,7 +82,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         twitchConnectionStatus: action.status,
         twitchConnectionGeneration: action.connectionGeneration ?? state.twitchConnectionGeneration,
-        twitchActiveConnection: action.status === "disconnected" ? undefined : action.activeConnection ?? state.twitchActiveConnection,
+        twitchActiveConnection:
+          action.status === "disconnected"
+            ? undefined
+            : (action.activeConnection ?? state.twitchActiveConnection),
       };
     case "twitch.authPrompt":
       return { ...state, twitchAuthPrompt: action.prompt };
@@ -82,7 +96,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "chat.message":
       return {
         ...state,
-        chatMessages: [syncChatMessageStatus(action.message, state.queueItems), ...state.chatMessages].slice(0, 200),
+        chatMessages: [
+          syncChatMessageStatus(action.message, state.queueItems),
+          ...state.chatMessages,
+        ].slice(0, 200),
       };
     case "queue.changed":
       return {
@@ -103,22 +120,25 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case "log.added":
       return {
         ...state,
-        logs: [
-          { ...action.log, id: uniqueLogId(action.log, state.logs) },
-          ...state.logs,
-        ].slice(0, 500),
+        logs: [{ ...action.log, id: uniqueLogId(action.log, state.logs) }, ...state.logs].slice(
+          0,
+          500,
+        ),
       };
     case "notification.added": {
       const notification = {
         ...action.notification,
         id: action.notification.id ?? notificationId(action.notification),
       };
-      const duplicateIndex = state.notifications.findIndex(
-        (existing) => isDuplicateNotification(existing, notification),
+      const duplicateIndex = state.notifications.findIndex((existing) =>
+        isDuplicateNotification(existing, notification),
       );
       if (duplicateIndex >= 0) {
         const existing = state.notifications[duplicateIndex];
-        if (notificationSeverityRank(notification.severity) <= notificationSeverityRank(existing.severity)) {
+        if (
+          notificationSeverityRank(notification.severity) <=
+          notificationSeverityRank(existing.severity)
+        ) {
           return state;
         }
         const notifications = [...state.notifications];
@@ -133,7 +153,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         notifications: state.notifications.filter(
-          (notification) => notification.severity !== "warning" && notification.severity !== "error",
+          (notification) =>
+            notification.severity !== "warning" && notification.severity !== "error",
         ),
       };
     default:
@@ -141,7 +162,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
   }
 }
 
-export function chatStatusFromQueueStatus(status: QueueDisplayState): Extract<ChatMessage, { kind: "user" }>["status"] {
+export function chatStatusFromQueueStatus(
+  status: QueueDisplayState,
+): Extract<ChatMessage, { kind: "user" }>["status"] {
   return status === "speaking" ? "queued" : status;
 }
 
@@ -174,14 +197,18 @@ function syncChatMessageStatus(message: ChatMessage, queueItems: QueueItem[]): C
 function queueStatusByMessageId(queueItems: QueueItem[]) {
   return new Map(
     queueItems.flatMap((item) =>
-      item.sourceMessageId ? [[item.sourceMessageId, chatStatusFromQueueStatus(item.status)] as const] : [],
+      item.sourceMessageId
+        ? [[item.sourceMessageId, chatStatusFromQueueStatus(item.status)] as const]
+        : [],
     ),
   );
 }
 
 export function warningNotifications(notifications: AppNotification[]): AppNotification[] {
   return notifications
-    .filter((notification) => notification.severity === "warning" || notification.severity === "error")
+    .filter(
+      (notification) => notification.severity === "warning" || notification.severity === "error",
+    )
     .slice(0, 5);
 }
 

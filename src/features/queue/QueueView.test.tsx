@@ -39,7 +39,9 @@ describe("QueueView", () => {
     expect(markup).toContain('aria-label="キュー4行目、viewerの「同じ本文」を待機キューから削除"');
     expect(markup).toContain('aria-label="キュー3行目、viewerの「同じ本文」を履歴から削除"');
     expect(markup).toContain('aria-label="キュー2行目、viewerの「同じ本文」を履歴から削除"');
-    expect(markup).not.toContain('aria-label="キュー2行目、viewerの「同じ本文」を履歴から削除" disabled=""');
+    expect(markup).not.toContain(
+      'aria-label="キュー2行目、viewerの「同じ本文」を履歴から削除" disabled=""',
+    );
   });
 
   it("keeps the empty state inside the named table as one logical row", () => {

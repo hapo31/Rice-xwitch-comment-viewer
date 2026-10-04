@@ -6,7 +6,15 @@ import type { UiScaleMode } from "../hooks/useDisplayScale";
 import { appExit } from "../tauri/client";
 import { subscribeWithCleanup } from "../tauri/subscriptions";
 
-type ResizeDirection = "East" | "North" | "NorthEast" | "NorthWest" | "South" | "SouthEast" | "SouthWest" | "West";
+type ResizeDirection =
+  | "East"
+  | "North"
+  | "NorthEast"
+  | "NorthWest"
+  | "South"
+  | "SouthEast"
+  | "SouthWest"
+  | "West";
 
 interface TitleBarProps {
   scale: number;
@@ -43,9 +51,12 @@ export function TitleBar({ scale, scaleMode, onScaleModeChange, onClose }: Title
     }
 
     syncMaximized();
-    const dispose = subscribeWithCleanup([() => appWindow.onResized(() => {
-        void syncMaximized();
-      })]);
+    const dispose = subscribeWithCleanup([
+      () =>
+        appWindow.onResized(() => {
+          void syncMaximized();
+        }),
+    ]);
 
     return () => {
       isMounted = false;
@@ -102,7 +113,9 @@ export function TitleBar({ scale, scaleMode, onScaleModeChange, onClose }: Title
               key={option.mode}
               className={[
                 "cursor-pointer",
-                scaleMode === option.mode ? "bg-sky-500 text-zinc-950" : "text-zinc-400 hover:bg-zinc-850 hover:text-zinc-100",
+                scaleMode === option.mode
+                  ? "bg-sky-500 text-zinc-950"
+                  : "text-zinc-400 hover:bg-zinc-850 hover:text-zinc-100",
               ].join(" ")}
             >
               <input
@@ -130,7 +143,10 @@ export function TitleBar({ scale, scaleMode, onScaleModeChange, onClose }: Title
         <TitleBarButton label="最小化" onClick={() => void minimizeWindow()}>
           <Minus className="h-4 w-4" />
         </TitleBarButton>
-        <TitleBarButton label={isMaximized ? "元に戻す" : "最大化"} onClick={() => void toggleMaximizeWindow()}>
+        <TitleBarButton
+          label={isMaximized ? "元に戻す" : "最大化"}
+          onClick={() => void toggleMaximizeWindow()}
+        >
           {isMaximized ? <Square className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
         </TitleBarButton>
         <TitleBarButton label="閉じる" tone="danger" onClick={() => void closeWindow()}>
@@ -192,7 +208,9 @@ function TitleBarButton({
       onClick={onClick}
       className={[
         "flex w-11 items-center justify-center text-zinc-300 transition-colors",
-        tone === "danger" ? "hover:bg-rose-500 hover:text-white" : "hover:bg-zinc-800 hover:text-zinc-100",
+        tone === "danger"
+          ? "hover:bg-rose-500 hover:text-white"
+          : "hover:bg-zinc-800 hover:text-zinc-100",
       ].join(" ")}
     >
       {children}

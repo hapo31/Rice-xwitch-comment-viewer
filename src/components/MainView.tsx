@@ -15,7 +15,11 @@ import type {
   LauncherItem,
   LauncherLaunchResult,
 } from "../types";
-import { getRouteDocumentTitle, routeHeadingId, shouldFocusRouteHeading } from "../routeAccessibility";
+import {
+  getRouteDocumentTitle,
+  routeHeadingId,
+  shouldFocusRouteHeading,
+} from "../routeAccessibility";
 
 interface MainViewProps {
   onSettingsUpdate: (patch: AppSettingsPatch) => Promise<boolean>;
@@ -101,10 +105,7 @@ export function MainView({
           />
         }
       />
-      <Route
-        path="/filter"
-        element={<DomainFilterView onSettingsUpdate={onSettingsUpdate} />}
-      />
+      <Route path="/filter" element={<DomainFilterView onSettingsUpdate={onSettingsUpdate} />} />
       <Route path="/rules" element={<Navigate to="/filter" replace />} />
       <Route
         path="/settings"

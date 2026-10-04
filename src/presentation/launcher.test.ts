@@ -29,7 +29,9 @@ describe("launcher presentation", () => {
 
   it("uses a valid custom tile color and rejects unsafe values", () => {
     expect(launcherTileColor(item({ backgroundColor: "#123abc" }))).toBe("#123abc");
-    expect(launcherTileColor(item({ backgroundColor: "red; color: white" }))).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(launcherTileColor(item({ backgroundColor: "red; color: white" }))).toMatch(
+      /^#[0-9a-f]{6}$/i,
+    );
   });
 
   it("accepts Windows executable and shortcut paths case-insensitively", () => {
@@ -40,9 +42,11 @@ describe("launcher presentation", () => {
   });
 
   it("summarizes partial bulk launch failures", () => {
-    expect(launcherLaunchSummary({
-      launchedCount: 2,
-      failures: [{ itemId: "3", displayName: "Broken", message: "見つかりません" }],
-    })).toBe("2 件を起動し、1 件は起動できませんでした（Broken）。");
+    expect(
+      launcherLaunchSummary({
+        launchedCount: 2,
+        failures: [{ itemId: "3", displayName: "Broken", message: "見つかりません" }],
+      }),
+    ).toBe("2 件を起動し、1 件は起動できませんでした（Broken）。");
   });
 });

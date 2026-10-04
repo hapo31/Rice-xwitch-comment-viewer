@@ -1,12 +1,20 @@
 import type { MutableRefObject } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { ActiveOperationsExitDialog, createNativeCloseHandler, UnsavedChangesDialog } from "./unsavedChanges";
+import {
+  ActiveOperationsExitDialog,
+  createNativeCloseHandler,
+  UnsavedChangesDialog,
+} from "./unsavedChanges";
 
 describe("未保存変更の確認ダイアログ", () => {
   it("画面遷移後に再入場する前の保存・破棄・キャンセルをキーボード操作できる", () => {
     const markup = renderToStaticMarkup(
-      <UnsavedChangesDialog onSave={() => undefined} onDiscard={() => undefined} onCancel={() => undefined} />,
+      <UnsavedChangesDialog
+        onSave={() => undefined}
+        onDiscard={() => undefined}
+        onCancel={() => undefined}
+      />,
     );
 
     expect(markup).toContain('role="dialog"');

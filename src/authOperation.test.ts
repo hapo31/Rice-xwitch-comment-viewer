@@ -36,7 +36,9 @@ describe("AuthOperationController", () => {
     const controller = new AuthOperationController();
     const startup = controller.begin();
     let resolveValidation!: () => void;
-    const validation = new Promise<void>((resolve) => { resolveValidation = resolve; });
+    const validation = new Promise<void>((resolve) => {
+      resolveValidation = resolve;
+    });
     const newAuthentication = controller.begin();
 
     resolveValidation();

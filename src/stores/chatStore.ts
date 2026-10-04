@@ -15,7 +15,10 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case "message.added":
       return {
-        messages: [syncChatMessageStatus(action.message, action.queueItems ?? []), ...state.messages].slice(0, 200),
+        messages: [
+          syncChatMessageStatus(action.message, action.queueItems ?? []),
+          ...state.messages,
+        ].slice(0, 200),
       };
     case "queue.statuses.changed":
       return { messages: syncChatMessageStatuses(state.messages, action.items) };
@@ -24,12 +27,18 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   }
 }
 
-
-export function addChatMessage(store: ExternalStore<ChatState, ChatAction>, message: ChatMessage, queueItems: QueueItem[] = []): void {
+export function addChatMessage(
+  store: ExternalStore<ChatState, ChatAction>,
+  message: ChatMessage,
+  queueItems: QueueItem[] = [],
+): void {
   store.dispatch({ type: "message.added", message: syncChatMessageStatus(message, queueItems) });
 }
 
-export function syncChatMessageStatuses(messages: ChatMessage[], queueItems: QueueItem[]): ChatMessage[] {
+export function syncChatMessageStatuses(
+  messages: ChatMessage[],
+  queueItems: QueueItem[],
+): ChatMessage[] {
   const statusByMessageId = queueStatusByMessageId(queueItems);
   let changed = false;
   const updatedMessages = messages.map((message) => {

@@ -10,11 +10,9 @@ export type AuthStatus =
   | "disconnecting"
   | "error";
 
-export type SpeechStatus =
-  "idle" | "speaking" | "paused" | "disconnected" | "error";
+export type SpeechStatus = "idle" | "speaking" | "paused" | "disconnected" | "error";
 
-export type ChatDisplayState =
-  "queued" | "spoken" | "skipped" | "blocked" | "error";
+export type ChatDisplayState = "queued" | "spoken" | "skipped" | "blocked" | "error";
 export type QueueDisplayState = ChatDisplayState | "speaking";
 
 export interface AppSettingsPatch {
@@ -277,8 +275,7 @@ export interface SpeechQueueUpdatedEvent {
 }
 
 export type SpeechQueuePhase = "idle" | "speaking" | "paused" | "error";
-export type SpeechAdapterHealth =
-  "unknown" | "connected" | "disconnected" | "error";
+export type SpeechAdapterHealth = "unknown" | "connected" | "disconnected" | "error";
 
 export interface AppEventsSnapshot {
   revision: number;

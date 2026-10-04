@@ -4,8 +4,9 @@ const tileColors = ["#075985", "#155e75", "#166534", "#5b21b6", "#9f1239", "#924
 const supportedApplicationExtensions = [".exe", ".lnk"] as const;
 
 export function sortLauncherItems(items: LauncherItem[]): LauncherItem[] {
-  return [...items].sort((left, right) =>
-    left.order - right.order || left.displayName.localeCompare(right.displayName, "ja"),
+  return [...items].sort(
+    (left, right) =>
+      left.order - right.order || left.displayName.localeCompare(right.displayName, "ja"),
   );
 }
 
@@ -47,9 +48,13 @@ export function launcherLaunchSummary(result: LauncherLaunchResult): string {
   if (result.failures.length === 0) {
     return `${result.launchedCount} 件のアプリを起動しました。`;
   }
-  const failedNames = result.failures.slice(0, 2).map(({ displayName }) => displayName).join("、");
+  const failedNames = result.failures
+    .slice(0, 2)
+    .map(({ displayName }) => displayName)
+    .join("、");
   const remainingCount = result.failures.length - 2;
-  const failureDetail = remainingCount > 0 ? `${failedNames} ほか ${remainingCount} 件` : failedNames;
+  const failureDetail =
+    remainingCount > 0 ? `${failedNames} ほか ${remainingCount} 件` : failedNames;
   if (result.launchedCount === 0) {
     return `${result.failures.length} 件のアプリを起動できませんでした（${failureDetail}）。`;
   }

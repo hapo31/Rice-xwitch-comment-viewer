@@ -25,18 +25,33 @@ describe("field validation errors", () => {
         settings={invalidSettings}
         onSettingsUpdate={async () => true}
         onSpeechHealthCheck={() => undefined}
-        onSpeechDiagnostics={async () => ({ configuredAddr: "127.0.0.1:50001", attempted: [], recommendation: "" })}
+        onSpeechDiagnostics={async () => ({
+          configuredAddr: "127.0.0.1:50001",
+          attempted: [],
+          recommendation: "",
+        })}
         onSpeechTest={() => undefined}
       />,
     );
 
-    expect(markup).toContain('id="bouyomi-host" aria-invalid="true" aria-describedby="bouyomi-host-error"');
-    expect(markup).toContain('id="bouyomi-port" inputMode="numeric" aria-invalid="true" aria-describedby="bouyomi-port-error"');
-    expect(markup).toContain('id="bouyomi-voice" inputMode="numeric" aria-invalid="true" aria-describedby="bouyomi-voice-error"');
+    expect(markup).toContain(
+      'id="bouyomi-host" aria-invalid="true" aria-describedby="bouyomi-host-error"',
+    );
+    expect(markup).toContain(
+      'id="bouyomi-port" inputMode="numeric" aria-invalid="true" aria-describedby="bouyomi-port-error"',
+    );
+    expect(markup).toContain(
+      'id="bouyomi-voice" inputMode="numeric" aria-invalid="true" aria-describedby="bouyomi-voice-error"',
+    );
     expect(markup).toContain('id="bouyomi-host-error"');
     expect(markup).toContain("棒読みちゃんのホストを入力してください。");
     const saveMarkup = renderToStaticMarkup(
-      <FloatingSaveButton visible disabled disabledReason="設定を保存できません。" onClick={() => undefined} />,
+      <FloatingSaveButton
+        visible
+        disabled
+        disabledReason="設定を保存できません。"
+        onClick={() => undefined}
+      />,
     );
     expect(saveMarkup).toContain('aria-describedby="settings-save-disabled-reason"');
     expect(saveMarkup).toContain('id="settings-save-disabled-reason"');
@@ -58,8 +73,12 @@ describe("field validation errors", () => {
       />,
     );
 
-    expect(markup).toContain('id="twitch-channel" aria-invalid="true" aria-describedby="twitch-channel-error"');
+    expect(markup).toContain(
+      'id="twitch-channel" aria-invalid="true" aria-describedby="twitch-channel-error"',
+    );
     expect(markup).toContain('id="twitch-channel-error"');
-    expect(markup).toContain("Twitch チャンネル名は 3 から 25 文字の英数字またはアンダースコアで入力してください。");
+    expect(markup).toContain(
+      "Twitch チャンネル名は 3 から 25 文字の英数字またはアンダースコアで入力してください。",
+    );
   });
 });

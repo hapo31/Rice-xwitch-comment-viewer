@@ -12,7 +12,9 @@
     "build": "tsc && vite build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "pnpm run typecheck",
+    "lint": "biome lint src",
+    "format": "biome format src --write",
+    "format:check": "biome format src",
     "check:security": "node scripts/verify-tauri-security.mjs",
     "check:license": "node scripts/verify-project-license.mjs",
     "preview": "vite preview",
@@ -28,6 +30,7 @@
     "react-router-dom": "^6.28.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@tauri-apps/cli": "^2.0.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

@@ -49,7 +49,9 @@ export function launcherMenuItemIndex(
   }
 }
 
-export function launcherMenuKeyAction(key: string): "move-focus" | "close" | "close-and-focus-trigger" | undefined {
+export function launcherMenuKeyAction(
+  key: string,
+): "move-focus" | "close" | "close-and-focus-trigger" | undefined {
   if (["ArrowDown", "ArrowUp", "Home", "End"].includes(key)) {
     return "move-focus";
   }
@@ -91,13 +93,16 @@ export function LauncherView({
     setOpenMenuId(itemId);
   }, []);
 
-  const closeMenu = useCallback((shouldRestoreFocus = false) => {
-    const menuId = openMenuId;
-    setOpenMenuId(undefined);
-    if (shouldRestoreFocus && menuId) {
-      menuTriggers.current.get(menuId)?.focus();
-    }
-  }, [openMenuId]);
+  const closeMenu = useCallback(
+    (shouldRestoreFocus = false) => {
+      const menuId = openMenuId;
+      setOpenMenuId(undefined);
+      if (shouldRestoreFocus && menuId) {
+        menuTriggers.current.get(menuId)?.focus();
+      }
+    },
+    [openMenuId],
+  );
 
   useEffect(() => {
     if (!openMenuId || !focusMenuOnOpen.current) {
@@ -201,7 +206,10 @@ export function LauncherView({
       }
     } catch (error) {
       const presented = presentError(error, "launcher");
-      stores.logs.dispatch({ type: "log.added", log: { level: "error", message: presented.details, occurredAtMs: Date.now() } });
+      stores.logs.dispatch({
+        type: "log.added",
+        log: { level: "error", message: presented.details, occurredAtMs: Date.now() },
+      });
       setNotice(presented.message);
     }
   }
@@ -211,9 +219,11 @@ export function LauncherView({
     setBusyAction(`launch:${item.id}`);
     try {
       const result = await onLaunch(item.id);
-      setNotice(result.failures.length === 0
-        ? `${item.displayName} を起動しました。`
-        : `${item.displayName} を起動できませんでした: ${result.failures[0]?.message ?? "起動エラー"}`);
+      setNotice(
+        result.failures.length === 0
+          ? `${item.displayName} を起動しました。`
+          : `${item.displayName} を起動できませんでした: ${result.failures[0]?.message ?? "起動エラー"}`,
+      );
     } catch (error) {
       setNotice(readableError(error));
     } finally {
@@ -249,8 +259,16 @@ export function LauncherView({
     <main className="relative col-span-2 col-start-2 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-14 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-5">
         <div className="min-w-0">
-          <h1 id={routeHeadingId} tabIndex={-1} className="truncate text-sm font-semibold text-zinc-100">Launcher</h1>
-          <p className="truncate text-xs text-zinc-400">よく使うアプリを登録して、ここからすばやく起動します</p>
+          <h1
+            id={routeHeadingId}
+            tabIndex={-1}
+            className="truncate text-sm font-semibold text-zinc-100"
+          >
+            Launcher
+          </h1>
+          <p className="truncate text-xs text-zinc-400">
+            よく使うアプリを登録して、ここからすばやく起動します
+          </p>
         </div>
         <button
           type="button"
@@ -283,15 +301,27 @@ export function LauncherView({
                     className="flex h-full w-full flex-col items-center justify-center px-3 pb-9 pt-3 text-center transition-[filter,transform] hover:brightness-110 active:scale-[0.98] disabled:cursor-wait disabled:opacity-70"
                   >
                     {item.iconDataUrl ? (
-                      <img src={item.iconDataUrl} alt="" className="h-16 w-16 object-contain drop-shadow" />
+                      <img
+                        src={item.iconDataUrl}
+                        alt=""
+                        className="h-16 w-16 object-contain drop-shadow"
+                      />
                     ) : (
-                      <AppWindow className="h-14 w-14 stroke-[1.25] drop-shadow" aria-hidden="true" />
+                      <AppWindow
+                        className="h-14 w-14 stroke-[1.25] drop-shadow"
+                        aria-hidden="true"
+                      />
                     )}
                     {isBusy && <span className="mt-2 text-[11px] text-white/80">処理中…</span>}
                   </button>
 
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-9 items-center bg-black/20 pl-3 pr-9">
-                    <span className="truncate text-left text-xs font-medium" title={item.displayName}>{item.displayName}</span>
+                    <span
+                      className="truncate text-left text-xs font-medium"
+                      title={item.displayName}
+                    >
+                      {item.displayName}
+                    </span>
                   </div>
                   <button
                     type="button"
@@ -344,11 +374,19 @@ export function LauncherView({
                       onPointerDown={(event) => event.stopPropagation()}
                       onKeyDown={(event) => {
                         const action = launcherMenuKeyAction(event.key);
-                        const menuItems = [...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                          '[role="menuitem"]:not(:disabled)',
-                        )];
-                        const currentIndex = menuItems.indexOf(document.activeElement as HTMLButtonElement);
-                        const nextIndex = launcherMenuItemIndex(event.key, currentIndex, menuItems.length);
+                        const menuItems = [
+                          ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                            '[role="menuitem"]:not(:disabled)',
+                          ),
+                        ];
+                        const currentIndex = menuItems.indexOf(
+                          document.activeElement as HTMLButtonElement,
+                        );
+                        const nextIndex = launcherMenuItemIndex(
+                          event.key,
+                          currentIndex,
+                          menuItems.length,
+                        );
                         if (action === "move-focus" && nextIndex !== undefined) {
                           event.preventDefault();
                           menuItems[nextIndex]?.focus();
@@ -395,7 +433,9 @@ export function LauncherView({
         </div>
 
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex min-h-10 items-center justify-between gap-4 border-t border-zinc-800 bg-zinc-900/95 px-5 py-2 text-[11px] text-zinc-400">
-          <p className="truncate" aria-live="polite">{notice}</p>
+          <p className="truncate" aria-live="polite">
+            {notice}
+          </p>
           <p className="hidden shrink-0 items-center gap-1.5 text-zinc-400 lg:flex">
             <ExternalLink className="h-3 w-3" />
             タイルを押すと起動・右下の … から削除

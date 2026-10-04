@@ -80,7 +80,10 @@ export function parseBlockedWordList(value: string): RuleListParseResult {
   return parseRuleList(value, (item) => item);
 }
 
-function parseRuleList(value: string, normalizeItem: (item: string) => string): RuleListParseResult {
+function parseRuleList(
+  value: string,
+  normalizeItem: (item: string) => string,
+): RuleListParseResult {
   const seen = new Set<string>();
   const items: string[] = [];
   let duplicateCount = 0;

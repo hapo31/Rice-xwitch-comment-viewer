@@ -271,6 +271,7 @@ impl BouyomiAdapter {
         self.send_packet_unordered(&packet).await
     }
 
+    #[cfg(test)]
     pub async fn control(&self, command: BouyomiControlCommand) -> anyhow::Result<()> {
         let _dispatch_guard = self.dispatcher.lock().await;
         self.send_control_after_dispatch_lock(command).await
@@ -376,19 +377,23 @@ impl SpeechAdapter for BouyomiAdapter {
     }
 
     async fn pause(&self) -> anyhow::Result<()> {
-        self.control(BouyomiControlCommand::Pause).await
+        self.send_control_and_apply(BouyomiControlCommand::Pause, || ())
+            .await
     }
 
     async fn resume(&self) -> anyhow::Result<()> {
-        self.control(BouyomiControlCommand::Resume).await
+        self.send_control_and_apply(BouyomiControlCommand::Resume, || ())
+            .await
     }
 
     async fn skip(&self) -> anyhow::Result<()> {
-        self.control(BouyomiControlCommand::Skip).await
+        self.send_control_and_apply(BouyomiControlCommand::Skip, || ())
+            .await
     }
 
     async fn clear(&self) -> anyhow::Result<()> {
-        self.control(BouyomiControlCommand::Clear).await
+        self.send_control_and_apply(BouyomiControlCommand::Clear, || ())
+            .await
     }
 }
 

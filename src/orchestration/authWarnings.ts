@@ -1,6 +1,8 @@
 import type { TwitchAuthPollResult, TwitchAuthValidationResult } from "../types";
 
-type AuthResultWithStorageWarning = Extract<TwitchAuthPollResult, { status: "authorized" }> | TwitchAuthValidationResult;
+type AuthResultWithStorageWarning =
+  | Extract<TwitchAuthPollResult, { status: "authorized" }>
+  | TwitchAuthValidationResult;
 
 /** Route an auth persistence warning through both visible recovery paths. */
 export function routeAuthStorageWarning(

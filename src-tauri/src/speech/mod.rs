@@ -365,10 +365,10 @@ impl SpeechQueueState {
     }
 
     fn complete_request(&mut self, request_id: &str) -> bool {
-        if !self
+        if self
             .in_flight
             .as_ref()
-            .is_some_and(|item| item.id == request_id)
+            .is_none_or(|item| item.id != request_id)
         {
             return false;
         }
@@ -379,10 +379,10 @@ impl SpeechQueueState {
     }
 
     fn fail_request(&mut self, request_id: &str) -> SpeechQueueFailureTransition {
-        if !self
+        if self
             .in_flight
             .as_ref()
-            .is_some_and(|item| item.id == request_id)
+            .is_none_or(|item| item.id != request_id)
         {
             return SpeechQueueFailureTransition::Ignored;
         }
@@ -401,10 +401,10 @@ impl SpeechQueueState {
     }
 
     fn fail_after_acceptance(&mut self, request_id: &str) -> bool {
-        if !self
+        if self
             .in_flight
             .as_ref()
-            .is_some_and(|item| item.id == request_id)
+            .is_none_or(|item| item.id != request_id)
         {
             return false;
         }

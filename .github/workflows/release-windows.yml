@@ -13,9 +13,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  quality:
+    name: Shared release quality
+    uses: ./.github/workflows/quality-checks.yml
+
   build-windows:
     name: Test and build Windows installer and zip
     if: startsWith(github.ref, 'refs/tags/v')
+    needs: quality
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -111,24 +116,6 @@ jobs:
           path: audit-reports/
           if-no-files-found: warn
           retention-days: 30
-
-      - name: Test frontend and run TypeScript build
-        run: |
-          set -euo pipefail
-          pnpm test
-          pnpm build
-
-      - name: Install Linux dependencies for Rust tests
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libayatana-appindicator3-dev \
-            libgtk-3-dev \
-            librsvg2-dev \
-            libwebkit2gtk-4.1-dev
-
-      - name: Test Rust backend
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Verify Docker build context policy
         run: scripts/check-docker-context.sh

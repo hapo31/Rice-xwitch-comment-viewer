@@ -15,7 +15,10 @@ export function SettingsSection({
 
   return (
     <section aria-labelledby={headingId} className="border-y border-zinc-800">
-      <h2 id={headingId} className="border-b border-zinc-800 px-3 py-2 text-xs font-semibold text-zinc-300">
+      <h2
+        id={headingId}
+        className="border-b border-zinc-800 px-3 py-2 text-xs font-semibold text-zinc-300"
+      >
         {title}
       </h2>
       {children}
@@ -55,7 +58,11 @@ export function FloatingSaveButton({
         保存
       </button>
       {disabled && disabledReason && (
-        <p id={disabledReasonId} className="mt-2 max-w-72 text-right text-xs text-rose-400" role="status">
+        <p
+          id={disabledReasonId}
+          className="mt-2 max-w-72 text-right text-xs text-rose-400"
+          role="status"
+        >
           {disabledReason}
         </p>
       )}
@@ -164,7 +171,10 @@ export function RuleTextArea({
           onChange={(event) => onChange(event.target.value)}
           className={`resize-y border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 ${focusIndicatorClass}`}
         />
-        <p id={`${id}-status`} className={`mt-1 text-xs ${isValid ? "text-zinc-400" : "text-rose-400"}`}>
+        <p
+          id={`${id}-status`}
+          className={`mt-1 text-xs ${isValid ? "text-zinc-400" : "text-rose-400"}`}
+        >
           {isValid
             ? `${itemCount}/200 件`
             : `${itemCount}/200 件（${overflowCount} 件超過）。上限を超えているため保存できません。`}
@@ -204,7 +214,9 @@ export function RangeRow({
         onChange={(event) => onChange(Number(event.target.value))}
         className="w-full accent-sky-400"
       />
-      <span className="text-right font-mono text-xs text-zinc-300">{value === -1 ? "既定" : value}</span>
+      <span className="text-right font-mono text-xs text-zinc-300">
+        {value === -1 ? "既定" : value}
+      </span>
     </div>
   );
 }

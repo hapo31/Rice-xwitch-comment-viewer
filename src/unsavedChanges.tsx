@@ -66,7 +66,10 @@ export function UnsavedChangesDialog({
   saveDisabled?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/70 p-4" role="presentation">
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/70 p-4"
+      role="presentation"
+    >
       <section
         role="dialog"
         aria-modal="true"
@@ -74,18 +77,34 @@ export function UnsavedChangesDialog({
         aria-describedby="unsaved-changes-description"
         className="w-full max-w-md border border-zinc-700 bg-zinc-900 p-5 shadow-xl"
       >
-        <h2 id="unsaved-changes-title" className="text-base font-semibold text-zinc-100">未保存の変更があります</h2>
+        <h2 id="unsaved-changes-title" className="text-base font-semibold text-zinc-100">
+          未保存の変更があります
+        </h2>
         <p id="unsaved-changes-description" className="mt-2 text-sm text-zinc-400">
           保存してから移動または終了しますか？
         </p>
         <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <button type="button" onClick={onCancel} autoFocus className="border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:border-sky-400">
+          <button
+            type="button"
+            onClick={onCancel}
+            autoFocus
+            className="border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:border-sky-400"
+          >
             キャンセル
           </button>
-          <button type="button" onClick={onDiscard} className="border border-rose-500/70 px-3 py-2 text-sm text-rose-300 hover:bg-rose-500/10">
+          <button
+            type="button"
+            onClick={onDiscard}
+            className="border border-rose-500/70 px-3 py-2 text-sm text-rose-300 hover:bg-rose-500/10"
+          >
             破棄して続ける
           </button>
-          <button type="button" onClick={onSave} disabled={saveDisabled} className="border border-sky-500 bg-sky-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saveDisabled}
+            className="border border-sky-500 bg-sky-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
+          >
             保存して続ける
           </button>
         </div>
@@ -104,7 +123,10 @@ export function ActiveOperationsExitDialog({
   isClosing?: boolean;
 }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/70 p-4" role="presentation">
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/70 p-4"
+      role="presentation"
+    >
       <section
         role="dialog"
         aria-modal="true"
@@ -112,15 +134,29 @@ export function ActiveOperationsExitDialog({
         aria-describedby="active-operations-exit-description"
         className="w-full max-w-md border border-zinc-700 bg-zinc-900 p-5 shadow-xl"
       >
-        <h2 id="active-operations-exit-title" className="text-base font-semibold text-zinc-100">配信支援を停止して終了しますか？</h2>
+        <h2 id="active-operations-exit-title" className="text-base font-semibold text-zinc-100">
+          配信支援を停止して終了しますか？
+        </h2>
         <p id="active-operations-exit-description" className="mt-2 text-sm text-zinc-400">
-          Twitch チャット受信または読み上げキューが動作中です。終了するとチャット受信を停止し、待機中の読み上げをクリアします。
+          Twitch
+          チャット受信または読み上げキューが動作中です。終了するとチャット受信を停止し、待機中の読み上げをクリアします。
         </p>
         <div className="mt-5 flex flex-wrap justify-end gap-2">
-          <button type="button" onClick={onCancel} disabled={isClosing} autoFocus className="border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:border-sky-400 disabled:cursor-not-allowed disabled:text-zinc-500">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isClosing}
+            autoFocus
+            className="border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:border-sky-400 disabled:cursor-not-allowed disabled:text-zinc-500"
+          >
             キャンセル
           </button>
-          <button type="button" onClick={onConfirm} disabled={isClosing} className="border border-rose-500/70 px-3 py-2 text-sm text-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500">
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isClosing}
+            className="border border-rose-500/70 px-3 py-2 text-sm text-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:text-zinc-500"
+          >
             {isClosing ? "停止しています…" : "停止して終了"}
           </button>
         </div>

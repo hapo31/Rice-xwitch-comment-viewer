@@ -31,25 +31,31 @@ export function subscribeWithCleanup(
     }
   };
 
-  const registrations = subscriptions.map((subscribe) => Promise.resolve().then(subscribe).then(
-    (unlisten) => {
-      if (disposed) {
-        safelyUnlisten(unlisten);
-      } else {
-        active.push(unlisten);
-      }
-    },
-    (error) => {
-      failed = true;
-      if (!disposed) {
-        reportError(error);
-      }
-    },
-  ));
+  const registrations = subscriptions.map((subscribe) =>
+    Promise.resolve()
+      .then(subscribe)
+      .then(
+        (unlisten) => {
+          if (disposed) {
+            safelyUnlisten(unlisten);
+          } else {
+            active.push(unlisten);
+          }
+        },
+        (error) => {
+          failed = true;
+          if (!disposed) {
+            reportError(error);
+          }
+        },
+      ),
+  );
 
-  void Promise.all(registrations).then(() => {
-    if (!disposed && !failed) onReady();
-  }).catch(reportError);
+  void Promise.all(registrations)
+    .then(() => {
+      if (!disposed && !failed) onReady();
+    })
+    .catch(reportError);
 
   return () => {
     disposed = true;

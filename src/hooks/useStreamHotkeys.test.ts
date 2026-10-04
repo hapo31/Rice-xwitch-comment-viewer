@@ -29,15 +29,21 @@ describe("stream hotkeys", () => {
 
   it("does not interfere with text editing, composition, buttons, or repeated keys", () => {
     expect(
-      getStreamHotkey(keyEvent({ code: "Space", target: { tagName: "INPUT" } as unknown as EventTarget })),
+      getStreamHotkey(
+        keyEvent({ code: "Space", target: { tagName: "INPUT" } as unknown as EventTarget }),
+      ),
     ).toBeUndefined();
     expect(
-      getStreamHotkey(keyEvent({ key: "s", target: { isContentEditable: true } as unknown as EventTarget })),
+      getStreamHotkey(
+        keyEvent({ key: "s", target: { isContentEditable: true } as unknown as EventTarget }),
+      ),
     ).toBeUndefined();
     expect(getStreamHotkey(keyEvent({ key: "s", isComposing: true }))).toBeUndefined();
     expect(getStreamHotkey(keyEvent({ key: "s", repeat: true }))).toBeUndefined();
     expect(
-      getStreamHotkey(keyEvent({ code: "Space", target: { tagName: "BUTTON" } as unknown as EventTarget })),
+      getStreamHotkey(
+        keyEvent({ code: "Space", target: { tagName: "BUTTON" } as unknown as EventTarget }),
+      ),
     ).toBeUndefined();
   });
 

@@ -20,7 +20,9 @@ describe("ChatBadges", () => {
   });
 
   it("keeps an unknown badge bounded while exposing its set ID to assistive technology", () => {
-    const markup = renderToStaticMarkup(<ChatBadges badges={[{ setId: "founder", id: "0", info: "" }]} />);
+    const markup = renderToStaticMarkup(
+      <ChatBadges badges={[{ setId: "founder", id: "0", info: "" }]} />,
+    );
 
     expect(markup).toContain(">founder<");
     expect(markup).toContain('aria-label="不明な Twitch バッジ: founder"');

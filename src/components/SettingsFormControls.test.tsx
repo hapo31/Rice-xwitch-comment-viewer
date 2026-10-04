@@ -11,7 +11,11 @@ describe("FloatingSaveButton accessibility", () => {
       <SettingsView
         onSettingsUpdate={async () => true}
         onSpeechHealthCheck={() => undefined}
-        onSpeechDiagnostics={async () => ({ configuredAddr: "127.0.0.1:50001", attempted: [], recommendation: "" })}
+        onSpeechDiagnostics={async () => ({
+          configuredAddr: "127.0.0.1:50001",
+          attempted: [],
+          recommendation: "",
+        })}
         onSpeechTest={() => undefined}
       />,
     );
@@ -41,7 +45,9 @@ describe("FloatingSaveButton accessibility", () => {
       />,
     );
 
-    expect(markup).toContain('<label class="pt-2 text-sm text-zinc-400" for="rule-blocked-users">NG ユーザー</label>');
+    expect(markup).toContain(
+      '<label class="pt-2 text-sm text-zinc-400" for="rule-blocked-users">NG ユーザー</label>',
+    );
     expect(markup).toContain('<textarea id="rule-blocked-users"');
   });
 
@@ -53,17 +59,33 @@ describe("FloatingSaveButton accessibility", () => {
 
   it("exposes the range label and its default value to assistive technology", () => {
     const markup = renderToStaticMarkup(
-      <RangeRow id="bouyomi-speed" label="速度" value={-1} min={-1} max={300} onChange={() => undefined} />,
+      <RangeRow
+        id="bouyomi-speed"
+        label="速度"
+        value={-1}
+        min={-1}
+        max={300}
+        onChange={() => undefined}
+      />,
     );
 
-    expect(markup).toContain('<label class="text-sm text-zinc-400" for="bouyomi-speed">速度</label>');
+    expect(markup).toContain(
+      '<label class="text-sm text-zinc-400" for="bouyomi-speed">速度</label>',
+    );
     expect(markup).toContain('id="bouyomi-speed"');
     expect(markup).toContain('aria-valuetext="既定"');
   });
 
   it("announces a numeric range value when it is explicitly set", () => {
     const markup = renderToStaticMarkup(
-      <RangeRow id="bouyomi-volume" label="音量" value={80} min={-1} max={100} onChange={() => undefined} />,
+      <RangeRow
+        id="bouyomi-volume"
+        label="音量"
+        value={80}
+        min={-1}
+        max={100}
+        onChange={() => undefined}
+      />,
     );
 
     expect(markup).toContain('aria-valuetext="80"');

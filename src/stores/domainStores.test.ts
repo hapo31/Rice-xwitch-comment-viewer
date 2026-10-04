@@ -65,7 +65,15 @@ describe("domain store subscription boundaries", () => {
     });
     stores.queue.dispatch({
       type: "items.replaced",
-      items: [{ id: "queue-1", sourceMessageId: "message-1", userDisplayName: "viewer", text: "hello", status: "spoken" }],
+      items: [
+        {
+          id: "queue-1",
+          sourceMessageId: "message-1",
+          userDisplayName: "viewer",
+          text: "hello",
+          status: "spoken",
+        },
+      ],
     });
     stores.chat.dispatch({ type: "queue.statuses.changed", items: stores.queue.getState().items });
 

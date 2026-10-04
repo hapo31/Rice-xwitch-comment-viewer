@@ -28,7 +28,9 @@ export function SidePanel({
   const activeChannel = state.twitchActiveConnection?.broadcasterLogin;
   const channel = activeChannel || configuredChannel;
   const hasPendingChannelChange = Boolean(
-    activeChannel && configuredChannel !== "未設定" && activeChannel.toLowerCase() !== configuredChannel.toLowerCase(),
+    activeChannel &&
+      configuredChannel !== "未設定" &&
+      activeChannel.toLowerCase() !== configuredChannel.toLowerCase(),
   );
   const queueCount = countIncompleteQueueItems(state.queueItems);
   const warnings = warningNotifications(state.notifications);
@@ -43,7 +45,11 @@ export function SidePanel({
     error: "認証エラー",
   }[state.twitchAuthStatus];
   const twitchAuthTone =
-    state.twitchAuthStatus === "authenticated" ? "ok" : state.twitchAuthStatus === "error" ? "danger" : "muted";
+    state.twitchAuthStatus === "authenticated"
+      ? "ok"
+      : state.twitchAuthStatus === "error"
+        ? "danger"
+        : "muted";
   const twitchConnectionLabel = {
     disconnected: "未接続",
     connecting: "接続中",
@@ -55,15 +61,19 @@ export function SidePanel({
   const twitchConnectionTone =
     state.twitchConnectionStatus === "connected"
       ? "ok"
-      : state.twitchConnectionStatus === "connecting" || state.twitchConnectionStatus === "reconnecting"
+      : state.twitchConnectionStatus === "connecting" ||
+          state.twitchConnectionStatus === "reconnecting"
         ? "active"
-        : state.twitchConnectionStatus === "error" || state.twitchConnectionStatus === "authRequired"
+        : state.twitchConnectionStatus === "error" ||
+            state.twitchConnectionStatus === "authRequired"
           ? "danger"
           : "muted";
   const canStartChat =
     state.twitchAuthStatus === "authenticated" &&
     !["connecting", "connected", "reconnecting"].includes(state.twitchConnectionStatus);
-  const canStopChat = ["connecting", "connected", "reconnecting", "error"].includes(state.twitchConnectionStatus);
+  const canStopChat = ["connecting", "connected", "reconnecting", "error"].includes(
+    state.twitchConnectionStatus,
+  );
 
   return (
     <aside className="col-start-2 row-start-2 flex min-h-0 flex-col overflow-hidden border-r border-zinc-800 bg-zinc-900">
@@ -75,17 +85,39 @@ export function SidePanel({
           <h2 className="mb-2 text-xs font-semibold text-zinc-400">接続</h2>
           <div className="space-y-2">
             <PanelRow label="Twitch" value={twitchAuthLabel} tone={twitchAuthTone} />
-            <PanelRow label="チャンネル" value={channel} to="/auth" title="Login 画面でチャンネルを設定" />
+            <PanelRow
+              label="チャンネル"
+              value={channel}
+              to="/auth"
+              title="Login 画面でチャンネルを設定"
+            />
             {hasPendingChannelChange && (
-              <PanelRow label="次回接続先" value={configuredChannel} to="/auth" title="受信を停止して再接続すると反映" />
+              <PanelRow
+                label="次回接続先"
+                value={configuredChannel}
+                to="/auth"
+                title="受信を停止して再接続すると反映"
+              />
             )}
-            <PanelRow label="サーバー接続" value={twitchConnectionLabel} tone={twitchConnectionTone} />
+            <PanelRow
+              label="サーバー接続"
+              value={twitchConnectionLabel}
+              tone={twitchConnectionTone}
+            />
             <PanelRow
               label="読み上げ"
               value={speechStatusLabel(state.speechStatus)}
               tone={state.speechStatus === "idle" ? "ok" : "muted"}
-              to={state.speechStatus === "disconnected" || state.speechStatus === "error" ? settingsRoute.path : undefined}
-              title={state.speechStatus === "disconnected" || state.speechStatus === "error" ? `${settingsRoute.label} 画面の［診断］を開く` : undefined}
+              to={
+                state.speechStatus === "disconnected" || state.speechStatus === "error"
+                  ? settingsRoute.path
+                  : undefined
+              }
+              title={
+                state.speechStatus === "disconnected" || state.speechStatus === "error"
+                  ? `${settingsRoute.label} 画面の［診断］を開く`
+                  : undefined
+              }
             />
           </div>
         </section>
@@ -93,8 +125,19 @@ export function SidePanel({
         <section className="shrink-0">
           <h2 className="mb-2 text-xs font-semibold text-zinc-400">チャット受信</h2>
           <div className="grid grid-cols-2 gap-1">
-            <CommandButton label="開始" icon={Radio} disabled={!canStartChat} onClick={onTwitchConnect} />
-            <CommandButton label="停止" icon={Square} disabled={!canStopChat} onClick={onTwitchStopChat} danger />
+            <CommandButton
+              label="開始"
+              icon={Radio}
+              disabled={!canStartChat}
+              onClick={onTwitchConnect}
+            />
+            <CommandButton
+              label="停止"
+              icon={Square}
+              disabled={!canStopChat}
+              onClick={onTwitchStopChat}
+              danger
+            />
           </div>
         </section>
 
@@ -107,7 +150,11 @@ export function SidePanel({
           <div className="mt-2 grid grid-cols-4 gap-1">
             <IconButton label="再開" icon={Play} onClick={() => onSpeechControl("resume")} />
             <IconButton label="一時停止" icon={Pause} onClick={() => onSpeechControl("pause")} />
-            <IconButton label="スキップ" icon={SkipForward} onClick={() => onSpeechControl("skip")} />
+            <IconButton
+              label="スキップ"
+              icon={SkipForward}
+              onClick={() => onSpeechControl("skip")}
+            />
             <IconButton label="クリア" icon={RotateCcw} onClick={() => onSpeechControl("clear")} />
           </div>
         </section>
@@ -131,7 +178,10 @@ export function SidePanel({
           ) : (
             <div className="max-h-full space-y-2 overflow-y-auto pr-1">
               {warnings.map((warning) => (
-                <p key={warning.id} className="border-l-2 border-amber-400 bg-zinc-850 px-2 py-1 text-xs text-amber-200">
+                <p
+                  key={warning.id}
+                  className="border-l-2 border-amber-400 bg-zinc-850 px-2 py-1 text-xs text-amber-200"
+                >
                   {warning.message}
                 </p>
               ))}

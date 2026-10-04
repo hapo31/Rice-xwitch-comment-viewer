@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDomainStores } from "../stores/domainStores";
-import { restoreStartupAuth, createSettingsMutationOrchestrator, subscribeDomainEvents, type DomainEventBridge } from "./domainOrchestration";
+import {
+  restoreStartupAuth,
+  createSettingsMutationOrchestrator,
+  subscribeDomainEvents,
+  type DomainEventBridge,
+} from "./domainOrchestration";
 
 describe("domain orchestration", () => {
   it("routes a Twitch chat event to chat only and cleans up deferred listeners", async () => {
@@ -16,7 +21,10 @@ describe("domain orchestration", () => {
     const bridge: DomainEventBridge = {
       subscribeAppLogEvents: async () => unlisten,
       subscribeTwitchStatusEvents: async () => unlisten,
-      subscribeTwitchChatMessageEvents: async (listener) => { chatListener = listener; return unlisten; },
+      subscribeTwitchChatMessageEvents: async (listener) => {
+        chatListener = listener;
+        return unlisten;
+      },
       subscribeSpeechStatusEvents: async () => unlisten,
       subscribeSpeechQueueUpdatedEvents: async () => unlisten,
     };
@@ -56,8 +64,14 @@ describe("domain orchestration", () => {
     const unlisten = vi.fn();
     const bridge: DomainEventBridge = {
       subscribeAppLogEvents: async () => unlisten,
-      subscribeTwitchStatusEvents: async (listener) => { statusListener = listener; return unlisten; },
-      subscribeTwitchChatMessageEvents: async (listener) => { chatListener = listener; return unlisten; },
+      subscribeTwitchStatusEvents: async (listener) => {
+        statusListener = listener;
+        return unlisten;
+      },
+      subscribeTwitchChatMessageEvents: async (listener) => {
+        chatListener = listener;
+        return unlisten;
+      },
       subscribeSpeechStatusEvents: async () => unlisten,
       subscribeSpeechQueueUpdatedEvents: async () => unlisten,
     };
@@ -69,7 +83,11 @@ describe("domain orchestration", () => {
       status: "connected",
       occurredAtMs: 1,
       connectionGeneration: 2,
-      activeConnection: { generation: 2, broadcasterUserId: "channel-b", broadcasterLogin: "channel_b" },
+      activeConnection: {
+        generation: 2,
+        broadcasterUserId: "channel-b",
+        broadcasterLogin: "channel_b",
+      },
     });
     const base = {
       platform: "twitch",
@@ -81,8 +99,20 @@ describe("domain orchestration", () => {
       badges: [],
       receivedAt: "2026-08-01T00:00:00Z",
     };
-    chatListener?.({ ...base, id: "old", channelId: "channel-a", channelLogin: "channel_a", connectionGeneration: 1 });
-    chatListener?.({ ...base, id: "current", channelId: "channel-b", channelLogin: "channel_b", connectionGeneration: 2 });
+    chatListener?.({
+      ...base,
+      id: "old",
+      channelId: "channel-a",
+      channelLogin: "channel_a",
+      connectionGeneration: 1,
+    });
+    chatListener?.({
+      ...base,
+      id: "current",
+      channelId: "channel-b",
+      channelLogin: "channel_b",
+      connectionGeneration: 2,
+    });
 
     expect(stores.chat.getState().messages.map((message) => message.id)).toEqual(["current"]);
     cleanup();
@@ -90,7 +120,9 @@ describe("domain orchestration", () => {
 
   it("serializes settings mutations and publishes the backend result", async () => {
     const resolvers: Array<(value: any) => void> = [];
-    const updateSettings = vi.fn((_patch: any): Promise<any> => new Promise((resolve) => resolvers.push(resolve)));
+    const updateSettings = vi.fn(
+      (_patch: any): Promise<any> => new Promise((resolve) => resolvers.push(resolve)),
+    );
     const loaded: any[] = [];
     const orchestrator = createSettingsMutationOrchestrator({
       updateSettings,
@@ -117,8 +149,15 @@ describe("domain orchestration", () => {
   it("keeps startup auth command orchestration dependency-injectable", async () => {
     const report = vi.fn();
     const result = await restoreStartupAuth({
-      getStoredAuth: async () => ({ userId: "user-1", login: "viewer", scopes: ["user:read:chat"], expiresIn: 3600 }),
-      validateAuth: async () => ({ profile: { userId: "user-1", login: "viewer", scopes: ["user:read:chat"], expiresIn: 3600 } }),
+      getStoredAuth: async () => ({
+        userId: "user-1",
+        login: "viewer",
+        scopes: ["user:read:chat"],
+        expiresIn: 3600,
+      }),
+      validateAuth: async () => ({
+        profile: { userId: "user-1", login: "viewer", scopes: ["user:read:chat"], expiresIn: 3600 },
+      }),
       reportSystemMessage: report,
     });
     expect(result.status).toBe("authenticated");

@@ -88,7 +88,9 @@ export async function getAppBuildInfo(): Promise<AppBuildInfo | undefined> {
   return nullFreePayload<AppBuildInfo>(await invoke<unknown>("app_build_info"), "app_build_info");
 }
 
-function normalizeSettings(settings: Partial<AppSettings> | AppSettingsPatch | undefined): AppSettings {
+function normalizeSettings(
+  settings: Partial<AppSettings> | AppSettingsPatch | undefined,
+): AppSettings {
   return {
     ...fallbackSettings,
     ...settings,
@@ -113,7 +115,9 @@ export async function getSettings(): Promise<AppSettings> {
     return fallbackSettings;
   }
 
-  return normalizeSettings(nullFreePayload<Partial<AppSettings>>(await invoke<unknown>("settings_get"), "settings_get"));
+  return normalizeSettings(
+    nullFreePayload<Partial<AppSettings>>(await invoke<unknown>("settings_get"), "settings_get"),
+  );
 }
 
 export async function getAppEventsSnapshot(): Promise<AppEventsSnapshot | undefined> {
@@ -140,7 +144,12 @@ export async function updateSettings(patch: AppSettingsPatch): Promise<AppSettin
     return normalizeSettings(patch);
   }
 
-  return normalizeSettings(nullFreePayload<Partial<AppSettings>>(await invoke<unknown>("settings_update", { patch }), "settings_update"));
+  return normalizeSettings(
+    nullFreePayload<Partial<AppSettings>>(
+      await invoke<unknown>("settings_update", { patch }),
+      "settings_update",
+    ),
+  );
 }
 
 export async function launcherAdd(paths: string[]): Promise<LauncherItem[]> {
@@ -148,7 +157,10 @@ export async function launcherAdd(paths: string[]): Promise<LauncherItem[]> {
     return [];
   }
 
-  return nullFreePayload<LauncherItem[]>(await invoke<unknown>("launcher_add", { paths }), "launcher_add");
+  return nullFreePayload<LauncherItem[]>(
+    await invoke<unknown>("launcher_add", { paths }),
+    "launcher_add",
+  );
 }
 
 export async function launcherRemove(itemId: string): Promise<LauncherItem[]> {
@@ -156,7 +168,10 @@ export async function launcherRemove(itemId: string): Promise<LauncherItem[]> {
     return [];
   }
 
-  return nullFreePayload<LauncherItem[]>(await invoke<unknown>("launcher_remove", { itemId }), "launcher_remove");
+  return nullFreePayload<LauncherItem[]>(
+    await invoke<unknown>("launcher_remove", { itemId }),
+    "launcher_remove",
+  );
 }
 
 export async function launcherLaunch(itemId: string): Promise<LauncherLaunchResult> {
@@ -164,7 +179,10 @@ export async function launcherLaunch(itemId: string): Promise<LauncherLaunchResu
     return { launchedCount: 1, failures: [] };
   }
 
-  return nullFreePayload<LauncherLaunchResult>(await invoke<unknown>("launcher_launch", { itemId }), "launcher_launch");
+  return nullFreePayload<LauncherLaunchResult>(
+    await invoke<unknown>("launcher_launch", { itemId }),
+    "launcher_launch",
+  );
 }
 
 export async function launcherLaunchAll(): Promise<LauncherLaunchResult> {
@@ -172,7 +190,10 @@ export async function launcherLaunchAll(): Promise<LauncherLaunchResult> {
     return { launchedCount: 0, failures: [] };
   }
 
-  return nullFreePayload<LauncherLaunchResult>(await invoke<unknown>("launcher_launch_all"), "launcher_launch_all");
+  return nullFreePayload<LauncherLaunchResult>(
+    await invoke<unknown>("launcher_launch_all"),
+    "launcher_launch_all",
+  );
 }
 
 export function isDesktopRuntime(): boolean {
@@ -198,10 +219,16 @@ export async function speechHealthProbe(): Promise<string> {
 export async function speechConnectionDiagnostics(): Promise<BouyomiConnectionDiagnostics> {
   if (!isTauriRuntime) {
     return {
-      configuredAddr: formatBouyomiAddress(fallbackSettings.speech.bouyomiHost, fallbackSettings.speech.bouyomiPort),
+      configuredAddr: formatBouyomiAddress(
+        fallbackSettings.speech.bouyomiHost,
+        fallbackSettings.speech.bouyomiPort,
+      ),
       attempted: [
         {
-          addr: formatBouyomiAddress(fallbackSettings.speech.bouyomiHost, fallbackSettings.speech.bouyomiPort),
+          addr: formatBouyomiAddress(
+            fallbackSettings.speech.bouyomiHost,
+            fallbackSettings.speech.bouyomiPort,
+          ),
           status: "failed",
           message: "ブラウザプレビューでは接続診断をスキップします。",
           elapsedMs: 0,
@@ -211,7 +238,10 @@ export async function speechConnectionDiagnostics(): Promise<BouyomiConnectionDi
     };
   }
 
-  return nullFreePayload<BouyomiConnectionDiagnostics>(await invoke<unknown>("speech_connection_diagnostics"), "speech_connection_diagnostics");
+  return nullFreePayload<BouyomiConnectionDiagnostics>(
+    await invoke<unknown>("speech_connection_diagnostics"),
+    "speech_connection_diagnostics",
+  );
 }
 
 export async function speechTest(text: string): Promise<void> {
@@ -288,7 +318,10 @@ export async function twitchStartAuth(): Promise<TwitchDeviceAuthStart> {
     };
   }
 
-  return nullFreePayload<TwitchDeviceAuthStart>(await invoke<unknown>("twitch_start_auth"), "twitch_start_auth");
+  return nullFreePayload<TwitchDeviceAuthStart>(
+    await invoke<unknown>("twitch_start_auth"),
+    "twitch_start_auth",
+  );
 }
 
 export async function twitchPollAuth(): Promise<TwitchAuthPollResult> {
@@ -388,7 +421,9 @@ export async function subscribeTwitchStatusEvents(
     return () => {};
   }
 
-  return listen<unknown>("twitch://status", (event) => handler(parseTwitchStatusEvent(event.payload)));
+  return listen<unknown>("twitch://status", (event) =>
+    handler(parseTwitchStatusEvent(event.payload)),
+  );
 }
 
 export async function subscribeTwitchChatMessageEvents(
@@ -420,7 +455,9 @@ export async function subscribeSpeechStatusEvents(
     return () => {};
   }
 
-  return listen<unknown>("speech://status", (event) => handler(parseSpeechStatusEvent(event.payload)));
+  return listen<unknown>("speech://status", (event) =>
+    handler(parseSpeechStatusEvent(event.payload)),
+  );
 }
 
 export async function subscribeSpeechQueueUpdatedEvents(
@@ -430,5 +467,7 @@ export async function subscribeSpeechQueueUpdatedEvents(
     return () => {};
   }
 
-  return listen<unknown>("speech://queue-updated", (event) => handler(parseSpeechQueueUpdatedEvent(event.payload)));
+  return listen<unknown>("speech://queue-updated", (event) =>
+    handler(parseSpeechQueueUpdatedEvent(event.payload)),
+  );
 }

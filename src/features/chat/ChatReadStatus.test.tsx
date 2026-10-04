@@ -10,11 +10,12 @@ const virtualizerState = vi.hoisted(() => ({ indexes: [0], totalSize: 44 }));
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: () => ({
     getTotalSize: () => virtualizerState.totalSize,
-    getVirtualItems: () => virtualizerState.indexes.map((index) => ({
-      index,
-      key: `virtual-chat-${index}`,
-      start: index * 44,
-    })),
+    getVirtualItems: () =>
+      virtualizerState.indexes.map((index) => ({
+        index,
+        key: `virtual-chat-${index}`,
+        start: index * 44,
+      })),
     measureElement: () => undefined,
     scrollToIndex: () => undefined,
     scrollToOffset: () => undefined,
@@ -96,14 +97,17 @@ describe("ChatRow read status", () => {
     ["skipped", "スキップ"],
     ["blocked", "抑制"],
     ["error", "エラー"],
-  ] satisfies Array<[ChatDisplayState, string]>)("renders %s with a visible Japanese label", (status, label) => {
-    const markup = renderToStaticMarkup(<ChatRow message={chatMessage(status)} rowIndex={37} />);
+  ] satisfies Array<[ChatDisplayState, string]>)(
+    "renders %s with a visible Japanese label",
+    (status, label) => {
+      const markup = renderToStaticMarkup(<ChatRow message={chatMessage(status)} rowIndex={37} />);
 
-    expect(markup).toContain('role="row"');
-    expect(markup).toContain('aria-rowindex="37"');
-    expect(markup.match(/role="cell"/g)).toHaveLength(3);
-    expect(markup).toContain('aria-colindex="3"');
-    expect(markup).toContain(`>${label}</span>`);
-    expect(markup).toContain('aria-hidden="true"');
-  });
+      expect(markup).toContain('role="row"');
+      expect(markup).toContain('aria-rowindex="37"');
+      expect(markup.match(/role="cell"/g)).toHaveLength(3);
+      expect(markup).toContain('aria-colindex="3"');
+      expect(markup).toContain(`>${label}</span>`);
+      expect(markup).toContain('aria-hidden="true"');
+    },
+  );
 });

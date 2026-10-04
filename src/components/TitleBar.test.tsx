@@ -8,7 +8,7 @@ describe("TitleBar UI scale selector", () => {
       <TitleBar scale={1.25} scaleMode="1.25" onScaleModeChange={() => undefined} />,
     );
 
-    expect(markup).toContain("<legend class=\"sr-only\">UI倍率</legend>");
+    expect(markup).toContain('<legend class="sr-only">UI倍率</legend>');
     expect(markup.match(/type="radio" name="ui-scale"/g)).toHaveLength(4);
     expect(markup).toContain('value="auto"');
     expect(markup).toContain('value="1"');

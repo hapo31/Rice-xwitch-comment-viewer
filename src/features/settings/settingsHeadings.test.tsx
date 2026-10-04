@@ -4,7 +4,10 @@ import { FilterView } from "../filter/FilterView";
 import { SettingsView } from "./SettingsView";
 
 function headingList(markup: string): Array<{ level: string; text: string }> {
-  return [...markup.matchAll(/<h([1-6])[^>]*>([^<]+)<\/h\1>/g)].map(([, level, text]) => ({ level, text }));
+  return [...markup.matchAll(/<h([1-6])[^>]*>([^<]+)<\/h\1>/g)].map(([, level, text]) => ({
+    level,
+    text,
+  }));
 }
 
 describe("Settings and Filter section headings", () => {
@@ -14,12 +17,18 @@ describe("Settings and Filter section headings", () => {
         <SettingsView
           onSettingsUpdate={async () => true}
           onSpeechHealthCheck={() => undefined}
-          onSpeechDiagnostics={async () => ({ configuredAddr: "127.0.0.1:50001", attempted: [], recommendation: "" })}
+          onSpeechDiagnostics={async () => ({
+            configuredAddr: "127.0.0.1:50001",
+            attempted: [],
+            recommendation: "",
+          })}
           onSpeechTest={() => undefined}
         />,
       ),
     );
-    const filterHeadings = headingList(renderToStaticMarkup(<FilterView onSettingsUpdate={async () => true} />));
+    const filterHeadings = headingList(
+      renderToStaticMarkup(<FilterView onSettingsUpdate={async () => true} />),
+    );
 
     expect(settingsHeadings).toEqual([
       { level: "1", text: "Settings" },

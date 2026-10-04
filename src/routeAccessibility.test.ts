@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { NavigationType } from "react-router-dom";
-import { getRouteDocumentTitle, routeHeadingId, shouldFocusRouteHeading } from "./routeAccessibility";
+import {
+  getRouteDocumentTitle,
+  routeHeadingId,
+  shouldFocusRouteHeading,
+} from "./routeAccessibility";
 
 describe("route accessibility", () => {
   it("derives a document title for every application route", () => {

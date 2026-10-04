@@ -12,9 +12,18 @@ describe("SidePanel speech recovery", () => {
           state={{
             ...initialAppState,
             twitchConnectionStatus: "connected",
-            twitchActiveConnection: { generation: 1, broadcasterUserId: "a", broadcasterLogin: "channel_a" },
+            twitchActiveConnection: {
+              generation: 1,
+              broadcasterUserId: "a",
+              broadcasterLogin: "channel_a",
+            },
             settings: {
-              twitch: { channelLogin: "channel_b", autoConnect: false, confirmBeforeStopChat: true, liveChatAnnouncements: true },
+              twitch: {
+                channelLogin: "channel_b",
+                autoConnect: false,
+                confirmBeforeStopChat: true,
+                liveChatAnnouncements: true,
+              },
               speech: {} as any,
               launcher: { items: [] },
             },

@@ -1,7 +1,12 @@
 import type { QueueItem } from "../types";
 
 const incompleteQueueStatuses = new Set<QueueItem["status"]>(["queued", "speaking", "error"]);
-const visibleQueueStatuses = new Set<QueueItem["status"]>(["queued", "speaking", "error", "blocked"]);
+const visibleQueueStatuses = new Set<QueueItem["status"]>([
+  "queued",
+  "speaking",
+  "error",
+  "blocked",
+]);
 
 export function countIncompleteQueueItems(items: QueueItem[]): number {
   return items.filter((item) => incompleteQueueStatuses.has(item.status)).length;

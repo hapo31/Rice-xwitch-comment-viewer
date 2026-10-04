@@ -1,4 +1,12 @@
-import { AppWindow, KeyRound, ListFilter, MessageSquareText, Radio, ScrollText, SlidersHorizontal } from "lucide-react";
+import {
+  AppWindow,
+  KeyRound,
+  ListFilter,
+  MessageSquareText,
+  Radio,
+  ScrollText,
+  SlidersHorizontal,
+} from "lucide-react";
 import { NavLink } from "react-router-dom";
 import type { AppRoutePath } from "../routes";
 
@@ -30,12 +38,14 @@ export function ActivityBar() {
             to={item.path}
             aria-label={item.label}
             title={item.label}
-            className={({ isActive }) => [
-              "mb-1 flex h-11 w-11 items-center justify-center border-l-2 transition-colors",
-              isActive
-                ? "border-sky-400 bg-zinc-850 text-zinc-100"
-                : "border-transparent text-zinc-400 hover:bg-zinc-850 hover:text-zinc-100",
-            ].join(" ")}
+            className={({ isActive }) =>
+              [
+                "mb-1 flex h-11 w-11 items-center justify-center border-l-2 transition-colors",
+                isActive
+                  ? "border-sky-400 bg-zinc-850 text-zinc-100"
+                  : "border-transparent text-zinc-400 hover:bg-zinc-850 hover:text-zinc-100",
+              ].join(" ")
+            }
           >
             <Icon className="h-5 w-5" />
           </NavLink>

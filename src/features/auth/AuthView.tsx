@@ -35,10 +35,19 @@ export function AuthView({
   const [authValidationNotice, setAuthValidationNotice] = useState<string>();
   const [nowMs, setNowMs] = useState(Date.now());
   const isChannelValid = isValidTwitchChannelLogin(channelLogin);
-  const channelError = "Twitch チャンネル名は 3 から 25 文字の英数字またはアンダースコアで入力してください。";
+  const channelError =
+    "Twitch チャンネル名は 3 から 25 文字の英数字またはアンダースコアで入力してください。";
   const isAuthenticated = state.twitchAuthStatus === "authenticated";
-  const canDisconnect = Boolean(state.twitchProfile) && state.twitchAuthStatus !== "authorizing" && state.twitchAuthStatus !== "disconnecting";
-  const isAuthOperationInProgress = ["authorizing", "polling", "checking", "disconnecting"].includes(state.twitchAuthStatus);
+  const canDisconnect =
+    Boolean(state.twitchProfile) &&
+    state.twitchAuthStatus !== "authorizing" &&
+    state.twitchAuthStatus !== "disconnecting";
+  const isAuthOperationInProgress = [
+    "authorizing",
+    "polling",
+    "checking",
+    "disconnecting",
+  ].includes(state.twitchAuthStatus);
   const activeChannel = state.twitchActiveConnection?.broadcasterLogin;
   const hasPendingChannelChange = Boolean(
     activeChannel && activeChannel.toLowerCase() !== twitchSettings.channelLogin.toLowerCase(),
@@ -71,7 +80,10 @@ export function AuthView({
 
   function saveChannelLogin() {
     const trimmedChannelLogin = channelLogin.trim();
-    if (!isValidTwitchChannelLogin(trimmedChannelLogin) || trimmedChannelLogin === twitchSettings.channelLogin) {
+    if (
+      !isValidTwitchChannelLogin(trimmedChannelLogin) ||
+      trimmedChannelLogin === twitchSettings.channelLogin
+    ) {
       return;
     }
 
@@ -99,11 +111,25 @@ export function AuthView({
     <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
-          <h1 id={routeHeadingId} tabIndex={-1} className="truncate text-sm font-semibold text-zinc-100">Login</h1>
-          <p className="truncate text-xs text-zinc-400">Twitch 認証と接続先チャンネルを管理します</p>
+          <h1
+            id={routeHeadingId}
+            tabIndex={-1}
+            className="truncate text-sm font-semibold text-zinc-100"
+          >
+            Login
+          </h1>
+          <p className="truncate text-xs text-zinc-400">
+            Twitch 認証と接続先チャンネルを管理します
+          </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-zinc-400">
-          <span className={state.twitchAuthStatus === "authenticated" ? "h-2 w-2 rounded-full bg-emerald-400" : "h-2 w-2 rounded-full bg-zinc-600"} />
+          <span
+            className={
+              state.twitchAuthStatus === "authenticated"
+                ? "h-2 w-2 rounded-full bg-emerald-400"
+                : "h-2 w-2 rounded-full bg-zinc-600"
+            }
+          />
           {state.twitchProfile?.login ?? "未ログイン"}
         </div>
       </header>
@@ -128,7 +154,8 @@ export function AuthView({
                 {!isChannelValid && <FieldError id="twitch-channel" message={channelError} />}
                 {hasPendingChannelChange && (
                   <p className="mt-2 text-xs text-amber-300" role="status">
-                    現在は {activeChannel} を受信中です。{twitchSettings.channelLogin} は次回接続時に反映されます。
+                    現在は {activeChannel} を受信中です。{twitchSettings.channelLogin}{" "}
+                    は次回接続時に反映されます。
                   </p>
                 )}
               </div>
@@ -139,7 +166,11 @@ export function AuthView({
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
               <span className="text-sm text-zinc-400">認証状態</span>
               <div className="space-y-2 text-sm">
-                <p className="text-zinc-200">{state.twitchProfile ? `${state.twitchProfile.login} / ${state.twitchProfile.userId}` : "未ログイン"}</p>
+                <p className="text-zinc-200">
+                  {state.twitchProfile
+                    ? `${state.twitchProfile.login} / ${state.twitchProfile.userId}`
+                    : "未ログイン"}
+                </p>
                 <p className="text-xs text-zinc-400">必要スコープ: user:read:chat</p>
               </div>
             </div>
@@ -148,19 +179,28 @@ export function AuthView({
                 <span className="text-sm text-zinc-400">認証コード</span>
                 <div className="space-y-2">
                   {isAuthPromptExpired ? (
-                    <p className="text-sm text-amber-300" role="status">認証コードの期限が切れました。認証をやり直してください。</p>
+                    <p className="text-sm text-amber-300" role="status">
+                      認証コードの期限が切れました。認証をやり直してください。
+                    </p>
                   ) : (
                     <>
-                      <p className="font-mono text-lg font-semibold text-zinc-100">{state.twitchAuthPrompt.userCode}</p>
+                      <p className="font-mono text-lg font-semibold text-zinc-100">
+                        {state.twitchAuthPrompt.userCode}
+                      </p>
                       <button
                         type="button"
-                        onClick={() => onOpenExternalUrl(state.twitchAuthPrompt?.verificationUri ?? "")}
+                        onClick={() =>
+                          onOpenExternalUrl(state.twitchAuthPrompt?.verificationUri ?? "")
+                        }
                         className="inline-flex items-center gap-2 text-sm text-sky-300 hover:text-sky-200"
                       >
                         <Link2 className="h-4 w-4" />
                         {state.twitchAuthPrompt.verificationUri}
                       </button>
-                      <p className="text-xs text-zinc-400">残り {formatDeviceAuthRemainingTime(remainingSeconds)} / 自動確認間隔 {state.twitchAuthPrompt.interval} 秒</p>
+                      <p className="text-xs text-zinc-400">
+                        残り {formatDeviceAuthRemainingTime(remainingSeconds)} / 自動確認間隔{" "}
+                        {state.twitchAuthPrompt.interval} 秒
+                      </p>
                     </>
                   )}
                 </div>
@@ -185,24 +225,38 @@ export function AuthView({
                   disabled={isValidatingAuth || isAuthOperationInProgress}
                   className="flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 hover:border-sky-400 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {isValidatingAuth ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  {isValidatingAuth ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4" />
+                  )}
                   {isValidatingAuth ? "確認中..." : "有効性確認"}
                 </button>
               )}
               <button
                 type="button"
                 onClick={canDisconnect ? onTwitchDisconnect : onTwitchStartAuth}
-                disabled={state.twitchAuthStatus === "authorizing" || state.twitchAuthStatus === "disconnecting"}
+                disabled={
+                  state.twitchAuthStatus === "authorizing" ||
+                  state.twitchAuthStatus === "disconnecting"
+                }
                 className={`flex items-center gap-2 border border-zinc-700 bg-zinc-850 px-3 py-1.5 text-sm text-zinc-100 ${
                   canDisconnect ? "hover:border-rose-400" : "hover:border-sky-400"
                 }`}
               >
                 {canDisconnect ? <LogOut className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
-                {canDisconnect ? "認証解除" : state.twitchAuthPrompt ? "認証をやり直す" : "認証開始"}
+                {canDisconnect
+                  ? "認証解除"
+                  : state.twitchAuthPrompt
+                    ? "認証をやり直す"
+                    : "認証開始"}
               </button>
             </div>
             {authValidationNotice && isAuthenticated && (
-              <div className="flex items-center justify-end gap-2 border-t border-zinc-800 py-3 text-sm text-emerald-300" role="status">
+              <div
+                className="flex items-center justify-end gap-2 border-t border-zinc-800 py-3 text-sm text-emerald-300"
+                role="status"
+              >
                 <CheckCircle2 className="h-4 w-4" />
                 {authValidationNotice}
               </div>

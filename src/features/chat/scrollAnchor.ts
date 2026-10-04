@@ -13,7 +13,10 @@ export interface ChatScrollAnchor {
   offset: number;
 }
 
-export function getPrependedMessageCount(previous: ChatScrollItem[], next: ChatScrollItem[]): number {
+export function getPrependedMessageCount(
+  previous: ChatScrollItem[],
+  next: ChatScrollItem[],
+): number {
   const previousFirstId = previous[0]?.id;
 
   if (!previousFirstId) {
@@ -32,9 +35,7 @@ export function getVisibleChatAnchor(
   const row = virtualRows.find((candidate) => candidate.start + candidate.size > scrollOffset);
   const message = row && messages[row.index];
 
-  return message && row
-    ? { messageId: message.id, offset: scrollOffset - row.start }
-    : undefined;
+  return message && row ? { messageId: message.id, offset: scrollOffset - row.start } : undefined;
 }
 
 export function getRestoredScrollOffset(

@@ -1,0 +1,69 @@
+name: Shared quality checks
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: ${{ matrix.gate }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        gate: [frontend-format, frontend-lint, frontend-typecheck, frontend-test, frontend-build]
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Read pinned compiler
+        id: inputs
+        run: echo "node=$(jq -r .nodeVersion build/release-inputs.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ steps.inputs.outputs.node }}
+      - name: Install reviewed frontend tools
+        run: |
+          corepack enable
+          corepack prepare pnpm@8.11.0 --activate
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Run shared gate
+        env:
+          QUALITY_GATE: ${{ matrix.gate }}
+        run: bash scripts/quality-gate.sh "$QUALITY_GATE"
+      - name: Prove quality policy and negative lint examples
+        if: matrix.gate == 'frontend-test'
+        run: node --test scripts/test-quality-policy.mjs
+
+  rust:
+    name: ${{ matrix.gate }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        gate: [rust-format, rust-clippy, rust-test]
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust and static checking components
+        run: |
+          release_rust=$(jq -r .rustVersion build/release-inputs.json)
+          rustup toolchain install "$release_rust" --profile minimal --component rustfmt --component clippy
+          rustup override set "$release_rust"
+      - name: Install Tauri build dependencies
+        if: matrix.gate != 'rust-format'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libayatana-appindicator3-dev libgtk-3-dev librsvg2-dev libwebkit2gtk-4.1-dev
+      - name: Create frontend distribution placeholder
+        run: mkdir -p dist
+      - name: Run shared gate
+        env:
+          QUALITY_GATE: ${{ matrix.gate }}
+        run: bash scripts/quality-gate.sh "$QUALITY_GATE"

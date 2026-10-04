@@ -17,18 +17,30 @@ export class SystemTimelineRouter {
   }
 }
 
-export function timelineEventFromTwitchStatus(event: TwitchStatusEvent): SystemTimelineEvent | undefined {
+export function timelineEventFromTwitchStatus(
+  event: TwitchStatusEvent,
+): SystemTimelineEvent | undefined {
   const message = event.message?.trim();
   if (!message || /keepalive/i.test(message)) return undefined;
 
   const source = event.domain === "auth" ? "twitch-auth" : "twitch-connection";
-  return { source, transition: source === "twitch-auth" ? `${event.status}:${message}` : event.status, message };
+  return {
+    source,
+    transition: source === "twitch-auth" ? `${event.status}:${message}` : event.status,
+    message,
+  };
 }
 
-export function speechRecoveryTimelineEvent(message: string, status: SpeechStatus): SystemTimelineEvent {
+export function speechRecoveryTimelineEvent(
+  message: string,
+  status: SpeechStatus,
+): SystemTimelineEvent {
   return { source: "speech", transition: status, message };
 }
 
-export function autoConnectTimelineEvent(transition: "started" | "failed", message: string): SystemTimelineEvent {
+export function autoConnectTimelineEvent(
+  transition: "started" | "failed",
+  message: string,
+): SystemTimelineEvent {
   return { source: "twitch-connection", transition: `auto-${transition}`, message };
 }

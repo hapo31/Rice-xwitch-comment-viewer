@@ -12,7 +12,9 @@ describe("Device Code の期限表示", () => {
     const expiresAtMs = Date.now() + 61_000;
 
     expect(getDeviceAuthRemainingSeconds(expiresAtMs)).toBe(61);
-    expect(formatDeviceAuthRemainingTime(getDeviceAuthRemainingSeconds(expiresAtMs))).toBe("1分 01秒");
+    expect(formatDeviceAuthRemainingTime(getDeviceAuthRemainingSeconds(expiresAtMs))).toBe(
+      "1分 01秒",
+    );
 
     vi.advanceTimersByTime(60_999);
     expect(getDeviceAuthRemainingSeconds(expiresAtMs)).toBe(1);

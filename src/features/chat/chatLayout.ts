@@ -15,7 +15,9 @@ export function getMinimumChatContentWidthPx(scale: number, baseFontSize = 16) {
 
 export function getMinimumChatMessageColumnWidthPx(scale: number, baseFontSize = 16) {
   const reservedWidth =
-    (CHAT_HORIZONTAL_PADDING_REM + CHAT_TIME_COLUMN_MIN_REM + CHAT_USER_COLUMN_MIN_REM) * baseFontSize * scale;
+    (CHAT_HORIZONTAL_PADDING_REM + CHAT_TIME_COLUMN_MIN_REM + CHAT_USER_COLUMN_MIN_REM) *
+    baseFontSize *
+    scale;
 
   return getMinimumChatContentWidthPx(scale, baseFontSize) - reservedWidth;
 }

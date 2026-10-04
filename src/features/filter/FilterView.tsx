@@ -32,7 +32,9 @@ export function FilterView({
   const [blockedWords, setBlockedWords] = useState(formatRuleList(speechSettings.blockedWords));
   const [urlHandling, setUrlHandling] = useState(speechSettings.urlHandling);
   const [maxLength, setMaxLength] = useState(String(speechSettings.maxCommentLength));
-  const [repeatSeconds, setRepeatSeconds] = useState(String(speechSettings.repeatSuppressionSeconds));
+  const [repeatSeconds, setRepeatSeconds] = useState(
+    String(speechSettings.repeatSuppressionSeconds),
+  );
 
   useEffect(() => {
     setBlockedUsers(formatRuleList(speechSettings.blockedUsers));
@@ -50,11 +52,13 @@ export function FilterView({
 
   const numericMaxLength = Number(maxLength);
   const numericRepeatSeconds = Number(repeatSeconds);
-  const isMaxLengthValid = Number.isInteger(numericMaxLength) && numericMaxLength >= 1 && numericMaxLength <= 500;
+  const isMaxLengthValid =
+    Number.isInteger(numericMaxLength) && numericMaxLength >= 1 && numericMaxLength <= 500;
   const isRepeatSecondsValid = isValidRepeatSuppressionSeconds(repeatSeconds);
   const blockedUserRules = parseBlockedUserList(blockedUsers);
   const blockedWordRules = parseBlockedWordList(blockedWords);
-  const areRuleListsValid = blockedUserRules.overflowCount === 0 && blockedWordRules.overflowCount === 0;
+  const areRuleListsValid =
+    blockedUserRules.overflowCount === 0 && blockedWordRules.overflowCount === 0;
   const isDirty =
     numericMaxLength !== speechSettings.maxCommentLength ||
     numericRepeatSeconds !== speechSettings.repeatSuppressionSeconds ||
@@ -68,10 +72,14 @@ export function FilterView({
     }
 
     const speech: NonNullable<AppSettingsPatch["speech"]> = {};
-    if (numericMaxLength !== speechSettings.maxCommentLength) speech.maxCommentLength = numericMaxLength;
-    if (numericRepeatSeconds !== speechSettings.repeatSuppressionSeconds) speech.repeatSuppressionSeconds = numericRepeatSeconds;
-    if (!stringArrayEqual(blockedUserRules.items, speechSettings.blockedUsers)) speech.blockedUsers = blockedUserRules.items;
-    if (!stringArrayEqual(blockedWordRules.items, speechSettings.blockedWords)) speech.blockedWords = blockedWordRules.items;
+    if (numericMaxLength !== speechSettings.maxCommentLength)
+      speech.maxCommentLength = numericMaxLength;
+    if (numericRepeatSeconds !== speechSettings.repeatSuppressionSeconds)
+      speech.repeatSuppressionSeconds = numericRepeatSeconds;
+    if (!stringArrayEqual(blockedUserRules.items, speechSettings.blockedUsers))
+      speech.blockedUsers = blockedUserRules.items;
+    if (!stringArrayEqual(blockedWordRules.items, speechSettings.blockedWords))
+      speech.blockedWords = blockedWordRules.items;
     if (urlHandling !== speechSettings.urlHandling) speech.urlHandling = urlHandling;
     return onSettingsUpdate({ speech });
   }
@@ -90,8 +98,16 @@ export function FilterView({
     <main className="relative col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
-          <h1 id={routeHeadingId} tabIndex={-1} className="truncate text-sm font-semibold text-zinc-100">Filter</h1>
-          <p className="truncate text-xs text-zinc-400">読み上げるチャットの種類と、除外・省略する条件を設定します</p>
+          <h1
+            id={routeHeadingId}
+            tabIndex={-1}
+            className="truncate text-sm font-semibold text-zinc-100"
+          >
+            Filter
+          </h1>
+          <p className="truncate text-xs text-zinc-400">
+            読み上げるチャットの種類と、除外・省略する条件を設定します
+          </p>
         </div>
       </header>
 
@@ -105,7 +121,9 @@ export function FilterView({
               <select
                 id="rule-url-handling"
                 value={urlHandling}
-                onChange={(event) => setUrlHandling(event.target.value as AppSettings["speech"]["urlHandling"])}
+                onChange={(event) =>
+                  setUrlHandling(event.target.value as AppSettings["speech"]["urlHandling"])
+                }
                 className={`h-9 w-52 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
               >
                 <option value="replace">URL省略</option>

@@ -34,17 +34,38 @@ describe("appReducer", () => {
   });
 
   it("keeps system messages distinct from viewer chat", () => {
-    const state = appReducer(initialAppState, { type: "chat.message", message: { kind: "system", id: "system-1", receivedAt, userDisplayName: "system", text: "Twitch EventSub を再接続しました。" } });
+    const state = appReducer(initialAppState, {
+      type: "chat.message",
+      message: {
+        kind: "system",
+        id: "system-1",
+        receivedAt,
+        userDisplayName: "system",
+        text: "Twitch EventSub を再接続しました。",
+      },
+    });
     expect(state.chatMessages[0]).toMatchObject({ kind: "system", userDisplayName: "system" });
   });
 
   it("keeps authentication and chat connection transitions independent", () => {
-    const authenticated = appReducer(initialAppState, { type: "twitch.authStatus", status: "authenticated" });
-    const chatConnected = appReducer(authenticated, { type: "twitch.connectionStatus", status: "connected" });
+    const authenticated = appReducer(initialAppState, {
+      type: "twitch.authStatus",
+      status: "authenticated",
+    });
+    const chatConnected = appReducer(authenticated, {
+      type: "twitch.connectionStatus",
+      status: "connected",
+    });
     const authExpired = appReducer(chatConnected, { type: "twitch.authStatus", status: "expired" });
 
-    expect(chatConnected).toMatchObject({ twitchAuthStatus: "authenticated", twitchConnectionStatus: "connected" });
-    expect(authExpired).toMatchObject({ twitchAuthStatus: "expired", twitchConnectionStatus: "connected" });
+    expect(chatConnected).toMatchObject({
+      twitchAuthStatus: "authenticated",
+      twitchConnectionStatus: "connected",
+    });
+    expect(authExpired).toMatchObject({
+      twitchAuthStatus: "expired",
+      twitchConnectionStatus: "connected",
+    });
   });
 
   it("represents an EventSub revocation as both a chat and authentication failure", () => {
@@ -53,10 +74,16 @@ describe("appReducer", () => {
       twitchAuthStatus: "authenticated" as const,
       twitchConnectionStatus: "connected" as const,
     };
-    const chatRevoked = appReducer(connected, { type: "twitch.connectionStatus", status: "authRequired" });
+    const chatRevoked = appReducer(connected, {
+      type: "twitch.connectionStatus",
+      status: "authRequired",
+    });
     const authRevoked = appReducer(chatRevoked, { type: "twitch.authStatus", status: "expired" });
 
-    expect(authRevoked).toMatchObject({ twitchAuthStatus: "expired", twitchConnectionStatus: "authRequired" });
+    expect(authRevoked).toMatchObject({
+      twitchAuthStatus: "expired",
+      twitchConnectionStatus: "authRequired",
+    });
   });
 
   it("replaces queue items from speech queue events", () => {
@@ -84,29 +111,61 @@ describe("appReducer", () => {
         chatMessage("skipped"),
         chatMessage("blocked"),
         chatMessage("error"),
-        { kind: "system" as const, id: "system", receivedAt, userDisplayName: "system" as const, text: "接続しました" },
+        {
+          kind: "system" as const,
+          id: "system",
+          receivedAt,
+          userDisplayName: "system" as const,
+          text: "接続しました",
+        },
       ],
     };
     const items: QueueItem[] = [
-      { id: "1", sourceMessageId: "queued", userDisplayName: "viewer", text: "", status: "speaking" },
+      {
+        id: "1",
+        sourceMessageId: "queued",
+        userDisplayName: "viewer",
+        text: "",
+        status: "speaking",
+      },
       { id: "2", sourceMessageId: "spoken", userDisplayName: "viewer", text: "", status: "spoken" },
-      { id: "3", sourceMessageId: "skipped", userDisplayName: "viewer", text: "", status: "skipped" },
-      { id: "4", sourceMessageId: "blocked", userDisplayName: "viewer", text: "", status: "blocked" },
+      {
+        id: "3",
+        sourceMessageId: "skipped",
+        userDisplayName: "viewer",
+        text: "",
+        status: "skipped",
+      },
+      {
+        id: "4",
+        sourceMessageId: "blocked",
+        userDisplayName: "viewer",
+        text: "",
+        status: "blocked",
+      },
       { id: "5", sourceMessageId: "error", userDisplayName: "viewer", text: "", status: "error" },
     ];
 
     const updated = appReducer(state, { type: "queue.changed", items });
 
-    expect(updated.chatMessages.slice(0, 5).map((message) => message.kind === "user" && message.status)).toEqual([
-      "queued", "spoken", "skipped", "blocked", "error",
-    ]);
+    expect(
+      updated.chatMessages.slice(0, 5).map((message) => message.kind === "user" && message.status),
+    ).toEqual(["queued", "spoken", "skipped", "blocked", "error"]);
     expect(updated.chatMessages[5]).toEqual(state.chatMessages[5]);
   });
 
   it("uses a previously received queue snapshot when its source chat message arrives later", () => {
     const queued = appReducer(initialAppState, {
       type: "queue.changed",
-      items: [{ id: "speech", sourceMessageId: "blocked", userDisplayName: "viewer", text: "", status: "blocked" }],
+      items: [
+        {
+          id: "speech",
+          sourceMessageId: "blocked",
+          userDisplayName: "viewer",
+          text: "",
+          status: "blocked",
+        },
+      ],
     });
 
     const updated = appReducer(queued, { type: "chat.message", message: chatMessage("blocked") });
@@ -133,7 +192,11 @@ describe("appReducer", () => {
     });
 
     expect(updated.chatMessages).toHaveLength(200);
-    expect(updated.chatMessages.every((message) => message.kind === "user" && message.status === "skipped")).toBe(true);
+    expect(
+      updated.chatMessages.every(
+        (message) => message.kind === "user" && message.status === "skipped",
+      ),
+    ).toBe(true);
   });
 
   it("replaces launcher items without changing the other settings", () => {
@@ -152,10 +215,7 @@ describe("appReducer", () => {
       },
     ];
 
-    const state = appReducer(
-      { ...initialAppState, settings },
-      { type: "launcher.changed", items },
-    );
+    const state = appReducer({ ...initialAppState, settings }, { type: "launcher.changed", items });
 
     expect(state.settings?.launcher.items).toEqual(items);
     expect(state.settings?.twitch.channelLogin).toBe("rice");
@@ -176,18 +236,28 @@ describe("appReducer", () => {
       appReducer(
         appReducer(initialAppState, {
           type: "notification.added",
-          notification: { severity: "info", source: "command", message: "接続しました", occurredAtMs: 10 },
+          notification: {
+            severity: "info",
+            source: "command",
+            message: "接続しました",
+            occurredAtMs: 10,
+          },
         }),
         {
           type: "notification.added",
-          notification: { severity: "success", source: "command", message: "認証しました", occurredAtMs: 11 },
+          notification: {
+            severity: "success",
+            source: "command",
+            message: "認証しました",
+            occurredAtMs: 11,
+          },
         },
       ),
     );
 
-    expect(warningNotifications(state.notifications).map((notification) => notification.message)).toEqual([
-      "warning 7", "warning 6", "warning 5", "warning 4", "warning 3",
-    ]);
+    expect(
+      warningNotifications(state.notifications).map((notification) => notification.message),
+    ).toEqual(["warning 7", "warning 6", "warning 5", "warning 4", "warning 3"]);
     expect(state.notifications.map((notification) => notification.severity)).toContain("info");
     expect(state.notifications.map((notification) => notification.severity)).toContain("success");
   });
@@ -212,7 +282,10 @@ describe("appReducer", () => {
     );
 
     expect(warningNotifications(state.notifications)).toHaveLength(1);
-    expect(warningNotifications(state.notifications)[0]).toMatchObject({ ...failure, severity: "error" });
+    expect(warningNotifications(state.notifications)[0]).toMatchObject({
+      ...failure,
+      severity: "error",
+    });
   });
 
   it("stores application logs for the Logs view", () => {
@@ -262,10 +335,10 @@ describe("appReducer", () => {
       occurredAtMs: 1,
     };
 
-    const state = appReducer(
-      appReducer(initialAppState, { type: "log.added", log }),
-      { type: "log.added", log },
-    );
+    const state = appReducer(appReducer(initialAppState, { type: "log.added", log }), {
+      type: "log.added",
+      log,
+    });
 
     expect(state.logs).toHaveLength(2);
     expect(state.logs.map((entry) => entry.id)).toEqual([

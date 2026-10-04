@@ -42,7 +42,8 @@ export function toLiveStatusSnapshot(state: AppState): LiveStatusSnapshot {
     twitchAuthStatus: state.twitchAuthStatus,
     twitchConnectionStatus: state.twitchConnectionStatus,
     speechStatus: state.speechStatus,
-    latestWarning: state.notifications.find((notification) => notification.severity === "warning")?.message,
+    latestWarning: state.notifications.find((notification) => notification.severity === "warning")
+      ?.message,
   };
 }
 
@@ -50,8 +51,14 @@ export function getLiveStatusAnnouncement(
   previous: LiveStatusSnapshot,
   current: LiveStatusSnapshot,
 ): LiveStatusAnnouncement | undefined {
-  if (previous.twitchAuthStatus !== current.twitchAuthStatus && isAuthError(current.twitchAuthStatus)) {
-    return { message: `Twitch 認証: ${twitchAuthLabels[current.twitchAuthStatus]}`, priority: "alert" };
+  if (
+    previous.twitchAuthStatus !== current.twitchAuthStatus &&
+    isAuthError(current.twitchAuthStatus)
+  ) {
+    return {
+      message: `Twitch 認証: ${twitchAuthLabels[current.twitchAuthStatus]}`,
+      priority: "alert",
+    };
   }
 
   if (
@@ -63,11 +70,17 @@ export function getLiveStatusAnnouncement(
       // announcing the same revocation once as a connection failure first.
       return undefined;
     }
-    return { message: `Twitch 接続: ${twitchConnectionLabels[current.twitchConnectionStatus]}`, priority: "alert" };
+    return {
+      message: `Twitch 接続: ${twitchConnectionLabels[current.twitchConnectionStatus]}`,
+      priority: "alert",
+    };
   }
 
   if (previous.speechStatus !== current.speechStatus && isSpeechError(current.speechStatus)) {
-    return { message: `棒読みちゃん: ${speechStatusLabel(current.speechStatus)}`, priority: "alert" };
+    return {
+      message: `棒読みちゃん: ${speechStatusLabel(current.speechStatus)}`,
+      priority: "alert",
+    };
   }
 
   if (previous.latestWarning !== current.latestWarning && current.latestWarning) {
@@ -75,18 +88,27 @@ export function getLiveStatusAnnouncement(
   }
 
   if (previous.twitchAuthStatus !== current.twitchAuthStatus) {
-    return { message: `Twitch 認証: ${twitchAuthLabels[current.twitchAuthStatus]}`, priority: "status" };
+    return {
+      message: `Twitch 認証: ${twitchAuthLabels[current.twitchAuthStatus]}`,
+      priority: "status",
+    };
   }
 
   if (previous.twitchConnectionStatus !== current.twitchConnectionStatus) {
     if (current.twitchConnectionStatus === "authRequired") {
       return undefined;
     }
-    return { message: `Twitch 接続: ${twitchConnectionLabels[current.twitchConnectionStatus]}`, priority: "status" };
+    return {
+      message: `Twitch 接続: ${twitchConnectionLabels[current.twitchConnectionStatus]}`,
+      priority: "status",
+    };
   }
 
   if (previous.speechStatus !== current.speechStatus) {
-    return { message: `棒読みちゃん: ${speechStatusLabel(current.speechStatus)}`, priority: "status" };
+    return {
+      message: `棒読みちゃん: ${speechStatusLabel(current.speechStatus)}`,
+      priority: "status",
+    };
   }
 }
 
@@ -101,7 +123,12 @@ export function LiveStatusAnnouncer({ state }: { state: AppState }) {
     if (nextAnnouncement) {
       setAnnouncement(nextAnnouncement);
     }
-  }, [snapshot.twitchAuthStatus, snapshot.twitchConnectionStatus, snapshot.speechStatus, snapshot.latestWarning]);
+  }, [
+    snapshot.twitchAuthStatus,
+    snapshot.twitchConnectionStatus,
+    snapshot.speechStatus,
+    snapshot.latestWarning,
+  ]);
 
   return (
     <>

@@ -25,10 +25,21 @@ export interface ConnectionState {
 
 export type ConnectionAction =
   | { type: "auth.status.changed"; status: AuthStatus; revision?: number }
-  | { type: "chat.status.changed"; status: TwitchChatConnectionStatus; revision?: number; connectionGeneration?: number; activeConnection?: TwitchActiveConnection }
+  | {
+      type: "chat.status.changed";
+      status: TwitchChatConnectionStatus;
+      revision?: number;
+      connectionGeneration?: number;
+      activeConnection?: TwitchActiveConnection;
+    }
   | { type: "auth.prompt.changed"; prompt?: TwitchDeviceAuthStart }
   | { type: "auth.profile.changed"; profile?: TwitchUserProfile }
-  | { type: "speech.status.changed"; status: SpeechStatus; revision?: number; adapterHealth?: SpeechAdapterHealth };
+  | {
+      type: "speech.status.changed";
+      status: SpeechStatus;
+      revision?: number;
+      adapterHealth?: SpeechAdapterHealth;
+    };
 
 export const initialConnectionState: ConnectionState = {
   twitchAuthStatus: "unauthenticated",
@@ -41,14 +52,25 @@ export const initialConnectionState: ConnectionState = {
   speechRevision: 0,
 };
 
-export function connectionReducer(state: ConnectionState, action: ConnectionAction): ConnectionState {
+export function connectionReducer(
+  state: ConnectionState,
+  action: ConnectionAction,
+): ConnectionState {
   switch (action.type) {
     case "auth.status.changed":
       if (action.revision !== undefined && action.revision <= state.authRevision) return state;
-      return { ...state, twitchAuthStatus: action.status, authRevision: action.revision ?? state.authRevision };
+      return {
+        ...state,
+        twitchAuthStatus: action.status,
+        authRevision: action.revision ?? state.authRevision,
+      };
     case "chat.status.changed":
       if (action.revision !== undefined && action.revision <= state.chatRevision) return state;
-      if (action.connectionGeneration !== undefined && action.connectionGeneration < state.twitchConnectionGeneration) return state;
+      if (
+        action.connectionGeneration !== undefined &&
+        action.connectionGeneration < state.twitchConnectionGeneration
+      )
+        return state;
       return {
         ...state,
         twitchConnectionStatus: action.status,
@@ -56,18 +78,27 @@ export function connectionReducer(state: ConnectionState, action: ConnectionActi
         twitchActiveConnection:
           action.status === "disconnected"
             ? undefined
-            : action.activeConnection ??
-              (action.connectionGeneration !== undefined && action.connectionGeneration > state.twitchConnectionGeneration
+            : (action.activeConnection ??
+              (action.connectionGeneration !== undefined &&
+              action.connectionGeneration > state.twitchConnectionGeneration
                 ? undefined
-                : state.twitchActiveConnection),
+                : state.twitchActiveConnection)),
         chatRevision: action.revision ?? state.chatRevision,
       };
-    case "auth.prompt.changed": return { ...state, twitchAuthPrompt: action.prompt };
-    case "auth.profile.changed": return { ...state, twitchProfile: action.profile };
+    case "auth.prompt.changed":
+      return { ...state, twitchAuthPrompt: action.prompt };
+    case "auth.profile.changed":
+      return { ...state, twitchProfile: action.profile };
     case "speech.status.changed":
       if (action.revision !== undefined && action.revision <= state.speechRevision) return state;
-      return { ...state, speechStatus: action.status, speechRevision: action.revision ?? state.speechRevision, speechAdapterHealth: action.adapterHealth ?? state.speechAdapterHealth };
-    default: return state;
+      return {
+        ...state,
+        speechStatus: action.status,
+        speechRevision: action.revision ?? state.speechRevision,
+        speechAdapterHealth: action.adapterHealth ?? state.speechAdapterHealth,
+      };
+    default:
+      return state;
   }
 }
 

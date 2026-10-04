@@ -31,8 +31,16 @@ export function QueueView({
     <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
       <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
-          <h1 id={routeHeadingId} tabIndex={-1} className="truncate text-sm font-semibold text-zinc-100">Queue</h1>
-          <p className="truncate text-xs text-zinc-400">読み上げ待ち、エラー、フィルターで読み飛ばしたチャットを確認します</p>
+          <h1
+            id={routeHeadingId}
+            tabIndex={-1}
+            className="truncate text-sm font-semibold text-zinc-100"
+          >
+            Queue
+          </h1>
+          <p className="truncate text-xs text-zinc-400">
+            読み上げ待ち、エラー、フィルターで読み飛ばしたチャットを確認します
+          </p>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -81,25 +89,56 @@ export function QueueView({
         aria-rowcount={Math.max(displayItems.length, 1) + 1}
         className="h-[calc(100%-3rem)] overflow-auto"
       >
-        <div role="row" aria-rowindex={1} className="grid grid-cols-[140px_96px_minmax(0,1fr)_80px] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400">
-          <span role="columnheader" aria-colindex={1}>ユーザー</span>
-          <span role="columnheader" aria-colindex={2}>状態</span>
-          <span role="columnheader" aria-colindex={3}>読み上げ文</span>
-          <span role="columnheader" aria-colindex={4} className="text-right">操作</span>
+        <div
+          role="row"
+          aria-rowindex={1}
+          className="grid grid-cols-[140px_96px_minmax(0,1fr)_80px] border-b border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-medium text-zinc-400"
+        >
+          <span role="columnheader" aria-colindex={1}>
+            ユーザー
+          </span>
+          <span role="columnheader" aria-colindex={2}>
+            状態
+          </span>
+          <span role="columnheader" aria-colindex={3}>
+            読み上げ文
+          </span>
+          <span role="columnheader" aria-colindex={4} className="text-right">
+            操作
+          </span>
         </div>
         {displayItems.length === 0 ? (
           <div role="row" aria-rowindex={2}>
-            <div role="cell" aria-colspan={4} className="px-4 py-8 text-sm text-zinc-400">確認が必要な読み上げはありません。</div>
+            <div role="cell" aria-colspan={4} className="px-4 py-8 text-sm text-zinc-400">
+              確認が必要な読み上げはありません。
+            </div>
           </div>
         ) : (
           displayItems.map((item, index) => (
-            <div key={item.id} role="row" aria-rowindex={index + 2} className="grid min-h-11 grid-cols-[140px_96px_minmax(0,1fr)_80px] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900">
-              <span role="cell" aria-colindex={1} className="truncate pr-3 font-medium text-sky-300">{item.userDisplayName}</span>
-              <span role="cell" aria-colindex={2} className="flex items-center gap-2 text-xs text-zinc-400">
+            <div
+              key={item.id}
+              role="row"
+              aria-rowindex={index + 2}
+              className="grid min-h-11 grid-cols-[140px_96px_minmax(0,1fr)_80px] items-start border-b border-zinc-900 px-4 py-2 text-sm hover:bg-zinc-900"
+            >
+              <span
+                role="cell"
+                aria-colindex={1}
+                className="truncate pr-3 font-medium text-sky-300"
+              >
+                {item.userDisplayName}
+              </span>
+              <span
+                role="cell"
+                aria-colindex={2}
+                className="flex items-center gap-2 text-xs text-zinc-400"
+              >
                 <StatusIcon status={item.status} />
                 {queueStatusLabel(item.status)}
               </span>
-              <span role="cell" aria-colindex={3} className="line-clamp-2 pr-4 text-zinc-200">{item.text}</span>
+              <span role="cell" aria-colindex={3} className="line-clamp-2 pr-4 text-zinc-200">
+                {item.text}
+              </span>
               <span role="cell" aria-colindex={4} className="flex justify-end">
                 {item.status === "error" && (
                   <button
@@ -117,7 +156,9 @@ export function QueueView({
                   aria-label={queueDeleteAccessibleName(item, index + 2)}
                   title={item.status === "queued" ? "待機中の読み上げを削除" : "履歴項目を削除"}
                   disabled={!["queued", "error", "blocked"].includes(item.status)}
-                  onClick={() => (item.status === "queued" ? onQueueRemove(item.id) : onQueueDismiss(item.id))}
+                  onClick={() =>
+                    item.status === "queued" ? onQueueRemove(item.id) : onQueueDismiss(item.id)
+                  }
                   className="flex h-7 w-7 items-center justify-center border border-zinc-800 bg-zinc-850 text-zinc-400 hover:border-rose-400 hover:text-rose-200 disabled:cursor-not-allowed disabled:text-zinc-700"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -138,9 +179,10 @@ export function QueueView({
 function queueItemAccessibleTarget(item: QueueItem, rowIndex: number): string {
   const normalizedText = item.text.replace(/\s+/g, " ").trim();
   const textCharacters = Array.from(normalizedText);
-  const textSnippet = textCharacters.length > ACCESSIBLE_TEXT_SNIPPET_LENGTH
-    ? `${textCharacters.slice(0, ACCESSIBLE_TEXT_SNIPPET_LENGTH).join("")}…`
-    : normalizedText || "本文なし";
+  const textSnippet =
+    textCharacters.length > ACCESSIBLE_TEXT_SNIPPET_LENGTH
+      ? `${textCharacters.slice(0, ACCESSIBLE_TEXT_SNIPPET_LENGTH).join("")}…`
+      : normalizedText || "本文なし";
 
   return `キュー${rowIndex}行目、${item.userDisplayName}の「${textSnippet}」`;
 }

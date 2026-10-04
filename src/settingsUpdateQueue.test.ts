@@ -6,7 +6,9 @@ describe("SettingsUpdateQueue", () => {
     const queue = new SettingsUpdateQueue();
     const completed: string[] = [];
     let releaseFirst: (() => void) | undefined;
-    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
 
     const first = queue.enqueue(async () => {
       await firstGate;
@@ -28,7 +30,9 @@ describe("SettingsUpdateQueue", () => {
 
   it("continues with a later update after a failed save", async () => {
     const queue = new SettingsUpdateQueue();
-    const failed = queue.enqueue(async () => { throw new Error("save failed"); });
+    const failed = queue.enqueue(async () => {
+      throw new Error("save failed");
+    });
     const later = queue.enqueue(async () => "saved");
 
     await expect(failed).rejects.toThrow("save failed");

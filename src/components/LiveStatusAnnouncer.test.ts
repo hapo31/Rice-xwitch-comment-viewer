@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { initialAppState } from "../stores/appStore";
-import { getLiveStatusAnnouncement, toLiveStatusSnapshot, type LiveStatusSnapshot } from "./LiveStatusAnnouncer";
+import {
+  getLiveStatusAnnouncement,
+  toLiveStatusSnapshot,
+  type LiveStatusSnapshot,
+} from "./LiveStatusAnnouncer";
 
 const initial: LiveStatusSnapshot = {
   twitchAuthStatus: "authenticated",
@@ -13,8 +17,20 @@ describe("getLiveStatusAnnouncement", () => {
     const snapshot = toLiveStatusSnapshot({
       ...initialAppState,
       notifications: [
-        { id: "error", severity: "error", source: "command", message: "読み上げに失敗しました。", occurredAtMs: 2 },
-        { id: "warning", severity: "warning", source: "event", message: "再接続を試行します。", occurredAtMs: 1 },
+        {
+          id: "error",
+          severity: "error",
+          source: "command",
+          message: "読み上げに失敗しました。",
+          occurredAtMs: 2,
+        },
+        {
+          id: "warning",
+          severity: "warning",
+          source: "event",
+          message: "再接続を試行します。",
+          occurredAtMs: 1,
+        },
       ],
     });
 
@@ -32,11 +48,15 @@ describe("getLiveStatusAnnouncement", () => {
   });
 
   it("uses polite status announcements for warnings and ordinary state changes", () => {
-    expect(getLiveStatusAnnouncement(initial, { ...initial, latestWarning: "接続を確認しました。" })).toEqual({
+    expect(
+      getLiveStatusAnnouncement(initial, { ...initial, latestWarning: "接続を確認しました。" }),
+    ).toEqual({
       message: "警告: 接続を確認しました。",
       priority: "status",
     });
-    expect(getLiveStatusAnnouncement(initial, { ...initial, twitchConnectionStatus: "connected" })).toEqual({
+    expect(
+      getLiveStatusAnnouncement(initial, { ...initial, twitchConnectionStatus: "connected" }),
+    ).toEqual({
       message: "Twitch 接続: 受信中",
       priority: "status",
     });

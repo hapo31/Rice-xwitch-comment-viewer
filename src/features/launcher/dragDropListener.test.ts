@@ -41,9 +41,12 @@ describe("subscribeLauncherDragDrop", () => {
   it("cleans up a listener whose asynchronous registration finishes after unmount", async () => {
     let resolveSubscription: ((unlisten: () => void) => void) | undefined;
     const unlisten = vi.fn();
-    const subscribe = vi.fn(() => new Promise<() => void>((resolve) => {
-      resolveSubscription = resolve;
-    }));
+    const subscribe = vi.fn(
+      () =>
+        new Promise<() => void>((resolve) => {
+          resolveSubscription = resolve;
+        }),
+    );
 
     const cleanup = subscribeLauncherDragDrop(subscribe, { current: handlers() });
     await new Promise((resolve) => setTimeout(resolve, 0));

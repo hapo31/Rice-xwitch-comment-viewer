@@ -8,11 +8,12 @@ const virtualizerState = vi.hoisted(() => ({ indexes: [0], totalSize: 40 }));
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: () => ({
     getTotalSize: () => virtualizerState.totalSize,
-    getVirtualItems: () => virtualizerState.indexes.map((index) => ({
-      index,
-      key: `virtual-log-${index}`,
-      start: index * 40,
-    })),
+    getVirtualItems: () =>
+      virtualizerState.indexes.map((index) => ({
+        index,
+        key: `virtual-log-${index}`,
+        start: index * 40,
+      })),
     measureElement: () => undefined,
   }),
 }));
@@ -35,9 +36,7 @@ describe("LogsView table semantics", () => {
   }
 
   it("exposes a named table, column headers, and the virtualized total row count", () => {
-    const markup = renderToStaticMarkup(
-      <LogsView state={{ ...initialAppState, logs: [log] }} />,
-    );
+    const markup = renderToStaticMarkup(<LogsView state={{ ...initialAppState, logs: [log] }} />);
 
     expect(markup).toContain('role="table"');
     expect(markup).toContain('aria-label="アプリログ"');
