@@ -95,6 +95,21 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Enforce reviewed dependency advisory policy
+        run: |
+          cargo install --locked --version 0.22.2 cargo-audit
+          node --test scripts/test-audit-policy.mjs scripts/test-sbom.mjs
+          node scripts/dependency-audit.mjs
+
+      - name: Retain dependency audit results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dependency-audit-${{ github.run_id }}
+          path: audit-reports/
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Test frontend and run TypeScript build
         run: |
           set -euo pipefail
@@ -131,6 +146,9 @@ jobs:
             --output type=local,dest=release-artifacts \
             .
 
+      - name: Generate artifact-bound CycloneDX SBOM
+        run: node scripts/generate-sbom.mjs release-artifacts
+
       - name: Verify artifacts and write checksums
         run: |
           set -euo pipefail
@@ -138,6 +156,7 @@ jobs:
           test -n "$(find release-artifacts -maxdepth 1 -type f -name '*.exe' -print -quit)"
           test -n "$(find release-artifacts -maxdepth 1 -type f -name '*.zip' -print -quit)"
           test -s release-artifacts/BUILD-MATERIALS.json
+          test -s release-artifacts/Rice.sbom.cdx.json
           (cd release-artifacts && sha256sum * > SHA256SUMS.txt)
 
       - name: Upload release artifact bundle

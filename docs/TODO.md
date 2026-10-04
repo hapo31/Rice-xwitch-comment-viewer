@@ -13,6 +13,10 @@
 
 2026-10-05: Issue #99 で settings storage のUnix permission invariantを実装した。共有ancestorを変更せず、読込前にowner-onlyへ補正する。Windows CIでは実ユーザーAppDataに本番SettingsStoreで保存し、directory、本体、backup、temporaryの所有者と許可SIDを検査する。packaged実機で独自profile ACLが設定された場合の確認は継続する。
 
+- [x] Issue #96: pnpm/Cargoの監査・期限付き例外validator・定期scan・dependency更新PR・release SBOMを導入する。
+
+2026-10-05: Issue #96でPR/main/weekly/releaseの共通advisory gate、期限/owner/根拠を必須とする例外validator、Dependabot、artifact digestとexact commitへ結び付けたCycloneDX 1.5 SBOMを追加した。policy/SBOMのunit10件と実installed graphのintegration1件を確認。RustSec DB ef6173cbc5c50ec8166f9a5b28f07834144373ee（1290 advisory）でRust警告7件、npm High1件をblockingとして検出した。gateが正常に失敗することを確認しており、clean auditではない。新規releaseの実配布は未実施。
+
 - [x] Issue #93: release build の base image / Debian snapshot / toolchain を固定し、時刻と build material を記録・検証する。SDK/CRT feed と NSIS/PE metadata の非決定性は material inventory と文書で明示する。
 
 2026-10-05: Issue #93 で release の immutable input manifest、test/build の compiler policy、commit時刻のZIP正規化と build material inventory を追加した。完全な byte 再現性を保証せず、残る非決定要因を文書化した。

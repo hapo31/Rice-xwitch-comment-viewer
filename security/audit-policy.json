@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "npmBlockingSeverities": ["high", "critical"],
+  "cargoBlockVulnerabilities": true,
+  "cargoBlockWarnings": true,
+  "cargoAuditVersion": "0.22.2",
+  "pnpmVersion": "8.11.0",
+  "owner": "hapo31"
+}
