@@ -3,11 +3,13 @@ pub mod bouyomi;
 pub mod commands;
 mod factory;
 mod failure;
+pub mod outcome;
 pub mod runtime;
 #[cfg(any(feature = "app", test))]
 mod worker;
 
 pub use failure::{FailureCode, SpeechFailure};
+use outcome::{BlockedReason, SkippedReason, SpeechQueueOutcome};
 pub type SpeechFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 
 use crate::app_events::SpeechQueueItemStatus;
@@ -157,6 +159,7 @@ struct SpeechQueueItem {
     status: SpeechQueueItemStatus,
     retry_count: u8,
     delivery_state: SpeechQueueDeliveryState,
+    outcome: Option<SpeechQueueOutcome>,
 }
 
 /// `retry_count` は送信を試した回数ではなく、自動再試行を既に予約した回数を表す。
@@ -274,11 +277,12 @@ impl SpeechQueueState {
         Some(expiry.expires_at <= now)
     }
 
-    fn cancel_in_flight(&mut self) -> bool {
+    fn cancel_in_flight(&mut self, reason: SkippedReason) -> bool {
         let Some(mut item) = self.in_flight.take() else {
             return false;
         };
         item.status = SpeechQueueItemStatus::Skipped;
+        item.outcome = Some(SpeechQueueOutcome::skipped(reason, outcome::now_ms()));
         push_history(self, item);
         // The worker retains ownership until its physical send settles. Unique IDs
         // make that late completion a no-op, even if new items arrive meanwhile.
@@ -286,9 +290,13 @@ impl SpeechQueueState {
     }
 
     fn skip_current(&mut self) {
-        if !self.cancel_in_flight() {
+        if !self.cancel_in_flight(SkippedReason::UserSkip) {
             if let Some(mut item) = self.pending.pop_front() {
                 item.status = SpeechQueueItemStatus::Skipped;
+                item.outcome = Some(SpeechQueueOutcome::skipped(
+                    SkippedReason::UserSkip,
+                    outcome::now_ms(),
+                ));
                 push_history(self, item);
             }
         }
@@ -301,6 +309,10 @@ impl SpeechQueueState {
                 break;
             };
             item.status = SpeechQueueItemStatus::Skipped;
+            item.outcome = Some(SpeechQueueOutcome::skipped(
+                SkippedReason::Overflow,
+                outcome::now_ms(),
+            ));
             push_history(self, item);
             dropped_any = true;
         }
@@ -308,9 +320,13 @@ impl SpeechQueueState {
     }
 
     fn clear_pending(&mut self) {
-        self.cancel_in_flight();
+        self.cancel_in_flight(SkippedReason::Cleared);
         while let Some(mut item) = self.pending.pop_front() {
             item.status = SpeechQueueItemStatus::Skipped;
+            item.outcome = Some(SpeechQueueOutcome::skipped(
+                SkippedReason::Cleared,
+                outcome::now_ms(),
+            ));
             push_history(self, item);
         }
     }
@@ -321,7 +337,7 @@ impl SpeechQueueState {
             .as_ref()
             .is_some_and(|item| item.id == item_id)
         {
-            return self.cancel_in_flight();
+            return self.cancel_in_flight(SkippedReason::Removed);
         }
         let Some(index) = self.pending.iter().position(|item| item.id == item_id) else {
             return false;
@@ -329,6 +345,10 @@ impl SpeechQueueState {
 
         let mut item = self.pending.remove(index).expect("queue index checked");
         item.status = SpeechQueueItemStatus::Skipped;
+        item.outcome = Some(SpeechQueueOutcome::skipped(
+            SkippedReason::Removed,
+            outcome::now_ms(),
+        ));
         push_history(self, item);
         true
     }
@@ -408,19 +428,29 @@ impl SpeechQueueState {
         }
         let mut item = self.in_flight.take().expect("in-flight checked");
         item.status = SpeechQueueItemStatus::Spoken;
+        item.outcome = None;
         push_history(self, item);
         true
     }
 
     #[cfg(test)]
     fn fail_request(&mut self, request_id: &str) -> SpeechQueueFailureTransition {
-        self.fail_request_with_retry(request_id, true)
+        self.fail_request_with_retry(
+            request_id,
+            &SpeechFailure {
+                code: FailureCode::ConnectTimeout,
+                status: SpeechStatus::Disconnected,
+                retryable: true,
+                user_message: String::new(),
+                detail: String::new(),
+            },
+        )
     }
 
     fn fail_request_with_retry(
         &mut self,
         request_id: &str,
-        retryable: bool,
+        failure: &SpeechFailure,
     ) -> SpeechQueueFailureTransition {
         if self
             .in_flight
@@ -430,7 +460,8 @@ impl SpeechQueueState {
             return SpeechQueueFailureTransition::Ignored;
         }
         let mut item = self.in_flight.take().expect("in-flight checked");
-        if retryable && item.retry_count == 0 {
+        item.outcome = Some(SpeechQueueOutcome::error(failure, false, outcome::now_ms()));
+        if failure.retryable && item.retry_count == 0 {
             item.retry_count = 1;
             item.status = SpeechQueueItemStatus::Queued;
             item.delivery_state = SpeechQueueDeliveryState::RetryScheduled;
@@ -443,7 +474,7 @@ impl SpeechQueueState {
         SpeechQueueFailureTransition::RetryExhausted
     }
 
-    fn fail_after_acceptance(&mut self, request_id: &str) -> bool {
+    fn fail_after_acceptance(&mut self, request_id: &str, failure: &SpeechFailure) -> bool {
         if self
             .in_flight
             .as_ref()
@@ -453,6 +484,7 @@ impl SpeechQueueState {
         }
         let mut item = self.in_flight.take().expect("in-flight checked");
         item.status = SpeechQueueItemStatus::Error;
+        item.outcome = Some(SpeechQueueOutcome::error(failure, true, outcome::now_ms()));
         item.delivery_state = SpeechQueueDeliveryState::RetryExhausted;
         // The adapter accepted the request, so consuming the automatic retry budget
         // prevents a duplicate utterance. A user may still explicitly retry it.
@@ -490,6 +522,7 @@ impl SpeechQueueState {
         item.status = SpeechQueueItemStatus::Queued;
         item.retry_count = 0;
         item.delivery_state = SpeechQueueDeliveryState::Ready;
+        item.outcome = None;
         self.pending.push_back(item);
         true
     }
@@ -519,7 +552,7 @@ pub struct SpeechFormatterOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpeechFormatDecision {
     Speak(String),
-    Blocked(String),
+    Blocked(BlockedReason),
 }
 
 impl Default for SpeechFormatterOptions {
@@ -545,29 +578,27 @@ impl SpeechFormatter {
     pub fn format_chat_message(&self, message: &ChatMessage) -> SpeechFormatDecision {
         let raw_text = collect_readable_text(message, self.options.read_emotes);
         if raw_text.trim().is_empty() {
-            return SpeechFormatDecision::Blocked("読み上げる本文がありません。".to_string());
+            return SpeechFormatDecision::Blocked(BlockedReason::EmptyAfterFormatting);
         }
 
         if contains_blocked_user(&self.options.blocked_users, message) {
-            return SpeechFormatDecision::Blocked("NG ユーザーに一致しました。".to_string());
+            return SpeechFormatDecision::Blocked(BlockedReason::BlockedUser);
         }
 
         if self.options.block_urls && contains_url(&raw_text) {
-            return SpeechFormatDecision::Blocked("URL を含むため読み上げません。".to_string());
+            return SpeechFormatDecision::Blocked(BlockedReason::BlockedUrl);
         }
 
         let lowered = raw_text.to_ascii_lowercase();
-        if let Some(blocked_word) = self
+        if self
             .options
             .blocked_words
             .iter()
             .map(|word| word.trim())
             .filter(|word| !word.is_empty())
-            .find(|word| lowered.contains(&word.to_ascii_lowercase()))
+            .any(|word| lowered.contains(&word.to_ascii_lowercase()))
         {
-            return SpeechFormatDecision::Blocked(format!(
-                "NG ワードを含むため読み上げません: {blocked_word}"
-            ));
+            return SpeechFormatDecision::Blocked(BlockedReason::BlockedWord);
         }
 
         let mut text = normalize_control_chars(&raw_text);
@@ -582,7 +613,7 @@ impl SpeechFormatter {
         // Normalization and omitted emotes can remove every readable character. Do not
         // turn that into an empty packet or a display-name-only utterance.
         if text.is_empty() {
-            return SpeechFormatDecision::Blocked("読み上げる本文がありません。".to_string());
+            return SpeechFormatDecision::Blocked(BlockedReason::EmptyAfterFormatting);
         }
 
         if self.options.read_user_name {
@@ -644,11 +675,8 @@ fn enqueue_message(
     let formatted_text = match formatter.format_chat_message(&message) {
         SpeechFormatDecision::Speak(text) => text,
         SpeechFormatDecision::Blocked(reason) => {
-            let warning_message = format!(
-                "{} のチャットを読み上げません: {reason}",
-                message.user_display_name
-            );
             let id = next_queue_id(queue);
+            let warning_message = format!("[{id}] {}", reason.message());
             push_history(
                 queue,
                 SpeechQueueItem {
@@ -659,6 +687,7 @@ fn enqueue_message(
                     status: SpeechQueueItemStatus::Blocked,
                     retry_count: 0,
                     delivery_state: SpeechQueueDeliveryState::Ready,
+                    outcome: Some(SpeechQueueOutcome::blocked(reason, outcome::now_ms())),
                 },
             );
             outcome.warning = Some(warning_message);
@@ -671,8 +700,12 @@ fn enqueue_message(
         outcome.should_schedule_cleanup = queue.claim_repeat_suppression_cleanup();
     }
     if queue.make_pending_room() {
-        outcome.warning =
-            Some("読み上げキューが上限に達したため、古い未読チャットを落としました。".to_string());
+        outcome.warning = queue.history.front().map(|item| {
+            format!(
+                "[{}] 読み上げキューが上限に達したため、古い未読チャットを落としました。",
+                item.id
+            )
+        });
     }
 
     let item = SpeechQueueItem {
@@ -683,6 +716,7 @@ fn enqueue_message(
         status: SpeechQueueItemStatus::Queued,
         retry_count: 0,
         delivery_state: SpeechQueueDeliveryState::Ready,
+        outcome: None,
     };
     queue.pending.push_back(item);
     outcome.should_spawn = queue.claim_worker();
@@ -785,8 +819,8 @@ fn suppress_repeated_message(
         return None;
     }
 
-    let warning_message = format!("{} の連投を抑制しました。", message.user_display_name);
     let id = next_queue_id(queue);
+    let warning_message = format!("[{id}] {}", BlockedReason::RepeatSuppressed.message());
     push_history(
         queue,
         SpeechQueueItem {
@@ -797,6 +831,10 @@ fn suppress_repeated_message(
             status: SpeechQueueItemStatus::Blocked,
             retry_count: 0,
             delivery_state: SpeechQueueDeliveryState::Ready,
+            outcome: Some(SpeechQueueOutcome::blocked(
+                BlockedReason::RepeatSuppressed,
+                outcome::now_ms(),
+            )),
         },
     );
     Some(warning_message)
@@ -1113,6 +1151,7 @@ fn to_queue_event_item(item: &SpeechQueueItem) -> SpeechQueueItemEvent {
         user_display_name: item.user_display_name.clone(),
         text: item.text.clone(),
         status: item.status.clone(),
+        outcome: item.outcome.clone(),
     }
 }
 
@@ -1479,6 +1518,7 @@ mod tests {
             status: SpeechQueueItemStatus::Queued,
             retry_count: 0,
             delivery_state: SpeechQueueDeliveryState::Ready,
+            outcome: None,
         }
     }
 
@@ -1491,6 +1531,7 @@ mod tests {
             status,
             retry_count: 0,
             delivery_state: SpeechQueueDeliveryState::Ready,
+            outcome: None,
         }
     }
 
@@ -1686,7 +1727,7 @@ mod tests {
             detail: "fake write timeout".to_string(),
         };
         assert_eq!(
-            queue.fail_request_with_retry(&request.id, failure.retryable),
+            queue.fail_request_with_retry(&request.id, &failure),
             SpeechQueueFailureTransition::RetryExhausted
         );
         assert!(queue.pending.is_empty());
@@ -1931,7 +1972,7 @@ mod tests {
             );
             assert_eq!(
                 block_formatter.format_chat_message(&chat(input)),
-                SpeechFormatDecision::Blocked("URL を含むため読み上げません。".to_string()),
+                SpeechFormatDecision::Blocked(BlockedReason::BlockedUrl),
                 "block: {case_name}"
             );
         }
@@ -2027,7 +2068,7 @@ mod tests {
                     }
                     None => assert_eq!(
                         formatter.format_chat_message(message),
-                        SpeechFormatDecision::Blocked("読み上げる本文がありません。".to_string()),
+                        SpeechFormatDecision::Blocked(BlockedReason::EmptyAfterFormatting),
                         "{case_name}, read_user_name={read_user_name}"
                     ),
                 }
@@ -2141,7 +2182,7 @@ mod tests {
         });
         assert_eq!(
             block_url_formatter.format_chat_message(&chat("https://example.com/path")),
-            SpeechFormatDecision::Blocked("URL を含むため読み上げません。".to_string())
+            SpeechFormatDecision::Blocked(BlockedReason::BlockedUrl)
         );
 
         let block_formatter = SpeechFormatter::new(SpeechFormatterOptions {
@@ -2152,7 +2193,7 @@ mod tests {
         });
         assert_eq!(
             block_formatter.format_chat_message(&chat("safe prefix badword")),
-            SpeechFormatDecision::Blocked("NG ワードを含むため読み上げません: badword".to_string())
+            SpeechFormatDecision::Blocked(BlockedReason::BlockedWord)
         );
     }
 
@@ -2166,7 +2207,7 @@ mod tests {
 
         assert_eq!(
             formatter.format_chat_message(&chat("\u{0007}\n")),
-            SpeechFormatDecision::Blocked("読み上げる本文がありません。".to_string())
+            SpeechFormatDecision::Blocked(BlockedReason::EmptyAfterFormatting)
         );
     }
 
@@ -2442,7 +2483,9 @@ mod tests {
         queue.pending.push_back(queued_item("speech-1"));
 
         let request = queue.begin_next_request().expect("submitted request");
-        assert!(queue.fail_after_acceptance(&request.id));
+        assert!(
+            queue.fail_after_acceptance(&request.id, &SpeechFailure::unknown("unconfirmed".into()))
+        );
 
         assert!(queue.pending.is_empty());
         assert!(queue.in_flight.is_none());

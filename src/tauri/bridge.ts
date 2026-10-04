@@ -4,6 +4,7 @@ import type {
   AppLogEvent,
   AppLogLevel,
   QueueItem,
+  SpeechQueueOutcome,
   SpeechAdapterHealth,
   SpeechQueuePhase,
   SpeechQueueUpdatedEvent,
@@ -24,6 +25,7 @@ import type {
   TwitchStatusEvent,
   TwitchUserProfile,
 } from "../types";
+import { speechOutcomeReasonCodes, speechRecoveryActions } from "../types";
 
 type BridgeRecord = Record<string, unknown>;
 export type TwitchChatMessageWireEvent = Omit<TwitchChatMessageEvent, "receivedAt"> & {
@@ -367,6 +369,53 @@ export function parseSpeechStatusEvent(value: unknown): SpeechStatusEvent {
   };
 }
 
+export function parseSpeechQueueOutcome(value: unknown): SpeechQueueOutcome {
+  const contract = "SpeechQueueOutcome";
+  const payload = record(value, contract);
+  const kind = enumField(payload, "kind", ["blocked", "skipped", "error"] as const, contract);
+  const message = stringField(payload, "message", contract);
+  const occurredAtMs = numberField(payload, "occurredAtMs", contract);
+  if (!message.trim() || Array.from(message).length > 200)
+    throw invalid(contract, "message の長さが不正です。");
+  if (
+    !Number.isSafeInteger(occurredAtMs) ||
+    occurredAtMs < 0 ||
+    occurredAtMs > 8_640_000_000_000_000
+  )
+    throw invalid(contract, "occurredAtMs は非負の安全な整数にしてください。");
+  if (typeof payload.retryable !== "boolean")
+    throw invalid(contract, "retryable は boolean ではありません。");
+  const retryable = payload.retryable;
+  const recoveryAction = enumField(payload, "recoveryAction", speechRecoveryActions, contract);
+  const details = { message, occurredAtMs, retryable, recoveryAction };
+  if (kind === "blocked") {
+    if (retryable || recoveryAction !== "reviewFilters")
+      throw invalid(contract, "blocked の復旧契約が不正です。");
+    return {
+      kind,
+      reasonCode: enumField(payload, "reasonCode", speechOutcomeReasonCodes.blocked, contract),
+      ...details,
+    };
+  }
+  if (kind === "skipped") {
+    const reasonCode = enumField(payload, "reasonCode", speechOutcomeReasonCodes.skipped, contract);
+    if (retryable || recoveryAction !== (reasonCode === "overflow" ? "reviewQueue" : "none"))
+      throw invalid(contract, "skipped の復旧契約が不正です。");
+    return { kind, reasonCode, ...details };
+  }
+  const reasonCode = enumField(payload, "reasonCode", speechOutcomeReasonCodes.error, contract);
+  if (
+    !["diagnoseSpeech", "confirmDelivery"].includes(recoveryAction) ||
+    (retryable &&
+      (recoveryAction === "confirmDelivery" ||
+        !["connectionRefused", "connectTimeout", "connectFailed", "connectionLost"].includes(
+          reasonCode,
+        )))
+  )
+    throw invalid(contract, "error の再送/復旧契約が不正です。");
+  return { kind, reasonCode, ...details };
+}
+
 function parseQueueItem(value: unknown): QueueItem {
   const payload = record(value, "SpeechQueueItemEvent");
   const sourceMessageId = optionalField(
@@ -379,11 +428,26 @@ function parseQueueItem(value: unknown): QueueItem {
       return id;
     },
   );
+  const status = enumField(payload, "status", queueStatuses, "SpeechQueueItemEvent");
+  const outcome = optionalField(
+    payload,
+    "outcome",
+    "SpeechQueueItemEvent",
+    parseSpeechQueueOutcome,
+  );
+  if (
+    outcome &&
+    (outcome.kind === "error"
+      ? !["queued", "speaking", "error"].includes(status)
+      : status !== outcome.kind)
+  )
+    throw invalid("SpeechQueueItemEvent", "status と outcome kind が一致しません。");
   return {
     id: stringField(payload, "id", "SpeechQueueItemEvent"),
     userDisplayName: stringField(payload, "userDisplayName", "SpeechQueueItemEvent"),
     text: stringField(payload, "text", "SpeechQueueItemEvent"),
-    status: enumField(payload, "status", queueStatuses, "SpeechQueueItemEvent"),
+    status,
+    ...(outcome === undefined ? {} : { outcome }),
     ...(sourceMessageId === undefined ? {} : { sourceMessageId }),
   };
 }

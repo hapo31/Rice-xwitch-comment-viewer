@@ -12,9 +12,15 @@ export function countIncompleteQueueItems(items: QueueItem[]): number {
   return items.filter((item) => incompleteQueueStatuses.has(item.status)).length;
 }
 
-export function selectQueueItemsForDisplay(items: QueueItem[]): QueueItem[] {
+export function selectQueueItemsForDisplay(
+  items: QueueItem[],
+  includeSkipped = false,
+): QueueItem[] {
   return items
-    .filter((item) => visibleQueueStatuses.has(item.status))
+    .filter(
+      (item) =>
+        visibleQueueStatuses.has(item.status) || (includeSkipped && item.status === "skipped"),
+    )
     .sort((left, right) => queueSequence(right.id) - queueSequence(left.id));
 }
 

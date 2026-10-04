@@ -139,6 +139,8 @@ pub struct SpeechQueueItemEvent {
     pub user_display_name: String,
     pub text: String,
     pub status: SpeechQueueItemStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<crate::speech::outcome::SpeechQueueOutcome>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -665,10 +667,44 @@ mod tests {
                 user_display_name: "viewer".into(),
                 text: "hello".into(),
                 status: SpeechQueueItemStatus::Queued,
+                outcome: None,
             }],
             phase: SpeechQueuePhase::Paused,
             warning: None,
             occurred_at_ms: 1,
+        }
+    }
+
+    #[test]
+    fn item_outcome_survives_latest_snapshot_and_unrelated_activity_without_warning() {
+        use crate::speech::outcome::{
+            BlockedReason, OutcomeDetails, RecoveryAction, SpeechQueueOutcome,
+        };
+        let state = AppEventState::default();
+        let outcome = SpeechQueueOutcome::Blocked {
+            reason_code: BlockedReason::BlockedWord,
+            details: OutcomeDetails {
+                message: BlockedReason::BlockedWord.message().into(),
+                retryable: false,
+                recovery_action: RecoveryAction::ReviewFilters,
+                occurred_at_ms: 123,
+            },
+        };
+        let mut event = queue();
+        event.items[0].status = SpeechQueueItemStatus::Blocked;
+        event.items[0].outcome = Some(outcome.clone());
+        event.queued_count = 0;
+        state.record_speech_queue(event);
+        for _ in 0..3 {
+            state.record_speech_activity(status(SpeechStatus::Idle));
+            let snapshot = state.speech_state_snapshot().unwrap();
+            assert_eq!(snapshot.queue.items[0].outcome.as_ref(), Some(&outcome));
+            assert!(snapshot.queue.warning.is_none());
+            assert_eq!(
+                serde_json::to_value(&snapshot).unwrap()["queue"]["items"][0]["outcome"]
+                    ["reasonCode"],
+                "blockedWord"
+            );
         }
     }
 
@@ -697,6 +733,7 @@ mod tests {
                 user_display_name: "viewer".into(),
                 text: "hello".into(),
                 status: SpeechQueueItemStatus::Queued,
+                outcome: None,
             }],
             warning: None,
             ..queue()

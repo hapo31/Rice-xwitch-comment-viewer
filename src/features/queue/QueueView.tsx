@@ -1,4 +1,6 @@
 import { RotateCcw, SkipForward, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { SpeechOutcomeDetails } from "../../components/SpeechOutcomeDetails";
 import { getQueueStatusPresentation, queueStatusLabel } from "../../presentation/chat";
 import { countIncompleteQueueItems, selectQueueItemsForDisplay } from "../../presentation/queue";
 import type { AppState } from "../../stores/appStore";
@@ -25,7 +27,8 @@ export function QueueView({
   onQueueRetry: (itemId: string) => void;
 }) {
   const queuedCount = countIncompleteQueueItems(state.queueItems);
-  const displayItems = selectQueueItemsForDisplay(state.queueItems);
+  const [includeSkipped, setIncludeSkipped] = useState(false);
+  const displayItems = selectQueueItemsForDisplay(state.queueItems, includeSkipped);
 
   return (
     <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
@@ -43,6 +46,14 @@ export function QueueView({
           </p>
         </div>
         <div className="flex items-center gap-1">
+          <label className="mr-2 flex items-center gap-1 text-xs text-zinc-400">
+            <input
+              type="checkbox"
+              checked={includeSkipped}
+              onChange={(event) => setIncludeSkipped(event.target.checked)}
+            />
+            スキップ履歴を表示
+          </label>
           <button
             type="button"
             aria-label="キューを再読込"
@@ -136,9 +147,10 @@ export function QueueView({
                 <StatusIcon status={item.status} />
                 {queueStatusLabel(item.status)}
               </span>
-              <span role="cell" aria-colindex={3} className="line-clamp-2 pr-4 text-zinc-200">
-                {item.text}
-              </span>
+              <div role="cell" aria-colindex={3} className="min-w-0 pr-4 text-zinc-200">
+                <p className="line-clamp-2">{item.text}</p>
+                {item.outcome && <SpeechOutcomeDetails outcome={item.outcome} itemId={item.id} />}
+              </div>
               <span role="cell" aria-colindex={4} className="flex justify-end">
                 {item.status === "error" && (
                   <button
@@ -155,7 +167,7 @@ export function QueueView({
                   type="button"
                   aria-label={queueDeleteAccessibleName(item, index + 2)}
                   title={item.status === "queued" ? "待機中の読み上げを削除" : "履歴項目を削除"}
-                  disabled={!["queued", "error", "blocked"].includes(item.status)}
+                  disabled={!["queued", "error", "blocked", "skipped"].includes(item.status)}
                   onClick={() =>
                     item.status === "queued" ? onQueueRemove(item.id) : onQueueDismiss(item.id)
                   }
@@ -197,7 +209,7 @@ function queueDeleteAccessibleName(item: QueueItem, rowIndex: number): string {
   if (item.status === "queued") {
     return `${accessibleTarget}を待機キューから削除`;
   }
-  if (item.status === "error" || item.status === "blocked") {
+  if (item.status === "error" || item.status === "blocked" || item.status === "skipped") {
     return `${accessibleTarget}を履歴から削除`;
   }
 

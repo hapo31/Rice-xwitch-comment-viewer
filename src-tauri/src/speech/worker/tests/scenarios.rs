@@ -57,6 +57,20 @@ fn invariants(queue: &SpeechQueueState) {
     );
     assert_eq!(snapshot.items.len(), items.len());
     for item in items {
+        if matches!(
+            item.status,
+            SpeechQueueItemStatus::Blocked
+                | SpeechQueueItemStatus::Skipped
+                | SpeechQueueItemStatus::Error
+        ) {
+            assert!(
+                item.outcome.is_some(),
+                "every terminal production item keeps its reason"
+            );
+        }
+        if item.status == SpeechQueueItemStatus::Spoken {
+            assert!(item.outcome.is_none());
+        }
         let event = snapshot
             .items
             .iter()
@@ -64,6 +78,7 @@ fn invariants(queue: &SpeechQueueState) {
             .unwrap();
         assert_eq!(event.status, item.status);
         assert_eq!(event.source_message_id, item.source_message_id);
+        assert_eq!(event.outcome, item.outcome);
     }
 }
 fn enqueue(h: &Harness, settings: &SpeechSettings, message: ChatMessage) -> QueueEnqueueOutcome {
@@ -305,6 +320,15 @@ async fn cancellations_and_late_outcomes_never_resurrect_items_or_strand_new_wor
                     .unwrap()
                     .status,
                 SpeechQueueItemStatus::Skipped
+            );
+            let expected = match operation {
+                "clear" => crate::speech::outcome::SkippedReason::Cleared,
+                "skip" => crate::speech::outcome::SkippedReason::UserSkip,
+                "remove" => crate::speech::outcome::SkippedReason::Removed,
+                _ => unreachable!(),
+            };
+            assert!(
+                matches!(queue.history.iter().find(|item| item.id == "old").unwrap().outcome, Some(crate::speech::outcome::SpeechQueueOutcome::Skipped { reason_code, .. }) if reason_code == expected)
             );
             assert_eq!(
                 queue
@@ -808,7 +832,7 @@ fn seeded_operation_sequences_preserve_lifecycle_invariants() {
                 if let Some(request) = queue.reserve_next_request_after_dispatch_lock() {
                     if random & 1 == 0 {
                         queue.complete_request(&request.id);
-                    } else if queue.fail_request_with_retry(&request.id, true)
+                    } else if queue.fail_request_with_retry(&request.id, &failure(true))
                         == SpeechQueueFailureTransition::RetryScheduled
                     {
                         queue.activate_scheduled_retry(&request.id);

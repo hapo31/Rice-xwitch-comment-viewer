@@ -24,7 +24,7 @@ src-tauri/
 
 `DomainProvider` は chat、queue、connection、settings、logs を独立した `useSyncExternalStore` source として保持する。各画面は `use*Selector` で必要な slice だけを購読し、Chat event は Chat store の subscriber だけを通知する。Launcher は settings の launcher selector、警告は logs store の notifications slice を使う。`App` は provider と shell の wiring のみを行い、Tauri の event 購読、認証復元、設定 mutation は `domainOrchestration` の dependency-injected boundary に集約する。
 
-旧 `AppState/appReducer` は presentation/test compatibility facade として残し、runtime の更新経路には使用しない。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。
+旧 `AppState/appReducer` は presentation/test compatibility facade として残し、runtime の更新経路には使用しない。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
 
 ## データフロー
 
@@ -169,6 +169,8 @@ Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、encoded/de
 判断根拠は Tauri v2 公式の [Content Security Policy](https://v2.tauri.app/security/csp/)、[Capabilities](https://v2.tauri.app/security/capabilities/)、[configuration schema](https://v2.tauri.app/reference/config/#securityconfig) に従う。
 
 ### backend event replay と speech state snapshot
+
+Issue #85の各queue itemは任意の`outcome`を持つ。Rust/TS共通の`kind`（blocked/skipped/error）でreasonCodeを区別し、固定の日本語message、retryable、recoveryAction、occurredAtMsを送る。Noneはfield omission（旧payload互換）であり、terminal production itemには必ず理由を付ける。auto retry待ち/送信中は直前のerror理由を保持し、手動retryと正常完了で消す。最新snapshot/reload/late subscriberはwarningの有無に依存せず同じoutcomeを復元する。時刻は遷移時のUTC wall clock（表示用）で、並び順/新旧判定は既存ID/revisionを使う。共通fixture`src/tauri/fixtures/queue-outcomes.json`で全21codeを検証する。
 
 backend は bounded な operational log ring と Twitch（auth/chat）/speech の最新 status を managed state に保持する。`app_events_snapshot` command は listener 登録後にこの状態を取得するため、起動時に先行 emit されたログ・status も late subscriber へ復元できる。各 status と speech queue event には単調増加 `revision` を付与し、`speech_queue_reload` は status と queue を同一ロック下で採取した `SpeechStateSnapshot` として返す（各componentは最後の更新revisionを保持する）。frontend は全 listener を登録してから snapshot を取得し、snapshot より新しい並行 event を古い値で上書きしない。
 

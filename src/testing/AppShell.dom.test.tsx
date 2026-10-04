@@ -8,6 +8,7 @@ import { appRoutes } from "../routes";
 import { createDomainStores, DomainProvider } from "../stores/domainStores";
 import { defaultSettings, tauriMock } from "./tauriMock";
 import type { AppSettingsPatch } from "../types";
+import outcomeFixture from "../tauri/fixtures/queue-outcomes.json";
 
 function mountApp(path = "/chat", strict = false) {
   const stores = createDomainStores();
@@ -28,6 +29,139 @@ function mountApp(path = "/chat", strict = false) {
   const view = render(strict ? <StrictMode>{content}</StrictMode> : content);
   return { stores, router, ...view };
 }
+
+it("late startup and explicit reload preserve all item reasons and expose keyboard-operated skip history", async () => {
+  let revision = 10;
+  const items = outcomeFixture.map((outcome, index) => ({
+    id: `speech-${index + 1}`,
+    sourceMessageId: `chat-${index + 1}`,
+    userDisplayName: "viewer",
+    text: "bounded text",
+    status: outcome.kind,
+    outcome,
+  }));
+  tauriMock.setCommand("speech_queue_reload", () => ({
+    revision,
+    status: { revision, status: "idle", adapterHealth: "connected", occurredAtMs: 1 },
+    queue: { revision: revision++, phase: "error", items, queuedCount: 0, occurredAtMs: 1 },
+  }));
+  const user = userEvent.setup();
+  const { stores } = mountApp("/queue");
+  await ready(stores);
+  const table = screen.getByRole("table", { name: "読み上げキュー" });
+  await waitFor(() => expect(within(table).getByText("blockedWord")).toBeInTheDocument());
+  expect(within(table).queryByText("overflow")).not.toBeInTheDocument();
+  const toggle = screen.getByRole("checkbox", { name: "スキップ履歴を表示" });
+  toggle.focus();
+  await user.keyboard("[Space]");
+  expect(toggle).toBeChecked();
+  for (const outcome of outcomeFixture) {
+    expect(within(table).getByText(outcome.reasonCode)).toBeInTheDocument();
+    expect(within(table).getByText(outcome.message)).toBeInTheDocument();
+  }
+  expect(within(table).getAllByRole("link", { name: "Filterを開く" })).toHaveLength(6);
+  expect(within(table).getAllByRole("link", { name: "Settingsの診断を開く" })).toHaveLength(12);
+  await user.click(screen.getByRole("button", { name: "キューを再読込" }));
+  await waitFor(() => expect(stores.queue.getState().revision).toBe(11));
+  expect(within(table).getByText("overflow")).toBeInTheDocument();
+  expect(stores.queue.getState().items[0].outcome).toEqual(outcomeFixture[0]);
+  const skippedRow = within(table).getByText("userSkip").closest('[role="row"]')!;
+  expect(
+    within(skippedRow as HTMLElement).getByRole("button", { name: /履歴から削除/ }),
+  ).toBeEnabled();
+  tauriMock.setCommand("speech_queue_dismiss", () => undefined);
+  await user.click(within(skippedRow as HTMLElement).getByRole("button", { name: /履歴から削除/ }));
+  await waitFor(() =>
+    expect(tauriMock.invoke).toHaveBeenCalledWith("speech_queue_dismiss", { itemId: "speech-7" }),
+  );
+});
+
+it("Chat exposes outcome and recovery in a stable-row detail pane, updates it and restores keyboard focus", async () => {
+  const original = outcomeFixture.find((outcome) => outcome.reasonCode === "writeTimeout")!;
+  const replacement = outcomeFixture.find((outcome) => outcome.reasonCode === "configuration")!;
+  const item = {
+    id: "speech-1",
+    sourceMessageId: "detail-chat",
+    userDisplayName: "Viewer",
+    text: "bounded text",
+    status: "error",
+    outcome: original,
+  };
+  tauriMock.setCommand("speech_queue_reload", () => ({
+    revision: 10,
+    status: { revision: 10, status: "idle", adapterHealth: "connected", occurredAtMs: 1 },
+    queue: { revision: 10, phase: "error", items: [item], queuedCount: 0, occurredAtMs: 1 },
+  }));
+  const user = userEvent.setup();
+  const { stores } = mountApp("/chat");
+  await ready(stores);
+  await waitFor(() => expect(stores.queue.getState().items).toHaveLength(1));
+  await act(async () =>
+    tauriMock.emit("twitch://chat-message", {
+      id: "detail-chat",
+      platform: "twitch",
+      channelId: "channel",
+      channelLogin: "streamer",
+      userId: "viewer",
+      userLogin: "viewer",
+      userDisplayName: "Viewer",
+      text: "bounded text",
+      fragments: [],
+      badges: [],
+      receivedAt: "2026-10-05T00:00:00Z",
+    }),
+  );
+  const trigger = await screen.findByRole("button", {
+    name: "Viewerの読み上げ結果の詳細、detail-chat",
+  });
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  const details = screen.getByRole("complementary", { name: "読み上げ結果の詳細" });
+  expect(details).toHaveFocus();
+  expect(details).toHaveTextContent(original.message);
+  expect(details).toHaveTextContent("speech-1");
+  expect(within(details).getByRole("link", { name: "Settingsの診断を開く" })).toHaveAttribute(
+    "href",
+    "/settings",
+  );
+  expect(within(details).getByRole("link", { name: "Queueで再試行・履歴を確認" })).toHaveAttribute(
+    "href",
+    "/queue",
+  );
+  await act(async () =>
+    tauriMock.emit("speech://queue-updated", {
+      revision: 11,
+      phase: "error",
+      items: [{ ...item, outcome: replacement }],
+      queuedCount: 0,
+      occurredAtMs: 2,
+    }),
+  );
+  expect(details).toHaveTextContent(replacement.message);
+  expect(details).not.toHaveTextContent(original.message);
+  await user.keyboard("{Escape}");
+  expect(
+    screen.queryByRole("complementary", { name: "読み上げ結果の詳細" }),
+  ).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+  expect(screen.getAllByText("bounded text")).toHaveLength(1);
+  await user.keyboard("{Enter}");
+  expect(screen.getByRole("complementary", { name: "読み上げ結果の詳細" })).toHaveFocus();
+  const { outcome: _oldOutcome, ...retryItem } = item;
+  await act(async () =>
+    tauriMock.emit("speech://queue-updated", {
+      revision: 12,
+      phase: "idle",
+      items: [{ ...retryItem, status: "queued" }],
+      queuedCount: 1,
+      occurredAtMs: 3,
+    }),
+  );
+  expect(
+    screen.queryByRole("complementary", { name: "読み上げ結果の詳細" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Chat", level: 1 })).toHaveFocus();
+});
 async function ready(stores: ReturnType<typeof createDomainStores>) {
   await waitFor(() => expect(stores.settings.getState().settings).toBeDefined());
   await waitFor(() => expect(tauriMock.listenerCount("speech://queue-updated")).toBe(1));

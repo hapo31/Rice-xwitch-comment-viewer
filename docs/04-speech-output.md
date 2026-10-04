@@ -90,6 +90,14 @@ pub struct BouyomiTalkConfig {
 
 ## 通信失敗の分類
 
+### 項目ごとの理由と復旧（Issue #85）
+
+blocked理由はrepeatSuppressed/blockedUser/blockedWord/blockedUrl/emptyAfterFormatting、skipped理由はoverflow/userSkip/removed/cleared、error理由はadapter共通の12 FailureCodeを使う。formatterも表示文字列でなくBlockedReasonを返す。理由の説明は固定日本語とし、NG一致語、ユーザー名、host/設定、token、adapterのdetailをoutcomeへ複製しない。元のチャット本文を既存のitemへ保持することと、理由へ機微な情報を追加することは区別する。
+
+自動再試行中は直前のerror outcomeを保持するが、明示再試行では古い理由を消し、次の失敗でcode/timeを更新する。正常完了では理由を消す。受付後の未確認と送信到達不明はretryable=false/recoveryAction=confirmDeliveryを記録し、重複の可能性を利用者へ示す。retryableは失敗分類上の安全な再試行可否であり、残りbudgetを表さない。terminal errorをhealth復旧だけで再送しない。
+
+queue/snapshotの履歴上限200件、pending+in-flight上限200件は維持する。取消後の遅延成功/失敗は理由も上書きしない。理由に関するwarning/logは`[itemId]`を付け、項目詳細から対応するログを識別できる。全理由の共通Rust/TS fixture、formatter/連投、4取消理由、再試行/未確認、reload/latest snapshot、200件上限、本番fake-workerと既存6,144操作列で検証する。
+
 ### 接続healthとqueue phaseの独立性
 
 `SpeechAdapterHealth`（unknown/connected/disconnected/error）と`SpeechQueuePhase`（idle/speaking/paused/error）は別々に保存し、それぞれのrevision付きevent/snapshotから復元する。queue活動の通知は最後のhealthを保持し、Idle/Speaking/Pausedを接続確認と解釈しない。無音probe・接続確認の成功はhealthだけを更新し、pausedや失敗項目の手動再試行待ちを解除しない。

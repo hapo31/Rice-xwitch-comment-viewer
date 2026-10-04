@@ -1,5 +1,9 @@
 # 実装 TODO
 
+- [ ] Issue #85: blocked/skipped/errorの型付き理由・安全な日本語説明・復旧操作・発生時刻を項目へ保持し、snapshot/reload/late subscriberとChatへ伝える。Queue/Chatの詳細導線、item ID付きwarning/log、履歴上限と機微情報非複製を契約/DOM/fake-workerで検証する。
+
+2026-10-05: Issue #85で全21codeのkind別outcomeを導入し、formatter/連投/overflow/skip/remove/clear/adapter failureへ付与した。自動retry中は直前理由を保持し、manual retry/正常完了で消す。safe日本語へNG一致語/adapter detailをコピーせず、warning/logにitem IDを付ける。Chatの同status理由更新・非modal詳細paneとfocus、Queueのskip履歴toggle/削除・復旧routeを追加した。共通fixture、最新snapshot/reload/late subscriber、200件上限、取消/遅延結果9順序と6,144操作列を含むRust all-features219件/no-default168件、frontend279件、strict clippy/fmt、format/lint/typecheck/build/security/licenseとquality policy3件が成功。Windows/Linux継続CIの結果確認までは未完了とする。
+
 - [x] Issue #66: 多重起動禁止を正式方針とし、2回目起動で既存main windowを復元/focusする。設定のprocess-lifetime writer lockを読込前に取得し、全saveを同じ所有権で保護する。2 processの競合と終了後の解放を自動検証する。
 
 2026-10-05: Issue #66でsingle-instance pluginを最初に登録し、setup前のactivationを保留してshow/unminimize/focusする。固定lockを設定読込/初期化/復旧の前に取得してprocess lifetimeで保持し、全保存経路で所有権を確認する。別OS processによる競合、正常終了/kill後の解放、別section更新の保持、保存先/permission/link拒否を追加した。Rust all-features210件/no-default159件、strict clippy/fmt、frontend238件、format/lint/typecheck/build/security/license検査が成功。Windows native CI [37233983947](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37233983947)で本番builder/pluginを使った実HWND復元/foreground一致、2回目の正常終了、設定非変更、owner正常終了と隔離WebView storage削除をすべて確認した。Windows headless writer/permissionと9 quality jobsも成功。Windows配布物全般のsmokeは#91と区別する。更新後の依存監査はRust既知例外2件だけで追加指摘なし；npm braces High1件によるrelease blockは維持する。

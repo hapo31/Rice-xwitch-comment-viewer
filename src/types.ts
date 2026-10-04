@@ -15,6 +15,45 @@ export type SpeechStatus = "idle" | "speaking" | "paused" | "disconnected" | "er
 export type ChatDisplayState = "queued" | "spoken" | "skipped" | "blocked" | "error";
 export type QueueDisplayState = ChatDisplayState | "speaking";
 
+export const speechOutcomeReasonCodes = {
+  blocked: ["repeatSuppressed", "blockedUser", "blockedWord", "blockedUrl", "emptyAfterFormatting"],
+  skipped: ["overflow", "userSkip", "removed", "cleared"],
+  error: [
+    "configuration",
+    "connectionRefused",
+    "connectTimeout",
+    "connectFailed",
+    "connectionLost",
+    "permissionDenied",
+    "writeTimeout",
+    "writeFailed",
+    "responseTimeout",
+    "responseFailed",
+    "protocolMismatch",
+    "unknown",
+  ],
+} as const;
+export const speechRecoveryActions = [
+  "reviewFilters",
+  "reviewQueue",
+  "diagnoseSpeech",
+  "confirmDelivery",
+  "none",
+] as const;
+export type SpeechRecoveryAction = (typeof speechRecoveryActions)[number];
+type SpeechOutcomeDetails = {
+  message: string;
+  retryable: boolean;
+  recoveryAction: SpeechRecoveryAction;
+  occurredAtMs: number;
+};
+export type SpeechQueueOutcome = SpeechOutcomeDetails &
+  (
+    | { kind: "blocked"; reasonCode: (typeof speechOutcomeReasonCodes.blocked)[number] }
+    | { kind: "skipped"; reasonCode: (typeof speechOutcomeReasonCodes.skipped)[number] }
+    | { kind: "error"; reasonCode: (typeof speechOutcomeReasonCodes.error)[number] }
+  );
+
 export interface AppSettingsPatch {
   twitch?: Partial<AppSettings["twitch"]>;
   speech?: Partial<AppSettings["speech"]>;
@@ -99,6 +138,8 @@ export interface UserChatMessage {
   userDisplayName: string;
   text: string;
   status: ChatDisplayState;
+  speechOutcome?: SpeechQueueOutcome;
+  speechQueueItemId?: string;
   platform?: "twitch";
   channelId?: string;
   channelLogin?: string;
@@ -164,6 +205,7 @@ export interface QueueItem {
   userDisplayName: string;
   text: string;
   status: QueueDisplayState;
+  outcome?: SpeechQueueOutcome;
 }
 
 export interface BouyomiConnectionDiagnostics {

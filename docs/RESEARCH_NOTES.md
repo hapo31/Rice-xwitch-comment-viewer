@@ -1,5 +1,11 @@
 # 調査メモ
 
+## 2026-10-05 Issue #85: 項目に保持する読み上げ結果
+
+- 一時warningだけへ保存していたformatter/連投理由をBlockedReasonへ、取消を4つのSkippedReasonへ、worker失敗を既存FailureCodeへ統一した。outcomeはkindで判別する共通契約とし、安全な固定日本語、retryable/recoveryAction、遷移時刻をbounded item/historyへ持たせる。adapter detailやNG一致語を理由へコピーせず、warning/logへitem IDを付ける。
+- auto retry中は直前の失敗を保持し、manual retry/正常完了で消す。取消後に到着する結果は理由も変更しない。occurredAtMsはUTC wall clockの説明用値で、既存のmonotonic revision/IDによる順序を変更しない。
+- Queueは既定のskip非表示を維持しつつ履歴toggleを追加する。Chatは状態buttonから非modal下部詳細paneを開き、既存の行高さを保つ。復旧routeはfrontendに留め、keyboard opening/Escape/return focus、同status理由更新、理由消失時のfocus、snapshot/reload/late subscriptionをDOMとbridge/storeで検証する。
+
 ## 2026-10-05 Issue #66: 多重起動禁止と設定writer所有権
 
 - ownerの[多重起動禁止の判断](https://github.com/hapo31/Rice-xwitch-comment-viewer/issues/66#issuecomment-5154957888)に従う。CASや複数profile機能は追加しない。[Tauri公式single-instance手順](https://v2.tauri.app/plugin/single-instance/)に従い最初のpluginとして登録する。公式plugin 2.5.2のmanifestでMSRV 1.90 / Apache-2.0 OR MITを確認し、既存固定compilerに合わせて版を固定した。新規Linux zbus系を含む10依存も許可済みpermissive licenseを確認した。

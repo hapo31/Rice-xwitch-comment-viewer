@@ -2,13 +2,14 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { KeyRound } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { SpeechOutcomeDetails } from "../../components/SpeechOutcomeDetails";
 import { ChatLiveAnnouncementController } from "../../presentation/chatLiveAnnouncements";
 import { getChatMessagePresentation, getChatStatusPresentation } from "../../presentation/chat";
 import { getStartupGuideMessages, type StartupGuideMessage } from "../../presentation/startupGuide";
 import { routeHeadingId } from "../../routeAccessibility";
 import type { AppState } from "../../stores/appStore";
 import { formatLocalChatTime, utcNow } from "../../time";
-import type { ChatMessage } from "../../types";
+import type { ChatMessage, UserChatMessage } from "../../types";
 import { ChatBadges } from "./ChatBadges";
 import { CHAT_GRID_TEMPLATE } from "./chatLayout";
 import { getPrependedMessageCount } from "./scrollAnchor";
@@ -37,6 +38,27 @@ export function ChatView({
   const liveAnnouncementTimer = useRef<number>();
   const [liveAnnouncement, setLiveAnnouncement] = useState("");
   const [unseenMessageCount, setUnseenMessageCount] = useState(0);
+  const [selectedMessageId, setSelectedMessageId] = useState<string>();
+  const detailsRef = useRef<HTMLElement | null>(null);
+  const detailsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const selectedMessage = state.chatMessages.find(
+    (message): message is UserChatMessage =>
+      message.kind === "user" && message.id === selectedMessageId,
+  );
+  useEffect(() => {
+    detailsRef.current?.focus();
+  }, [selectedMessageId]);
+  useEffect(() => {
+    if (selectedMessageId && !selectedMessage?.speechOutcome) {
+      setSelectedMessageId(undefined);
+      document.getElementById(routeHeadingId)?.focus();
+    }
+  }, [selectedMessageId, selectedMessage?.speechOutcome]);
+  const closeDetails = () => {
+    setSelectedMessageId(undefined);
+    if (detailsTriggerRef.current?.isConnected) detailsTriggerRef.current.focus();
+    else document.getElementById(routeHeadingId)?.focus();
+  };
   const liveChatAnnouncementsEnabled = state.settings?.twitch.liveChatAnnouncements ?? true;
   if (!liveAnnouncementController.current) {
     liveAnnouncementController.current = new ChatLiveAnnouncementController();
@@ -181,8 +203,8 @@ export function ChatView({
           : "bg-zinc-600";
 
   return (
-    <main className="col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
-      <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
+    <main className="col-start-3 row-start-2 flex min-w-0 flex-col overflow-hidden bg-zinc-950">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
         <div className="min-w-0">
           <h1
             id={routeHeadingId}
@@ -216,7 +238,7 @@ export function ChatView({
         aria-live="off"
         aria-relevant="additions text"
         onScroll={handleScroll}
-        className="relative h-[calc(100%-3rem)] overflow-x-hidden overflow-y-auto"
+        className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
       >
         {unseenMessageCount > 0 && (
           <button
@@ -274,13 +296,48 @@ export function ChatView({
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
-                  <ChatRow message={message} rowIndex={virtualRow.index + 2} />
+                  <ChatRow
+                    message={message}
+                    rowIndex={virtualRow.index + 2}
+                    onShowOutcome={(id, trigger) => {
+                      detailsTriggerRef.current = trigger;
+                      setSelectedMessageId(id);
+                    }}
+                  />
                 </div>
               );
             })}
           </div>
         </div>
       </section>
+      {selectedMessage?.speechOutcome && (
+        <aside
+          ref={detailsRef}
+          tabIndex={-1}
+          aria-label="読み上げ結果の詳細"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              closeDetails();
+            }
+          }}
+          className="max-h-52 shrink-0 overflow-auto border-t border-zinc-700 bg-zinc-900 px-4 py-3"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm text-zinc-100">
+              読み上げ結果の詳細 — {selectedMessage.userDisplayName}
+            </h2>
+            <button type="button" onClick={closeDetails} className="text-xs text-zinc-400">
+              詳細を閉じる
+            </button>
+          </div>
+          <SpeechOutcomeDetails
+            outcome={selectedMessage.speechOutcome}
+            itemId={selectedMessage.speechQueueItemId}
+            showQueueLink
+          />
+        </aside>
+      )}
     </main>
   );
 }
@@ -288,9 +345,11 @@ export function ChatView({
 export function ChatRow({
   message,
   rowIndex,
+  onShowOutcome,
 }: {
   message: ChatMessage | StartupGuideMessage;
   rowIndex?: number;
+  onShowOutcome?: (messageId: string, trigger: HTMLButtonElement) => void;
 }) {
   const presentation = getChatMessagePresentation(message);
   const time = formatLocalChatTime(message.receivedAt);
@@ -312,7 +371,9 @@ export function ChatRow({
       >
         <ChatBadges badges={"badges" in message ? message.badges : undefined} />
         <span className="truncate">{message.userDisplayName}</span>
-        {message.kind === "user" && <ChatReadStatus status={message.status} />}
+        {message.kind === "user" && (
+          <ChatReadStatus message={message} onShowOutcome={onShowOutcome} />
+        )}
       </span>
       <span role="cell" aria-colindex={3} className={`line-clamp-2 ${presentation.textClassName}`}>
         {"action" in message && message.action === "login" && (
@@ -331,14 +392,36 @@ export function ChatRow({
   );
 }
 
-function ChatReadStatus({ status }: { status: Extract<ChatMessage, { kind: "user" }>["status"] }) {
-  const presentation = getChatStatusPresentation(status);
+function ChatReadStatus({
+  message,
+  onShowOutcome,
+}: {
+  message: UserChatMessage;
+  onShowOutcome?: (id: string, trigger: HTMLButtonElement) => void;
+}) {
+  const presentation = getChatStatusPresentation(message.status);
   const Icon = presentation.icon;
 
-  return (
-    <span className={`inline-flex shrink-0 items-center gap-1 text-xs ${presentation.className}`}>
+  const contents = (
+    <>
       <Icon aria-hidden="true" className="h-3.5 w-3.5" />
       <span>{presentation.label}</span>
+    </>
+  );
+  if (message.speechOutcome && onShowOutcome)
+    return (
+      <button
+        type="button"
+        aria-label={`${message.userDisplayName}の読み上げ結果の詳細、${message.id}`}
+        onClick={(event) => onShowOutcome(message.id, event.currentTarget)}
+        className={`inline-flex shrink-0 items-center gap-1 text-xs underline ${presentation.className}`}
+      >
+        {contents}
+      </button>
+    );
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1 text-xs ${presentation.className}`}>
+      {contents}
     </span>
   );
 }

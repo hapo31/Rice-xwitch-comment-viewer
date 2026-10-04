@@ -192,6 +192,7 @@ fn queued(id: &str) -> SpeechQueueItem {
         status: SpeechQueueItemStatus::Queued,
         retry_count: 0,
         delivery_state: SpeechQueueDeliveryState::Ready,
+        outcome: None,
     }
 }
 fn harness(ids: &[&str], submissions: Vec<Submission>, completions: Vec<Completion>) -> Harness {
@@ -235,6 +236,85 @@ fn failure(retryable: bool) -> SpeechFailure {
         user_message: "fake adapter未接続".to_string(),
         detail: "fake transport".to_string(),
     }
+}
+
+#[tokio::test]
+async fn production_worker_keeps_typed_retry_outcome_and_correlates_warning_and_log() {
+    use crate::speech::outcome::SpeechQueueOutcome;
+    let mut first = failure(true);
+    first.code = FailureCode::ConnectTimeout;
+    let mut last = failure(true);
+    last.code = FailureCode::ConnectionRefused;
+    let h = harness(
+        &["failed-item"],
+        vec![Submission::Fail(first), Submission::Fail(last)],
+        vec![],
+    );
+    h.worker.run().await;
+    let snapshots = h.events.snapshots.lock().unwrap();
+    let final_item = &snapshots.last().unwrap().items[0];
+    assert!(matches!(
+        final_item.outcome,
+        Some(SpeechQueueOutcome::Error {
+            reason_code: FailureCode::ConnectionRefused,
+            ..
+        })
+    ));
+    let warnings = snapshots
+        .iter()
+        .filter_map(|event| event.warning.as_ref())
+        .collect::<Vec<_>>();
+    assert_eq!(warnings.len(), 2);
+    assert!(warnings
+        .iter()
+        .all(|message| message.contains("[failed-item]")));
+    assert!(h
+        .events
+        .logs
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|message| message.contains("[failed-item]")));
+    assert!(snapshots.iter().any(|event| event
+        .items
+        .iter()
+        .any(|item| item.status == SpeechQueueItemStatus::Queued && item.outcome.is_some())));
+}
+
+#[tokio::test]
+async fn production_worker_preserves_uncertain_completion_without_resending() {
+    use crate::speech::outcome::{RecoveryAction, SpeechQueueOutcome};
+    let mut response = failure(false);
+    response.code = FailureCode::ResponseTimeout;
+    let h = harness(
+        &["accepted-item"],
+        vec![],
+        vec![Completion::Unconfirmed(response)],
+    );
+    h.worker.run().await;
+    assert_eq!(
+        *h.adapter.calls.lock().unwrap(),
+        ["talk:accepted-item", "completion"]
+    );
+    let queue = h.worker.queue.lock().unwrap();
+    match queue.history.front().unwrap().outcome.as_ref().unwrap() {
+        SpeechQueueOutcome::Error {
+            reason_code,
+            details,
+        } => {
+            assert_eq!(*reason_code, FailureCode::ResponseTimeout);
+            assert_eq!(details.recovery_action, RecoveryAction::ConfirmDelivery);
+            assert!(!details.retryable);
+        }
+        _ => panic!("error outcome"),
+    }
+    assert!(h
+        .events
+        .logs
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|message| message.contains("[accepted-item]")));
 }
 
 #[tokio::test]

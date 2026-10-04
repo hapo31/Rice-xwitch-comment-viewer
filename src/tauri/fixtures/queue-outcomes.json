@@ -1,0 +1,23 @@
+[
+  {"kind":"blocked","reasonCode":"repeatSuppressed","message":"同じユーザーの連投を抑制しました。","retryable":false,"recoveryAction":"reviewFilters","occurredAtMs":1790000000000},
+  {"kind":"blocked","reasonCode":"blockedUser","message":"NG ユーザーに一致しました。","retryable":false,"recoveryAction":"reviewFilters","occurredAtMs":1790000000000},
+  {"kind":"blocked","reasonCode":"blockedWord","message":"NG ワードを含むため読み上げません。","retryable":false,"recoveryAction":"reviewFilters","occurredAtMs":1790000000000},
+  {"kind":"blocked","reasonCode":"blockedUrl","message":"URL を含むため読み上げません。","retryable":false,"recoveryAction":"reviewFilters","occurredAtMs":1790000000000},
+  {"kind":"blocked","reasonCode":"emptyAfterFormatting","message":"読み上げる本文がありません。","retryable":false,"recoveryAction":"reviewFilters","occurredAtMs":1790000000000},
+  {"kind":"skipped","reasonCode":"overflow","message":"キュー上限に達したため、古い未読チャットを落としました。","retryable":false,"recoveryAction":"reviewQueue","occurredAtMs":1790000000000},
+  {"kind":"skipped","reasonCode":"userSkip","message":"利用者がスキップしました。","retryable":false,"recoveryAction":"none","occurredAtMs":1790000000000},
+  {"kind":"skipped","reasonCode":"removed","message":"利用者が個別に削除しました。","retryable":false,"recoveryAction":"none","occurredAtMs":1790000000000},
+  {"kind":"skipped","reasonCode":"cleared","message":"利用者がキューをクリアしました。","retryable":false,"recoveryAction":"none","occurredAtMs":1790000000000},
+  {"kind":"error","reasonCode":"configuration","message":"読み上げ先の接続設定が無効です。","retryable":false,"recoveryAction":"diagnoseSpeech","occurredAtMs":1790000000000},
+  {"kind":"error","reasonCode":"connectionRefused","message":"読み上げ先に接続できません。起動とTCP受付を確認してください。","retryable":true,"recoveryAction":"diagnoseSpeech","occurredAtMs":1790000000000},
+  {"kind":"error","reasonCode":"connectTimeout","message":"読み上げ先への接続がタイムアウトしました。","retryable":true,"recoveryAction":"diagnoseSpeech","occurredAtMs":1790000000000},
+  {"kind":"error","reasonCode":"connectFailed","message":"読み上げ先への接続に失敗しました。","retryable":true,"recoveryAction":"diagnoseSpeech","occurredAtMs":1790000000000},
+  {"kind":"error","reasonCode":"connectionLost","message":"読み上げ先との接続が切断されました。 届いた可能性があるため、自動再送していません。","retryable":false,"recoveryAction":"confirmDelivery","occurredAtMs":1790000000000},
+  {"kind":"error","reasonCode":"permissionDenied","message":"読み上げ先との通信が許可されていません。","retryable":false,"recoveryAction":"diagnoseSpeech","occurredAtMs":1790000000000},
+  {"kind":"error","reasonCode":"writeTimeout","message":"読み上げ先への送信がタイムアウトしました。 届いた可能性があるため、自動再送していません。","retryable":false,"recoveryAction":"confirmDelivery","occurredAtMs":1790000000000},
+  {"kind":"error","reasonCode":"writeFailed","message":"読み上げ先への送信に失敗しました。 届いた可能性があるため、自動再送していません。","retryable":false,"recoveryAction":"confirmDelivery","occurredAtMs":1790000000000},
+  {"kind":"error","reasonCode":"responseTimeout","message":"読み上げ先の状態応答がタイムアウトしました。 届いた可能性があるため、自動再送していません。","retryable":false,"recoveryAction":"confirmDelivery","occurredAtMs":1790000000000},
+  {"kind":"error","reasonCode":"responseFailed","message":"読み上げ先の状態応答を受信できません。 届いた可能性があるため、自動再送していません。","retryable":false,"recoveryAction":"confirmDelivery","occurredAtMs":1790000000000},
+  {"kind":"error","reasonCode":"protocolMismatch","message":"読み上げ先と互換性のない状態応答です。 届いた可能性があるため、自動再送していません。","retryable":false,"recoveryAction":"confirmDelivery","occurredAtMs":1790000000000},
+  {"kind":"error","reasonCode":"unknown","message":"読み上げ連携で予期しないエラーが発生しました。 届いた可能性があるため、自動再送していません。","retryable":false,"recoveryAction":"confirmDelivery","occurredAtMs":1790000000000}
+]

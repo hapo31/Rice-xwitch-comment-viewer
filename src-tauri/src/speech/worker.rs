@@ -122,7 +122,7 @@ impl SpeechQueueWorker {
                     self.events.snapshot(&queue, None);
                 }
                 Ok(SpeechPlaybackCompletion::Unconfirmed(failure)) => {
-                    let message = failure.user_message.clone();
+                    let message = format!("[{}] {}", request.id, failure.user_message);
                     let mut queue = match self.queue.lock() {
                         Ok(queue) => queue,
                         Err(error) => {
@@ -130,16 +130,18 @@ impl SpeechQueueWorker {
                             return;
                         }
                     };
-                    if queue.fail_after_acceptance(&request.id) {
+                    if queue.fail_after_acceptance(&request.id, &failure) {
                         self.events
                             .health(failure.adapter_health(), Some(message.clone()));
-                        self.events.log(AppLogLevel::Error, failure.log_message());
+                        self.events.log(
+                            AppLogLevel::Error,
+                            format!("[{}] {}", request.id, failure.log_message()),
+                        );
                         self.events.snapshot(&queue, Some(message));
                     } else {
                         self.events.log(
                             AppLogLevel::Warning,
-                            "取消済みの読み上げは読み上げ先側の完了を確認できませんでした。"
-                                .to_string(),
+                            format!("[{}] 取消済みの読み上げは読み上げ先側の完了を確認できませんでした。", request.id),
                         );
                     }
                 }
@@ -154,12 +156,13 @@ impl SpeechQueueWorker {
                                 return;
                             }
                         };
-                        transition = queue.fail_request_with_retry(&request.id, failure.retryable);
+                        transition = queue.fail_request_with_retry(&request.id, &failure);
                         if transition == SpeechQueueFailureTransition::Ignored {
                             self.events.log(
                                 AppLogLevel::Warning,
                                 format!(
-                                    "取消済みの読み上げ送信が失敗しました: {}",
+                                    "[{}] 取消済みの読み上げ送信が失敗しました: {}",
+                                    request.id,
                                     failure.log_message()
                                 ),
                             );
@@ -177,6 +180,7 @@ impl SpeechQueueWorker {
                             }
                             SpeechQueueFailureTransition::Ignored => error_message.clone(),
                         };
+                        let queue_message = format!("[{}] {queue_message}", request.id);
                         self.events
                             .health(failure.adapter_health(), Some(queue_message.clone()));
                         self.events.log(

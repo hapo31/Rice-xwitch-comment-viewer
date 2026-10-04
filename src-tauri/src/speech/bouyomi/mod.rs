@@ -563,6 +563,7 @@ mod tests {
             status: SpeechQueueItemStatus::Queued,
             retry_count: 0,
             delivery_state: SpeechQueueDeliveryState::Ready,
+            outcome: None,
         }
     }
 

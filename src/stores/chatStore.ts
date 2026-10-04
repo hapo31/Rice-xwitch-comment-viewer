@@ -1,4 +1,4 @@
-import type { ChatMessage, QueueItem } from "../types";
+import type { ChatMessage, QueueItem, SpeechQueueOutcome, UserChatMessage } from "../types";
 import { createExternalStore, type ExternalStore } from "./store";
 
 export interface ChatState {
@@ -39,30 +39,61 @@ export function syncChatMessageStatuses(
   messages: ChatMessage[],
   queueItems: QueueItem[],
 ): ChatMessage[] {
-  const statusByMessageId = queueStatusByMessageId(queueItems);
+  const itemByMessageId = queueItemByMessageId(queueItems);
   let changed = false;
   const updatedMessages = messages.map((message) => {
     if (message.kind !== "user") return message;
-    const status = statusByMessageId.get(message.id);
-    if (!status || status === message.status) return message;
-    changed = true;
-    return { ...message, status };
+    const item = itemByMessageId.get(message.id);
+    const updated = item ? applyQueueItem(message, item) : message;
+    if (updated !== message) changed = true;
+    return updated;
   });
   return changed ? updatedMessages : messages;
 }
 
 export function syncChatMessageStatus(message: ChatMessage, queueItems: QueueItem[]): ChatMessage {
   if (message.kind !== "user") return message;
-  const status = queueStatusByMessageId(queueItems).get(message.id);
-  return status && status !== message.status ? { ...message, status } : message;
+  const item = queueItemByMessageId(queueItems).get(message.id);
+  return item ? applyQueueItem(message, item) : message;
 }
 
-function queueStatusByMessageId(queueItems: QueueItem[]) {
+function sameOutcome(left?: SpeechQueueOutcome, right?: SpeechQueueOutcome): boolean {
+  return (
+    left === right ||
+    Boolean(
+      left &&
+        right &&
+        left.kind === right.kind &&
+        left.reasonCode === right.reasonCode &&
+        left.message === right.message &&
+        left.retryable === right.retryable &&
+        left.recoveryAction === right.recoveryAction &&
+        left.occurredAtMs === right.occurredAtMs,
+    )
+  );
+}
+
+function applyQueueItem(message: UserChatMessage, item: QueueItem): UserChatMessage {
+  const status = item.status === "speaking" ? "queued" : item.status;
+  const itemId = item.outcome ? item.id : undefined;
+  if (
+    status === message.status &&
+    sameOutcome(message.speechOutcome, item.outcome) &&
+    message.speechQueueItemId === itemId
+  )
+    return message;
+  const { speechOutcome: _previous, speechQueueItemId: _previousId, ...rest } = message;
+  return {
+    ...rest,
+    status,
+    ...(item.outcome ? { speechOutcome: item.outcome, speechQueueItemId: item.id } : {}),
+  };
+}
+
+function queueItemByMessageId(queueItems: QueueItem[]) {
   return new Map(
     queueItems.flatMap((item) =>
-      item.sourceMessageId
-        ? [[item.sourceMessageId, item.status === "speaking" ? "queued" : item.status] as const]
-        : [],
+      item.sourceMessageId ? [[item.sourceMessageId, item] as const] : [],
     ),
   );
 }
