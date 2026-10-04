@@ -7,6 +7,7 @@ import type {
   AuthStatus,
   AppNotification,
   AppSettings,
+  AppSettingsPatch,
   ChatMessage,
   SpeechQueueUpdatedEvent,
   SpeechStatusEvent,
@@ -300,13 +301,7 @@ export function restoreStartupAuth(dependencies: StartupAuthDependencies) {
 }
 
 export interface SettingsMutationDependencies {
-  updateSettings: (
-    patch: Partial<{
-      twitch: Partial<AppSettings["twitch"]>;
-      speech: Partial<AppSettings["speech"]>;
-      launcher: Partial<AppSettings["launcher"]>;
-    }>,
-  ) => Promise<AppSettings>;
+  updateSettings: (patch: AppSettingsPatch) => Promise<AppSettings>;
   onSettingsLoaded: (settings: AppSettings) => void;
   onError: (error: unknown) => void;
 }

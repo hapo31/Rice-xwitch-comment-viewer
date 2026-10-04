@@ -111,7 +111,12 @@ export async function getAppBuildInfo(): Promise<AppBuildInfo | undefined> {
 }
 
 function normalizeSettings(
-  settings: Partial<AppSettings> | AppSettingsPatch | undefined,
+  settings:
+    | (Omit<AppSettingsPatch, "launcher"> & {
+        launcher?: Partial<AppSettings["launcher"]>;
+        window?: AppSettings["window"];
+      })
+    | undefined,
 ): AppSettings {
   return {
     ...fallbackSettings,
@@ -163,7 +168,15 @@ export async function takeSettingsRecoveryNotice(): Promise<SettingsRecoveryNoti
 
 export async function updateSettings(patch: AppSettingsPatch): Promise<AppSettings> {
   if (!isTauriRuntime) {
-    return normalizeSettings(patch);
+    const items = patch.launcher?.items?.map((edit) => {
+      const item = fallbackSettings.launcher.items.find((item) => item.id === edit.id);
+      if (!item) throw new Error("登録済みのアプリだけを編集できます。");
+      return { ...item, ...edit };
+    });
+    return normalizeSettings({
+      ...patch,
+      launcher: { items: items ?? fallbackSettings.launcher.items },
+    });
   }
 
   return normalizeSettings(

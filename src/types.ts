@@ -57,7 +57,7 @@ export type SpeechQueueOutcome = SpeechOutcomeDetails &
 export interface AppSettingsPatch {
   twitch?: Partial<AppSettings["twitch"]>;
   speech?: Partial<AppSettings["speech"]>;
-  launcher?: Partial<AppSettings["launcher"]>;
+  launcher?: { items?: LauncherItemEdit[] };
 }
 
 export interface AppSettings {
@@ -102,6 +102,12 @@ export interface SettingsRecoveryNotice {
 export interface LauncherSettings {
   items: LauncherItem[];
 }
+
+/** Only metadata of existing items is editable; registration is backend-owned. */
+export type LauncherItemEdit = Pick<
+  LauncherItem,
+  "id" | "displayName" | "backgroundColor" | "groupId" | "order"
+>;
 
 /**
  * `website` is reserved for the planned URL launcher support. The backend

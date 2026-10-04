@@ -43,3 +43,31 @@ it("browser preview cannot register or launch and needs no native calls", async 
   });
   expect(invoke).not.toHaveBeenCalled();
 });
+
+it("sends only editable metadata through the settings patch contract", async () => {
+  vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+  const { updateSettings } = await import("./client");
+  const edit = {
+    id: "existing",
+    displayName: "名前",
+    backgroundColor: "#aabbcc",
+    groupId: "配信",
+    order: 2,
+  };
+  invoke.mockResolvedValue({ launcher: { items: [] } });
+  await updateSettings({ launcher: { items: [edit] } });
+  expect(invoke).toHaveBeenCalledWith("settings_update", {
+    patch: { launcher: { items: [edit] } },
+  });
+  expect(invoke.mock.calls[0][1].patch.launcher.items[0]).not.toHaveProperty("target");
+  expect(invoke.mock.calls[0][1].patch.launcher.items[0]).not.toHaveProperty("iconDataUrl");
+});
+
+it("browser preview does not synthesize a canonical model from a new metadata ID", async () => {
+  vi.stubGlobal("window", {});
+  const { updateSettings } = await import("./client");
+  await expect(
+    updateSettings({ launcher: { items: [{ id: "new-id", displayName: "new", order: 0 }] } }),
+  ).rejects.toThrow("登録済み");
+  expect(invoke).not.toHaveBeenCalled();
+});

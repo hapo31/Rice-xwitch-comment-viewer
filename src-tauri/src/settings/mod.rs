@@ -1,6 +1,11 @@
 #[cfg(feature = "app")]
 use crate::app_events::{emit_app_log, AppLogLevel};
-use crate::launcher::{normalize_launcher_items, LauncherSettings, LauncherSettingsPatch};
+use crate::launcher::{
+    apply_launcher_edits, validate_launcher_resources, LauncherSettings, LauncherSettingsPatch,
+};
+use crate::resource_limits::{
+    check_bytes, read_bounded, serialize_bounded, SizeLimitExceeded, MAX_SETTINGS_JSON_BYTES,
+};
 use crate::speech::SpeechQueueState;
 use crate::twitch::TwitchAuthState;
 #[cfg(feature = "app")]
@@ -273,10 +278,34 @@ fn validate_repeat_suppression_seconds(seconds: u16) -> Result<(), String> {
 }
 
 fn deserialize_settings(text: &str) -> Result<AppSettings, String> {
+    check_bytes(text.len(), MAX_SETTINGS_JSON_BYTES, "設定JSON")
+        .map_err(|error| error.to_string())?;
     let settings: AppSettings =
         serde_json::from_str(text).map_err(|_| "設定JSONを読み取れません。".to_string())?;
     validate_repeat_suppression_seconds(settings.speech.repeat_suppression_seconds)?;
+    crate::launcher::validate_launcher_structure(&settings.launcher.items)?;
     Ok(settings)
+}
+
+/// Inspect the framework-owned JSON tree before cloning any application DTO.
+fn parse_settings_request(value: &serde_json::Value) -> Result<SettingsPatch, String> {
+    crate::resource_limits::validate_json_request(value, MAX_SETTINGS_JSON_BYTES)?;
+    let patch = value
+        .get("patch")
+        .ok_or_else(|| "更新する設定を指定してください。".to_string())?;
+    crate::launcher::preflight_launcher_patch(patch)?;
+    serde_json::from_value(patch.clone()).map_err(|_| "設定の項目または型が無効です。登録先・ID・アイコンは変更できません。入力内容を見直してください。".into())
+}
+
+fn read_settings_text(path: &Path) -> anyhow::Result<Result<String, String>> {
+    match read_bounded(path, MAX_SETTINGS_JSON_BYTES) {
+        Ok(text) => Ok(Ok(text)),
+        Err(error) if error.downcast_ref::<SizeLimitExceeded>().is_some() => {
+            Ok(Err(error.to_string()))
+        }
+        // IO/permission failures are not evidence of corrupt content. Fail closed.
+        Err(error) => Err(error),
+    }
 }
 
 impl SettingsStore {
@@ -299,8 +328,8 @@ impl SettingsStore {
             });
         }
 
-        let text = fs::read_to_string(path)?;
-        match deserialize_settings(&text) {
+        let loaded = read_settings_text(path)?.and_then(|text| deserialize_settings(&text));
+        match loaded {
             Ok(settings) => Ok(LoadedSettings {
                 settings,
                 recovery_notice: None,
@@ -328,18 +357,21 @@ impl SettingsStore {
         settings: &AppSettings,
         fault: SaveFault,
     ) -> anyhow::Result<()> {
-        let text = serde_json::to_string_pretty(settings)?;
-        Self::save_text_to_path(path, &text, fault)
+        validate_launcher_resources(&settings.launcher.items).map_err(anyhow::Error::msg)?;
+        let bytes = serialize_bounded(settings, MAX_SETTINGS_JSON_BYTES, "設定JSON")?;
+        let text = std::str::from_utf8(&bytes)?;
+        Self::save_text_to_path(path, text, fault)
     }
 
     fn save_text_to_path(path: &Path, text: &str, fault: SaveFault) -> anyhow::Result<()> {
+        check_bytes(text.len(), MAX_SETTINGS_JSON_BYTES, "設定JSON")?;
         protect_storage(path)?;
         protect_existing_file(&backup_path(path))?;
 
         let temporary_path = write_temp_file(path, text.as_bytes(), fault)?;
         let result = (|| {
             if path.exists() {
-                let previous = fs::read_to_string(path)?;
+                let previous = read_bounded(path, MAX_SETTINGS_JSON_BYTES)?;
                 deserialize_settings(&previous).map_err(|error| {
                     anyhow::anyhow!("既存の設定をバックアップできませんでした: {error}")
                 })?;
@@ -364,20 +396,21 @@ impl SettingsStore {
         let backup = backup_path(path);
 
         if backup.exists() {
-            let backup_text = fs::read_to_string(&backup)?;
-            let backup_reason = match deserialize_settings(&backup_text) {
-                Ok(settings) => {
-                    atomic_write(path, backup_text.as_bytes(), SaveFault::None)?;
-                    return Ok(LoadedSettings {
-                        settings,
-                        recovery_notice: Some(SettingsRecoveryNotice {
-                            message: format!(
-                                "設定ファイルの内容が無効（{primary_reason}）だったため、バックアップから復旧しました。退避先: {}",
-                                corrupted_primary.display()
-                            ),
-                        }),
-                    });
-                }
+            let backup_reason = match read_settings_text(&backup)? {
+                Ok(backup_text) => match deserialize_settings(&backup_text) {
+                    Ok(settings) => {
+                        atomic_write(path, backup_text.as_bytes(), SaveFault::None)?;
+                        let message = format!(
+                            "設定ファイルの内容が無効（{primary_reason}）だったため、バックアップから復旧しました。退避先: {}",
+                            corrupted_primary.display()
+                        );
+                        return Ok(LoadedSettings {
+                            settings,
+                            recovery_notice: Some(SettingsRecoveryNotice { message }),
+                        });
+                    }
+                    Err(reason) => reason,
+                },
                 Err(reason) => reason,
             };
             let corrupted_backup = quarantine_file(&backup)?;
@@ -451,6 +484,7 @@ fn quarantine_file(path: &Path) -> anyhow::Result<PathBuf> {
 }
 
 fn atomic_write(path: &Path, contents: &[u8], fault: SaveFault) -> anyhow::Result<()> {
+    check_bytes(contents.len(), MAX_SETTINGS_JSON_BYTES, "設定JSON")?;
     protect_storage(path)?;
     let temporary_path = write_temp_file(path, contents, fault)?;
     let result =
@@ -669,6 +703,7 @@ pub(crate) fn update_settings_transaction(
 ) -> Result<(), String> {
     let mut candidate = settings.clone();
     update(&mut candidate)?;
+    validate_launcher_resources(&candidate.launcher.items)?;
     save(&candidate)?;
     *settings = candidate;
     Ok(())
@@ -679,25 +714,13 @@ pub(crate) fn update_settings_transaction(
 pub fn settings_update(
     app: tauri::AppHandle<tauri::Wry>,
     state: tauri::State<'_, AppState>,
-    patch: SettingsPatch,
+    request: tauri::ipc::Request<'_>,
 ) -> Result<AppSettings, String> {
+    let patch = parse_settings_request(crate::resource_limits::request_json(&request)?)?;
     let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
     update_settings_transaction(
         &mut settings,
-        |candidate| {
-            if let Some(incoming) = patch
-                .launcher
-                .as_ref()
-                .and_then(|launcher| launcher.items.as_ref())
-            {
-                crate::launcher::validate_platform_registration_changes(
-                    &crate::launcher::LauncherCapabilities::current(),
-                    &candidate.launcher.items,
-                    incoming,
-                )?;
-            }
-            apply_patch(candidate, patch)
-        },
+        |candidate| apply_patch(candidate, patch),
         |candidate| SettingsStore::save(&app, candidate).map_err(|error| error.to_string()),
     )?;
     emit_app_log(&app, AppLogLevel::Info, "設定を保存しました。");
@@ -781,7 +804,7 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
 
     if let Some(launcher) = patch.launcher {
         if let Some(items) = launcher.items {
-            settings.launcher.items = normalize_launcher_items(items)?;
+            settings.launcher.items = apply_launcher_edits(&settings.launcher.items, items)?;
         }
     }
 
@@ -856,6 +879,173 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn maximum_launcher_roundtrip_stays_within_time_and_rust_heap_budget() {
+        const TEST: &str =
+            "settings::tests::maximum_launcher_roundtrip_stays_within_time_and_rust_heap_budget";
+        if std::env::var_os("RICE_LAUNCHER_BUDGET_CHILD").is_none() {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", TEST, "--nocapture"])
+                .env("RICE_LAUNCHER_BUDGET_CHILD", "1")
+                .status()
+                .unwrap();
+            assert!(status.success(), "isolated maximum-payload budget test");
+            return;
+        }
+        for json_bytes in [None, Some(super::MAX_SETTINGS_JSON_BYTES)] {
+            let path = settings_path_for_test("launcher-budget");
+            let mut settings = crate::launcher::bounds_tests::full_quota_settings(json_bytes);
+            SettingsStore::save_to_path(&path, &settings).unwrap();
+            let baseline = crate::resource_limits::allocation::start();
+            let start = std::time::Instant::now();
+            update_settings_transaction(
+                &mut settings,
+                |candidate| {
+                    candidate.launcher.items[0].order = 201;
+                    Ok(())
+                },
+                |candidate| {
+                    SettingsStore::save_to_path(&path, candidate).map_err(|error| error.to_string())
+                },
+            )
+            .unwrap();
+            let loaded = SettingsStore::load_from_path(&path).unwrap();
+            assert_eq!(loaded.settings.launcher.items, settings.launcher.items);
+            assert_eq!(loaded.settings.launcher.items.len(), 200);
+            let elapsed = start.elapsed();
+            let peak = crate::resource_limits::allocation::peak_delta(baseline);
+            println!("Launcher budget: items=200 icons=4194304 JSON={} elapsed_ms={} incremental_rust_heap={peak}", fs::metadata(&path).unwrap().len(), elapsed.as_millis());
+            assert!(
+                elapsed < std::time::Duration::from_secs(5),
+                "maximum transaction/backup/load budget: {elapsed:?}"
+            );
+            let budget_mib = if json_bytes.is_some() { 40 } else { 32 };
+            assert!(
+            peak <= budget_mib * 1024 * 1024,
+            "Rust-owned incremental live heap, including conservative realloc coexistence: {peak}"
+        );
+            cleanup(&path);
+        }
+    }
+
+    #[test]
+    fn bounded_request_rejects_backend_fields_new_ids_and_large_json() {
+        use super::parse_settings_request;
+        for field in ["target", "kind", "iconDataUrl"] {
+            let mut edit =
+                serde_json::json!({ "id": "existing", "displayName": "name", "order": 0 });
+            edit[field] = serde_json::json!("injected");
+            assert!(
+                parse_settings_request(
+                    &serde_json::json!({"patch": {"launcher": {"items": [edit]}}})
+                )
+                .is_err(),
+                "{field}"
+            );
+        }
+        let patch = parse_settings_request(&serde_json::json!({"patch": {"twitch": {"channelLogin": "candidate"}, "launcher": {"items": [{"id": "new", "displayName": "name", "order": 0}]}}})).unwrap();
+        let mut settings = AppSettings::default();
+        let saved = std::cell::Cell::new(false);
+        assert!(update_settings_transaction(
+            &mut settings,
+            |candidate| apply_patch(candidate, patch),
+            |_| {
+                saved.set(true);
+                Ok(())
+            }
+        )
+        .is_err());
+        assert_eq!(settings.twitch.channel_login, "");
+        assert!(!saved.get());
+        let huge = serde_json::json!({"patch": {"speech": {"blockedWords": ["x".repeat(super::MAX_SETTINGS_JSON_BYTES)]}}});
+        assert!(parse_settings_request(&huge).unwrap_err().contains("最大"));
+    }
+
+    #[test]
+    fn over_quota_and_large_serialization_leave_memory_primary_backup_and_temps_unchanged() {
+        let path = settings_path_for_test("bounded-transaction");
+        let mut settings = settings_with_channel("original");
+        SettingsStore::save_to_path(&path, &settings).unwrap();
+        SettingsStore::save_to_path(&path, &settings).unwrap();
+        let primary = fs::read(&path).unwrap();
+        let backup = fs::read(backup_path(&path)).unwrap();
+        let mut items = crate::launcher::bounds_tests::full_quota_items();
+        items[0].icon_data_url.as_mut().unwrap().push_str("AAAA");
+        for launcher_failure in [true, false] {
+            let result = update_settings_transaction(
+                &mut settings,
+                |candidate| {
+                    candidate.twitch.channel_login = "candidate".into();
+                    if launcher_failure {
+                        candidate.launcher.items = items.clone();
+                    } else {
+                        candidate.speech.blocked_words =
+                            vec!["x".repeat(super::MAX_SETTINGS_JSON_BYTES)];
+                    }
+                    Ok(())
+                },
+                |candidate| {
+                    SettingsStore::save_to_path(&path, candidate).map_err(|error| error.to_string())
+                },
+            );
+            assert!(result.is_err());
+            assert_eq!(settings.twitch.channel_login, "original");
+            assert!(settings.launcher.items.is_empty());
+            assert_eq!(fs::read(&path).unwrap(), primary);
+            assert_eq!(fs::read(backup_path(&path)).unwrap(), backup);
+            assert_eq!(path.parent().unwrap().read_dir().unwrap().count(), 2);
+        }
+        let huge = " ".repeat(super::MAX_SETTINGS_JSON_BYTES + 1);
+        assert!(SettingsStore::save_text_to_path(&path, &huge, SaveFault::None).is_err());
+        assert_eq!(fs::read(&path).unwrap(), primary);
+        assert_eq!(fs::read(backup_path(&path)).unwrap(), backup);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn oversized_primary_and_backup_are_quarantined_without_full_read() {
+        for bad_backup in [false, true] {
+            let path = settings_path_for_test("bounded-recovery");
+            let settings = settings_with_channel("valid-backup");
+            SettingsStore::save_to_path(&path, &settings).unwrap();
+            SettingsStore::save_to_path(&path, &settings).unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_len(super::MAX_SETTINGS_JSON_BYTES as u64 + 1)
+                .unwrap();
+            if bad_backup {
+                std::fs::File::options()
+                    .write(true)
+                    .open(backup_path(&path))
+                    .unwrap()
+                    .set_len(super::MAX_SETTINGS_JSON_BYTES as u64 + 1)
+                    .unwrap();
+            }
+            let loaded = SettingsStore::load_from_path(&path).unwrap();
+            assert_eq!(
+                loaded.settings.twitch.channel_login,
+                if bad_backup { "" } else { "valid-backup" }
+            );
+            assert!(loaded.recovery_notice.unwrap().message.contains("最大"));
+            let quarantined: Vec<_> = path
+                .parent()
+                .unwrap()
+                .read_dir()
+                .unwrap()
+                .map(Result::unwrap)
+                .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"))
+                .collect();
+            assert_eq!(quarantined.len(), if bad_backup { 2 } else { 1 });
+            assert!(quarantined
+                .iter()
+                .all(|entry| entry.metadata().unwrap().len()
+                    == super::MAX_SETTINGS_JSON_BYTES as u64 + 1));
+            cleanup(&path);
+        }
+    }
 
     pub(super) fn settings_path_for_test(name: &str) -> PathBuf {
         let counter = TEST_DIRECTORY_COUNTER.fetch_add(1, Ordering::Relaxed);

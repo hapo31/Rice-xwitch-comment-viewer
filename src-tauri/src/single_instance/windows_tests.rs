@@ -50,6 +50,15 @@ fn native_instance_fixture() {
         ..AppState::default()
     };
     let app = crate::app_builder_with_state(state)
+        .on_page_load(|webview, payload| {
+            if std::env::var_os("RICE_LAUNCHER_NATIVE_BUDGET").is_some()
+                && matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
+            {
+                webview
+                    .eval(include_str!("../../tests/launcher-native-budget.js"))
+                    .expect("native measurement script");
+            }
+        })
         .any_thread()
         .build(context)
         .expect("native production app setup");
@@ -62,7 +71,32 @@ fn native_instance_fixture() {
         let hwnd = window.hwnd().expect("native HWND").0 as usize;
         let mut settings = app.state::<AppState>().settings.lock().expect("settings").clone();
         settings.speech.blocked_words = vec!["preserve-native-owner".into()];
+        let launcher_budget = std::env::var_os("RICE_LAUNCHER_NATIVE_BUDGET").is_some();
+        if launcher_budget {
+            settings = crate::launcher::bounds_tests::full_quota_settings(Some(crate::resource_limits::MAX_SETTINGS_JSON_BYTES - 1024));
+        }
         SettingsStore::save(app, &settings).expect("production owned save");
+        if launcher_budget {
+            *app.state::<AppState>().settings.lock().expect("publish fixture settings") = settings;
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(60);
+                loop {
+                    let record = handle.state::<AppState>().settings.lock().expect("result settings").twitch.channel_login.clone();
+                    if record.starts_with("RICE_LAUNCHER_RESULT ") {
+                        println!("{record}");
+                        std::io::stdout().flush().expect("flush measured result");
+                        return;
+                    }
+                    if Instant::now() > deadline {
+                        println!("RICE_LAUNCHER_RESULT {{\"error\":\"native result timed out\"}}");
+                        std::io::stdout().flush().expect("flush timeout");
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            });
+        }
         println!("RICE_NATIVE_READY {}", serde_json::json!({
             "hwnd": hwnd, "settingsPath": app.path().app_data_dir().expect("app data").join("settings.json")
         }));
@@ -204,4 +238,102 @@ fn native_two_process_restore_and_focus() {
     drop(contender);
     drop(owner);
     remove_fixture_directory(&root);
+}
+
+#[test]
+#[ignore = "requires a Windows desktop and WebView2; explicitly run by native CI"]
+fn native_maximum_launcher_render_and_ipc_budget() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::env::temp_dir().join(format!(
+        "rice-native-launcher-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    let mut owner = NativeChild(
+        Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", FIXTURE, "--nocapture"])
+            .env(
+                "RICE_NATIVE_TEST_ID",
+                format!("dev.rice.tests.launcher{}", std::process::id()),
+            )
+            .env("RICE_NATIVE_TEST_ROLE", "owner")
+            .env("RICE_NATIVE_TEST_ROOT", &root)
+            .env("RICE_LAUNCHER_NATIVE_BUDGET", "1")
+            // Diagnostic precision flag is confined to this isolated test child.
+            .env(
+                "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                "--enable-precise-memory-info",
+            )
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap(),
+    );
+    let stdout = owner.0.stdout.take().unwrap();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let line = line.unwrap();
+            for prefix in ["RICE_NATIVE_READY ", "RICE_LAUNCHER_RESULT "] {
+                if let Some((_, record)) = line.split_once(prefix) {
+                    tx.send((
+                        prefix,
+                        serde_json::from_str::<serde_json::Value>(record).unwrap(),
+                    ))
+                    .unwrap();
+                }
+            }
+        }
+    });
+    let mut ready = None;
+    let mut result = None;
+    for _ in 0..2 {
+        let (prefix, record) = rx
+            .recv_timeout(Duration::from_secs(75))
+            .expect("native measurement requires desktop/WebView2");
+        if prefix == "RICE_NATIVE_READY " {
+            ready = Some(record);
+        } else {
+            result = Some(record);
+        }
+    }
+    let ready = ready.expect("real app readiness");
+    let result = result.expect("real IPC/UI result");
+    println!("Native Launcher budget: {result}");
+    let hwnd = ready["hwnd"].as_u64().unwrap() as usize as *mut std::ffi::c_void;
+    assert_ne!(unsafe { PostMessageW(hwnd, WM_CLOSE, 0, 0) }, 0);
+    let mut status = None;
+    wait_until(
+        || {
+            status = owner.0.try_wait().unwrap();
+            status.is_some()
+        },
+        "fixture closes normally",
+    );
+    assert!(status.unwrap().success());
+    drop(owner);
+    remove_fixture_directory(&root);
+    assert!(result.get("error").is_none(), "{result}");
+    assert_eq!(result["count"], 200);
+    assert_eq!(result["rejected"], 4);
+    assert_eq!(result["unchanged"], true);
+    assert!(
+        result["getMs"].as_f64().unwrap() < 2000.0,
+        "full settings IPC retrieval within 2 seconds: {result}"
+    );
+    assert!(
+        result["renderMs"].as_f64().unwrap() < 2000.0,
+        "200 tiles/icons render within 2 seconds: {result}"
+    );
+    assert!(
+        result["incrementalJsHeap"].as_u64().unwrap() > 0,
+        "heap sampling must observe real allocation, not a stale zero delta: {result}"
+    );
+    assert!(
+        result["incrementalJsHeap"].as_u64().unwrap() <= 64 * 1024 * 1024,
+        "renderer JS live heap delta within 64MiB (not full WebView RSS/GPU): {result}"
+    );
 }

@@ -74,3 +74,9 @@ jobs:
         run: |
           & $env:RICE_NATIVE_TEST_BINARY single_instance::windows_tests::native_two_process_restore_and_focus --exact --ignored --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify maximum Launcher rendering, heap budget and production IPC rejection
+        env:
+          RICE_NATIVE_TEST_BINARY: ${{ steps.harness.outputs.binary }}
+        run: |
+          & $env:RICE_NATIVE_TEST_BINARY single_instance::windows_tests::native_maximum_launcher_render_and_ipc_budget --exact --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

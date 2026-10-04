@@ -1,5 +1,6 @@
 mod app_events;
 mod launcher;
+mod resource_limits;
 mod settings;
 #[cfg(feature = "app")]
 mod single_instance;

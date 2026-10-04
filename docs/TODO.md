@@ -1,5 +1,9 @@
 # 実装 TODO
 
+- [ ] Issue #71: Launcher request/文字列/PNG encoded・decoded/dimensions/合計icon量/settings JSONへ上限を設け、renderer編集DTOからbackend生成ID/target/iconを変更できないようにする。巨大・不正入力、重複path、quota境界、200件の予算、上限超過時のdisk/memory非変更を検証する。
+
+2026-10-05: #71の資源上限、borrowed Request preflight、編集DTO、bounded読込/serializer、quota超過の全体拒否を実装した。Rust all-features230件/no-default179件、frontend281件とstrict clippy、frontend全gate、quality policy3件が成功。別processの最大200件（icon合計4MiB、128×128 RGBA16 PNG200種類）で保存/backup/loadは3.64秒/追加Rust heap約19.3MiB、JSONも8MiBの最大構成で3.93秒/約39.4MiBだった（5秒/通常32MiB・最大JSON40MiBの予算）。実native Windows200tile描画/JS heap/拒否IPCはCI実行待ちのため、まだ完了扱いにしない。
+
 - [x] Issue #85: blocked/skipped/errorの型付き理由・安全な日本語説明・復旧操作・発生時刻を項目へ保持し、snapshot/reload/late subscriberとChatへ伝える。Queue/Chatの詳細導線、item ID付きwarning/log、履歴上限と機微情報非複製を契約/DOM/fake-workerで検証する。
 
 2026-10-05: Issue #85で全21codeのkind別outcomeを導入し、formatter/連投/overflow/skip/remove/clear/adapter failureへ付与した。自動retry中は直前理由を保持し、manual retry/正常完了で消す。safe日本語へNG一致語/adapter detailをコピーせず、warning/logにitem IDを付ける。Chatの同status理由更新・非modal詳細paneとfocus、Queueのskip履歴toggle/削除・復旧routeを追加した。共通fixture、最新snapshot/reload/late subscriber、200件上限、取消/遅延結果9順序と6,144操作列を含むRust all-features219件/no-default168件、frontend279件、strict clippy/fmt、format/lint/typecheck/build/security/licenseとquality policy3件が成功。[Windows/Linux契約CI](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37235933123)、[品質全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37235933304)、[feature matrix](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37235933100)、[Windows実動focus](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37235933133)も成功した。実棒読みちゃん/配布物全般のsmokeは#91と区別し、既知npm Highによるrelease blockは維持する。

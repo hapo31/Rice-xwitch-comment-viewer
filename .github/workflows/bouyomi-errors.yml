@@ -46,6 +46,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features app_events::tests::item_outcome_survives_latest_snapshot_and_unrelated_activity_without_warning -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test Launcher resource boundaries on both platforms
+        shell: pwsh
+        run: |
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features launcher::
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features resource_limits::
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features settings::tests::bounded_request_rejects_backend_fields_new_ids_and_large_json -- --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features settings::tests::over_quota_and_large_serialization_leave_memory_primary_backup_and_temps_unchanged -- --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features settings::tests::oversized_primary_and_backup_are_quarantined_without_full_read -- --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features settings::tests::maximum_launcher_roundtrip_stays_within_time_and_rust_heap_budget -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test native Windows error mapping and transport phases
         # #77 owns typed/native errors, bounded writes and protocol responses.
         # Full Windows dispatcher/launcher/runtime coverage remains #91.

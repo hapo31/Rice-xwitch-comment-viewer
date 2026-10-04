@@ -164,7 +164,11 @@ React の仮想スクロール、ウィンドウ倍率、Launcher tile は動的
 
 capability は `main` window の `default` だけを設定から明示的に有効化する。core API は event の listen/unlisten、現在の window の状態確認・移動・resize・native close 完了、Dialog の open に限定する。custom command は `tauri_build::AppManifest` へ列挙し、同じ main capability に明示した command だけを許可する。新しい window / capability / command を追加するときは、既存の default set を広げず、その利用箇所と permission を同じ変更で追加する。CSP や capability は backend の入力検証を代替しないため、外部 URL、Launcher path、設定値の Rust 側検証は維持する。
 
-Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、encoded/decoded payload 上限、base64 decode、PNG の chunk 構造・checksum・終端、単一 frame、最大 512 x 512 px を検証し、不正値は表示モデルへ渡さない。`assetProtocol` は有効化せず、任意ファイル path や remote image を renderer から読める境界は設けない。
+Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、base64部分64KiB / PNG file48KiB、PNGのchecksum・終端・単一frame・最大128×128pxを検証する。PNG decoder作業領域は1MiB、pixel出力bufferは128KiB以内。保存済みの不正/旧上限超過iconは読み込み時に汎用iconへfallbackし、新規追加の上限超過は全体を拒否する。合計data URLは4MiB以内。inline PNGをquotaで制限するため、cache用の追加filesystem権限や`assetProtocol`は有効化しない。
+
+Launcherの資源境界（#71）: 最大200件、pathは各4096UTF-8 bytes・合計128KiB、IDは64 ASCII bytes以内の英数字/ハイフン/下線、表示名1〜120 Unicode文字、group1〜64文字（いずれも制御文字なし）、背景色`#RRGGBB`。追加要求のJSONは256KiB、設定patch/保存JSONは8MiB、要求treeは4096nodes/深さ16まで。Tauriのparse済みbodyを`Request`で借用し、アプリDTOをcloneする前に検査する。framework自体の初回transport parseのallocationを制限できたとは扱わない。
+
+設定patchのLauncher itemsは`LauncherItemEdit`（登録済みIDを参照し、displayName/backgroundColor/groupId/orderだけを更新する置換一覧）へ分離する。新規ID、target/kind/iconDataUrl、未知の編集fieldは保存前に拒否する。canonical登録は`launcher_add`だけが行い、並行追加は最新stateへmergeし、件数/合計quota超過で一部だけ保存しない。永続pathの検査はpureな文字列検査で、metadata編集/設定load時にfilesystem/COMへ触れない。実ファイル検査は登録・起動時に行う。
 
 判断根拠は Tauri v2 公式の [Content Security Policy](https://v2.tauri.app/security/csp/)、[Capabilities](https://v2.tauri.app/security/capabilities/)、[configuration schema](https://v2.tauri.app/reference/config/#securityconfig) に従う。
 
@@ -183,6 +187,7 @@ backend は bounded な operational log ring と Twitch（auth/chat）/speech �
 ## 永続化
 
 - 一般設定: Tauriのapp data配下にJSON保存。同一ディレクトリの一時ファイルへ書き込み・`sync_all` した後、OSごとの atomic replace で `settings.json` を更新する。直前の正常版は `settings.json.bak` 1世代だけ保持する。
+- JSON読込/serializerは8MiBまで。上限超過の新設定はtemporary/backupを変更する前に拒否し、候補stateも公開しない。巨大な既存primary/backupはmetadataとbounded readで検出して元fileを退避し、既存の復旧方針を適用する。IO/permission失敗を破損と決めつけて上書きしない。
 - 多重起動: 正式方針は同一アプリの複数起動禁止。最初にsingle-instance pluginを登録し、2回目は既存main windowをshow/unminimize/focusして終了する。起動setup完了前の通知は保留して完了時に処理し、引数/cwdをcommandとして解釈しない。設定の読込・初期作成・破損復旧より前に、同じapp dataの固定`settings.writer.lock`を非blockingで排他lockし、process lifetimeのmanaged stateが保持する。全Settings/Launcher/window保存で同じ所有権と保存先を確認する。pluginの通知が失敗しても2つ目のwriterは設定に触れる前に失敗する。lock fileは削除/atomic replaceしない（inodeの分裂を防ぐ）；OSが正常終了/異常終了で所有権を解放する。手動lock削除による起動回避は非サポートであり、他ユーザー/同一ユーザーの悪意あるprocessの隔離機構ではない。
 - ウィンドウ位置: `settings.json` の `window.position` に物理ピクセル座標を保存する。終了要求時とアプリ内の終了操作で保存し、次回起動時は現在のいずれかのモニター作業領域にタイトルバー相当（64 x 32px）以上が残る位置だけを復元する。モニター構成の変更で画面外になる位置は復元せず、初期の中央配置を使う。
 - 設定復旧: 起動時に本体のJSON構文または検証対象の設定値が不正なら backup を同じ契約で検証して復旧する。backup も不正または不在なら、無効なファイルを `settings.json.corrupt-<timestamp>-<suffix>` として退避して既定値で起動する。復旧理由・内容・退避先は Logs、system Chat、警告通知に日本語で表示する。
