@@ -1,8 +1,8 @@
 # 実装 TODO
 
-- [ ] Issue #82: Launcherをpure model・service・repository・commands・Windows icon/launch adapterへ分離し、本番serviceへ小さなtraitを注入する。timeout・抽出/shortcut/spawn/保存失敗・同時更新を全OSのfake adapterで再現し、Windows実動境界を文書化する。
+- [x] Issue #82: Launcherをpure model・service・repository・commands・Windows icon/launch adapterへ分離し、本番serviceへ小さなtraitを注入する。timeout・抽出/shortcut/spawn/保存失敗・同時更新を全OSのfake adapterで再現し、Windows実動境界を文書化する。
 
-2026-10-05: #82の責務分割と本番serviceの依存注入を実装した。9つのfake serviceテストを追加し、Rust all-features239件/no-default188件、strict clippy/fmt、frontend281件と全frontend/build/security/license gate、quality policy3件、Docker context検査が成功。元の200件/quota/atomic保存/4-worker・timeout境界とIPC契約を維持する。Windows CIへ本番featureのLauncher suiteを追加し、実WebView/IPC回帰と両OS suiteの結果を待って完了を判定する。実shortcutの意味論は#76、packaged smokeは#91と区別し、既知npm Highの配布停止を維持する。
+2026-10-05: #82の責務分割と本番serviceの依存注入を実装した。9つのfake serviceテストを追加し、Rust all-features239件/no-default188件、strict clippy/fmt、frontend281件と全frontend/build/security/license gate、quality policy3件、Docker context検査が成功。元の200件/quota/atomic保存/4-worker・timeout境界とIPC契約を維持する。commit8579773の[両OS契約CI](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37242156624)でそれぞれLauncher34件、[Windows本番feature/実WebView](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37242156691)でLauncher34件と200 tile描画549ms・最大設定IPC547ms・JS heap差分43.7MiB・不正4要求拒否/設定保持・2process復元/focusが成功した。[品質全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37242156974)、feature matrix、Windows writer/permissionも成功。実shortcutの意味論は#76、packaged smokeは#91と区別し、既知npm Highの配布停止を維持する。
 
 - [x] Issue #71: Launcher request/文字列/PNG encoded・decoded/dimensions/合計icon量/settings JSONへ上限を設け、renderer編集DTOからbackend生成ID/target/iconを変更できないようにする。巨大・不正入力、重複path、quota境界、200件の予算、上限超過時のdisk/memory非変更を検証する。
 
