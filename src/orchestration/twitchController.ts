@@ -238,7 +238,7 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
     const generation = deps.operations.getState().generation;
     const remainingMs = Math.max(0, prompt.expiresAtMs - Date.now());
     if (remainingMs === 0) {
-      expireAuthPrompt();
+      expireAuthPrompt(prompt, generation);
       return () => undefined;
     }
     const pollDelayMs = Math.min(Math.max(prompt.interval, 1) * 1000, remainingMs);
@@ -252,14 +252,23 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
       ) {
         void pollAuth({ quietWaiting: true, expectedGeneration: generation });
       } else if (current) {
-        if (getDeviceAuthRemainingSeconds(current.expiresAtMs) === 0) expireAuthPrompt();
+        if (getDeviceAuthRemainingSeconds(current.expiresAtMs) === 0)
+          expireAuthPrompt(prompt, generation);
       }
     }, pollDelayMs);
     return () => window.clearTimeout(timer);
   }
 
-  function expireAuthPrompt() {
-    if (!deps.getAuthPrompt()) return;
+  function expireAuthPrompt(prompt: TwitchDeviceAuthStart, generation: number) {
+    const operation = deps.operations.getState().activeOperation;
+    const current = deps.getAuthPrompt();
+    if (
+      !deps.operations.isCurrent(generation) ||
+      (operation !== undefined && operation !== "poll") ||
+      current?.userCode !== prompt.userCode ||
+      current.expiresAtMs !== prompt.expiresAtMs
+    )
+      return;
     transitionAuth({
       type: "prompt.expired",
       message: "Twitch の認証コードの有効期限が切れました。再度ログインしてください。",

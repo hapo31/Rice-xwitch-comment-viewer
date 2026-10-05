@@ -70,6 +70,79 @@ function makeController(state = initialAppState) {
 afterEach(() => vi.useRealTimers());
 
 describe("Twitch controller auth-operation lifecycle", () => {
+  it.each(["start", "validate"] as const)(
+    "does not let a due expiry timer preempt deferred manual %s",
+    async (operation) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000_000);
+      const expiringPrompt = {
+        ...prompt,
+        expiresAtMs: Date.now() + 1000,
+        interval: 5,
+      };
+      const pendingStart = deferred<TwitchDeviceAuthStart>();
+      const pendingValidation = deferred<{ profile: TwitchUserProfile }>();
+      tauriMock.setCommand("twitch_start_auth", () => pendingStart.promise);
+      tauriMock.setCommand("twitch_validate_auth", () => pendingValidation.promise);
+      const harness = makeController({
+        ...initialAppState,
+        twitchAuthPrompt: expiringPrompt,
+      });
+      harness.controller.schedulePoll(expiringPrompt);
+
+      const manual =
+        operation === "start" ? harness.controller.startAuth() : harness.controller.validateAuth();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+
+      expect(harness.getState().twitchAuthStatus).not.toBe("expired");
+      expect(harness.reportNotification).not.toHaveBeenCalledWith(
+        "warning",
+        "event",
+        "Twitch の認証コードの有効期限が切れました。再度ログインしてください。",
+      );
+
+      if (operation === "start") pendingStart.resolve({ ...prompt, userCode: "NEW-CODE" });
+      else pendingValidation.resolve({ profile });
+      await act(async () => manual);
+
+      expect(harness.getState().twitchAuthStatus).not.toBe("expired");
+      if (operation === "start") {
+        expect(harness.getState().twitchAuthPrompt?.userCode).toBe("NEW-CODE");
+      } else {
+        expect(harness.getState()).toMatchObject({
+          twitchAuthStatus: "authenticated",
+          twitchProfile: profile,
+        });
+      }
+    },
+  );
+
+  it("does not expire an already-expired retained prompt during manual start", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const pendingStart = deferred<TwitchDeviceAuthStart>();
+    tauriMock.setCommand("twitch_start_auth", () => pendingStart.promise);
+    const expiredPrompt = { ...prompt, expiresAtMs: Date.now() - 1 };
+    const harness = makeController({ ...initialAppState, twitchAuthPrompt: expiredPrompt });
+
+    const manual = harness.controller.startAuth();
+    harness.controller.schedulePoll(expiredPrompt);
+
+    expect(harness.getState().twitchAuthStatus).not.toBe("expired");
+    expect(harness.getState().twitchAuthPrompt).toEqual(expiredPrompt);
+    expect(harness.reportNotification).not.toHaveBeenCalledWith(
+      "warning",
+      "event",
+      "Twitch の認証コードの有効期限が切れました。再度ログインしてください。",
+    );
+
+    pendingStart.resolve({ ...prompt, userCode: "NEW-CODE" });
+    await act(async () => manual);
+    expect(harness.getState().twitchAuthPrompt?.userCode).toBe("NEW-CODE");
+  });
+
   it.each(["start", "validate", "disconnect"] as const)(
     "prevents a due Device Code timer from overtaking deferred manual %s",
     async (operation) => {
