@@ -4,6 +4,8 @@
 
 2026-10-05進捗: exact artifact/source/lock/CRC/PE/checksum verifierとWindows NSIS/portable probe、同runのreceiptと実Windows jobsをtrusted publisherで照合するgateを追加した。新しいartifact/receipt検証36件を含むlocal49件とworkflow/context policyが成功。source63d45e3の両OS契約は成功したがWindows全体実行はCommon Controls manifest消失によるloader failureで失敗し、Cargo runnerで起動直前に付け直す。runnerはpackage rootで実行されるため絶対pathにする。実全体テストとDocker製の本物のNSIS/ZIPをcandidate dispatchで確認するまでは未完了。tag/Releaseは作成しない。
 
+2026-10-05追加検証: source deac006 の[候補CI](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37263095537)でWindows全体263件と実keyringの保存・読込・失敗・削除が成功した。全体harnessでignoreされるheadful3件も別stepで各1件/0ignoreとして実行し、Launcher41件、focus、200 tile/16 styles/設定拒否、future schemaの保存保持と正常終了を確認した。[品質全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37263098051)も成功。一方、Docker配布buildはRust Tauri 2.12.1に対してJS API 2.11.0が不一致で停止したため、API/CLIを2.12.1へexact pinし、通常frontend buildとDockerに互換性guardを追加する。新guard6件を含むlocal policy63件とfrontend322件は成功した。実installer/portableのsmokeはまだ未実行で、チェックを緩めず新sourceで再検証する。
+
 - [x] Issue #64: versioned persistence wireをdomainから分離し、旧schemaを段階migrationする。全fieldはoptionalとして欠落・型/範囲/意味違反を既定値へ戻し、#88の共通validatorでload/saveの不変条件を揃える。未知future version/未知fieldを黙って捨てず、設定・Launcher・window保存と終了からの上書きを防ぐ。fixture、primary/backup保持、writer、両OS/native CIで検証する。
 
 2026-10-05 local検証: v0（番号なし/null/0）→v1、14 fixtureと7 schemaテスト、元bytesを保持するmigration backup、保存直前の将来版への交換、future backupの復旧を実装した。Rust all-features262件/no-default211件とfmt/strict clippy、frontend321件とformat/lint/typecheck/build/security/license、policy21件、Docker contextが成功。最大8MiB roundtripは4.56秒/追加Rust heap25.5MiBで既存予算内。Windows本番起動/Settings・Launcher IPC拒否/正常終了の追加テストと両OS CIが成功するまでは未完了とする。

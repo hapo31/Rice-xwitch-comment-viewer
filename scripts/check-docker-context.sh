@@ -23,6 +23,7 @@ expected_exceptions=(
   '!scripts/verify-release-build-inputs.mjs'
   '!scripts/record-build-materials.mjs'
   '!scripts/verify-project-license.mjs'
+  '!scripts/verify-tauri-versions.mjs'
   '!src/'
   '!src/**'
   '!src-tauri/'
@@ -49,6 +50,7 @@ expected_copy_sources=(
   scripts/record-build-materials.mjs
   scripts/verify-project-license.mjs
   scripts/verify-release-build-inputs.mjs
+  scripts/verify-tauri-versions.mjs
   scripts/verify-twitch-client-id.mjs
   src
   src-tauri/Cargo.lock
@@ -136,6 +138,7 @@ manifest_files=(
   scripts/verify-release-build-inputs.mjs
   scripts/record-build-materials.mjs
   scripts/verify-project-license.mjs
+  scripts/verify-tauri-versions.mjs
   package.json
   pnpm-lock.yaml
   index.html

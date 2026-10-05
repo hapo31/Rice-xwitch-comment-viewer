@@ -38,6 +38,7 @@ jobs:
           node --test scripts/test-release-repository-policy.mjs
           node --test scripts/test-release-build-inputs.mjs
           node --test scripts/test-release-artifacts.mjs scripts/test-windows-smoke.mjs
+          node --test scripts/test-tauri-versions.mjs
           scripts/check-docker-context.sh
       - name: Check release workflow privilege boundary
         run: node scripts/verify-release-workflow-policy.mjs

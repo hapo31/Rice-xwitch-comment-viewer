@@ -75,6 +75,7 @@ RUN node scripts/verify-twitch-client-id.mjs
 COPY package.json pnpm-lock.yaml ./
 COPY LICENSE ./LICENSE
 COPY scripts/verify-project-license.mjs ./scripts/verify-project-license.mjs
+COPY scripts/verify-tauri-versions.mjs ./scripts/verify-tauri-versions.mjs
 RUN pnpm install --frozen-lockfile
 
 COPY index.html postcss.config.js tailwind.config.js tsconfig.json vite.config.ts ./
@@ -84,7 +85,8 @@ COPY src-tauri/capabilities ./src-tauri/capabilities
 COPY src-tauri/icons ./src-tauri/icons
 COPY src-tauri/src ./src-tauri/src
 
-RUN node scripts/verify-project-license.mjs --bundle
+RUN node scripts/verify-project-license.mjs --bundle \
+    && node scripts/verify-tauri-versions.mjs --installed
 RUN pnpm tauri build --bundles nsis --runner cargo-xwin --target "${WINDOWS_TARGET}"
 
 RUN node scripts/verify-twitch-client-id.mjs "src-tauri/target/${WINDOWS_TARGET}/release/rice.exe"

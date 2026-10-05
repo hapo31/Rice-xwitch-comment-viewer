@@ -12,6 +12,8 @@ Debian の署名・package hash 検証は維持します。過去 snapshot の `
 
 ## Windows候補と公開gate
 
+`package.json` と `pnpm-lock.yaml` の Tauri API/CLI はレビュー済みのexact versionに固定し、Rust lockのTauri coreとmajor/minorが一致する必要があります。`verify-tauri-versions.mjs` は通常frontend buildとDocker buildのinstalled graphも検査します。compiler policyの更新やTauri自身のversion checkを無効化する代わりにはしません。
+
 `Release Windows` の手動dispatchは選択したcommitを同じDocker経路でbuildし、tagやGitHub Releaseを作らずに候補を検証します。公開workflowは成功したtag push eventだけを対象とし、dispatch結果を公開へ換算しません。
 
 `ARTIFACT-MANIFEST.json` は3つのversion manifestとtag（候補はnull）、source commit、reviewed target、exactなinstaller/portable/support file集合、各file hash・容量、portable内のflatなrice.exe/LICENSEのCRC・hashを記録します。検査はZIPのlocal/central一致、CRC、bounded inflate、PE GUI/x64、元LICENSE、build材料とlock digest、SHA256SUMSの完全一致を要求します。
