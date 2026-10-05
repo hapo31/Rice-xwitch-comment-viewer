@@ -208,6 +208,16 @@ struct AppEventStateInner {
 }
 
 impl AppEventState {
+    #[cfg(all(test, feature = "app"))]
+    pub(crate) fn record_test_twitch_status(&self, payload: TwitchStatusEvent) {
+        self.record_twitch_status(payload);
+    }
+
+    #[cfg(all(test, feature = "app"))]
+    pub(crate) fn record_test_log(&self, payload: AppLogEvent) {
+        self.record_log(payload);
+    }
+
     fn next_revision(inner: &mut AppEventStateInner) -> u64 {
         inner.revision = inner.revision.wrapping_add(1).max(1);
         inner.revision
