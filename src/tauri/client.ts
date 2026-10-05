@@ -20,6 +20,7 @@ import type {
   AppSettings,
   AppSettingsPatch,
   BouyomiConnectionDiagnostics,
+  LauncherAddResult,
   LauncherItem,
   LauncherCapabilities,
   LauncherLaunchResult,
@@ -194,12 +195,12 @@ export async function updateSettings(patch: AppSettingsPatch): Promise<AppSettin
   );
 }
 
-export async function launcherAdd(paths: string[]): Promise<LauncherItem[]> {
+export async function launcherAdd(paths: string[]): Promise<LauncherAddResult> {
   if (!isTauriRuntime) {
-    return [];
+    return { items: [], addedCount: 0 };
   }
 
-  return nullFreePayload<LauncherItem[]>(
+  return nullFreePayload<LauncherAddResult>(
     await invoke<unknown>("launcher_add", { paths }),
     "launcher_add",
   );

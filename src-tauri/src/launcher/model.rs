@@ -405,6 +405,13 @@ pub(crate) fn validate_launcher_structure(items: &[LauncherItem]) -> Result<(), 
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct LauncherAddResult {
+    pub items: Vec<LauncherItem>,
+    pub added_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct LauncherLaunchFailure {
     pub item_id: String,
     pub display_name: String,

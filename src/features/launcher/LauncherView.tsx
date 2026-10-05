@@ -13,6 +13,7 @@ import { routeHeadingId } from "../../routeAccessibility";
 import { useDomainStores } from "../../stores/domainStores";
 import { getLauncherCapabilities, isDesktopRuntime } from "../../tauri/client";
 import type {
+  LauncherAddResult,
   LauncherCapabilities,
   LauncherItem,
   LauncherLaunchFailure,
@@ -23,7 +24,7 @@ import { type LauncherDragDropHandlers, subscribeLauncherDragDrop } from "./drag
 interface LauncherViewProps {
   items: LauncherItem[];
   isReady: boolean;
-  onAdd: (paths: string[]) => Promise<LauncherItem[]>;
+  onAdd: (paths: string[]) => Promise<LauncherAddResult>;
   onRemove: (itemId: string) => Promise<LauncherItem[]>;
   onLaunch: (itemId: string) => Promise<LauncherLaunchResult>;
   onLaunchAll: () => Promise<LauncherLaunchResult>;
@@ -94,11 +95,9 @@ export function LauncherView({
   const focusMenuOnOpen = useRef(false);
   const orderedItems = useMemo(() => sortLauncherItems(items), [items]);
   const isReadyRef = useRef(isReady);
-  const itemsCountRef = useRef(items.length);
   const onAddRef = useRef(onAdd);
 
   isReadyRef.current = isReady;
-  itemsCountRef.current = items.length;
   onAddRef.current = onAdd;
 
   useEffect(() => {
@@ -166,12 +165,14 @@ export function LauncherView({
 
     setBusyAction("add");
     try {
-      const nextItems = await onAddRef.current(accepted);
-      const addedCount = Math.max(0, nextItems.length - itemsCountRef.current);
+      const { addedCount } = await onAddRef.current(accepted);
       const rejectedNote = rejected.length > 0 ? `（未対応の ${rejected.length} 件は除外）` : "";
-      setNotice(`${addedCount} 件を登録しました。${rejectedNote}`);
       if (addedCount === 0) {
         setNotice(`選択したアプリはすでに登録されています。${rejectedNote}`);
+      } else {
+        const duplicateCount = accepted.length - addedCount;
+        const duplicateNote = duplicateCount > 0 ? ` ${duplicateCount} 件は登録済みです。` : "";
+        setNotice(`${addedCount} 件を登録しました。${duplicateNote}${rejectedNote}`);
       }
     } catch (error) {
       setNotice(readableError(error));
