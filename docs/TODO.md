@@ -357,7 +357,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 - [x] Issue #48: Tauri bridge の `Option` を JSON field omission に統一し、Rust/TypeScript の camelCase・nullability 契約、Device Code 後の保存警告経路を共通 fixture と runtime validation で検証する。
 - [x] Issue #201: 全 command 応答と event を runtime schema で検証し、Rust wire 型生成と schema 型一致・生成差分検査を導入する。既存 domain 変換と IPC 境界を保持する。
-  - 作業進捗: Zod 4 schema から frontend DTO を導出し、ts-rs 12 の Serde 型生成と全51 wire 型の双方向一致検査を導入。全32 command の正常/不正応答と unit null を検証し、最新 main 統合後の frontend 408 tests・型検査・lint・format・build、Rust no-default 218 tests と全機能 287 tests・型生成が成功。#200 の厳密な状態契約を維持し、#195 の解除テストも実際の unit null 応答に統一。独立レビュー済みで、#199 の snapshot テストにも必須 adapterHealth を補い、#197 の Chat 状態所有権も統合した。最終 CI・統合結果は PR #247 に記録する。
+  - 作業進捗: Zod 4 schema から frontend DTO を導出し、ts-rs 12 の Serde 型生成と全51 wire 型の双方向一致検査を導入。全32 command の正常/不正応答と unit null を検証し、最新 main 統合後の frontend 408 tests・型検査・lint・format・build、Rust no-default 218 tests と全機能 287 tests・型生成が成功。#200 の厳密な状態契約を維持し、#195 の解除テストも実際の unit null 応答に統一。独立レビュー済みで、#199 の snapshot テストにも必須 adapterHealth を補い、#197 の Chat 状態所有権も統合した。Windows checkout の CRLF は生成比較前に改行だけ正規化し、LF/CRLF 成功・型差分の失敗・復元後成功も確認した。最終 CI・統合結果は PR #247 に記録する。
   - 性能確認: 同一 Node 24 プロセス、1000 warmup 後の5回中央値で chat 1万件は旧 parser 5.74ms / schema 10.88ms、200件 queue 1000回は46.55ms / 39.67ms。production JS は554.37kB (gzip167.42kB)で、導入前の469.75kB (gzip142.31kB)から増加し Vite の500kB警告が出る。警告上限は変更しない。
   - 性能計測: Node 24 / 同一 fixture・1000回 warmup・5回の中央値。chat 10,000件は旧5.0ms→schema8.2ms、200項目 queue snapshot 1,000回は旧44.9ms→38.5ms。bundle は469.8kB→553.4kB（gzip142.3→167.2kB）。機能境界の厳密化を優先し、500kB chunk 警告の上限変更や未計測の高速化は行わない。
 

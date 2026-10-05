@@ -70,7 +70,11 @@ fn generated_wire_contracts_are_current() {
         std::fs::write(&path, &generated).unwrap();
     }
     assert_eq!(
-        std::fs::read_to_string(path).expect("generate bindings/wire.ts"),
+        // Git for Windows may check this file out with CRLF. Only normalize
+        // checkout line endings; every declaration must still match exactly.
+        std::fs::read_to_string(path)
+            .expect("generate bindings/wire.ts")
+            .replace("\r\n", "\n"),
         generated,
         "Rust wire DTOs changed; regenerate bindings/wire.ts and review schema parity"
     );
