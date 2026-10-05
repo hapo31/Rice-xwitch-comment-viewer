@@ -127,7 +127,7 @@ export function AppShell() {
       onError: (error) => reportError(error, "settings"),
     }),
   );
-  const settingsSnapshot = useRef<AppSettings>();
+  const settingsSnapshot = useRef<AppSettings | undefined>(undefined);
   const startupAuthAttempted = useRef(false);
   const authOperations = useRef(new AuthOperationController());
   const systemTimelineRouter = useRef(new SystemTimelineRouter());
