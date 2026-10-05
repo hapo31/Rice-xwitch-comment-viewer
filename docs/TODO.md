@@ -1,5 +1,7 @@
 # 実装 TODO
 
+- [x] Issue #195: AppShellの認証・接続・speech・Launcher・終了保護をcontroller/providerへ分離し、各画面がdomain selector/actionを直接利用する。巨大な旧AppStateの再構成とMainView経由のcallback転送をなくし、無関係な画面の再renderを計測回帰で保証する。認証の遷移は既存のgeneration/poll排他と手動優先を保ち、XState invoke/delayと小さなreducerを比較して判断する。
+
 - [x] Issue #44: Twitchのmodel/error、認証service/store/OAuth、EventSub transport/state/subscription/dedupe/正規化を責務別moduleへ分割する。Tauri commandを薄いadapterにし、型付き状態制御、command/event payload、generationによる競合制御を維持する。fake transport/storeと明示clockを使う既存・追加回帰を分割後の本番経路へ適用し、両OS/feature matrix/native CIで確認する。
 
 2026-10-05段階1: main2b83b6aから専用worktreeで公開chat model、型付きAPI/認証/購読エラーと表示、EventSub wire/正規化、bounded dedupeを4つのprivate moduleへ抽出した。公開型のroot再export、payload、generation、token保存と接続処理は維持する。既存inline回帰をtests.rsへ移動し、mod.rsは4550行から2723行になった。元productionと既存テストはvisibility/format以外のtoken・文字列が同一であることも照合した。文言非依存の分類、明示receive clock/metadata fallback、TTL/capacity等の5回帰を追加し、Rust1.90のall-targets/all-features267件、no-default216件（いずれも0fail/0ignore）、fmt/strict clippy、frontend build、security/workflow/license guardが成功した。同時compile中の最初の全体実行では既存5秒budgetが5.26秒で失敗したが、閾値や条件を変えず単独再実行で4.67秒、no-defaultでも4.50秒の成功を確認した。認証service/store/OAuth、EventSub transport/state/subscriptionと薄いcommand adapter、分割後の両OS/native CIはまだ必要であり、Issueは未完了、mainへは未反映。
@@ -88,6 +90,10 @@
 調査メモは [`docs/RESEARCH_NOTES.md`](./RESEARCH_NOTES.md) に分離し、日付が新しいものほど上に追記してください。
 
 ## 現在の進捗サマリ
+
+2026-10-06: Issue #195の実装を専用 Draft PR #236 に分離した。AppShell配下へ controller/actions provider を組み立て、Twitch認証の非同期遷移、speech/queue/Launcher command、終了保護を責務別 controller/provider へ移した。画面はdomain別の安定action Contextと必要な selector を参照し、旧AppStateの再構成を除去した。初期レビューで見つかったDevice Code pollingのproduction lifecycle未接続、認証結果遷移の分散、実画面render計測の不足、手動操作/終了時の遅延応答競合を修正し、本番AppShell/provider/routes経由のtimer/render回帰へ更新した。親レビュー指摘を解消し、#205 の共通ラベルとの統合後は frontend 362件、format/lint/typecheck/build と diff check が成功。最終 CI と main 反映は PR #236 で確認する。
+
+2026-10-06 レビュー対応: Device Code pollingをAppShellのprompt/status lifecycleへ接続し、初回interval、pending/slowDown後のinterval更新、手動start/validate/disconnectの競合、期限切れ、unmount中の遅延応答/restore callback抑制をcontrollerと本番AppShell経由の回帰で確認した。追加レビュー対応として期限切れtimerもschedule時のgenerationとprompt identityを照合し、手動start/validate進行中のdeadline callbackと期限到達済みpromptの即時expireを遅延応答テストで保護する。#200のdiscriminated state/runtime contractsを含む最新mainを統合して全 frontend gate を再実行する。timerはschedule時のgeneration/promptを照合し、AuthOperationControllerは世代付き完了、手動優先、poll排他、dispose invalidationを管理する。認証結果・prompt・profile・statusと通知/error副作用は小さな純粋遷移モデルへまとめた。render回帰は実AppShell/provider/routes上のSettings/Logs/Launcher各bodyをProfiler計測し、queue revisionのみの連続更新を確認する。PRは親レビュー再確認待ちのためDraft、Issueはmain反映まで未完了。
 
 Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既存 Biome gate に any・enum・const enum・namespace の検査を追加した。frontend 322件と品質 policy 5件、format/lint/typecheck/build が成功し、独立レビューを完了した。最終コミットの CI 結果と統合状況は PR #238 に記録する。
 
@@ -541,4 +547,3 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 - 2026-10-06 Issue #198: [Biome noExplicitAny](https://biomejs.dev/linter/rules/no-explicit-any/) の型引数制約の例外を維持する。条件型で任意の引数列から戻り値を推論する場合に限り、理由付きの行単位 `biome-ignore lint/suspicious/noExplicitAny` を使える。DTO、mock、値のキャストには使わず、ファイル単位の無効化はしない。`noEnum` は const enum を検出しないため `noConstEnum` も有効にした。既存 quality policy の正負 fixture で named/alias import と許容例外を含め検証し、別の AST 検査器や workflow は追加していない。
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
-
