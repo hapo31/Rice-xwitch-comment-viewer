@@ -70,6 +70,8 @@ jobs:
         if: always()
         with:
           name: rice-capability-diagnostic-${{ github.run_id }}
-          path: windows-smoke-report.json
+          path: |
+            windows-smoke-report.json
+            windows-capability-failure.png
           if-no-files-found: error
           retention-days: 1

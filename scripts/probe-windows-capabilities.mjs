@@ -184,6 +184,8 @@ async function run() {
     try { await native.call("focus", { x: Math.round(geometry.focusX * geometry.scale), y: Math.round(geometry.focusY * geometry.scale) }); }
     catch (error) {
       proof.focusDiagnostic = { geometry, state: await native.call("state"), error: String(error.message) };
+      try { proof.focusDiagnostic.screenshot = await native.call("screenshot"); }
+      catch (captureError) { proof.focusDiagnostic.screenshotError = String(captureError.message); }
       console.log(`${name}: 前面化の失敗診断 ${JSON.stringify(proof.focusDiagnostic)}`);
       throw error;
     }

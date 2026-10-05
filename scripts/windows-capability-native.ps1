@@ -29,6 +29,9 @@ public static class RiceNativeProbe {
   [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point point);
   [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr window,uint flags);
   [DllImport("user32.dll", EntryPoint="GetWindowLongW")] static extern int GetWindowLong(IntPtr window,int index);
+  [DllImport("kernel32.dll")] static extern IntPtr GetConsoleWindow();
+  [DllImport("dwmapi.dll", EntryPoint="DwmGetWindowAttribute")] static extern int DwmCloak(IntPtr window,uint attribute,out int value,int size);
+  [DllImport("dwmapi.dll", EntryPoint="DwmGetWindowAttribute")] static extern int DwmFrame(IntPtr window,uint attribute,out Rect value,int size);
   [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GuiThread info);
   [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out Rect r);
   [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref Point p);
@@ -68,7 +71,17 @@ public static class RiceNativeProbe {
     var name=new StringBuilder(128); var title=new StringBuilder(128); GetClassName(h,name,128); GetWindowText(h,title,128);
     var foreground=GetForegroundWindow(); uint foregroundPid; GetWindowThreadProcessId(foreground,out foregroundPid); Point cursor; GetCursorPos(out cursor);
     var foregroundClass=new StringBuilder(128); GetClassName(foreground,foregroundClass,128);
-    return new { hwnd=h.ToInt64(), windowClass=name.ToString(), title=title.ToString(), left=r.Left, top=r.Top, width=r.Right-r.Left, height=r.Bottom-r.Top, visible=IsWindowVisible(h), enabled=IsWindowEnabled(h), style=GetWindowLong(h,-16), extendedStyle=GetWindowLong(h,-20), minimized=IsIconic(h), maximized=IsZoomed(h), foregroundHwnd=foreground.ToInt64(), foregroundPid=foregroundPid, foregroundClass=foregroundClass.ToString(), cursorX=cursor.X, cursorY=cursor.Y };
+    int cloak; Rect physical; var cloakStatus=DwmCloak(h,14,out cloak,4); var frameStatus=DwmFrame(h,9,out physical,16);
+    return new { hwnd=h.ToInt64(), windowClass=name.ToString(), title=title.ToString(), left=r.Left, top=r.Top, width=r.Right-r.Left, height=r.Bottom-r.Top, visible=IsWindowVisible(h), enabled=IsWindowEnabled(h), style=GetWindowLong(h,-16), extendedStyle=GetWindowLong(h,-20), minimized=IsIconic(h), maximized=IsZoomed(h), foregroundHwnd=foreground.ToInt64(), foregroundPid=foregroundPid, foregroundClass=foregroundClass.ToString(), helperConsoleHwnd=GetConsoleWindow().ToInt64(), dwmCloak=cloakStatus==0?(int?)cloak:null, physicalBounds=frameStatus==0?new {left=physical.Left,top=physical.Top,width=physical.Right-physical.Left,height=physical.Bottom-physical.Top}:null, cursorX=cursor.X, cursorY=cursor.Y };
+  }
+  public static void Screenshot(string path) {
+    // Only this disposable hosted runner's test desktop, never a developer's
+    // real desktop. The PowerShell action binds the path to its owned fixture.
+    var bounds=System.Windows.Forms.Screen.PrimaryScreen.Bounds;
+    using(var bitmap=new Bitmap(bounds.Width,bounds.Height)) {
+      using(var graphics=Graphics.FromImage(bitmap)) graphics.CopyFromScreen(bounds.Location,System.Drawing.Point.Empty,bounds.Size);
+      bitmap.Save(path,System.Drawing.Imaging.ImageFormat.Png);
+    }
   }
   public static void Restore(int pid) { var h=Window(pid); ShowWindow(h,9); SetForegroundWindow(h); Thread.Sleep(250); }
   public static void Prepare(int pid) {
@@ -226,6 +239,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             'prepare' { [RiceNativeProbe]::Prepare($RicePid); $value = [RiceNativeProbe]::State($RicePid) }
             'restore' { [RiceNativeProbe]::Restore($RicePid); $value = [RiceNativeProbe]::State($RicePid) }
             'focus' { [RiceNativeProbe]::Focus($RicePid, $request.x, $request.y); $value = [RiceNativeProbe]::State($RicePid) }
+            'screenshot' { $value = Join-Path $fixture 'native-focus-failure.png'; [RiceNativeProbe]::Screenshot($value) }
             'drag' { [RiceNativeProbe]::Drag($RicePid, $request.x, $request.y, $request.dx, $request.dy); $value = [RiceNativeProbe]::State($RicePid) }
             'click' { [RiceNativeProbe]::Click($RicePid, $request.x, $request.y); $value = $true }
             'close-native' { [RiceNativeProbe]::NativeClose($RicePid); $value = $true }

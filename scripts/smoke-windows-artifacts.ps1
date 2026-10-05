@@ -104,6 +104,11 @@ function Probe-App([string]$Executable, [string]$Name) {
         & node (Join-Path $PSScriptRoot 'probe-windows-capabilities.mjs') $debugPort $process.Id $fixtures $capabilityReport $Name
         if ($LASTEXITCODE -ne 0) {
             if (Test-Path -LiteralPath $capabilityReport -PathType Leaf) { $script:reportData['failedCapabilityProbe'] = Get-Content -LiteralPath $capabilityReport -Raw -Encoding utf8 | ConvertFrom-Json }
+            $failureImage = Join-Path $fixtures 'native-focus-failure.png'
+            if (Test-Path -LiteralPath $failureImage -PathType Leaf) {
+                if (Test-Path -LiteralPath 'windows-capability-failure.png') { throw 'Pre-existing failure image must not be overwritten' }
+                Copy-Item -LiteralPath $failureImage -Destination 'windows-capability-failure.png'
+            }
             throw "$Name packaged capability/native UI probe failed"
         }
         $capabilityProof = Get-Content -LiteralPath $capabilityReport -Raw -Encoding utf8 | ConvertFrom-Json
