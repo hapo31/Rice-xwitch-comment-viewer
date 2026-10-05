@@ -1,0 +1,67 @@
+name: Windows packaged capability diagnostics
+
+# Read-only diagnostics reuse an already successful, exact release candidate
+# while developing the UI probe. They NEVER satisfy the release publication
+# gate; final evidence still requires the normal candidate's same-run smoke.
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run:
+        description: Successful Release Windows run containing the exact artifacts
+        required: true
+        type: string
+      candidate_commit:
+        description: Exact 40-character source SHA of that candidate
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  diagnose:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    env:
+      CANDIDATE_RUN: ${{ inputs.candidate_run }}
+      CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+      - name: Verify successful source candidate and identical application inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ($env:CANDIDATE_RUN -notmatch '^\d+$' -or $env:CANDIDATE_COMMIT -notmatch '^[a-f0-9]{40}$') { throw 'Invalid exact candidate identity' }
+          $run = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:CANDIDATE_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $run.name -ne 'Release Windows' -or $run.status -ne 'completed' -or $run.conclusion -ne 'success' -or $run.head_sha -ne $env:CANDIDATE_COMMIT) { throw 'Candidate is not the exact successful Release Windows run' }
+          git fetch --no-tags origin $env:CANDIDATE_COMMIT
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect candidate source' }
+          # Only diagnostic scripts/docs may differ. Never test old application
+          # bytes and present them as evidence for changed app/config/deps.
+          git diff --exit-code $env:CANDIDATE_COMMIT HEAD -- src src-tauri package.json pnpm-lock.yaml build Dockerfile .dockerignore index.html vite.config.ts tsconfig.json postcss.config.js tailwind.config.js LICENSE
+          if ($LASTEXITCODE -ne 0) { throw 'Application/build inputs differ; a fresh release candidate is required' }
+      - name: Read reviewed Node version
+        id: inputs
+        run: |
+          $inputs = Get-Content build/release-inputs.json -Raw | ConvertFrom-Json
+          "node=$($inputs.nodeVersion)" >> $env:GITHUB_OUTPUT
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ steps.inputs.outputs.node }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run }}
+          name: rice-windows-${{ inputs.candidate_run }}
+          path: release-artifacts
+      - name: Diagnose real packaged ACL and native UI
+        run: |
+          ./scripts/smoke-windows-artifacts.ps1 -Artifacts release-artifacts -Commit $env:CANDIDATE_COMMIT
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: rice-capability-diagnostic-${{ github.run_id }}
+          path: windows-smoke-report.json
+          if-no-files-found: error
+          retention-days: 1
