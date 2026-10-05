@@ -166,7 +166,7 @@ export function subscribeDomainEvents({
       event.connectionGeneration < current.twitchConnectionGeneration
     )
       return;
-    if (event.domain === "chat" && event.status !== "validating") {
+    if (event.domain === "chat") {
       dispatchDomainAction(stores, {
         type: "twitch.connectionStatus",
         status: event.status,

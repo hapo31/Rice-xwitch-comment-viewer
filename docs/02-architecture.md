@@ -224,6 +224,8 @@ Launcherの資源境界（#71）: 最大200件、pathは各4096UTF-8 bytes・合
 
 ### backend event replay と speech state snapshot
 
+frontend の `SpeechQueueOutcome` は blocked/各 skipped reason/error の retryable と recoveryAction の組合せまで型で表す。再送不能な writeTimeout/writeFailed/connectionLost/unknown は送達確認を要求する。adapter が受付済みなら理由を問わず送達不明になり得るため、全 error reason に retryable=false/confirmDelivery を許す。`TwitchStatusEvent` は Auth/Chat の判別可能 union とし、各状態の共通定数を型と parser の両方へ使う。validating は Auth、reconnecting と接続世代/identity は Chat、missingRequiredScope は Auth の authRequired だけに属する。従来の正常な省略 payload は受理し、不正組合せは型検査と受信時の parser の両方で拒否する。
+
 Issue #85の各queue itemは任意の`outcome`を持つ。Rust/TS共通の`kind`（blocked/skipped/error）でreasonCodeを区別し、固定の日本語message、retryable、recoveryAction、occurredAtMsを送る。Noneはfield omission（旧payload互換）であり、terminal production itemには必ず理由を付ける。auto retry待ち/送信中は直前のerror理由を保持し、手動retryと正常完了で消す。最新snapshot/reload/late subscriberはwarningの有無に依存せず同じoutcomeを復元する。時刻は遷移時のUTC wall clock（表示用）で、並び順/新旧判定は既存ID/revisionを使う。共通fixture`src/tauri/fixtures/queue-outcomes.json`で全21codeを検証する。
 
 backend は bounded な operational log ring と Twitch（auth/chat）/speech の最新 status を managed state に保持する。`app_events_snapshot` command は listener 登録後にこの状態を取得するため、起動時に先行 emit されたログ・status も late subscriber へ復元できる。各 status と speech queue event には単調増加 `revision` を付与し、`speech_queue_reload` は status と queue を同一ロック下で採取した `SpeechStateSnapshot` として返す（各componentは最後の更新revisionを保持する）。frontend は全 listener を登録してから snapshot を取得し、snapshot より新しい並行 event を古い値で上書きしない。
