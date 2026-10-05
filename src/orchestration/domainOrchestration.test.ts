@@ -6,6 +6,7 @@ import type { AppSettings } from "../types";
 import {
   createSettingsMutationOrchestrator,
   type DomainEventBridge,
+  dispatchDomainAction,
   restoreStartupAuth,
   type SettingsMutationDependencies,
   subscribeDomainEvents,
@@ -165,6 +166,105 @@ describe("domain orchestration", () => {
     cleanup();
   });
 
+  it("preserves queue status mapping and system chat rows through domain stores", () => {
+    const stores = createDomainStores();
+    const statuses = ["speaking", "spoken", "skipped", "blocked", "error"] as const;
+    for (const status of statuses) {
+      dispatchDomainAction(stores, {
+        type: "chat.message",
+        message: {
+          kind: "user",
+          id: `message-${status}`,
+          receivedAt: utcTimestamp("2026-08-01T00:00:00Z"),
+          userDisplayName: "viewer",
+          text: status,
+          status: "queued",
+        },
+      });
+    }
+    const systemMessage = {
+      kind: "system" as const,
+      id: "system",
+      receivedAt: utcTimestamp("2026-08-01T00:00:00Z"),
+      userDisplayName: "system" as const,
+      text: "Twitch に接続しました",
+    };
+    dispatchDomainAction(stores, { type: "chat.message", message: systemMessage });
+    dispatchDomainAction(stores, {
+      type: "queue.changed",
+      items: statuses.map((status) => ({
+        id: `queue-${status}`,
+        sourceMessageId: `message-${status}`,
+        userDisplayName: "viewer",
+        text: status,
+        status,
+      })),
+    });
+
+    const messages = stores.chat.getState().messages;
+    expect(
+      messages.filter((message) => message.kind === "user").map((message) => message.status),
+    ).toEqual(["error", "blocked", "skipped", "spoken", "queued"]);
+    expect(messages[0]).toEqual(systemMessage);
+  });
+
+  it("keeps a 200-message chat history and applies a clear snapshot as skipped", () => {
+    const stores = createDomainStores();
+    for (let index = 0; index < 205; index += 1) {
+      dispatchDomainAction(stores, {
+        type: "chat.message",
+        message: {
+          kind: "user",
+          id: `message-${index}`,
+          receivedAt: utcTimestamp("2026-08-01T00:00:00Z"),
+          userDisplayName: "viewer",
+          text: `message ${index}`,
+          status: "queued",
+        },
+      });
+    }
+    dispatchDomainAction(stores, {
+      type: "queue.changed",
+      items: Array.from({ length: 205 }, (_, index) => ({
+        id: `queue-${index}`,
+        sourceMessageId: `message-${index}`,
+        userDisplayName: "viewer",
+        text: `message ${index}`,
+        status: "skipped" as const,
+      })),
+    });
+
+    const messages = stores.chat.getState().messages;
+    expect(messages).toHaveLength(200);
+    expect(
+      messages.every((message) => message.kind === "user" && message.status === "skipped"),
+    ).toBe(true);
+  });
+
+  it("replaces Launcher items through settings domain actions and preserves other settings", () => {
+    const stores = createDomainStores();
+    const settings = {
+      twitch: defaultTwitchSettings(),
+      speech: defaultSpeechSettings(),
+      launcher: { items: [] },
+    };
+    dispatchDomainAction(stores, { type: "settings.loaded", settings });
+    const items = [
+      {
+        id: "launcher-1",
+        kind: "application" as const,
+        target: "C:\\Apps\\Example.exe",
+        displayName: "Example",
+        order: 0,
+      },
+    ];
+    dispatchDomainAction(stores, { type: "launcher.changed", items });
+
+    expect(stores.settings.getState().settings).toEqual({ ...settings, launcher: { items } });
+    expect(stores.settings.getState().settings?.twitch).toBe(settings.twitch);
+    expect(stores.settings.getState().settings?.speech).toBe(settings.speech);
+  });
+
   it("serializes settings mutations and publishes the backend result", async () => {
     const resolvers: Array<(value: AppSettings) => void> = [];
     const updateSettings = vi.fn<SettingsMutationDependencies["updateSettings"]>(
@@ -200,24 +300,50 @@ describe("domain orchestration", () => {
     expect(loaded).toEqual([firstResult, secondResult]);
   });
 
-  it("continues serialized mutations after a failed save and resolves waitForIdle", async () => {
+  it("continues an already queued save after failure and waits for all queued work", async () => {
+    let rejectFirst!: (reason: unknown) => void;
+    let resolveSecond!: (settings: AppSettings) => void;
+    const firstSave = new Promise<AppSettings>((_resolve, reject) => {
+      rejectFirst = reject;
+    });
+    const secondSave = new Promise<AppSettings>((resolve) => {
+      resolveSecond = resolve;
+    });
+    const updateSettings = vi
+      .fn<SettingsMutationDependencies["updateSettings"]>()
+      .mockReturnValueOnce(firstSave)
+      .mockReturnValueOnce(secondSave);
     const errors: unknown[] = [];
     const loaded: AppSettings[] = [];
     const orchestrator = createSettingsMutationOrchestrator({
-      updateSettings: vi
-        .fn()
-        .mockRejectedValueOnce(new Error("save failed"))
-        .mockResolvedValue({
-          twitch: defaultTwitchSettings(),
-          speech: defaultSpeechSettings(),
-          launcher: { items: [] },
-        }),
+      updateSettings,
       onSettingsLoaded: (settings) => loaded.push(settings),
       onError: (error) => errors.push(error),
     });
-    await expect(orchestrator.mutate({ twitch: { autoConnect: true } })).resolves.toBe(false);
-    await expect(orchestrator.mutate({ twitch: { autoConnect: false } })).resolves.toBe(true);
-    await expect(orchestrator.waitForIdle()).resolves.toBeUndefined();
+    const first = orchestrator.mutate({ twitch: { autoConnect: true } });
+    const second = orchestrator.mutate({ twitch: { autoConnect: false } });
+    let idle = false;
+    const idleWait = orchestrator.waitForIdle().then(() => {
+      idle = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(idle).toBe(false);
+    rejectFirst(new Error("save failed"));
+    await expect(first).resolves.toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(updateSettings).toHaveBeenCalledTimes(2);
+    expect(idle).toBe(false);
+    resolveSecond({
+      twitch: { ...defaultTwitchSettings(), autoConnect: false },
+      speech: defaultSpeechSettings(),
+      launcher: { items: [] },
+    });
+    await expect(second).resolves.toBe(true);
+    await idleWait;
+
+    expect(idle).toBe(true);
     expect(errors).toHaveLength(1);
     expect(loaded).toHaveLength(1);
   });
