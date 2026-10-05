@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { SidePanel } from "./SidePanel";
 import { initialAppState } from "../stores/appStore";
+import { defaultSpeechSettings } from "../features/settings/defaults";
 
 describe("SidePanel speech recovery", () => {
   it("shows the active channel separately from a changed configured channel", () => {
@@ -24,7 +25,7 @@ describe("SidePanel speech recovery", () => {
                 confirmBeforeStopChat: true,
                 liveChatAnnouncements: true,
               },
-              speech: {} as any,
+              speech: structuredClone(defaultSpeechSettings),
               launcher: { items: [] },
             },
           }}

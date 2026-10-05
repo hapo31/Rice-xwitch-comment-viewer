@@ -88,6 +88,7 @@ import type {
   AppSettings,
   AppSettingsPatch,
   BouyomiConnectionDiagnostics,
+  LauncherAddResult,
   LauncherLaunchResult,
   NotificationSeverity,
   NotificationSource,
@@ -675,11 +676,11 @@ export function AppShell() {
     }
   }
 
-  const handleLauncherAdd = useCallback(async (paths: string[]) => {
+  const handleLauncherAdd = useCallback(async (paths: string[]): Promise<LauncherAddResult> => {
     try {
-      const items = await launcherAdd(paths);
-      dispatch({ type: "launcher.changed", items });
-      return items;
+      const result = await launcherAdd(paths);
+      dispatch({ type: "launcher.changed", items: result.items });
+      return result;
     } catch (error) {
       reportError(error, "launcher");
       throw error;

@@ -85,6 +85,8 @@ domain/endpointの境界値は同じJSON fixtureをRustとフォームで検証�
 
 `AppState.launcher_runtime`がアプリ全体で1つのworker poolとadapterを保持する。`commands.rs`はborrowed IPCのpreflight/DTO変換、repository/event sinkのwiring、service呼出しだけを行う。`repository.rs`は共有設定の最新candidateへmutationを1回適用し、既存のsettings transactionで検証・永続化した後だけメモリへ公開する。Launcher以外のsectionも保持する。保存失敗時は追加/削除の成功ログやicon fallback通知を発行しない。filesystem/COM処理中にsettings lockを保持しない。
 
+`launcher_add`は更新後の`items`と、そのtransactionで実際に追加した`addedCount`を返す。UIはPromise解決時の共有state件数から追加数を推測しない。並行追加が同じtargetを含む場合もrepositoryの最新candidateへのcommit内で件数を確定する。
+
 `workers.rs`は最大4つのblocking taskを共通poolで制限する。取得待ち6秒・job待ち7秒を維持し、timeout後も実workerが終了するまでpermitを返さない。`platform/target.rs`だけが実ファイルの存在/種類/canonical pathを確認し、WindowsではDOS/UNCへ変換する。`platform/windows/icon.rs`はPowerShell/COMの5秒timeout、kill/reap、bounded pipe回収を担当する。`platform/windows/launch.rs`はapplication pathだけを受け取り、Launcherのkindを解釈しない。Websiteの予約/拒否と将来のdispatch追加はservice/modelに閉じる。
 
 Windowsのsupported caseは存在する`.exe`と、通常の`.exe`を指す`.lnk`（拡張子の大文字小文字を区別しない）。`.exe`はshellを経由せずpathをCreateProcessへ渡し、parentをworking directoryにする。`.lnk`は起動の都度COMでtarget/arguments/working directory/icon sourceを構造化し、解決結果を設定に保存しない。参照先の存在・regular file/canonical path、絶対パスのworking directoryを検証した後、そのexeを直接CreateProcessする。引数はWindowsのraw argument tailとして渡すため、shellのメタ文字へ再解釈しない（起動先自身の引数解釈は別）。cwd空欄はexeのparentを使う。link修復/移動先探索のResolve、Explorerへの受付、ShellExecuteは使わない。移動したtargetは失敗として修復・再登録を案内する。

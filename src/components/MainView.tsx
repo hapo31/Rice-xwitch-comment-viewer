@@ -12,6 +12,7 @@ import {
 import type {
   AppSettingsPatch,
   BouyomiConnectionDiagnostics,
+  LauncherAddResult,
   LauncherItem,
   LauncherLaunchResult,
 } from "../types";
@@ -32,7 +33,7 @@ interface MainViewProps {
   onQueueDismiss: (itemId: string) => void;
   onQueueDismissHistory: () => void;
   onQueueRetry: (itemId: string) => void;
-  onLauncherAdd: (paths: string[]) => Promise<LauncherItem[]>;
+  onLauncherAdd: (paths: string[]) => Promise<LauncherAddResult>;
   onLauncherRemove: (itemId: string) => Promise<LauncherItem[]>;
   onLauncherLaunch: (itemId: string) => Promise<LauncherLaunchResult>;
   onLauncherLaunchAll: () => Promise<LauncherLaunchResult>;

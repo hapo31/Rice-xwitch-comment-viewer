@@ -398,7 +398,7 @@ it("Windows Launcher selects applications and displays partial launch failures",
     },
   ];
   tauriMock.open.mockResolvedValue(["C:\\valid.exe", "C:\\missing.lnk"]);
-  tauriMock.setCommand("launcher_add", items);
+  tauriMock.setCommand("launcher_add", { items, addedCount: 2 });
   tauriMock.setCommand("launcher_launch_all", {
     launchedCount: 1,
     failures: [
@@ -415,6 +415,13 @@ it("Windows Launcher selects applications and displays partial launch failures",
     expect(screen.getByRole("button", { name: "アプリをランチャーに追加" })).toBeEnabled(),
   );
   await user.click(screen.getByRole("button", { name: "アプリをランチャーに追加" }));
+  expect(await screen.findByText("2 件を登録しました。")).toBeVisible();
+  tauriMock.setCommand("launcher_add", { items, addedCount: 1 });
+  await user.click(screen.getByRole("button", { name: "アプリをランチャーに追加" }));
+  expect(await screen.findByText("1 件を登録しました。 1 件は登録済みです。")).toBeVisible();
+  tauriMock.setCommand("launcher_add", { items, addedCount: 0 });
+  await user.click(screen.getByRole("button", { name: "アプリをランチャーに追加" }));
+  expect(await screen.findByText("選択したアプリはすでに登録されています。")).toBeVisible();
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "有効なアプリ を起動" })).toBeEnabled(),
   );

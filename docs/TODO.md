@@ -91,6 +91,8 @@
 
 Issue #199 は system timeline の中立モデルと型付き購読境界、source 別 transition 契約を実装した。初期 snapshot の認証/speech 通知、連続重複と復旧後の再通知、購読終了後の無視、不正 callback の型エラーを検証した。独立レビューで認証/接続の状態集合をさらに限定し、案内文を含む認証の重複抑制を維持した。最終 CI 結果と統合状況は PR #239 に記録する。
 
+Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既存 Biome gate に any・enum・const enum・namespace の検査を追加した。frontend 322件と品質 policy 5件、format/lint/typecheck/build が成功し、独立レビューを完了した。最終コミットの CI 結果と統合状況は PR #238 に記録する。
+
 2026-10-05: Dependabot全13件（#179–#182、#184–#192）のレビューと互換性修正を完了した。Tauri dialogのJS/Rust版一致検査、React 19の型・ref初期値・TitleBar DOMテスト移行を実施した。マージと後片付けの条件・検証結果・既存Windows入力の不安定性はPhase 5のDependabot項目に記録する。
 
 - [x] Issue #69: adapter healthとqueue phaseをbackend/frontendで独立保持し、paused中も無音probeを継続する。復旧は失敗項目を自動再送せず、UIの接続/準備完了を両状態から導出する。
@@ -330,6 +332,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 - [x] Issue #199: system timeline の source/transition を中立の判別可能 union へ移し、生成・購読・routing の共通型で型 assertion を除去する。起動・認証・speech 復旧の初回通知／重複抑制と不正 callback の型エラーを検証し、既存品質 gate で検証する。
 
+- [x] Issue #198: テスト mock の明示的 any を実 DTO／関数型へ置換し、既存 Biome 品質ゲートで any・enum・namespace の禁止と型レベル用途の限定例外を検証する。既存 quality policy に正負 fixture を追加し、関連テスト・format・lint・型検査・build を確認した。
+
 - [x] Dependabot PR #179–#182、#184–#192 の全13件を一件ずつ専用 worktree でレビューし、必要なCI互換性修正を実装する。各PRは全PR checksと当該headのWindows開発build成功を確認してからマージし、worktreeと作業用ローカルbranchを削除して次へ進む。
 
 2026-10-05最終PR進捗: #190はRust dialog 2.8.1との版一致とplugin回帰検査12件を追加し、全16 checksと開発build成功後にマージした。#192も使用中アイコンがv1のbrand icon削除に該当しないことを[公式移行ガイド](https://lucide.dev/guide/react/migration)で確認し、frontend322件・全16 checks・開発build成功後にマージした。両worktreeは削除済み。最後の[#191](https://github.com/hapo31/Rice-xwitch-comment-viewer/pull/191)では[React 19移行ガイド](https://react.dev/blog/2024/04/25/react-19-upgrade-guide)に合わせてReact DOM型も19.3.0へ揃え、5か所のuseRefへundefined初期値を明示した。TitleBarテストはHTML属性順の比較から、既存jsdom projectでgroup/radioの名前・値・全選択状態と現在倍率の検証へ移した。StrictModeの購読cleanupを含むfrontend322件、typecheck/build/format/lint、Tauri版・renderer権限検査は成功した。Dependabotの自動rebaseも取り込み、無関係なWASM更新を入れずに検証済みtreeを保持した。文書を含む最終headの全PR checksとWindows開発build成功をマージ条件とし、マージ済み・保存先から到達可能・cleanを確認してからworktreeを削除する。新たなRelease公開や新依存構成での配布物smokeは今回の対象に含めない。
@@ -388,6 +392,9 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Windows 10 スタートメニュー風の Launcher 画面を追加する。
 - [x] Launcher でアプリの選択/DnD登録、削除、単体起動、一斉起動を実装する。
 - [x] Launcher の登録内容を永続化し、将来の色変更・グループ・並べ替え・Webリンクに拡張できるモデルにする。
+- [x] Issue #196: Launcher追加処理が`added`/`duplicate`/`rejected`の操作結果を明示し、共有state更新とPromise解決の順序や並行追加に依存せず正しい通知を表示する。実装・回帰テスト・親レビューを完了した。最終コミットの CI 結果と統合状況は PR #237 に記録する。
+
+2026-10-06 Issue #196: `launcher_add`はsettings transactionで実際に追加した`addedCount`と更新後のitemsを返すようにし、Launcher通知は共有stateの件数差分を参照しない。実DomainStoresとLauncherViewを接続し、`flushSync`で共有stateをPromise解決前に更新してから結果を返すDOM回帰を追加した。新規/混在/重複通知と同一targetの並行結果独立性を確認する。Frontend全gate（format/lint/typecheck/test 324件/build）とsecurity/license policyが成功。Rust toolchainがこの実行環境にないためRust回帰のローカル実行は未確認。親レビューで追加した実store更新順序のDOM回帰2件も成功。Rustを含む最終CI結果はPR #237に記録する。
 - [x] Issue #68: Launcher のアイコン抽出を timeout/kill/reap 付きの上限制御 worker へ移し、設定 lock 外で実行して競合する設定変更を merge する。抽出失敗は汎用アイコンと bounded Logs へフォールバックする。
 - [x] Issue #18: Launcher の削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応させる。
 - [x] Issue #24: チャット・ログ・状態更新時にも Launcher の DnD listener を再登録せず、mount 中の購読を維持し、最新 handler と遅延登録後の cleanup をテストする。
@@ -509,5 +516,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 ## 調査メモ
 
 - 2026-10-06 Issue #199: `SystemTimelineEvent` を presentation から `models/systemTimeline.ts` へ移し、domain orchestration と AppShell も同じ型を使う。source/transition は判別可能 union とし、認証の状態＋案内文による重複抑制は維持する。実購読＋snapshot replay＋router の回帰と `@ts-expect-error` の型契約回帰を追加した。frontend 325件、format/lint/typecheck/build が成功した。実Twitch/棒読みちゃんとの手動通信は未実施。
+
+- 2026-10-06 Issue #198: [Biome noExplicitAny](https://biomejs.dev/linter/rules/no-explicit-any/) の型引数制約の例外を維持する。条件型で任意の引数列から戻り値を推論する場合に限り、理由付きの行単位 `biome-ignore lint/suspicious/noExplicitAny` を使える。DTO、mock、値のキャストには使わず、ファイル単位の無効化はしない。`noEnum` は const enum を検出しないため `noConstEnum` も有効にした。既存 quality policy の正負 fixture で named/alias import と許容例外を含め検証し、別の AST 検査器や workflow は追加していない。
 
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。

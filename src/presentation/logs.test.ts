@@ -15,7 +15,7 @@ describe("formatLogTime", () => {
     Object.defineProperty(Intl, "DateTimeFormat", {
       configurable: true,
       writable: true,
-      value: function (...args: any[]) {
+      value: function (...args: ConstructorParameters<typeof Intl.DateTimeFormat>) {
         formatterCreations += 1;
         return new DateTimeFormat(...args);
       },
