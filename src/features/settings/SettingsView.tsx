@@ -20,6 +20,7 @@ import { defaultSpeechSettings, defaultTwitchSettings } from "./defaults";
 import { useUnsavedChanges } from "../../unsavedChanges";
 import { authorizeSpeechEndpoint } from "../../tauri/client";
 import { presentError } from "../../presentation/errors";
+import { useFormDraft } from "./useFormDraft";
 
 const defaultConnectionSuccessMessage = "棒読みちゃんと接続しました";
 
@@ -44,56 +45,43 @@ export function SettingsView({
     ...defaultSpeechSettings(),
     ...settings?.speech,
   };
-  const [host, setHost] = useState(speechSettings.bouyomiHost);
-  const [port, setPort] = useState(String(speechSettings.bouyomiPort));
-  const [remoteMode, setRemoteMode] = useState(speechSettings.bouyomiRemoteMode ?? false);
+  const form = useFormDraft({
+    host: speechSettings.bouyomiHost,
+    port: String(speechSettings.bouyomiPort),
+    remoteMode: speechSettings.bouyomiRemoteMode ?? false,
+    speed: speechSettings.bouyomiSpeed,
+    tone: speechSettings.bouyomiTone,
+    volume: speechSettings.bouyomiVolume,
+    voice: String(speechSettings.bouyomiVoice),
+    autoSpeak: speechSettings.autoSpeak,
+    readUserName: speechSettings.readUserName,
+    readEmotes: speechSettings.readEmotes,
+    connectionSuccessSpeechEnabled: speechSettings.connectionSuccessSpeechEnabled,
+    connectionSuccessSpeechText: speechSettings.connectionSuccessSpeechText,
+  });
+  const {
+    host,
+    port,
+    remoteMode,
+    speed,
+    tone,
+    volume,
+    voice,
+    autoSpeak,
+    readUserName,
+    readEmotes,
+    connectionSuccessSpeechEnabled,
+    connectionSuccessSpeechText,
+  } = form.values;
   const [consentMessage, setConsentMessage] = useState("");
   const [isAuthorizing, setIsAuthorizing] = useState(false);
-  const [speed, setSpeed] = useState(speechSettings.bouyomiSpeed);
-  const [tone, setTone] = useState(speechSettings.bouyomiTone);
-  const [volume, setVolume] = useState(speechSettings.bouyomiVolume);
-  const [voice, setVoice] = useState(String(speechSettings.bouyomiVoice));
-  const [autoSpeak, setAutoSpeak] = useState(speechSettings.autoSpeak);
-  const [readUserName, setReadUserName] = useState(speechSettings.readUserName);
-  const [readEmotes, setReadEmotes] = useState(speechSettings.readEmotes);
-  const [connectionSuccessSpeechEnabled, setConnectionSuccessSpeechEnabled] = useState(
-    speechSettings.connectionSuccessSpeechEnabled,
-  );
-  const [connectionSuccessSpeechText, setConnectionSuccessSpeechText] = useState(
-    speechSettings.connectionSuccessSpeechText,
-  );
   const [testText, setTestText] = useState("テスト読み上げです。");
   const [diagnostics, setDiagnostics] = useState<BouyomiConnectionDiagnostics>();
   const [isDiagnosing, setIsDiagnosing] = useState(false);
 
   useEffect(() => {
-    setHost(speechSettings.bouyomiHost);
-    setPort(String(speechSettings.bouyomiPort));
-    setRemoteMode(speechSettings.bouyomiRemoteMode ?? false);
     setConsentMessage("");
-    setSpeed(speechSettings.bouyomiSpeed);
-    setTone(speechSettings.bouyomiTone);
-    setVolume(speechSettings.bouyomiVolume);
-    setVoice(String(speechSettings.bouyomiVoice));
-    setAutoSpeak(speechSettings.autoSpeak);
-    setReadUserName(speechSettings.readUserName);
-    setReadEmotes(speechSettings.readEmotes);
-    setConnectionSuccessSpeechEnabled(speechSettings.connectionSuccessSpeechEnabled);
-    setConnectionSuccessSpeechText(speechSettings.connectionSuccessSpeechText);
-  }, [
-    speechSettings.bouyomiHost,
-    speechSettings.bouyomiPort,
-    speechSettings.bouyomiRemoteMode,
-    speechSettings.bouyomiSpeed,
-    speechSettings.bouyomiTone,
-    speechSettings.bouyomiVolume,
-    speechSettings.bouyomiVoice,
-    speechSettings.autoSpeak,
-    speechSettings.readUserName,
-    speechSettings.readEmotes,
-    speechSettings.connectionSuccessSpeechEnabled,
-    speechSettings.connectionSuccessSpeechText,
-  ]);
+  }, [speechSettings.bouyomiHost, speechSettings.bouyomiPort, speechSettings.bouyomiRemoteMode]);
 
   const numericPort = Number(port);
   const numericVoice = Number(voice);
@@ -137,38 +125,68 @@ export function SettingsView({
     }
 
     const speech: NonNullable<AppSettingsPatch["speech"]> = {};
-    if (host.trim() !== speechSettings.bouyomiHost) speech.bouyomiHost = host.trim();
-    if (numericPort !== speechSettings.bouyomiPort) speech.bouyomiPort = numericPort;
-    if (remoteMode !== (speechSettings.bouyomiRemoteMode ?? false))
+    const submittedKeys: (keyof typeof form.values)[] = [];
+    if (host.trim() !== speechSettings.bouyomiHost) {
+      speech.bouyomiHost = host.trim();
+      submittedKeys.push("host");
+    }
+    if (numericPort !== speechSettings.bouyomiPort) {
+      speech.bouyomiPort = numericPort;
+      submittedKeys.push("port");
+    }
+    if (remoteMode !== (speechSettings.bouyomiRemoteMode ?? false)) {
       speech.bouyomiRemoteMode = remoteMode;
-    if (speed !== speechSettings.bouyomiSpeed) speech.bouyomiSpeed = speed;
-    if (tone !== speechSettings.bouyomiTone) speech.bouyomiTone = tone;
-    if (volume !== speechSettings.bouyomiVolume) speech.bouyomiVolume = volume;
-    if (numericVoice !== speechSettings.bouyomiVoice) speech.bouyomiVoice = numericVoice;
-    if (autoSpeak !== speechSettings.autoSpeak) speech.autoSpeak = autoSpeak;
-    if (readUserName !== speechSettings.readUserName) speech.readUserName = readUserName;
-    if (readEmotes !== speechSettings.readEmotes) speech.readEmotes = readEmotes;
-    if (connectionSuccessSpeechEnabled !== speechSettings.connectionSuccessSpeechEnabled)
+      submittedKeys.push("remoteMode");
+    }
+    if (speed !== speechSettings.bouyomiSpeed) {
+      speech.bouyomiSpeed = speed;
+      submittedKeys.push("speed");
+    }
+    if (tone !== speechSettings.bouyomiTone) {
+      speech.bouyomiTone = tone;
+      submittedKeys.push("tone");
+    }
+    if (volume !== speechSettings.bouyomiVolume) {
+      speech.bouyomiVolume = volume;
+      submittedKeys.push("volume");
+    }
+    if (numericVoice !== speechSettings.bouyomiVoice) {
+      speech.bouyomiVoice = numericVoice;
+      submittedKeys.push("voice");
+    }
+    if (autoSpeak !== speechSettings.autoSpeak) {
+      speech.autoSpeak = autoSpeak;
+      submittedKeys.push("autoSpeak");
+    }
+    if (readUserName !== speechSettings.readUserName) {
+      speech.readUserName = readUserName;
+      submittedKeys.push("readUserName");
+    }
+    if (readEmotes !== speechSettings.readEmotes) {
+      speech.readEmotes = readEmotes;
+      submittedKeys.push("readEmotes");
+    }
+    if (connectionSuccessSpeechEnabled !== speechSettings.connectionSuccessSpeechEnabled) {
       speech.connectionSuccessSpeechEnabled = connectionSuccessSpeechEnabled;
-    if (connectionSuccessSpeechText !== speechSettings.connectionSuccessSpeechText)
+      submittedKeys.push("connectionSuccessSpeechEnabled");
+    }
+    if (connectionSuccessSpeechText !== speechSettings.connectionSuccessSpeechText) {
       speech.connectionSuccessSpeechText = connectionSuccessSpeechText;
-    return onSettingsUpdate({ speech });
+      submittedKeys.push("connectionSuccessSpeechText");
+    }
+    const snapshot = form.beginSave(submittedKeys);
+    let succeeded = false;
+    try {
+      succeeded = await onSettingsUpdate({ speech });
+      return succeeded;
+    } finally {
+      form.finishSave(snapshot, succeeded);
+    }
   }
 
   function discardBouyomiSettings() {
-    setHost(speechSettings.bouyomiHost);
-    setPort(String(speechSettings.bouyomiPort));
-    setRemoteMode(speechSettings.bouyomiRemoteMode ?? false);
+    form.discard();
     setConsentMessage("");
-    setSpeed(speechSettings.bouyomiSpeed);
-    setTone(speechSettings.bouyomiTone);
-    setVolume(speechSettings.bouyomiVolume);
-    setVoice(String(speechSettings.bouyomiVoice));
-    setAutoSpeak(speechSettings.autoSpeak);
-    setReadUserName(speechSettings.readUserName);
-    setReadEmotes(speechSettings.readEmotes);
-    setConnectionSuccessSpeechEnabled(speechSettings.connectionSuccessSpeechEnabled);
-    setConnectionSuccessSpeechText(speechSettings.connectionSuccessSpeechText);
   }
 
   useUnsavedChanges("settings", {
@@ -270,16 +288,28 @@ export function SettingsView({
           </SettingsSection>
 
           <SettingsSection id="automatic-speech" title="自動読み上げ">
-            <ToggleRow label="自動読み上げ" checked={autoSpeak} onChange={setAutoSpeak} />
-            <ToggleRow label="ユーザー名を読む" checked={readUserName} onChange={setReadUserName} />
-            <ToggleRow label="emote を読む" checked={readEmotes} onChange={setReadEmotes} />
+            <ToggleRow
+              label="自動読み上げ"
+              checked={autoSpeak}
+              onChange={(value) => form.setValue("autoSpeak", value)}
+            />
+            <ToggleRow
+              label="ユーザー名を読む"
+              checked={readUserName}
+              onChange={(value) => form.setValue("readUserName", value)}
+            />
+            <ToggleRow
+              label="emote を読む"
+              checked={readEmotes}
+              onChange={(value) => form.setValue("readEmotes", value)}
+            />
           </SettingsSection>
 
           <SettingsSection id="bouyomi-connection" title="棒読みちゃん接続">
             <ToggleRow
               label="外部接続モード（明示許可が必要）"
               checked={remoteMode}
-              onChange={setRemoteMode}
+              onChange={(value) => form.setValue("remoteMode", value)}
             />
             <p className="py-2 text-xs text-zinc-400">
               通常は127.0.0.0/8・::1だけに接続します。外部接続はprivate
@@ -313,7 +343,7 @@ export function SettingsView({
                 <input
                   id="bouyomi-host"
                   value={host}
-                  onChange={(event) => setHost(event.target.value)}
+                  onChange={(event) => form.setValue("host", event.target.value)}
                   aria-invalid={!isHostValid}
                   aria-describedby={!isHostValid ? "bouyomi-host-error" : undefined}
                   className={`h-9 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
@@ -330,7 +360,7 @@ export function SettingsView({
                   id="bouyomi-port"
                   inputMode="numeric"
                   value={port}
-                  onChange={(event) => setPort(event.target.value)}
+                  onChange={(event) => form.setValue("port", event.target.value)}
                   aria-invalid={!isPortValid}
                   aria-describedby={!isPortValid ? "bouyomi-port-error" : undefined}
                   className={`h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
@@ -384,7 +414,7 @@ export function SettingsView({
               value={speed}
               min={-1}
               max={300}
-              onChange={setSpeed}
+              onChange={(value) => form.setValue("speed", value)}
             />
             <RangeRow
               id="bouyomi-tone"
@@ -392,7 +422,7 @@ export function SettingsView({
               value={tone}
               min={-1}
               max={200}
-              onChange={setTone}
+              onChange={(value) => form.setValue("tone", value)}
             />
             <RangeRow
               id="bouyomi-volume"
@@ -400,7 +430,7 @@ export function SettingsView({
               value={volume}
               min={-1}
               max={100}
-              onChange={setVolume}
+              onChange={(value) => form.setValue("volume", value)}
             />
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-t border-zinc-800 py-3">
               <label className="text-sm text-zinc-400" htmlFor="bouyomi-voice">
@@ -411,7 +441,7 @@ export function SettingsView({
                   id="bouyomi-voice"
                   inputMode="numeric"
                   value={voice}
-                  onChange={(event) => setVoice(event.target.value)}
+                  onChange={(event) => form.setValue("voice", event.target.value)}
                   aria-invalid={!isVoiceValid}
                   aria-describedby={!isVoiceValid ? "bouyomi-voice-error" : undefined}
                   className={`h-9 w-40 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
@@ -425,7 +455,7 @@ export function SettingsView({
             <ToggleRow
               label="接続成功時に読み上げさせる"
               checked={connectionSuccessSpeechEnabled}
-              onChange={setConnectionSuccessSpeechEnabled}
+              onChange={(value) => form.setValue("connectionSuccessSpeechEnabled", value)}
             />
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start py-3">
               <label
@@ -442,7 +472,9 @@ export function SettingsView({
                   aria-describedby={!isConfirmationValid ? "confirmation-text-error" : undefined}
                   disabled={!connectionSuccessSpeechEnabled}
                   placeholder={defaultConnectionSuccessMessage}
-                  onChange={(event) => setConnectionSuccessSpeechText(event.target.value)}
+                  onChange={(event) =>
+                    form.setValue("connectionSuccessSpeechText", event.target.value)
+                  }
                   className={`h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 placeholder:text-zinc-400 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-950 disabled:text-zinc-400 ${focusIndicatorClass}`}
                 />
                 <div className="text-right text-xs text-zinc-400">
