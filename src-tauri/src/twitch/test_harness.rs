@@ -8,7 +8,7 @@ use tokio_tungstenite::tungstenite::Error;
 
 type Frame = Result<Message, Error>;
 #[derive(Debug)]
-struct FakeSocket {
+pub(super) struct FakeSocket {
     frames: VecDeque<Frame>,
     pending_once: bool,
     schedule: VecDeque<tokio::time::Instant>,
@@ -16,7 +16,7 @@ struct FakeSocket {
     pong: Arc<Mutex<Vec<Message>>>,
 }
 impl FakeSocket {
-    fn new(frames: impl IntoIterator<Item = Message>) -> Self {
+    pub(super) fn new(frames: impl IntoIterator<Item = Message>) -> Self {
         Self {
             frames: frames.into_iter().map(Ok).collect(),
             pong: Arc::default(),

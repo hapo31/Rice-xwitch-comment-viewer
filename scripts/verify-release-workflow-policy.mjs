@@ -46,6 +46,10 @@ requireMatch(
   /rice-release-provenance-/,
   "build workflow は tag object の provenance artifact を保存する必要があります。",
 );
+requireMatch(buildWorkflow, /windows-tests:\s*\n\s+name: Windows production tests\s*\n\s+uses: \.\/\.github\/workflows\/single-instance\.yml/, "release must run the complete Windows production tests");
+requireMatch(buildWorkflow, /windows-smoke:\s*\n\s+name: Smoke exact Windows release artifacts\s*\n\s+needs: \[build-windows, windows-tests\]/, "exact artifact smoke must require the build and Windows tests");
+requireMatch(buildWorkflow, /node scripts\/verify-release-artifacts\.mjs release-artifacts --write/, "release must inspect exact artifacts and ZIP integrity before upload");
+requireMatch(buildWorkflow, /\.\/scripts\/smoke-windows-artifacts\.ps1 -Artifacts release-artifacts -Commit \$env:GITHUB_SHA/, "release must execute the installer and portable on Windows");
 
 requireMatch(
   publishWorkflow,
@@ -91,5 +95,9 @@ requireMatch(
   /run-id:\s*\$\{\{ github\.event\.workflow_run\.id \}\}/,
   "publish workflow は検証対象 run の artifact だけを取得する必要があります。",
 );
+requireMatch(publishWorkflow, /name: rice-windows-\$\{\{ github\.event\.workflow_run\.id \}\}/, "published bundle must come from the exact tested run");
+requireMatch(publishWorkflow, /name: rice-windows-smoke-\$\{\{ github\.event\.workflow_run\.id \}\}/, "publisher must fetch the Windows smoke receipt from the same run");
+requireMatch(publishWorkflow, /node trusted\/scripts\/verify-windows-smoke\.mjs/, "trusted publication policy must verify actual Windows jobs and artifact-bound receipt");
+if (publishWorkflow.indexOf("node trusted/scripts/verify-windows-smoke.mjs") >= publishWorkflow.indexOf("../trusted/scripts/publish-release.sh")) throw new Error("Windows smoke must be verified before any Release mutation");
 
 console.log("release workflow policy checks passed");

@@ -28,7 +28,7 @@ jobs:
       actions: read
       contents: read
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -57,14 +57,14 @@ jobs:
       RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
     steps:
       - name: Checkout trusted release policy
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           path: trusted
           persist-credentials: false
 
       - name: Checkout event commit
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
@@ -72,7 +72,7 @@ jobs:
           persist-credentials: false
 
       - name: Download release provenance
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: rice-release-provenance-${{ github.event.workflow_run.head_branch }}
           path: release-provenance
@@ -129,9 +129,9 @@ jobs:
           echo "tag-object=${provenance_tag_object}" >> "${GITHUB_OUTPUT}"
 
       - name: Download release artifact bundle
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: rice-windows-${{ github.event.workflow_run.head_branch }}
+          name: rice-windows-${{ github.event.workflow_run.id }}
           path: release-artifacts
           github-token: ${{ github.token }}
           run-id: ${{ github.event.workflow_run.id }}
@@ -143,6 +143,25 @@ jobs:
           test -n "$(find . -maxdepth 1 -type f -name '*.exe' -print -quit)"
           test -n "$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)"
           sha256sum --check --strict SHA256SUMS.txt
+
+      - name: Download Windows smoke receipt from the same run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: rice-windows-smoke-${{ github.event.workflow_run.id }}
+          path: windows-smoke
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Require exact artifact manifest and actual successful Windows jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RICE_RELEASE_ROOT: ${{ github.workspace }}/source
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_RUN_ID}/jobs?filter=latest&per_page=100" --jq '.jobs[] | @json' > release-jobs.ndjson
+          node trusted/scripts/verify-windows-smoke.mjs release-artifacts \
+            windows-smoke/windows-smoke-report.json release-jobs.ndjson \
+            "${RELEASE_RUN_ID}" "${RELEASE_TAG}" "${RELEASE_COMMIT}"
 
       - name: Create or update release safely
         env:

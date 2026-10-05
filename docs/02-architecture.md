@@ -47,9 +47,9 @@ Rust backend
 
 | コンポーネント | 責務 |
 | --- | --- |
-| `TwitchAuthService` | Device Code Flow、トークン更新、`/validate`、ユーザーID取得 |
-| `EventSubClient` | WebSocket接続、welcome/keepalive/reconnect/revocation処理 |
-| `TwitchChatService` | `channel.chat.message`購読、イベント重複排除、チャット正規化 |
+| `TwitchAuthService` | Device Code Flow、トークン更新、`/validate`、認証世代による古い応答の拒否 |
+| `EventSubClient` | WebSocket接続、welcome/keepalive/reconnect/revocation、購読・重複排除・正規化へのdispatch |
+| `TwitchChatService` | チャンネル入力検証とHelixユーザー取得、接続taskの所有・交換、受信停止と連携解除 |
 | `SpeechQueue` | 優先度、停止/再開/スキップ、連投抑制、バックプレッシャ |
 | `SpeechFormatter` | 読み上げ文生成、ユーザー名付与、絵文字/URL/長文処理 |
 | `SpeechAdapter` | 読み上げ先を抽象化するtrait |
@@ -58,6 +58,16 @@ Rust backend
 | `SettingsStore` | optional/versionedな永続wireを移行・共通検証し、不正な項目だけ既定値へ戻す。JSON構文/容量の破損はbackupまたは既定値へ復旧する。未知の版・項目は読取り専用。原子的保存の成功後だけ候補を共有メモリへ反映する。OAuthトークンは扱わない |
 | `TwitchAuthStore` | Twitch OAuth状態をOS keyringへ保存/復元/削除する |
 | `LauncherService` | 登録アプリのパス検証、重複排除、単体/一斉起動を扱う |
+
+### Twitch責務分割（Issue #44）
+
+`twitch/model.rs`は公開chat DTOだけを保持し、既存の`crate::twitch::*`で再exportする。camelCase/optional field omissionとcommand/event payloadは変更しない。`error.rs`はHTTP status/OAuth codeの型付き分類と日本語表示を分け、表示文言が認証解除・retry可否を決めない。`normalization.rs`はEventSub wireとchat正規化を担当し、欠損/不正timestampには呼出元が渡した受信時刻を使う。`dedupe.rs`は接続全体で共有するbounded cacheと明示`Instant`によるTTLを保持する。この2つのpure境界はTauri、keyring、network clientに依存しない。
+
+`auth_state.rs`は認証DTO・世代・scopeの規則、`auth_service.rs`は認証操作、`auth_store.rs`はcredential I/Oの直列化とkeyring/旧Linuxファイルの移行、`oauth.rs`はHTTP wireとOAuth transportを担当する。`chat_service.rs`は接続taskのライフサイクル、`eventsub.rs`はsession/handover/backoff、`subscription.rs`は最新credential取得・401時1回refresh・保存後の再購読を担当する。ファイル移動で保存/削除の世代照合やHTTP deadlineを緩めない。
+
+`commands.rs`は既存7 commandの引数/戻り値を維持する薄いadapterで、`runtime.rs`だけがTauriのmanaged state、event送信、speech enqueueと本番transportを接続する。認証serviceには`AuthRuntime`/`DeviceOAuthTransport`、チャットserviceには`ChatRuntime`、EventSubには`EventSubRuntime`、購読には`SubscriptionRuntime`を注入する。`TwitchAuthStore::with_backend`で保存先を差し替えられる。Device Codeのwall clockと通知のreceive/monotonic clockもruntimeから渡し、非同期deadlineはTokio test clockで制御する。serviceはTauri/reqwest/keyringをimportしない。
+
+既存の認証競合・bridge fixture・再接続回帰は`tests.rs`/`test_harness.rs`へ保持し、`service_tests.rs`で同じ本番serviceをscripted transport/store/clockへ接続する。Device Code各応答、並行start/poll、保存後の認証通知、失敗した解除、チャンネルの事前検証、接続交換、停止時の認証保持、解除時の削除、型付き購読失敗とrefresh保存順、clockによるTTLを検証する。各leafの分類・receive clock・TTL/capacity回帰と、serviceへのインフラ依存/command名の退行を検出する境界チェックも維持する。
 
 Launcherのアプリ登録・起動はWindows専用。`app_build_info.launcher`で`canRegisterApplications/canLaunchApplications/reason`を型付きで返す。UIは取得成功まで安全側に無効化し、非対応OSでは選択・DnD購読・単体/一斉起動を提供しない。backendも登録commandと設定patchによる新規登録/target変更を保存前に拒否し、起動をfilesystem操作前に拒否する。既存設定の項目は他OSでも表示・並び替え/表示名変更・削除でき、OS標準ランチャーまたはWindows版を案内する（Issue #79）。
 
@@ -188,6 +198,19 @@ production の bundled window は `default-src 'self'` を起点とする CSP �
 React の仮想スクロール、ウィンドウ倍率、Launcher tile は動的な style 属性を使うため、`style-src-attr 'unsafe-inline'` だけを例外とする。script の inline handler は `script-src-attr 'none'` で拒否する。Vite dev server / HMR は production の許可元へ含めず、development policy だけに `ws://localhost:1420` と Vite の style injection 用 `style-src 'unsafe-inline'` を明示する。Tauri は `devCsp` が `null` または未指定だと production `csp` へ fallback するため、開発時 policy を省略しない。
 
 capability は `main` window の `default` だけを設定から明示的に有効化する。core API は event の listen/unlisten、現在の window の状態確認・移動・resize・native close 完了、Dialog の open に限定する。custom command は `tauri_build::AppManifest` へ列挙し、同じ main capability に明示した command だけを許可する。新しい window / capability / command を追加するときは、既存の default set を広げず、その利用箇所と permission を同じ変更で追加する。CSP や capability は backend の入力検証を代替しないため、外部 URL、Launcher path、設定値の Rust 側検証は維持する。
+
+Issue #75の最小集合は次の9 core/plugin permissionと既存の明示custom commandだけ。`test-tauri-security.mjs`はcustomも含む全体snapshot、実policyを使ったdefault/emit/image/menu/tray等の拡張・remote/window/webview/platform scope追加拒否を検証する。新しい許可は利用箇所とsnapshotの両方をreviewする。
+
+| permission | 本番frontendで必要な理由 |
+| --- | --- |
+| `core:event:allow-listen` / `allow-unlisten` | domain event、AppShellのclose、TitleBarのresize、Launcherのnative DnDの購読/解除 |
+| `core:window:allow-destroy` | SDKの`Window.onCloseRequested`が確認不要のnative close後に間接呼出しする。通常終了に必要であり、未使用ではない |
+| `core:window:allow-is-maximized` | TitleBarの最大化/復元アイコン同期 |
+| `core:window:allow-minimize` / `allow-toggle-maximize` | TitleBarの最小化/最大化/復元 |
+| `core:window:allow-start-dragging` / `allow-start-resize-dragging` | TitleBarの移動と8方向のresize handle |
+| `dialog:allow-open` | Launcherの`.exe`/`.lnk`複数選択。save/message等のrenderer権限は不要 |
+
+配布候補のWindows検査は変更していない実portable/NSIS exeを起動し、WebView2 loopback debuggerから本番IPC/DOMへ接続する。11実core/plugin commandはrelease固有の`not allowed by ACL`を厳密確認し、command-not-found/feature-disabled/引数errorを代用しない。実HWNDの最小化/最大化/復元・native移動/resize、backendが発行した保存logのlisten/unlisten、所有fixture2fileのnative dialog選択とOLE FileDrop1fileによる本番Launcher登録/解除を検査する。portableはnative closeとSDK destroy、installedはtitlebar/app_exitで通常終了させる。検証記録はPID/source/run/exact artifact digestへ結び付け、未検証項目をpublisherで拒否する。debuggerはfresh GitHub-hosted runnerの所有Rice子tree・loopbackだけに限定し、production config/CSP/ACL・global環境は変更しない。hosted runnerがHigh ILのためWebView2が環境/HKCUのoverrideを無視する場合も、RiceのAppID/exe名だけへ一時的なHKLM browser args/user-data-folderを指定する。既存valueは上書きせず、所有valueと新規空leaf keyだけをfinallyで除去し、wildcard policy・sandbox無効化は使わない（[Microsoft: elevated host overrides](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/security#for-an-elevated-host-app-use-appropriate-override-flags)）。
 
 Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、base64部分64KiB / PNG file48KiB、PNGのchecksum・終端・単一frame・最大128×128pxを検証する。PNG decoder作業領域は1MiB、pixel出力bufferは128KiB以内。保存済みの不正/旧上限超過iconは読み込み時に汎用iconへfallbackし、新規追加の上限超過は全体を拒否する。合計data URLは4MiB以内。inline PNGをquotaで制限するため、cache用の追加filesystem権限や`assetProtocol`は有効化しない。
 

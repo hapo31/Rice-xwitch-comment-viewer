@@ -5,12 +5,24 @@ ARG NODE_IMAGE=node:22.22.0-bookworm-slim@sha256:dd9d21971ec4395903fa6143c2b9267
 ARG DEBIAN_SNAPSHOT=20260921T000000Z
 ARG PNPM_VERSION=8.11.0
 ARG CARGO_XWIN_VERSION=0.22.0
+ARG NSIS_VERSION=3.11
+ARG NSIS_SOURCE_URL=https://deb.debian.org/debian/pool/main/n/nsis/nsis_3.11.orig.tar.gz
+ARG NSIS_SOURCE_SHA256=9643566e50357918f23c0c4afdac0be8b5305b031b3aeb69f86c17a0a7eb469d
+ARG NSIS_WINDOWS_URL=https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip
+ARG NSIS_WINDOWS_SHA256=c7d27f780ddb6cffb4730138cd1591e841f4b7edb155856901cdf5f214394fa1
+ARG NSIS_SOURCE_DATE_EPOCH=1741475460
 ARG WINDOWS_TARGET=x86_64-pc-windows-msvc
 
 FROM ${NODE_IMAGE} AS node
 
 FROM ${RUST_IMAGE} AS tools
 
+ARG NSIS_VERSION
+ARG NSIS_SOURCE_URL
+ARG NSIS_SOURCE_SHA256
+ARG NSIS_WINDOWS_URL
+ARG NSIS_WINDOWS_SHA256
+ARG NSIS_SOURCE_DATE_EPOCH
 ARG PNPM_VERSION
 ARG CARGO_XWIN_VERSION
 ARG WINDOWS_TARGET
@@ -36,7 +48,9 @@ RUN rm -f /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources \
         curl \
         lld \
         llvm \
-        nsis \
+        scons \
+        unzip \
+        zlib1g-dev \
         zip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -44,7 +58,32 @@ RUN npm install --global "pnpm@${PNPM_VERSION}" \
     && rustup target add "${WINDOWS_TARGET}" \
     && cargo install --locked --version "${CARGO_XWIN_VERSION}" cargo-xwin
 
+# The compiler and Windows headers/stubs/plugins must come from the same
+# reviewed NSIS release. Bookworm's NSIS lacks Win/RestartManager.nsh.
+RUN curl --fail --location --retry 3 "${NSIS_SOURCE_URL}" -o /tmp/rice-nsis-source.tar.gz \
+    && curl --fail --location --retry 3 "${NSIS_WINDOWS_URL}" -o /tmp/rice-nsis-windows.zip \
+    && printf '%s\n' "${NSIS_SOURCE_SHA256}  /tmp/rice-nsis-source.tar.gz" "${NSIS_WINDOWS_SHA256}  /tmp/rice-nsis-windows.zip" | sha256sum --check - \
+    && mkdir -p /opt/nsis/share \
+    && unzip -q /tmp/rice-nsis-windows.zip -d /opt/nsis/share \
+    && mv "/opt/nsis/share/nsis-${NSIS_VERSION}" /opt/nsis/share/nsis \
+    && tar -xzf /tmp/rice-nsis-source.tar.gz -C /opt \
+    && SOURCE_DATE_EPOCH="${NSIS_SOURCE_DATE_EPOCH}" scons -C "/opt/nsis-${NSIS_VERSION}" -j2 \
+        VERSION="${NSIS_VERSION}" VER_MAJOR="${NSIS_VERSION%%.*}" VER_MINOR="${NSIS_VERSION#*.}" VER_REVISION=0 VER_BUILD=0 \
+        SKIPSTUBS=all SKIPPLUGINS=all SKIPUTILS=all SKIPMISC=all \
+        NSIS_CONFIG_CONST_DATA_PATH=yes PREFIX=/opt/nsis install-compiler
+ENV PATH=/opt/nsis/bin:${PATH}
+COPY scripts/nsis-toolchain-probe.nsi ./scripts/nsis-toolchain-probe.nsi
+RUN test "$(makensis -VERSION)" = "v${NSIS_VERSION}" \
+    && makensis -V2 scripts/nsis-toolchain-probe.nsi \
+    && test -s /tmp/rice-nsis-toolchain-probe.exe
+
 FROM tools AS build
+ARG NSIS_VERSION
+ARG NSIS_SOURCE_URL
+ARG NSIS_SOURCE_SHA256
+ARG NSIS_WINDOWS_URL
+ARG NSIS_WINDOWS_SHA256
+ARG NSIS_SOURCE_DATE_EPOCH
 ARG RUST_IMAGE
 ARG NODE_IMAGE
 ARG DEBIAN_SNAPSHOT
@@ -56,6 +95,12 @@ ARG RICE_GIT_COMMIT
 ARG SOURCE_DATE_EPOCH
 ENV RICE_GIT_COMMIT=${RICE_GIT_COMMIT} SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 ENV RICE_BUILD_RUST_IMAGE=${RUST_IMAGE} \
+    RICE_BUILD_NSIS_VERSION=${NSIS_VERSION} \
+    RICE_BUILD_NSIS_SOURCE_URL=${NSIS_SOURCE_URL} \
+    RICE_BUILD_NSIS_SOURCE_SHA256=${NSIS_SOURCE_SHA256} \
+    RICE_BUILD_NSIS_WINDOWS_URL=${NSIS_WINDOWS_URL} \
+    RICE_BUILD_NSIS_WINDOWS_SHA256=${NSIS_WINDOWS_SHA256} \
+    RICE_BUILD_NSIS_SOURCE_DATE_EPOCH=${NSIS_SOURCE_DATE_EPOCH} \
     RICE_BUILD_NODE_IMAGE=${NODE_IMAGE} \
     RICE_BUILD_DEBIAN_SNAPSHOT=${DEBIAN_SNAPSHOT} \
     RICE_BUILD_PNPM_VERSION=${PNPM_VERSION} \
@@ -65,7 +110,7 @@ ENV RICE_BUILD_RUST_IMAGE=${RUST_IMAGE} \
 COPY build/release-inputs.json ./build/release-inputs.json
 COPY Dockerfile ./Dockerfile
 COPY scripts/verify-release-build-inputs.mjs scripts/record-build-materials.mjs ./scripts/
-RUN node scripts/verify-release-build-inputs.mjs --runtime \
+RUN node scripts/verify-release-build-inputs.mjs --runtime --nsis \
     && test "${#RICE_GIT_COMMIT}" = 40 \
     && test "${SOURCE_DATE_EPOCH}" -ge 315532800
 
@@ -75,6 +120,7 @@ RUN node scripts/verify-twitch-client-id.mjs
 COPY package.json pnpm-lock.yaml ./
 COPY LICENSE ./LICENSE
 COPY scripts/verify-project-license.mjs ./scripts/verify-project-license.mjs
+COPY scripts/verify-tauri-versions.mjs ./scripts/verify-tauri-versions.mjs
 RUN pnpm install --frozen-lockfile
 
 COPY index.html postcss.config.js tailwind.config.js tsconfig.json vite.config.ts ./
@@ -84,7 +130,8 @@ COPY src-tauri/capabilities ./src-tauri/capabilities
 COPY src-tauri/icons ./src-tauri/icons
 COPY src-tauri/src ./src-tauri/src
 
-RUN node scripts/verify-project-license.mjs --bundle
+RUN node scripts/verify-project-license.mjs --bundle \
+    && node scripts/verify-tauri-versions.mjs --installed
 RUN pnpm tauri build --bundles nsis --runner cargo-xwin --target "${WINDOWS_TARGET}"
 
 RUN node scripts/verify-twitch-client-id.mjs "src-tauri/target/${WINDOWS_TARGET}/release/rice.exe"
