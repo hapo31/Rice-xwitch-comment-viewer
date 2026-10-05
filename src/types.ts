@@ -47,6 +47,20 @@ export const retryableSpeechReasons = [
   "connectFailed",
   "connectionLost",
 ] as const;
+const uncertainSpeechReasons = [
+  "writeTimeout",
+  "writeFailed",
+  "connectionLost",
+  "unknown",
+] as const;
+export const diagnosableNonRetryableSpeechReasons = speechOutcomeReasonCodes.error.filter(
+  (
+    reason,
+  ): reason is Exclude<
+    (typeof speechOutcomeReasonCodes.error)[number],
+    (typeof uncertainSpeechReasons)[number]
+  > => !uncertainSpeechReasons.some((uncertain) => uncertain === reason),
+);
 type SpeechOutcomeDetails = { message: string; occurredAtMs: number };
 export type SpeechQueueOutcome = SpeechOutcomeDetails &
   (
@@ -67,7 +81,13 @@ export type SpeechQueueOutcome = SpeechOutcomeDetails &
         kind: "error";
         reasonCode: (typeof speechOutcomeReasonCodes.error)[number];
         retryable: false;
-        recoveryAction: "diagnoseSpeech" | "confirmDelivery";
+        recoveryAction: "confirmDelivery";
+      }
+    | {
+        kind: "error";
+        reasonCode: (typeof diagnosableNonRetryableSpeechReasons)[number];
+        retryable: false;
+        recoveryAction: "diagnoseSpeech";
       }
     | {
         kind: "error";

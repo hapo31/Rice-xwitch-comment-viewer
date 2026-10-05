@@ -27,6 +27,7 @@ import {
   speechOutcomeReasonCodes,
   speechRecoveryActions,
   retryableSpeechReasons,
+  diagnosableNonRetryableSpeechReasons,
   twitchStatusesByDomain,
 } from "../types";
 
@@ -425,7 +426,20 @@ export function parseSpeechQueueOutcome(value: unknown): SpeechQueueOutcome {
       reasonCode: enumField(payload, "reasonCode", retryableSpeechReasons, contract),
     };
   }
-  return { kind, reasonCode, ...details, retryable: false, recoveryAction };
+  return recoveryAction === "diagnoseSpeech"
+    ? {
+        kind,
+        reasonCode: enumField(
+          payload,
+          "reasonCode",
+          diagnosableNonRetryableSpeechReasons,
+          contract,
+        ),
+        ...details,
+        retryable: false,
+        recoveryAction,
+      }
+    : { kind, reasonCode, ...details, retryable: false, recoveryAction };
 }
 
 function parseQueueItem(value: unknown): QueueItem {

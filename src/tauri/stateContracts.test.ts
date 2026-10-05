@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { SpeechQueueOutcome, TwitchStatusEvent } from "../types";
-import { twitchStatusesByDomain } from "../types";
+import { speechOutcomeReasonCodes, twitchStatusesByDomain } from "../types";
 import { parseSpeechQueueOutcome, parseTwitchStatusEvent } from "./bridge";
 
 const details = { message: "状態の案内", occurredAtMs: 1 };
@@ -53,6 +53,20 @@ it("preserves the typed outcome variants and their existing recovery choices", (
   for (const value of cases) expect(parseSpeechQueueOutcome(value)).toEqual(value);
 });
 
+it("preserves delivery confirmation for all errors after the adapter accepted the item", () => {
+  // Rust SpeechQueueOutcome::error treats accepted=true as uncertain for every reason.
+  for (const reasonCode of speechOutcomeReasonCodes.error) {
+    const outcome = {
+      ...details,
+      kind: "error",
+      reasonCode,
+      retryable: false,
+      recoveryAction: "confirmDelivery",
+    } satisfies SpeechQueueOutcome;
+    expect(parseSpeechQueueOutcome(outcome)).toEqual(outcome);
+  }
+});
+
 it("rejects the same impossible recovery combinations in types and the runtime parser", () => {
   const cases = [
     {
@@ -97,6 +111,20 @@ it("rejects the same impossible recovery combinations in types and the runtime p
       retryable: true,
       recoveryAction: "confirmDelivery",
     },
+    {
+      ...details,
+      kind: "error",
+      reasonCode: "writeTimeout",
+      retryable: false,
+      recoveryAction: "diagnoseSpeech",
+    },
+    {
+      ...details,
+      kind: "error",
+      reasonCode: "connectionLost",
+      retryable: false,
+      recoveryAction: "diagnoseSpeech",
+    },
   ] as const;
   // @ts-expect-error Blocked outcomes cannot be retried.
   const blockedRetry: SpeechQueueOutcome = cases[0];
@@ -110,7 +138,13 @@ it("rejects the same impossible recovery combinations in types and the runtime p
   const writeRetry: SpeechQueueOutcome = cases[4];
   // @ts-expect-error Delivery confirmation and retry are mutually exclusive.
   const ambiguousRetry: SpeechQueueOutcome = cases[5];
+  // @ts-expect-error A non-retryable write failure always requires delivery confirmation.
+  const uncertainWrite: SpeechQueueOutcome = cases[6];
+  // @ts-expect-error A non-retryable lost connection also has uncertain delivery.
+  const uncertainConnection: SpeechQueueOutcome = cases[7];
   for (const value of [
+    uncertainWrite,
+    uncertainConnection,
     blockedRetry,
     blockedDelivery,
     overflow,

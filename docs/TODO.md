@@ -89,7 +89,7 @@
 
 ## 現在の進捗サマリ
 
-Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態・付随情報を判別可能 union に揃えた。既存21 outcome fixtureと新しい型/runtime共通の正負 fixtureを検証し、frontend 326件とformat/lint/typecheck/buildが成功した。最終レビューと CI は未完了。
+Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態・付随情報を判別可能 union に揃えた。既存21 outcome fixtureと新しい型/runtime共通の正負 fixtureを検証し、frontend 327件とformat/lint/typecheck/buildが成功した。独立レビューを受け、再送不能かつ送達不明な理由には送達確認を必須にした。最終 CI 結果と統合状況は PR #240 に記録する。
 
 2026-10-05: Dependabot全13件（#179–#182、#184–#192）のレビューと互換性修正を完了した。Tauri dialogのJS/Rust版一致検査、React 19の型・ref初期値・TitleBar DOMテスト移行を実施した。マージと後片付けの条件・検証結果・既存Windows入力の不安定性はPhase 5のDependabot項目に記録する。
 
@@ -328,7 +328,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 5: 配信運用向け仕上げ
 
-- [ ] Issue #200: 読み上げ outcome の kind/reason と retry/recovery、Twitch の domain と状態・付随情報を判別可能 union にし、不正組合せを型検査と bridge parser の両方で拒否する。既存 Rust payload と共通 fixture の互換性、品質 gate、CI を確認する。
+- [x] Issue #200: 読み上げ outcome の kind/reason と retry/recovery、Twitch の domain と状態・付随情報を判別可能 union にし、不正組合せを型検査と bridge parser の両方で拒否する。既存 Rust payload と共通 fixture の互換性、品質 gate で検証する。
 
 - [x] Dependabot PR #179–#182、#184–#192 の全13件を一件ずつ専用 worktree でレビューし、必要なCI互換性修正を実装する。各PRは全PR checksと当該headのWindows開発build成功を確認してからマージし、worktreeと作業用ローカルbranchを削除して次へ進む。
 
@@ -508,6 +508,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## 調査メモ
 
-- 2026-10-06 Issue #200: Rust の auth service と app_events の本番送信は、Auth に接続世代/identityを持たせず、missingRequiredScope を AuthRequired にだけ付ける。Frontend の domain 別状態配列を型/parserで共用し、12種類の不正組合せを同じ値でコンパイル時とruntimeの両方から拒否した。既存21 outcome fixture、旧payloadのoptional省略、errorの安全な再送と送達確認の既存分岐は保持する。追加のschema libraryやRust wire変更は行わず、汎用parserの整理は別Issue #201に残す。
+- 2026-10-06 Issue #200: Rust の auth service と app_events の本番送信は、Auth に接続世代/identityを持たせず、missingRequiredScope を AuthRequired にだけ付ける。Frontend の domain 別状態配列を型/parserで共用し、14種類の不正組合せを同じ値でコンパイル時とruntimeの両方から拒否した。既存21 outcome fixture、旧payloadのoptional省略、errorの安全な再送と送達確認の既存分岐は保持する。追加のschema libraryやRust wire変更は行わず、汎用parserの整理は別Issue #201に残す。
 
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
+
+- Issue #200 レビュー確認: Rust `SpeechQueueOutcome::error` は `accepted=true` なら全 FailureCode に confirmDelivery を返す。configuration/confirmDelivery もこの経路では正常な契約のため拒否しない。全理由の受付済み fixture を維持し、accepted=false でも送達不明になる再送不能 write/lost/unknown に diagnoseSpeech を指定する組合せは排除する。
