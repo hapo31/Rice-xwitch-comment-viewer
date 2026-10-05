@@ -67,6 +67,8 @@ jobs:
           & $mt.FullName -manifest src-tauri/tests/native-windows.manifest "-outputresource:$($env:RICE_NATIVE_TEST_BINARY);#1"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run all Windows targets and features, including native credentials and process adapters
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER: pwsh -NoProfile -File scripts/run-windows-test.ps1
         run: |
           cargo test --locked --all-targets --all-features --manifest-path src-tauri/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
