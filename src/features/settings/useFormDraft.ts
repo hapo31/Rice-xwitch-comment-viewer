@@ -1,119 +1,124 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  type FieldPath,
+  type FieldPathValue,
+  type FieldValues,
+  type DefaultValues,
+  type UseFormReturn,
+  useForm,
+} from "react-hook-form";
 
-/** Keeps only fields the user edited; all other values follow the latest saved settings. */
-export function useFormDraft<T extends Record<string, unknown>>(savedValues: T) {
-  type Entry<K extends keyof T> = { value: T[K]; version: number };
-  type Patch = { [K in keyof T]?: Entry<K> };
-  type Snapshot = { [K in keyof T]?: Entry<K> & { baseline: T[K] } };
-  const [patch, setPatch] = useState<Patch>({});
-  const nextVersion = useRef(0);
-  const pending = useRef(new Map<keyof T, Set<number>>());
-  const awaitingSaved = useRef(new Map<keyof T, { baseline: unknown }>());
-  const values = Object.assign(
-    {},
-    savedValues,
-    Object.fromEntries(
-      Object.entries(patch).map(([key, entry]) => [key, (entry as { value: unknown }).value]),
-    ),
-  ) as T;
+export type FormDraft<T extends FieldValues> = UseFormReturn<T, unknown, T> & {
+  discard: () => void;
+  beginSave: () => DraftSnapshot<T>;
+  finishSave: (snapshot: DraftSnapshot<T>, succeeded: boolean) => void;
+  isSaving: boolean;
+};
 
-  function isPending(key: keyof T) {
-    return (pending.current.get(key)?.size ?? 0) > 0;
-  }
+export type DraftSnapshot<T extends FieldValues> = {
+  values: T;
+  savedValues: T;
+  fields: FieldPath<T>[];
+};
 
-  function isProtected(key: keyof T) {
-    return isPending(key) || awaitingSaved.current.has(key);
-  }
+/** Keeps edited fields locally while refreshing pristine fields from saved settings. */
+export function useFormDraft<T extends FieldValues>(savedValues: T): FormDraft<T> {
+  const form = useForm<T, unknown, T>({
+    defaultValues: savedValues as DefaultValues<T>,
+    mode: "onChange",
+  });
+  const previousSaved = useRef(savedValues);
+  const pendingFields = useRef(new Map<FieldPath<T>, number>());
+  const awaitingSaved = useRef(new Map<FieldPath<T>, T[keyof T]>());
+  const [pendingCount, setPendingCount] = useState(0);
+  const { dirtyFields } = form.formState;
 
   useEffect(() => {
-    setPatch((current) => {
-      let changed = false;
-      const next: Patch = {};
-      for (const key of Object.keys(current) as (keyof T)[]) {
-        const entry = current[key];
-        const awaiting = awaitingSaved.current.get(key);
-        if (awaiting && !Object.is(savedValues[key], awaiting.baseline)) {
-          awaitingSaved.current.delete(key);
+    const previous = previousSaved.current;
+    for (const name of Object.keys(savedValues) as FieldPath<T>[]) {
+      const nextValue = savedValues[name as keyof T];
+      const previousValue = previous[name as keyof T];
+      if (sameValue(previousValue, nextValue)) continue;
+
+      if (pendingFields.current.has(name)) continue;
+      const awaitingBaseline = awaitingSaved.current.get(name);
+      if (awaitingBaseline !== undefined || awaitingSaved.current.has(name)) {
+        if (sameValue(awaitingBaseline, nextValue)) continue;
+        awaitingSaved.current.delete(name);
+        rebaseField(name, nextValue);
+        if (awaitingSaved.current.size === 0) {
+          setPendingCount((count) => Math.max(0, count - 1));
         }
-        if (entry && Object.is(entry.value, savedValues[key]) && !isProtected(key)) {
-          changed = true;
-        } else {
-          next[key] = entry;
-        }
+        continue;
       }
-      return changed ? next : current;
-    });
-  }, [savedValues]);
 
-  function setValue<K extends keyof T>(key: K, value: T[K]) {
-    const version = ++nextVersion.current;
-    setPatch((current) => {
-      if (Object.is(value, savedValues[key]) && !isProtected(key)) {
-        if (!(key in current)) return current;
-        const next = { ...current };
-        delete next[key];
-        return next;
-      }
-      if (current[key]?.value === value) return current;
-      return { ...current, [key]: { value, version } };
-    });
-  }
-
-  function beginSave(keys: readonly (keyof T)[] = Object.keys(patch) as (keyof T)[]): Snapshot {
-    const snapshot: Snapshot = {};
-    for (const key of keys) {
-      const entry = patch[key];
-      if (entry) snapshot[key] = { ...entry, baseline: savedValues[key] };
+      const currentValue = form.getValues(name);
+      const wasDirty = form.getFieldState(name).isDirty;
+      if (wasDirty) rebaseField(name, nextValue, currentValue);
+      else rebaseField(name, nextValue);
     }
-    for (const key of Object.keys(snapshot) as (keyof T)[]) {
-      const version = snapshot[key]?.version;
-      if (version === undefined) continue;
-      const versions = pending.current.get(key) ?? new Set<number>();
-      versions.add(version);
-      pending.current.set(key, versions);
-    }
-    return snapshot;
-  }
-
-  function finishSave(snapshot: Snapshot, succeeded: boolean) {
-    for (const key of Object.keys(snapshot) as (keyof T)[]) {
-      const version = snapshot[key]?.version;
-      if (version === undefined) continue;
-      const versions = pending.current.get(key);
-      versions?.delete(version);
-      if (versions?.size === 0) pending.current.delete(key);
-    }
-
-    setPatch((current) => {
-      let changed = false;
-      const next: Patch = {};
-      for (const key of Object.keys(current) as (keyof T)[]) {
-        const entry = current[key];
-        const wasSubmitted = entry?.version === snapshot[key]?.version;
-        if (succeeded && wasSubmitted) {
-          changed = true;
-        } else {
-          next[key] = entry;
-        }
-      }
-      return changed ? next : current;
-    });
-
-    if (succeeded) {
-      for (const key of Object.keys(snapshot) as (keyof T)[]) {
-        const submitted = snapshot[key];
-        if (submitted) {
-          awaitingSaved.current.set(key, {
-            baseline: submitted.baseline,
-          });
-        }
-      }
-    }
-  }
+    previousSaved.current = savedValues;
+    // `dirtyFields` is read to subscribe this synchronization boundary to RHF's field state.
+    void dirtyFields;
+  }, [dirtyFields, form, savedValues]);
 
   function discard() {
-    setPatch({});
+    form.reset(previousSaved.current);
+    pendingFields.current.clear();
+    awaitingSaved.current.clear();
+    setPendingCount(0);
   }
 
-  return { values, setValue, beginSave, finishSave, discard };
+  function beginSave(): DraftSnapshot<T> {
+    const fields = Object.keys(savedValues) as FieldPath<T>[];
+    const savedSnapshot = { ...savedValues };
+    for (const field of fields) {
+      pendingFields.current.set(field, (pendingFields.current.get(field) ?? 0) + 1);
+    }
+    setPendingCount((count) => count + 1);
+    return { values: form.getValues(), savedValues: savedSnapshot, fields };
+  }
+
+  function finishSave(snapshot: DraftSnapshot<T>, succeeded: boolean) {
+    for (const field of snapshot.fields) {
+      const count = (pendingFields.current.get(field) ?? 1) - 1;
+      if (count === 0) pendingFields.current.delete(field);
+      else pendingFields.current.set(field, count);
+    }
+    let isAwaiting = false;
+    for (const field of snapshot.fields) {
+      const saved = previousSaved.current[field as keyof T];
+      const baseline = snapshot.savedValues[field as keyof T];
+      const current = form.getValues(field);
+      if (succeeded && sameValue(saved, baseline)) {
+        awaitingSaved.current.set(field, baseline);
+        isAwaiting = true;
+        continue;
+      }
+      if (succeeded && sameValue(saved, snapshot.values[field as keyof T])) {
+        awaitingSaved.current.delete(field);
+      }
+      rebaseField(field, saved, current);
+    }
+    if (!isAwaiting) setPendingCount((count) => Math.max(0, count - 1));
+  }
+
+  function rebaseField(name: FieldPath<T>, defaultValue: T[keyof T], value = form.getValues(name)) {
+    form.resetField(name, { defaultValue: defaultValue as FieldPathValue<T, typeof name> });
+    if (!sameValue(value, defaultValue)) {
+      form.setValue(name, value, { shouldDirty: true, shouldValidate: true });
+    }
+  }
+
+  return Object.assign(form, { discard, beginSave, finishSave, isSaving: pendingCount > 0 });
+}
+
+function sameValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  return (
+    Array.isArray(left) &&
+    Array.isArray(right) &&
+    left.length === right.length &&
+    left.every((value, index) => Object.is(value, right[index]))
+  );
 }
