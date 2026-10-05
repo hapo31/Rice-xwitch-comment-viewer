@@ -36,39 +36,9 @@ import type {
   TwitchDeviceAuthStart,
   TwitchUserProfile,
 } from "../types";
+import { createDefaultAppSettings } from "../settings/model";
 
-const fallbackSettings: AppSettings = {
-  twitch: {
-    channelLogin: "",
-    autoConnect: false,
-    confirmBeforeStopChat: true,
-    liveChatAnnouncements: true,
-  },
-  speech: {
-    adapter: "bouyomi",
-    bouyomiHost: "127.0.0.1",
-    bouyomiPort: 50001,
-    bouyomiRemoteMode: false,
-    bouyomiSpeed: -1,
-    bouyomiTone: -1,
-    bouyomiVolume: -1,
-    bouyomiVoice: 0,
-    readUserName: true,
-    autoSpeak: true,
-    maxCommentLength: 120,
-    repeatSuppressionSeconds: 2,
-    blockedUsers: [],
-    blockedWords: [],
-    urlHandling: "replace",
-    readEmotes: false,
-    connectionSuccessSpeechEnabled: true,
-    connectionSuccessSpeechText: "",
-  },
-  launcher: {
-    items: [],
-  },
-  window: {},
-};
+let previewSettings = createDefaultAppSettings();
 
 const isTauriRuntime = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -126,28 +96,29 @@ function normalizeSettings(
       })
     | undefined,
 ): AppSettings {
+  const defaults = createDefaultAppSettings();
   return {
-    ...fallbackSettings,
+    ...defaults,
     ...settings,
     twitch: {
-      ...fallbackSettings.twitch,
+      ...defaults.twitch,
       ...settings?.twitch,
     },
     speech: {
-      ...fallbackSettings.speech,
+      ...defaults.speech,
       ...settings?.speech,
     },
     launcher: {
-      ...fallbackSettings.launcher,
+      ...defaults.launcher,
       ...settings?.launcher,
-      items: settings?.launcher?.items ?? fallbackSettings.launcher.items,
+      items: settings?.launcher?.items ?? defaults.launcher.items,
     },
   };
 }
 
 export async function getSettings(): Promise<AppSettings> {
   if (!isTauriRuntime) {
-    return fallbackSettings;
+    return structuredClone(previewSettings);
   }
 
   return normalizeSettings(
@@ -177,14 +148,20 @@ export async function takeSettingsRecoveryNotice(): Promise<SettingsRecoveryNoti
 export async function updateSettings(patch: AppSettingsPatch): Promise<AppSettings> {
   if (!isTauriRuntime) {
     const items = patch.launcher?.items?.map((edit) => {
-      const item = fallbackSettings.launcher.items.find((item) => item.id === edit.id);
+      const item = previewSettings.launcher.items.find((item) => item.id === edit.id);
       if (!item) throw new Error("登録済みのアプリだけを編集できます。");
       return { ...item, ...edit };
     });
-    return normalizeSettings({
-      ...patch,
-      launcher: { items: items ?? fallbackSettings.launcher.items },
-    });
+    previewSettings = structuredClone(
+      normalizeSettings({
+        ...previewSettings,
+        ...patch,
+        twitch: { ...previewSettings.twitch, ...patch.twitch },
+        speech: { ...previewSettings.speech, ...patch.speech },
+        launcher: { items: items ?? previewSettings.launcher.items },
+      }),
+    );
+    return structuredClone(previewSettings);
   }
 
   return normalizeSettings(
@@ -263,14 +240,14 @@ export async function speechConnectionDiagnostics(): Promise<BouyomiConnectionDi
   if (!isTauriRuntime) {
     return {
       configuredAddr: formatBouyomiAddress(
-        fallbackSettings.speech.bouyomiHost,
-        fallbackSettings.speech.bouyomiPort,
+        previewSettings.speech.bouyomiHost,
+        previewSettings.speech.bouyomiPort,
       ),
       attempted: [
         {
           addr: formatBouyomiAddress(
-            fallbackSettings.speech.bouyomiHost,
-            fallbackSettings.speech.bouyomiPort,
+            previewSettings.speech.bouyomiHost,
+            previewSettings.speech.bouyomiPort,
           ),
           status: "failed",
           message: "ブラウザプレビューでは接続診断をスキップします。",
