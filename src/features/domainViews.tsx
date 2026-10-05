@@ -17,6 +17,7 @@ import {
 import type {
   AppSettingsPatch,
   BouyomiConnectionDiagnostics,
+  LauncherAddResult,
   LauncherItem,
   LauncherLaunchResult,
 } from "../types";
@@ -130,7 +131,7 @@ export function DomainLogsView() {
 }
 
 export type DomainLauncherActions = {
-  onAdd: (paths: string[]) => Promise<LauncherItem[]>;
+  onAdd: (paths: string[]) => Promise<LauncherAddResult>;
   onRemove: (itemId: string) => Promise<LauncherItem[]>;
   onLaunch: (itemId: string) => Promise<LauncherLaunchResult>;
   onLaunchAll: () => Promise<LauncherLaunchResult>;
