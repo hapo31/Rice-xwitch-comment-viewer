@@ -129,8 +129,10 @@ impl EventSubRuntime for Runtime {
 fn params() -> EventSubConnectionParams {
     EventSubConnectionParams {
         generation: 7,
+        auth_generation: 0,
         broadcaster_user_id: "broadcaster".into(),
         broadcaster_login: "streamer".into(),
+        client_id: "client".into(),
         user_id: "reader".into(),
     }
 }

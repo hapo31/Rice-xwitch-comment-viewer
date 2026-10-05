@@ -387,7 +387,7 @@ impl<'a, R: AuthRuntime> TwitchAuthService<'a, R> {
         // Validation and EventSub refresh share this lock across the network
         // request and commit, so a delayed response cannot race token rotation.
         let _credential_update = state.store().lock_credential_update().await;
-        let (generation, credential_revision, access_token, refresh_token, client_id) = {
+        let (generation, credential_revision, access_token, refresh_token, client_id, user_id) = {
             let auth = state.auth().lock().map_err(|error| error.to_string())?;
             let token = auth
                 .token
@@ -406,6 +406,10 @@ impl<'a, R: AuthRuntime> TwitchAuthService<'a, R> {
                 token.access_token.clone(),
                 token.refresh_token.clone(),
                 client_id,
+                auth.profile
+                    .as_ref()
+                    .map(|profile| profile.user_id.clone())
+                    .unwrap_or_default(),
             )
         };
 
@@ -436,6 +440,7 @@ impl<'a, R: AuthRuntime> TwitchAuthService<'a, R> {
                     generation,
                     credential_revision,
                     client_id,
+                    user_id,
                     access_token: access_token.clone(),
                     refresh_token: refresh_token.clone(),
                 };

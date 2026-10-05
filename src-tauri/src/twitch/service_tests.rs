@@ -92,10 +92,18 @@ struct Transport {
     users: Mutex<VecDeque<Reply<anyhow::Result<HelixUser>>>>,
     sockets: Mutex<VecDeque<FakeSocket>>,
     subscriptions: Mutex<VecDeque<Reply<Result<(), SubscriptionRequestError>>>>,
-    subscription_calls: Mutex<Vec<(String, String, String)>>,
+    subscription_calls: Mutex<Vec<SubscriptionCall>>,
     lookup_calls: Mutex<Vec<String>>,
     validation_calls: AtomicUsize,
     refresh_calls: AtomicUsize,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SubscriptionCall {
+    broadcaster_user_id: String,
+    session_id: String,
+    access_token: String,
+    client_id: String,
+    user_id: String,
 }
 #[derive(Clone)]
 struct Runtime {
@@ -251,15 +259,21 @@ impl SubscriptionRuntime for Runtime {
         &self,
         params: &EventSubConnectionParams,
         session_id: &str,
-        _: &str,
+        client_id: &str,
         access_token: &str,
     ) -> Result<(), SubscriptionRequestError> {
         self.backend.order.lock().unwrap().push("subscribe");
-        self.http.subscription_calls.lock().unwrap().push((
-            params.broadcaster_user_id.clone(),
-            session_id.into(),
-            access_token.into(),
-        ));
+        self.http
+            .subscription_calls
+            .lock()
+            .unwrap()
+            .push(SubscriptionCall {
+                broadcaster_user_id: params.broadcaster_user_id.clone(),
+                session_id: session_id.into(),
+                access_token: access_token.into(),
+                client_id: client_id.into(),
+                user_id: params.user_id.clone(),
+            });
         let reply = self.http.subscriptions.lock().unwrap().pop_front();
         match reply {
             Some(reply) => reply.receive().await,
@@ -346,8 +360,10 @@ fn api_error(status: u16, code: Option<&str>) -> anyhow::Error {
 fn params() -> EventSubConnectionParams {
     EventSubConnectionParams {
         generation: 1,
+        auth_generation: 0,
         broadcaster_user_id: "broadcaster-id".into(),
         broadcaster_login: "streamer".into(),
+        client_id: "fake-client".into(),
         user_id: "reader-id".into(),
     }
 }
@@ -911,11 +927,13 @@ async fn chat_service_connects_preferred_channel_and_stop_preserves_authenticati
     );
     assert_eq!(
         runtime.http.subscription_calls.lock().unwrap()[0],
-        (
-            "broadcaster-id".into(),
-            "fake-session".into(),
-            "old-access".into()
-        )
+        (SubscriptionCall {
+            broadcaster_user_id: "broadcaster-id".into(),
+            session_id: "fake-session".into(),
+            access_token: "old-access".into(),
+            client_id: "fake-client".into(),
+            user_id: "reader-id".into(),
+        })
     );
     assert_eq!(
         runtime.chats.lock().unwrap()[0].connection_generation,
@@ -977,7 +995,7 @@ async fn chat_service_replacement_aborts_pending_old_lookup_and_logout_clears_cu
     assert!(old.is_finished());
     assert!(runtime.connection_is_current(2));
     assert_eq!(
-        runtime.http.subscription_calls.lock().unwrap()[0].0,
+        runtime.http.subscription_calls.lock().unwrap()[0].broadcaster_user_id,
         "new-broadcaster"
     );
     service.disconnect().await.unwrap();
@@ -1011,7 +1029,10 @@ async fn subscription_service_refreshes_once_and_persists_before_retry() {
         .unwrap();
     let calls = runtime.http.subscription_calls.lock().unwrap();
     assert_eq!(
-        calls.iter().map(|call| call.2.as_str()).collect::<Vec<_>>(),
+        calls
+            .iter()
+            .map(|call| call.access_token.as_str())
+            .collect::<Vec<_>>(),
         ["old-access", "new-access"]
     );
     assert_eq!(runtime.http.refresh_calls.load(Ordering::Relaxed), 1);
@@ -1074,8 +1095,8 @@ async fn validate_rotation_serializes_an_eventsub_refresh_started_with_the_old_r
     assert_eq!(runtime.http.refresh_calls.load(Ordering::Relaxed), 1);
     let calls = runtime.http.subscription_calls.lock().unwrap();
     assert_eq!(calls.len(), 2);
-    assert_eq!(calls[0].2, "old-access");
-    assert_eq!(calls[1].2, "new-access");
+    assert_eq!(calls[0].access_token, "old-access");
+    assert_eq!(calls[1].access_token, "new-access");
     let auth = runtime.auth.lock().unwrap();
     assert_eq!(auth.token.as_ref().unwrap().access_token, "new-access");
     assert_eq!(auth.token.as_ref().unwrap().refresh_token, "new-refresh");
@@ -1129,8 +1150,8 @@ async fn concurrent_eventsub_refreshes_share_one_rotation_for_the_same_revision(
     assert_eq!(runtime.http.validation_calls.load(Ordering::Relaxed), 1);
     let calls = runtime.http.subscription_calls.lock().unwrap();
     assert_eq!(calls.len(), 4);
-    assert_eq!(calls[2].2, "new-access");
-    assert_eq!(calls[3].2, "new-access");
+    assert_eq!(calls[2].access_token, "new-access");
+    assert_eq!(calls[3].access_token, "new-access");
 }
 
 #[tokio::test]
@@ -1197,10 +1218,181 @@ async fn stale_subscription_unauthorized_preserves_the_credential_sent_with_the_
             .lock()
             .unwrap()
             .iter()
-            .map(|call| call.2.as_str())
+            .map(|call| call.access_token.as_str())
             .collect::<Vec<_>>(),
         ["old-access", "new-access"]
     );
+}
+
+#[tokio::test]
+async fn obsolete_subscription_does_not_retry_or_clear_a_new_login() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    let gate = Gate::default();
+    runtime.http.subscriptions.lock().unwrap().extend([
+        Reply::delayed(Err(SubscriptionRequestError::Unauthorized), &gate),
+        Reply::ready(Err(SubscriptionRequestError::Permanent(
+            TwitchApiError::Http {
+                status: 403,
+                code: None,
+                message: "new login must not be cleared".into(),
+            },
+        ))),
+    ]);
+
+    let subscription = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { create_chat_message_subscription(&runtime, &params(), "session").await }
+    });
+    runtime.wait_for_subscription(1).await;
+
+    let (generation, snapshot) = {
+        let mut auth = runtime.auth.lock().unwrap();
+        auth.invalidate_operations();
+        let mut next_profile = profile("new-reader");
+        next_profile.user_id = "new-reader-id".into();
+        next_profile.client_id = "new-client".into();
+        auth.replace_token(
+            TokenResponse {
+                access_token: "new-login-access".into(),
+                refresh_token: "new-login-refresh".into(),
+                scope: vec![CHAT_READ_SCOPE.into()],
+                expires_in: 7200,
+            },
+            next_profile,
+        )
+        .unwrap();
+        (auth.generation, auth.clone())
+    };
+    runtime
+        .store
+        .save_if_current(runtime.auth.clone(), generation, snapshot)
+        .await
+        .unwrap();
+    gate.release.notify_one();
+
+    let error = subscription.await.unwrap().unwrap_err();
+    assert!(matches!(
+        error.downcast_ref::<EventSubTerminalError>(),
+        Some(EventSubTerminalError::ObsoleteConnection)
+    ));
+    assert_eq!(runtime.http.subscription_calls.lock().unwrap().len(), 1);
+    let sent = runtime.http.subscription_calls.lock().unwrap()[0].clone();
+    assert_eq!(sent.access_token, "old-access");
+    assert_eq!(sent.client_id, "fake-client");
+    assert_eq!(sent.user_id, "reader-id");
+
+    {
+        let auth = runtime.auth.lock().unwrap();
+        assert_eq!(auth.generation, generation);
+        assert_eq!(
+            auth.token.as_ref().unwrap().access_token,
+            "new-login-access"
+        );
+        assert_eq!(
+            auth.token.as_ref().unwrap().refresh_token,
+            "new-login-refresh"
+        );
+        assert_eq!(auth.profile.as_ref().unwrap().client_id, "new-client");
+        assert_eq!(auth.profile.as_ref().unwrap().user_id, "new-reader-id");
+    }
+    let persisted = runtime.backend.saved.lock().unwrap().clone().unwrap();
+    assert_eq!(persisted.token.unwrap().access_token, "new-login-access");
+    assert_eq!(runtime.backend.clears.load(Ordering::Relaxed), 0);
+    assert_eq!(runtime.auth_required.load(Ordering::Relaxed), 0);
+
+    let later_retry = create_chat_message_subscription(&runtime, &params(), "later").await;
+    assert!(matches!(
+        later_retry
+            .unwrap_err()
+            .downcast_ref::<EventSubTerminalError>(),
+        Some(EventSubTerminalError::ObsoleteConnection)
+    ));
+    assert_eq!(runtime.http.subscription_calls.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn stale_refresh_response_does_not_retry_with_a_different_auth_generation() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    let gate = Gate::default();
+    runtime
+        .http
+        .subscriptions
+        .lock()
+        .unwrap()
+        .push_back(Reply::ready(Err(SubscriptionRequestError::Unauthorized)));
+    runtime
+        .http
+        .refreshes
+        .lock()
+        .unwrap()
+        .push_back(Reply::delayed(
+            Ok(TokenResponse {
+                access_token: "stale-refresh-access".into(),
+                refresh_token: "stale-refresh-token".into(),
+                scope: vec![CHAT_READ_SCOPE.into()],
+                expires_in: 3600,
+            }),
+            &gate,
+        ));
+    runtime
+        .http
+        .validations
+        .lock()
+        .unwrap()
+        .push_back(Reply::ready(Ok(validate("reader"))));
+
+    let subscription = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { create_chat_message_subscription(&runtime, &params(), "session").await }
+    });
+    gate.started.notified().await;
+
+    let (generation, snapshot) = {
+        let mut auth = runtime.auth.lock().unwrap();
+        auth.invalidate_operations();
+        let mut next_profile = profile("new-reader");
+        next_profile.user_id = "new-reader-id".into();
+        next_profile.client_id = "new-client".into();
+        auth.replace_token(
+            TokenResponse {
+                access_token: "new-login-access".into(),
+                refresh_token: "new-login-refresh".into(),
+                scope: vec![CHAT_READ_SCOPE.into()],
+                expires_in: 7200,
+            },
+            next_profile,
+        )
+        .unwrap();
+        (auth.generation, auth.clone())
+    };
+    runtime
+        .store
+        .save_if_current(runtime.auth.clone(), generation, snapshot)
+        .await
+        .unwrap();
+    gate.release.notify_one();
+
+    let error = subscription.await.unwrap().unwrap_err();
+    assert!(matches!(
+        error.downcast_ref::<EventSubTerminalError>(),
+        Some(EventSubTerminalError::ObsoleteConnection)
+    ));
+    assert_eq!(runtime.http.subscription_calls.lock().unwrap().len(), 1);
+    assert_eq!(runtime.http.refresh_calls.load(Ordering::Relaxed), 1);
+    let auth = runtime.auth.lock().unwrap();
+    assert_eq!(auth.generation, generation);
+    assert_eq!(
+        auth.token.as_ref().unwrap().access_token,
+        "new-login-access"
+    );
+    assert_eq!(auth.profile.as_ref().unwrap().client_id, "new-client");
+    assert_eq!(auth.profile.as_ref().unwrap().user_id, "new-reader-id");
+    let persisted = runtime.backend.saved.lock().unwrap().clone().unwrap();
+    assert_eq!(persisted.token.unwrap().access_token, "new-login-access");
+    assert_eq!(runtime.backend.clears.load(Ordering::Relaxed), 0);
+    assert_eq!(runtime.auth_required.load(Ordering::Relaxed), 0);
 }
 
 #[tokio::test]

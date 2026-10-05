@@ -1,10 +1,12 @@
 # 実装 TODO
 
-- [ ] Issue #206: Twitch の validate と EventSub refresh を共通の credential service/revision で管理する。成功・失敗・scope 不足・永続化結果を同一 credential revision と照合し、古い応答が新しい認証を上書き・解除しないようにする。同一 credential の refresh を必要に応じて共有し、deferred fake transport で各競合順序を回帰化する。
+- [ ] Issue #206: Twitch の validate と EventSub refresh を共通の credential service/revision で管理する。成功・失敗・scope 不足・永続化結果を同一 credential revision と照合し、別generation/client/userの再ログインと古い購読が交差しても新しい認証を流用・解除しない。同一auth session内のrefresh token rotationは安全に再購読し、deferred fake transportで各競合順序を回帰化する。
 
 2026-10-06 実装進捗: 共通 credential revision と credential-update lock を導入し、validate と EventSub の refresh・scope 判定・rotation・保存を共通 helper へ集約した。古い success/error/revocation/scope failure と遅延 save/clear は generation・revision・token identity が一致する場合だけ適用する。deferred fake で validate 対 EventSub refresh、refresh 対 refresh、revision 変更後の invalid_grant・遅延成功、同一 generation 内の古い保存、保存中の revision 変更を固定した。architecture と Twitch ingestion の設計メモも更新した。`cargo fmt --check`・`git diff --check` は成功し、公式 Debian DBus package を `/tmp` の sysroot に置いた環境で `cargo test --lib twitch:: --no-default-features` は20件成功した。no-default featureでは `service_tests` が有効にならないため、deferred regressionの実行結果はCIで確認する。no-default clippy は既存のno-app dead-code warningsを許容して完了したが、strict clippy とGitHub CIは未確認。
 
 2026-10-06 レビュー修正: 送信した subscription token と失敗時に照合する EventSubAuthCredentials をrefresh関数の同じ返却値から記録し、待機中に認証が変わった古い401/403は credential clear/AuthRequired ではなく retryable として扱う。deferred subscription fake で送信後に認証をrotationしてから401が戻る順序を追加し、最新のメモリ/保存credential保持とterminal auth errorなしを検証する。logout は共有更新lockを待つ前にgeneration/revisionを無効化し、遅延 validate と logout の順序を回帰化した。test-onlyでしか使われない保存/clear helper wrapperを削除し、本番未使用のprivate itemを残さない。環境DNS制限でgit fetchは失敗したためGitHub REST compareを使用。現在の `main` (`98bfd81`) は `d966846` から45 commit進み、frontend、Auth controller、Settings、timeline、docsのみの変更で、Twitch Rust factory/serviceの追加差分はない。#205 の status presentation factory も frontend側の変更で認証serviceと競合しない。他Issue branchは取り込んでいない。Rust 1.90 app feature Twitch service tests 83件と `cargo clippy --all-targets --features app -- -D warnings` が成功した。
+
+2026-10-06 第2レビュー対応: 同一auth generation内のtoken rotationと別Login sessionを区別する。EventSub接続paramsに認証generation/client/user identityを固定し、古い接続の遅延401やrefresh完了が新しいログイン資格情報で再購読しないようにする。stale refresh応答もgeneration/client/userが一致する場合だけ最新rotationを採用し、別sessionならobsolete接続として静かに終了する。遅延401中の再ログイン、古いrefresh応答中の再ログイン、再接続開始時の旧paramsを実購読経路のdeferred fakeで検証する。最新 origin/main `6916a44` はローカルfetchにより取得した。#208 terminal EventSub変更は本Issueの購読資格情報境界と衝突しないか統合レビュー・回帰実行する。
 
 2026-10-06 着手計画: auth_service.rs と subscription.rs の認証更新/失効経路、および auth_state.rs・auth_store.rs の generation と永続化境界を調査する。revision を含む共通 service に refresh/validate/rotation/clear/save の判定を集約し、validate 対 EventSub、refresh 対 refresh、scope 不足、遅延保存を deferred fake で検証する。Rust の Twitch 関連回帰、fmt、clippy を実行し、設計文書と実装の整合を確認する。
 
@@ -100,7 +102,7 @@
 
 ## 現在の進捗サマリ
 
-2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、レビューで見つかったsubscription token identity/logout orderingも回帰化した。最新mainとのAPI compareでRust factory/service差分との競合なしを確認した。Rust fmt、diff check、`--no-default-features` Twitch基礎20件、dead-codeを許容したno-default clippy、app-feature Twitch service tests 83件、strict app-feature all-target clippyが成功した。PR #243 のCIと親再レビュー後に最終完了状態を反映する。
+2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、subscription token identity/logout orderingも回帰化した。親レビューで見つかった別Login generationの誤流用を防ぐため、EventSubConnectionParamsにauth generation/client/user identityを保持する対応を追加中。latest `origin/main` `6916a44` を通常workspaceのfetch済みobjectから専用cloneへfetchし、#205 status presentation factoryや#208 terminal EventSub変更との統合差分を確認している。Rust fmt、diff check、no-default Twitch基礎20件、app-feature Twitch service tests 85件が成功した。最新main統合後のstrict all-target clippyとGitHub CI、親再レビュー後に最終完了状態を反映する。
 
 Issue #199 は system timeline の中立モデルと型付き購読境界、source 別 transition 契約を実装した。初期 snapshot の認証/speech 通知、連続重複と復旧後の再通知、購読終了後の無視、不正 callback の型エラーを検証した。独立レビューで認証/接続の状態集合をさらに限定し、案内文を含む認証の重複抑制を維持した。最終 CI 結果と統合状況は PR #239 に記録する。
 

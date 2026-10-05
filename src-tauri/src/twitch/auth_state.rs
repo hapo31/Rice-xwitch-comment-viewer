@@ -149,8 +149,10 @@ pub(super) struct OAuthErrorResponse {
 #[derive(Debug, Clone)]
 pub(super) struct EventSubConnectionParams {
     pub(super) generation: u64,
+    pub(super) auth_generation: u64,
     pub(super) broadcaster_user_id: String,
     pub(super) broadcaster_login: String,
+    pub(super) client_id: String,
     pub(super) user_id: String,
 }
 
@@ -160,6 +162,7 @@ pub(super) struct EventSubAuthCredentials {
     pub(super) generation: u64,
     pub(super) credential_revision: u64,
     pub(super) client_id: String,
+    pub(super) user_id: String,
     pub(super) access_token: String,
     pub(super) refresh_token: String,
 }
@@ -251,6 +254,7 @@ impl TwitchAuthState {
             generation: self.generation,
             credential_revision: self.credential_revision,
             client_id,
+            user_id: profile.user_id.clone(),
             access_token: token.access_token.clone(),
             refresh_token: token.refresh_token.clone(),
         })

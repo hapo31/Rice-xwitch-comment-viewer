@@ -130,6 +130,9 @@ pub(super) async fn run_eventsub_connection_with<R: EventSubRuntime>(
         .await
         {
             if let Some(terminal) = error.downcast_ref::<EventSubTerminalError>() {
+                if matches!(terminal, EventSubTerminalError::ObsoleteConnection) {
+                    break;
+                }
                 // Terminal API and revocation failures have already emitted their
                 // actionable UI status. Never turn configuration/auth failures into
                 // an infinite reconnect loop.

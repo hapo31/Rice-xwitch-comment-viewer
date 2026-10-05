@@ -31,11 +31,30 @@ pub(super) async fn create_chat_message_subscription(
     params: &EventSubConnectionParams,
     session_id: &str,
 ) -> anyhow::Result<()> {
-    let credentials = app
-        .auth()
-        .lock()
-        .map_err(|error| SubscriptionRequestError::Retryable(anyhow::anyhow!(error.to_string())))?
-        .eventsub_credentials()?;
+    let (credentials, auth_user_id) = {
+        let auth = app.auth().lock().map_err(|error| {
+            SubscriptionRequestError::Retryable(anyhow::anyhow!(error.to_string()))
+        })?;
+        let credentials = auth.eventsub_credentials()?;
+        let user_id = auth
+            .profile
+            .as_ref()
+            .map(|profile| profile.user_id.clone())
+            .ok_or_else(|| {
+                SubscriptionRequestError::Retryable(anyhow::anyhow!(
+                    "Twitch のユーザー情報がありません。認証を確認してください。"
+                ))
+            })?;
+        (credentials, user_id)
+    };
+    if credentials.generation != params.auth_generation
+        || credentials.client_id != params.client_id
+        || auth_user_id != params.user_id
+    {
+        return Err(anyhow::Error::new(
+            EventSubTerminalError::ObsoleteConnection,
+        ));
+    }
     let subscription_client_id = credentials.client_id.clone();
     let refresh_app = app;
     let refresh_credentials = credentials.clone();
@@ -87,6 +106,11 @@ pub(super) async fn create_chat_message_subscription(
             .await
             .map_err(anyhow::Error::msg)?;
             if !cleared {
+                if !auth_session_is_current(app, &request_credentials) {
+                    return Err(anyhow::Error::new(
+                        EventSubTerminalError::ObsoleteConnection,
+                    ));
+                }
                 return Err(SubscriptionRequestError::Retryable(anyhow::anyhow!(
                     stale_credential_message()
                 ))
@@ -121,6 +145,11 @@ pub(super) async fn create_chat_message_subscription(
                 .await
                 .map_err(anyhow::Error::msg)?;
                 if !cleared {
+                    if !auth_session_is_current(app, &request_credentials) {
+                        return Err(anyhow::Error::new(
+                            EventSubTerminalError::ObsoleteConnection,
+                        ));
+                    }
                     return Err(SubscriptionRequestError::Retryable(anyhow::anyhow!(
                         stale_credential_message()
                     ))
@@ -136,6 +165,9 @@ pub(super) async fn create_chat_message_subscription(
             }
         }
         Err(SubscriptionRequestError::Retryable(error)) => Err(error),
+        Err(SubscriptionRequestError::ObsoleteConnection) => Err(anyhow::Error::new(
+            EventSubTerminalError::ObsoleteConnection,
+        )),
     }
 }
 
@@ -177,7 +209,12 @@ pub(super) async fn refresh_eventsub_access_token(
         .eventsub_credentials()
         .map_err(SubscriptionRequestError::Retryable)?;
     if latest_credentials.generation != credentials.generation
-        || latest_credentials.credential_revision != credentials.credential_revision
+        || latest_credentials.client_id != credentials.client_id
+        || latest_credentials.user_id != credentials.user_id
+    {
+        return Err(SubscriptionRequestError::ObsoleteConnection);
+    }
+    if latest_credentials.credential_revision != credentials.credential_revision
         || latest_credentials.access_token != credentials.access_token
         || latest_credentials.refresh_token != credentials.refresh_token
     {
@@ -187,7 +224,7 @@ pub(super) async fn refresh_eventsub_access_token(
     let (_profile, storage_warning) = match refresh_credentials_if_current(app, credentials).await {
         Ok(result) => result,
         Err(error) if error.is::<StaleCredentialResponse>() => {
-            return latest_eventsub_credentials(app)
+            return latest_eventsub_credentials(app, credentials)
                 .map(|latest| (latest.access_token.clone(), latest));
         }
         Err(error) => {
@@ -207,13 +244,13 @@ pub(super) async fn refresh_eventsub_access_token(
                 {
                     return Err(SubscriptionRequestError::AuthRequired(message));
                 }
-                return latest_eventsub_credentials(app)
+                return latest_eventsub_credentials(app, credentials)
                     .map(|latest| (latest.access_token.clone(), latest));
             }
             return Err(classify_eventsub_refresh_error(app, credentials, error).await);
         }
     };
-    let request_credentials = latest_eventsub_credentials(app)?;
+    let request_credentials = latest_eventsub_credentials(app, credentials)?;
 
     app.auth_log(
         AppLogLevel::Info,
@@ -230,12 +267,33 @@ pub(super) async fn refresh_eventsub_access_token(
 
 fn latest_eventsub_credentials(
     app: &impl SubscriptionRuntime,
+    expected: &EventSubAuthCredentials,
 ) -> Result<EventSubAuthCredentials, SubscriptionRequestError> {
-    app.auth()
+    let auth = app
+        .auth()
         .lock()
-        .map_err(|error| anyhow::anyhow!(error.to_string()))?
-        .eventsub_credentials()
+        .map_err(|error| SubscriptionRequestError::Retryable(anyhow::anyhow!(error.to_string())))?;
+    let same_auth_session = auth.generation == expected.generation
+        && auth.profile.as_ref().is_some_and(|profile| {
+            profile.client_id == expected.client_id && profile.user_id == expected.user_id
+        });
+    if !same_auth_session {
+        return Err(SubscriptionRequestError::ObsoleteConnection);
+    }
+    auth.eventsub_credentials()
         .map_err(SubscriptionRequestError::Retryable)
+}
+
+fn auth_session_is_current(
+    app: &impl SubscriptionRuntime,
+    expected: &EventSubAuthCredentials,
+) -> bool {
+    app.auth().lock().is_ok_and(|auth| {
+        auth.generation == expected.generation
+            && auth.profile.as_ref().is_some_and(|profile| {
+                profile.client_id == expected.client_id && profile.user_id == expected.user_id
+            })
+    })
 }
 
 /// Classifies OAuth refresh and validation failures before they reach the EventSub
