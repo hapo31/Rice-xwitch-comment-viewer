@@ -143,8 +143,8 @@ describe("domain orchestration", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(updateSettings).toHaveBeenCalledTimes(1);
     const firstResult: AppSettings = {
-      twitch: { ...defaultTwitchSettings, autoConnect: true },
-      speech: structuredClone(defaultSpeechSettings),
+      twitch: { ...defaultTwitchSettings(), autoConnect: true },
+      speech: defaultSpeechSettings(),
       launcher: { items: [] },
     };
     resolvers[0]?.(firstResult);
