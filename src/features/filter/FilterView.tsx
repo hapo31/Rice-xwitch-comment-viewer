@@ -26,7 +26,7 @@ export function FilterView({
   onSettingsUpdate: (patch: AppSettingsPatch) => Promise<boolean>;
 }) {
   const speechSettings = {
-    ...defaultSpeechSettings,
+    ...defaultSpeechSettings(),
     ...settings?.speech,
   };
   const [blockedUsers, setBlockedUsers] = useState(formatRuleList(speechSettings.blockedUsers));
