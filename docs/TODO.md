@@ -2,7 +2,9 @@
 
 - [ ] Issue #75: main rendererのcore/plugin権限を実際のfrontend利用へ限定し、不要なemit/emit-to/image/menu/trayを拒否する。SDKのonCloseRequestedが間接利用するdestroyは通常終了のため保持する。明示allowlistのsnapshotと拡張拒否回帰を追加し、実Windows配布版でtitlebar・resize・native DnD・複数file dialog・backend event購読を検証する。配布版の成功前には完了扱いにしない。
 
-2026-10-05進捗: core/pluginは既に9権限へ縮小されており、SDKのnative close経路を確認して必要なdestroyを保持した。全customを含むallowlist snapshot、scope/default set/不要commandの拡張拒否、実release ACL拒否判定とloopback debugger対象検査、必須UI証跡の欠落拒否を追加した。関連local95件/0skipとsecurity/workflow/context policyが成功。実配布版のnative操作・複数file dialog・OLE DnD・event購読の検査を組み込んだが、Windows候補での実行はまだ未完了でありIssueは閉じない。
+2026-10-05進捗: core/pluginは既に9権限へ縮小されており、SDKのnative close経路を確認して必要なdestroyを保持した。全customを含むallowlist snapshot、scope/default set/不要commandの拡張拒否、実release ACL拒否判定とloopback debugger対象検査、必須UI証跡の欠落拒否を追加した。関連local133件/0skipとsecurity/workflow/context policyが成功。source a79a9caの通常6workflowは成功し、[初期配布候補](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37280438448)ではWindows全体263件/実keyring/明示headful3件とDocker製の実配布物生成が成功したが、High ILでWebView2の環境overrideが無視されてsmokeが停止した。fresh runnerのRice AppID/exeだけに一時HKLM overrideを指定し、既存値非変更と所有値のfinally cleanupを維持している。
+
+2026-10-05追加進捗: 成功済みsource74ed02eのexact配布物を再利用するread-only診断を用意し、app/config/deps/build入力の差分があれば拒否する。これは最終sourceの同run配布smokeやRelease公開gateの代用にはしない。[source663c195の診断](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37288332050)ではportableの11 ACL拒否、実最大化/復元/最小化・titlebar移動/resize、backend listen/unlisten、native file dialogの2件登録、実OLE FileDropの1件登録、Launcher cleanup、native close後exit0が成功した。native dialogは所有EditへのフォーカスとUnicodeキー入力の実文字列を照合してEnterで確定する。一方、installedではACL/イベント/最大化等は確認できたが、物理入力点のOS hit-testが別ConsoleWindowClassへ向くため移動以降を完了できていない。表示/有効状態・座標・前面HWNDの診断を記録し、検査用windowの一時topmost状態もfinallyで元へ戻す。両配布形式と最終候補の成功前にはIssueを閉じない。
 
 - [x] Issue #91: Windowsでlocked/all-targets/all-featuresの全体テストと実secure store/Launcher分岐を継続実行する。manifest/tag由来のexact artifact集合、portable ZIPのCRC/内容/PE、隔離Windowsでportable起動とNSIS silent install/起動/uninstallを検証し、同じartifact bytesのsmoke成功をRelease公開の必須条件にする。OS socket buffer量に依存する既存順序fixtureは実dispatcher permitを制御して検証する。タグ・Releaseの発行なしで候補を検証できるread-only経路も用意する。
 
