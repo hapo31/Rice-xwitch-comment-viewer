@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - "v[0-9]*"
+  # Candidate verification creates no tag or Release. The default-branch
+  # publisher accepts only tag push runs, never this manual event.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,9 +20,13 @@ jobs:
     name: Shared release quality
     uses: ./.github/workflows/quality-checks.yml
 
+  windows-tests:
+    name: Windows production tests
+    uses: ./.github/workflows/single-instance.yml
+
   build-windows:
     name: Test and build Windows installer and zip
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     needs: quality
     runs-on: ubuntu-24.04
     permissions:
@@ -27,6 +34,7 @@ jobs:
     env:
       DOCKER_BUILDKIT: "1"
       RICE_TWITCH_CLIENT_ID: ${{ vars.RICE_TWITCH_CLIENT_ID || secrets.RICE_TWITCH_CLIENT_ID }}
+      EXPECTED_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
     steps:
       - name: Checkout annotated tag
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
@@ -46,6 +54,7 @@ jobs:
         run: node scripts/verify-twitch-client-id.mjs
 
       - name: Verify immutable release source
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
           if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -70,7 +79,14 @@ jobs:
             > release-provenance.json
 
       - name: Verify manifest and tag versions
-        run: scripts/verify-release-version.sh "${GITHUB_REF_NAME#v}" --tag "${GITHUB_REF_NAME}"
+        run: |
+          set -euo pipefail
+          if [ -n "${EXPECTED_TAG}" ]; then
+            scripts/verify-release-version.sh "${EXPECTED_TAG#v}" --tag "${EXPECTED_TAG}"
+          else
+            scripts/verify-release-version.sh "$(node -p 'require("./package.json").version')"
+            test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          fi
 
       - name: Read reviewed release inputs
         id: build-inputs
@@ -141,26 +157,59 @@ jobs:
       - name: Verify artifacts and write checksums
         run: |
           set -euo pipefail
-          find release-artifacts -maxdepth 1 -type f -print
-          test -n "$(find release-artifacts -maxdepth 1 -type f -name '*.exe' -print -quit)"
-          test -n "$(find release-artifacts -maxdepth 1 -type f -name '*.zip' -print -quit)"
-          test -s release-artifacts/BUILD-MATERIALS.json
-          test -s release-artifacts/Rice.sbom.cdx.json
-          cmp LICENSE release-artifacts/LICENSE
-          (cd release-artifacts && sha256sum * > SHA256SUMS.txt)
+          node --test scripts/test-release-artifacts.mjs scripts/test-windows-smoke.mjs
+          node scripts/verify-release-artifacts.mjs release-artifacts --write --tag "${EXPECTED_TAG}" --commit "${GITHUB_SHA}"
+          node scripts/verify-release-artifacts.mjs release-artifacts --tag "${EXPECTED_TAG}" --commit "${GITHUB_SHA}"
 
       - name: Upload release artifact bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: rice-windows-${{ github.ref_name }}
+          name: rice-windows-${{ github.run_id }}
           path: release-artifacts/*
           if-no-files-found: error
           retention-days: 1
 
       - name: Upload immutable release provenance
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rice-release-provenance-${{ github.ref_name }}
           path: release-provenance.json
+          if-no-files-found: error
+          retention-days: 1
+
+  windows-smoke:
+    name: Smoke exact Windows release artifacts
+    needs: [build-windows, windows-tests]
+    runs-on: windows-2022
+    timeout-minutes: 15
+    env:
+      EXPECTED_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Read reviewed Node version
+        id: inputs
+        run: |
+          $inputs = Get-Content build/release-inputs.json -Raw | ConvertFrom-Json
+          "node=$($inputs.nodeVersion)" >> $env:GITHUB_OUTPUT
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ steps.inputs.outputs.node }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rice-windows-${{ github.run_id }}
+          path: release-artifacts
+      - name: Install, launch and uninstall exact release candidates
+        run: |
+          ./scripts/smoke-windows-artifacts.ps1 -Artifacts release-artifacts -Commit $env:GITHUB_SHA -Tag $env:EXPECTED_TAG
+      - name: Retain Windows smoke receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rice-windows-smoke-${{ github.run_id }}
+          path: windows-smoke-report.json
           if-no-files-found: error
           retention-days: 1

@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 jobs:
@@ -15,6 +16,14 @@ jobs:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
           persist-credentials: false
+      - name: Validate Windows test runner and artifact smoke syntax
+        run: |
+          foreach ($file in @('scripts/run-windows-test.ps1', 'scripts/smoke-windows-artifacts.ps1')) {
+            $tokens = $null
+            $errors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $env:GITHUB_WORKSPACE $file), [ref]$tokens, [ref]$errors)
+            if ($errors.Count -ne 0) { $errors | Format-List; throw "PowerShell parse failed: $file" }
+          }
       - name: Read reviewed compiler inputs
         id: inputs
         run: |
@@ -68,7 +77,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run all Windows targets and features, including native credentials and process adapters
         env:
-          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER: pwsh -NoProfile -File scripts/run-windows-test.ps1
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER: pwsh -NoProfile -File ${{ github.workspace }}/scripts/run-windows-test.ps1
         run: |
           cargo test --locked --all-targets --all-features --manifest-path src-tauri/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

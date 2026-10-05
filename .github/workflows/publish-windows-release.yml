@@ -131,7 +131,7 @@ jobs:
       - name: Download release artifact bundle
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: rice-windows-${{ github.event.workflow_run.head_branch }}
+          name: rice-windows-${{ github.event.workflow_run.id }}
           path: release-artifacts
           github-token: ${{ github.token }}
           run-id: ${{ github.event.workflow_run.id }}
@@ -143,6 +143,25 @@ jobs:
           test -n "$(find . -maxdepth 1 -type f -name '*.exe' -print -quit)"
           test -n "$(find . -maxdepth 1 -type f -name '*.zip' -print -quit)"
           sha256sum --check --strict SHA256SUMS.txt
+
+      - name: Download Windows smoke receipt from the same run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rice-windows-smoke-${{ github.event.workflow_run.id }}
+          path: windows-smoke
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Require exact artifact manifest and actual successful Windows jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RICE_RELEASE_ROOT: ${{ github.workspace }}/source
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_RUN_ID}/jobs?filter=latest&per_page=100" --jq '.jobs[] | @json' > release-jobs.ndjson
+          node trusted/scripts/verify-windows-smoke.mjs release-artifacts \
+            windows-smoke/windows-smoke-report.json release-jobs.ndjson \
+            "${RELEASE_RUN_ID}" "${RELEASE_TAG}" "${RELEASE_COMMIT}"
 
       - name: Create or update release safely
         env:
