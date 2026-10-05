@@ -127,9 +127,10 @@ it("keeps concurrent add notices tied to each operation result after shared stat
     resolve: (result: LauncherAddResult) => void;
     paths: string[];
   }> = [];
-  tauriMock.setCommand("launcher_add", (args) => {
-    const paths = Array.isArray(args?.paths)
-      ? args.paths.filter((path): path is string => typeof path === "string")
+  tauriMock.setCommand("launcher_add", (args?: Record<string, unknown>) => {
+    const rawPaths = args?.paths;
+    const paths = Array.isArray(rawPaths)
+      ? rawPaths.filter((path: unknown): path is string => typeof path === "string")
       : [];
     return new Promise<LauncherAddResult>((resolve) => pending.push({ resolve, paths }));
   });
