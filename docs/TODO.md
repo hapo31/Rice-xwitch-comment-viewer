@@ -210,6 +210,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 ## Phase 0: プロジェクト作成
 
 - [x] Issue #202: Settings 既定値を UI feature 非依存の共通 model factory に集約し、preview の leaf patch を現在値へ累積適用する。可変値の非共有、異 section/同 section field の連続保存、再読込を回帰検証する。
+- [x] Issue #202 統合追補: 並列で追加された回帰テストの既定値参照を factory 呼び出しへ更新し、最新 main 全体の frontend 338 tests、型検査・lint・format・build が成功した。
+  - 統合調査: #198 / #193 で並列追加された3テストが factory をオブジェクトとして参照していたため、clone 失敗や必須設定の欠落が起きた。製品の設定モデルを維持し、全呼び出しを factory 契約へ統一した。
 
 - [x] Tauri + TypeScript + Tailwind の雛形を作る。
 - [x] `src-tauri/src` に `twitch`, `speech`, `settings`, `app_events` の境界を作る。
