@@ -5,7 +5,9 @@ import type { AppState } from "../../stores/appStore";
 import type { AppLogLevel } from "../../types";
 import { routeHeadingId } from "../../routeAccessibility";
 
-export function LogsView({ state }: { state: AppState }) {
+type LogsViewState = Pick<AppState, "logs">;
+
+export function LogsView({ state }: { state: LogsViewState }) {
   const scrollParentRef = useRef<HTMLElement | null>(null);
   const rowVirtualizer = useVirtualizer({
     count: state.logs.length,

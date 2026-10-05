@@ -43,7 +43,16 @@ const twitchConnectionLabels: Record<TwitchChatConnectionStatus, string> = {
   error: "接続エラー",
 };
 
-export function toLiveStatusSnapshot(state: AppState): LiveStatusSnapshot {
+export function toLiveStatusSnapshot(
+  state: Pick<
+    AppState,
+    | "twitchAuthStatus"
+    | "twitchConnectionStatus"
+    | "speechAdapterHealth"
+    | "speechQueuePhase"
+    | "notifications"
+  >,
+): LiveStatusSnapshot {
   return {
     twitchAuthStatus: state.twitchAuthStatus,
     twitchConnectionStatus: state.twitchConnectionStatus,
@@ -129,7 +138,18 @@ export function getLiveStatusAnnouncement(
   }
 }
 
-export function LiveStatusAnnouncer({ state }: { state: AppState }) {
+export function LiveStatusAnnouncer({
+  state,
+}: {
+  state: Pick<
+    AppState,
+    | "twitchAuthStatus"
+    | "twitchConnectionStatus"
+    | "speechAdapterHealth"
+    | "speechQueuePhase"
+    | "notifications"
+  >;
+}) {
   const snapshot = toLiveStatusSnapshot(state);
   const previousSnapshot = useRef(snapshot);
   const [announcement, setAnnouncement] = useState<LiveStatusAnnouncement>();

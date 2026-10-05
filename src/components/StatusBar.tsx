@@ -5,8 +5,19 @@ import { warningNotifications, type AppState } from "../stores/appStore";
 import { getAppBuildInfo, type AppBuildInfo } from "../tauri/client";
 import { formatBouyomiAddress } from "../validation";
 
+type StatusBarState = Pick<
+  AppState,
+  | "settings"
+  | "twitchAuthStatus"
+  | "twitchConnectionStatus"
+  | "speechAdapterHealth"
+  | "speechQueuePhase"
+  | "queueItems"
+  | "notifications"
+>;
+
 interface StatusBarProps {
-  state: AppState;
+  state: StatusBarState;
 }
 
 export function StatusBar({ state }: StatusBarProps) {
