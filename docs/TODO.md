@@ -213,7 +213,7 @@ Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既
 
 Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP、main window capability / custom command ACL を有効化し、Launcher icon を完全 decode・寸法検証済みの PNG data URL に限定した。
 
-Issue #194 の親レビュー追補で、連投抑制秒の空欄/空白を拒否し `0` を有効な値として扱う回帰、同一fieldを含む重複保存の完了追跡、診断とテスト読み上げ section の個別操作回帰を追加する。最終 head の CI・親レビュー・統合は PR #246 で保留中。
+Issue #194 の親レビュー追補で、連投抑制秒の空欄/空白を拒否し `0` を有効な値として扱う回帰、同一fieldを含む重複保存の完了追跡、診断とテスト読み上げ section の個別操作回帰を追加した。親レビューと追加 DOM 14件の再検証、実装 head ed9a890 の全16 CI が成功した。最終 head の CI・統合結果は PR #246 に記録する。
 
 通常 devcontainer には lock 済みの GitHub CLI feature を追加し、Codex の認証情報・履歴・セッションを `rice-codex-home` named volume に永続化した。
 
@@ -408,7 +408,7 @@ Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離
 
 - [x] Issue #28: Filter / Settings の未保存変更を Activity Bar 遷移・履歴戻る・ウィンドウ終了で共通確認し、保存・破棄・キャンセルをキーボード操作可能にする。native close listener は mount 中に一度だけ登録し、直後の終了要求も保護する。
 - [x] Issue #194: React Hook Form 7 を採用し、Settings / Filter の値・dirty・reset を責務別 FormProvider / Controller へ移行する。Rice 固有の saved-value 同期、保存対象 field ごとの pending、leaf patch、日本語 validation、空欄/数値、NG リスト正規化、native 接続許可を維持し、外部更新ごとの全フォーム reset を避ける。テストで外部同期、保存中の追加入力、失敗、破棄、診断、許可、空欄と 0 の区別、重複する保存完了、診断・テスト読み上げ section の単独操作を確認する。
-- [ ] Issue #194 最終 head の CI、親レビュー、PR #246 の統合。
+- [x] Issue #194: 親レビューと実装 head の全16 CI を確認した。文書追補後の最終 CI と統合は PR #246 で管理する。
 - [x] Issue #193: Filter / Settings の保存済み値と世代付き編集patchを分離し、保存応答が開始後の追加入力・元値への編集を上書きしない。接続先が変わったときだけ endpoint 許可メッセージを消す。
 - [x] Issue #193: 親レビュー指摘を反映し、最終レビュー対象 commit `1f5df20411f48cbdfd96b31f4c21110004c9a175` を確認した。PR #235 で最終 CI と統合を管理する。
 - [x] Issue #38: Settings / Filter の設定群へ同一階層・同スタイルの見出しを追加し、見出し一覧のアクセシビリティテストを追加する。
