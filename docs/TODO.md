@@ -405,6 +405,7 @@ Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離
 - 2026-10-06 Issue #204: 実際に使用する logsReducer で warning/error を notifications、info/success を notificationHistory へ分離した。昇格時は元のIDを保ち履歴から対処待ちへ移し、correlationId と本文/5秒の重複排除、明示クリア、独立した保持上限を回帰する。旧 appReducer の整理は別Issue #203 の範囲とし、runtime の正本を直接検証した。
 
 - [x] Issue #28: Filter / Settings の未保存変更を Activity Bar 遷移・履歴戻る・ウィンドウ終了で共通確認し、保存・破棄・キャンセルをキーボード操作可能にする。native close listener は mount 中に一度だけ登録し、直後の終了要求も保護する。
+- [ ] Issue #194: React Hook Form など React 18 互換のフォーム基盤を評価し、Settings / Filter の値・dirty・reset・field error を役割別Contextで管理する。下書き同期、保存開始後の入力、並行section更新、leaf patch、日本語validation、空欄/数値、NGリスト正規化、native接続許可はRice固有modelとして維持し、外部更新の全resetを避ける。責務別操作テストで保存・診断・許可・未保存保護を確認する。
 - [x] Issue #193: Filter / Settings の保存済み値と世代付き編集patchを分離し、保存応答が開始後の追加入力・元値への編集を上書きしない。接続先が変わったときだけ endpoint 許可メッセージを消す。
 - [x] Issue #193: 親レビュー指摘を反映し、最終レビュー対象 commit `1f5df20411f48cbdfd96b31f4c21110004c9a175` を確認した。PR #235 で最終 CI と統合を管理する。
 - [x] Issue #38: Settings / Filter の設定群へ同一階層・同スタイルの見出しを追加し、見出し一覧のアクセシビリティテストを追加する。
