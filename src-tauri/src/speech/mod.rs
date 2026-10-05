@@ -1,6 +1,7 @@
 pub mod bouyomi;
 #[cfg(feature = "app")]
 pub mod commands;
+pub(crate) mod destination;
 mod factory;
 mod failure;
 pub mod outcome;

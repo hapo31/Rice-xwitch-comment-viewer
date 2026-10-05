@@ -453,7 +453,7 @@ where
     Option::<String>::deserialize(deserializer).map(normalize_launcher_icon_data_url)
 }
 
-pub(super) fn normalize_launcher_icon_data_url(value: Option<String>) -> Option<String> {
+pub(crate) fn normalize_launcher_icon_data_url(value: Option<String>) -> Option<String> {
     let value = value?;
     let trimmed = value.trim();
     if !valid_icon_data_url(trimmed) {

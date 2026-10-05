@@ -17,7 +17,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-2022]
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Install Linux keyring build dependencies
@@ -60,6 +60,21 @@ jobs:
           cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features settings::tests::oversized_primary_and_backup_are_quarantined_without_full_read -- --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features settings::tests::maximum_launcher_roundtrip_stays_within_time_and_rust_heap_budget -- --exact --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test settings domain and all Bouyomi destination policies on both platforms
+        shell: pwsh
+        run: |
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features settings::validation::tests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features settings::schema::tests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features settings::tests::invalid_repeat_suppression_defaults_only_that_field_without_a_notice -- --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features settings::tests::invalid_wire_and_domain_patch_never_save_publish_or_change_either_file -- --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features settings::tests::manually_edited_settings_cannot_persist_or_forge_remote_consent -- --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features speech::destination::tests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test native Windows error mapping and transport phases
         # #77 owns typed/native errors, bounded writes and protocol responses.

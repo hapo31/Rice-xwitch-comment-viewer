@@ -47,19 +47,37 @@ Rust backend
 
 | コンポーネント | 責務 |
 | --- | --- |
-| `TwitchAuthService` | Device Code Flow、トークン更新、`/validate`、ユーザーID取得 |
-| `EventSubClient` | WebSocket接続、welcome/keepalive/reconnect/revocation処理 |
-| `TwitchChatService` | `channel.chat.message`購読、イベント重複排除、チャット正規化 |
+| `TwitchAuthService` | Device Code Flow、トークン更新、`/validate`、認証世代による古い応答の拒否 |
+| `EventSubClient` | WebSocket接続、welcome/keepalive/reconnect/revocation、購読・重複排除・正規化へのdispatch |
+| `TwitchChatService` | チャンネル入力検証とHelixユーザー取得、接続taskの所有・交換、受信停止と連携解除 |
 | `SpeechQueue` | 優先度、停止/再開/スキップ、連投抑制、バックプレッシャ |
 | `SpeechFormatter` | 読み上げ文生成、ユーザー名付与、絵文字/URL/長文処理 |
 | `SpeechAdapter` | 読み上げ先を抽象化するtrait |
 | `BouyomiAdapter` | 棒読みちゃんTCPプロトコル実装 |
 | `VoiceroidAdapter` | Windows専用の実験的アダプタ。C# sidecarまたはUI Automationを隠蔽する |
-| `SettingsStore` | 一般設定JSONを原子的に保存し、JSON構文または検証対象の設定値が不正な場合はbackupまたは既定値へ復旧する。更新は候補を保存できた場合だけ共有メモリへ反映する。OAuthトークンは扱わない |
+| `SettingsStore` | optional/versionedな永続wireを移行・共通検証し、不正な項目だけ既定値へ戻す。JSON構文/容量の破損はbackupまたは既定値へ復旧する。未知の版・項目は読取り専用。原子的保存の成功後だけ候補を共有メモリへ反映する。OAuthトークンは扱わない |
 | `TwitchAuthStore` | Twitch OAuth状態をOS keyringへ保存/復元/削除する |
 | `LauncherService` | 登録アプリのパス検証、重複排除、単体/一斉起動を扱う |
 
+### Twitch責務分割（Issue #44）
+
+`twitch/model.rs`は公開chat DTOだけを保持し、既存の`crate::twitch::*`で再exportする。camelCase/optional field omissionとcommand/event payloadは変更しない。`error.rs`はHTTP status/OAuth codeの型付き分類と日本語表示を分け、表示文言が認証解除・retry可否を決めない。`normalization.rs`はEventSub wireとchat正規化を担当し、欠損/不正timestampには呼出元が渡した受信時刻を使う。`dedupe.rs`は接続全体で共有するbounded cacheと明示`Instant`によるTTLを保持する。この2つのpure境界はTauri、keyring、network clientに依存しない。
+
+`auth_state.rs`は認証DTO・世代・scopeの規則、`auth_service.rs`は認証操作、`auth_store.rs`はcredential I/Oの直列化とkeyring/旧Linuxファイルの移行、`oauth.rs`はHTTP wireとOAuth transportを担当する。`chat_service.rs`は接続taskのライフサイクル、`eventsub.rs`はsession/handover/backoff、`subscription.rs`は最新credential取得・401時1回refresh・保存後の再購読を担当する。ファイル移動で保存/削除の世代照合やHTTP deadlineを緩めない。
+
+`commands.rs`は既存7 commandの引数/戻り値を維持する薄いadapterで、`runtime.rs`だけがTauriのmanaged state、event送信、speech enqueueと本番transportを接続する。認証serviceには`AuthRuntime`/`DeviceOAuthTransport`、チャットserviceには`ChatRuntime`、EventSubには`EventSubRuntime`、購読には`SubscriptionRuntime`を注入する。`TwitchAuthStore::with_backend`で保存先を差し替えられる。Device Codeのwall clockと通知のreceive/monotonic clockもruntimeから渡し、非同期deadlineはTokio test clockで制御する。serviceはTauri/reqwest/keyringをimportしない。
+
+既存の認証競合・bridge fixture・再接続回帰は`tests.rs`/`test_harness.rs`へ保持し、`service_tests.rs`で同じ本番serviceをscripted transport/store/clockへ接続する。Device Code各応答、並行start/poll、保存後の認証通知、失敗した解除、チャンネルの事前検証、接続交換、停止時の認証保持、解除時の削除、型付き購読失敗とrefresh保存順、clockによるTTLを検証する。各leafの分類・receive clock・TTL/capacity回帰と、serviceへのインフラ依存/command名の退行を検出する境界チェックも維持する。
+
 Launcherのアプリ登録・起動はWindows専用。`app_build_info.launcher`で`canRegisterApplications/canLaunchApplications/reason`を型付きで返す。UIは取得成功まで安全側に無効化し、非対応OSでは選択・DnD購読・単体/一斉起動を提供しない。backendも登録commandと設定patchによる新規登録/target変更を保存前に拒否し、起動をfilesystem操作前に拒否する。既存設定の項目は他OSでも表示・並び替え/表示名変更・削除でき、OS標準ランチャーまたはWindows版を案内する（Issue #79）。
+
+## 設定入力と読み上げ接続先の境界
+
+設定入力は`settings/validation.rs`でwireとdomainを分ける。`settings_update`はframework所有JSONを256KiB/nodes/depth・既知field・文字列/rule量でpreflightしてからDTOをcloneし、leaf patchを最新candidateへ適用、全domainとLauncher資源を検証・保存できた場合だけ公開する。`ValidationError { field, code, message, recovery }`で安全な日本語と修正対象を返す。`TwitchLogin`は設定保存と`twitch_connect`で共用し、空欄は自分のチャンネル、非空は英数字・_の3〜25文字、raw128 UTF-8 bytes以内/controlなしとする。hostはraw253 UTF-8 bytes/DNS label63、NGユーザーはlogin形式、NGワードは500 Unicode文字/2048 UTF-8 bytes、各200件/両list合計64KiB、接続成功文は120文字/480bytesまで。文字数/range違反をclamp/truncateで成功扱いにしない。永続wireのmigration/field fallbackも同じpatch適用・domain validatorとLauncher構造validatorを使う（#64）。
+
+`SpeechRuntime`がprocess-localの`DestinationPolicy`をfactory/diagnosticsと共有する。各TCP接続はhostを2秒以内・最大16addressへ解決し、全addressを検証して検証済み`SocketAddr`集合へ直接接続する（connect時の再DNS解決なし）。通常は127/8・::1・IPv4-mapped loopbackだけを許可する。remote modeはopt-in要求であり許可ではない。private IPv4/IPv6 ULAだけが外部許可の対象で、public/link-local/multicast/未指定宛先は拒否する。明示`speech_authorize_endpoint`がhostname/IP/port・全解決address・ユーザー名/chat/test/controlの平文送信/TLSと相手認証の欠如/VPN注意をnative dialogへ表示する。callbackをawaitし設定lockは保持しない。許可後にDNSを再確認し、設定変更がないことを短いlock下で比較してからopaque approvalをメモリへinstallする。1つのpending prompt/30秒rate limit、拒否時は旧許可も取り消し、endpoint変更/再起動/解決address変更は再同意なしに送信しない。設定fileやrendererへconsent flagは持たせない。既に開始した送信の取消やbyte回収、相手identityの認証は保証しない。
+
+domain/endpointの境界値は同じJSON fixtureをRustとフォームで検証する。fake resolver/native consentでmixed DNS・rebinding・拒否・再起動/endpoint変更・全talk/query/control/diagnostics経路を検証する。実Windows WebViewは不正6入力のstructured rejection・disk/memory保持、rendererからremote flagを送ったprobe/diagnostics2経路の拒否を追加検証する。DNS/consent failureは自動再送しないConfigurationとする。既存Launcher 200件/4MiB iconsのfixtureはvalidな最大NG rule payloadへ変更し、8MiB wire read/backup budgetはJSON whitespace paddingで維持する（multi-MiB NG wordでdomain上限を回避しない）。native result channelもvalidatedな500文字以内のNG wordを使い、Twitch loginを検証除外にしない。
 
 ## Launcherの実行境界
 
@@ -146,6 +164,7 @@ Commands:
 - `twitch_disconnect()`
 - `speech_set_adapter(adapter: SpeechAdapterKind)`
 - `speech_test(text: String)`
+- `speech_authorize_endpoint()`（保存済みremote接続先のnative consent。接続/読み上げは開始しない）
 - `speech_pause()`
 - `speech_resume()`
 - `speech_skip()`
@@ -180,6 +199,19 @@ React の仮想スクロール、ウィンドウ倍率、Launcher tile は動的
 
 capability は `main` window の `default` だけを設定から明示的に有効化する。core API は event の listen/unlisten、現在の window の状態確認・移動・resize・native close 完了、Dialog の open に限定する。custom command は `tauri_build::AppManifest` へ列挙し、同じ main capability に明示した command だけを許可する。新しい window / capability / command を追加するときは、既存の default set を広げず、その利用箇所と permission を同じ変更で追加する。CSP や capability は backend の入力検証を代替しないため、外部 URL、Launcher path、設定値の Rust 側検証は維持する。
 
+Issue #75の最小集合は次の9 core/plugin permissionと既存の明示custom commandだけ。`test-tauri-security.mjs`はcustomも含む全体snapshot、実policyを使ったdefault/emit/image/menu/tray等の拡張・remote/window/webview/platform scope追加拒否を検証する。新しい許可は利用箇所とsnapshotの両方をreviewする。
+
+| permission | 本番frontendで必要な理由 |
+| --- | --- |
+| `core:event:allow-listen` / `allow-unlisten` | domain event、AppShellのclose、TitleBarのresize、Launcherのnative DnDの購読/解除 |
+| `core:window:allow-destroy` | SDKの`Window.onCloseRequested`が確認不要のnative close後に間接呼出しする。通常終了に必要であり、未使用ではない |
+| `core:window:allow-is-maximized` | TitleBarの最大化/復元アイコン同期 |
+| `core:window:allow-minimize` / `allow-toggle-maximize` | TitleBarの最小化/最大化/復元 |
+| `core:window:allow-start-dragging` / `allow-start-resize-dragging` | TitleBarの移動と8方向のresize handle |
+| `dialog:allow-open` | Launcherの`.exe`/`.lnk`複数選択。save/message等のrenderer権限は不要 |
+
+配布候補のWindows検査は変更していない実portable/NSIS exeを起動し、WebView2 loopback debuggerから本番IPC/DOMへ接続する。11実core/plugin commandはrelease固有の`not allowed by ACL`を厳密確認し、command-not-found/feature-disabled/引数errorを代用しない。実HWNDの最小化/最大化/復元・native移動/resize、backendが発行した保存logのlisten/unlisten、所有fixture2fileのnative dialog選択とOLE FileDrop1fileによる本番Launcher登録/解除を検査する。portableはnative closeとSDK destroy、installedはtitlebar/app_exitで通常終了させる。検証記録はPID/source/run/exact artifact digestへ結び付け、未検証項目をpublisherで拒否する。debuggerはfresh GitHub-hosted runnerの所有Rice子tree・loopbackだけに限定し、production config/CSP/ACL・global環境は変更しない。hosted runnerがHigh ILのためWebView2が環境/HKCUのoverrideを無視する場合も、RiceのAppID/exe名だけへ一時的なHKLM browser args/user-data-folderを指定する。既存valueは上書きせず、所有valueと新規空leaf keyだけをfinallyで除去し、wildcard policy・sandbox無効化は使わない（[Microsoft: elevated host overrides](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/security#for-an-elevated-host-app-use-appropriate-override-flags)）。
+
 Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、base64部分64KiB / PNG file48KiB、PNGのchecksum・終端・単一frame・最大128×128pxを検証する。PNG decoder作業領域は1MiB、pixel出力bufferは128KiB以内。保存済みの不正/旧上限超過iconは読み込み時に汎用iconへfallbackし、新規追加の上限超過は全体を拒否する。合計data URLは4MiB以内。inline PNGをquotaで制限するため、cache用の追加filesystem権限や`assetProtocol`は有効化しない。
 
 Launcherの資源境界（#71）: 最大200件、pathは各4096UTF-8 bytes・合計128KiB、IDは64 ASCII bytes以内の英数字/ハイフン/下線、表示名1〜120 Unicode文字、group1〜64文字（いずれも制御文字なし）、背景色`#RRGGBB`。追加要求のJSONは256KiB、設定patch/保存JSONは8MiB、要求treeは4096nodes/深さ16まで。Tauriのparse済みbodyを`Request`で借用し、アプリDTOをcloneする前に検査する。framework自体の初回transport parseのallocationを制限できたとは扱わない。
@@ -203,6 +235,9 @@ backend は bounded な operational log ring と Twitch（auth/chat）/speech �
 ## 永続化
 
 - 一般設定: Tauriのapp data配下にJSON保存。同一ディレクトリの一時ファイルへ書き込み・`sync_all` した後、OSごとの atomic replace で `settings.json` を更新する。直前の正常版は `settings.json.bak` 1世代だけ保持する。
+- 永続wireは`settings/schema.rs`でdomain/IPC DTOと分離し、`schemaVersion: 1`を保存時だけ付ける。唯一の既存版である番号なし/null/0のv0からv1への明示段階を通し、正常な値を保持して再保存する。型違い・範囲外のleafはその項目だけ既定値へ戻す。各section/fieldはoptional、通常の補正通知はowner方針により不要。NG listの不正値/合計quota超過は該当listを空へ、必須identity/targetのないLauncherは項目を除外し、重複ID/target・一覧quota違反は一覧を空へ戻す。表示metadataは不正なleafだけ既定値へ戻す。純粋な保存path文字列検証は登録/起動時の実ファイル検証とは別で、load中にfilesystem/COMを呼ばない。
+- 未対応のversion（型違い/負数を含む）、重複版番号や解釈不能なroot keyにより版番号が曖昧な設定は、自動接続しないdomain既定値で起動し、対応版で開くか、終了後に本体・backupをコピーして移動する復旧案内を出す。未知field/通常fieldの重複wire keyでは既知の正常な項目だけ読めるが読取り専用とする。いずれも元ファイル/backupを保持し、自動migrationしない。全Settings/Launcher/window保存はtemporary作成/backup更新より前に現在のディスク内容を再検査し、起動後に将来版へ交換された場合も拒否する。Settings IPCは`unsupportedSchema`を返し、終了時の位置保存失敗は終了を妨げない。構文破損primaryから未対応backupを復旧する場合も、そのbytesをそのまま戻して読取り専用を維持する。
+- file decoderは8MiB全体をowned `Value` treeに展開せず、Serde JSONの借用`RawValue`と上限付きVisitorで既知fieldを参照する。文字列はraw JSON escapeの上限を検査し、rules/Launcher配列は201件目で打ち切ってからdomainへ変換する。PNG decoderのbounded buffer・既存の時間/heap上限は維持する。API根拠は[Serde JSON RawValue](https://docs.rs/serde_json/latest/serde_json/value/struct.RawValue.html)、[Serde map Visitor](https://serde.rs/deserialize-map.html)を参照（lockのcrate版は変更しない）。
 - JSON読込/serializerは8MiBまで。上限超過の新設定はtemporary/backupを変更する前に拒否し、候補stateも公開しない。巨大な既存primary/backupはmetadataとbounded readで検出して元fileを退避し、既存の復旧方針を適用する。IO/permission失敗を破損と決めつけて上書きしない。
 - 多重起動: 正式方針は同一アプリの複数起動禁止。最初にsingle-instance pluginを登録し、2回目は既存main windowをshow/unminimize/focusして終了する。起動setup完了前の通知は保留して完了時に処理し、引数/cwdをcommandとして解釈しない。設定の読込・初期作成・破損復旧より前に、同じapp dataの固定`settings.writer.lock`を非blockingで排他lockし、process lifetimeのmanaged stateが保持する。全Settings/Launcher/window保存で同じ所有権と保存先を確認する。pluginの通知が失敗しても2つ目のwriterは設定に触れる前に失敗する。lock fileは削除/atomic replaceしない（inodeの分裂を防ぐ）；OSが正常終了/異常終了で所有権を解放する。手動lock削除による起動回避は非サポートであり、他ユーザー/同一ユーザーの悪意あるprocessの隔離機構ではない。
 - ウィンドウ位置: `settings.json` の `window.position` に物理ピクセル座標を保存する。終了要求時とアプリ内の終了操作で保存し、次回起動時は現在のいずれかのモニター作業領域にタイトルバー相当（64 x 32px）以上が残る位置だけを復元する。モニター構成の変更で画面外になる位置は復元せず、初期の中央配置を使う。

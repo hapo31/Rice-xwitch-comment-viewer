@@ -9,6 +9,7 @@ import type { AppSettings, AppSettingsPatch } from "../../types";
 import { focusIndicatorClass } from "../../presentation/focus";
 import { routeHeadingId } from "../../routeAccessibility";
 import {
+  blockedRulesError,
   formatRuleList,
   isValidRepeatSuppressionSeconds,
   parseBlockedUserList,
@@ -57,8 +58,9 @@ export function FilterView({
   const isRepeatSecondsValid = isValidRepeatSuppressionSeconds(repeatSeconds);
   const blockedUserRules = parseBlockedUserList(blockedUsers);
   const blockedWordRules = parseBlockedWordList(blockedWords);
+  const ruleError = blockedRulesError(blockedUserRules.items, blockedWordRules.items);
   const areRuleListsValid =
-    blockedUserRules.overflowCount === 0 && blockedWordRules.overflowCount === 0;
+    blockedUserRules.overflowCount === 0 && blockedWordRules.overflowCount === 0 && !ruleError;
   const isDirty =
     numericMaxLength !== speechSettings.maxCommentLength ||
     numericRepeatSeconds !== speechSettings.repeatSuppressionSeconds ||
@@ -150,6 +152,15 @@ export function FilterView({
           </SettingsSection>
 
           <SettingsSection id="blocked-rules" title="除外リスト">
+            <p className="py-2 text-xs text-zinc-400">
+              各200件まで。NGユーザーはTwitch login、NGワードは500文字まで、両リスト合計64KiB
+              UTF-8以内です。
+            </p>
+            {ruleError && (
+              <p role="alert" className="py-2 text-xs text-zinc-400">
+                {ruleError}
+              </p>
+            )}
             <RuleTextArea
               id="rule-blocked-users"
               label="NG ユーザー"

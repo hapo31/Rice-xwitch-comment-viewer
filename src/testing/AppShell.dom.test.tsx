@@ -1,7 +1,7 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { createHashRouter, createMemoryRouter, RouterProvider } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { AppShell } from "../AppShell";
 import { appRoutes } from "../routes";
@@ -29,6 +29,43 @@ function mountApp(path = "/chat", strict = false) {
   const view = render(strict ? <StrictMode>{content}</StrictMode> : content);
   return { stores, router, ...view };
 }
+
+it("native settings-schema completion survives HashRouter without an unknown-route redirect", async () => {
+  const originalUrl = window.location.href;
+  window.location.hash = "/chat";
+  const stores = createDomainStores();
+  const router = createHashRouter([
+    {
+      path: "*",
+      element: (
+        <DomainProvider stores={stores}>
+          <AppShell />
+        </DomainProvider>
+      ),
+    },
+  ]);
+  const view = render(<RouterProvider router={router} />);
+  try {
+    await ready(stores);
+    await act(async () => {
+      window.location.hash = "rice-schema-ok";
+    });
+    await waitFor(() => expect(window.location.hash).toBe("#/chat"));
+    for (const result of ["ok", "failed&stage=update"]) {
+      const search = `?riceSchemaResult=${result}`;
+      await act(async () => {
+        window.location.hash = `/chat${search}`;
+      });
+      await waitFor(() => expect(router.state.location.search).toBe(search));
+      expect(router.state.location.pathname).toBe("/chat");
+      expect(window.location.hash).toBe(`#/chat${search}`);
+    }
+  } finally {
+    view.unmount();
+    router.dispose();
+    window.history.replaceState(null, "", originalUrl);
+  }
+});
 
 it("late startup and explicit reload preserve all item reasons and expose keyboard-operated skip history", async () => {
   let revision = 10;
@@ -258,6 +295,65 @@ it("Filter uses real input/validation/save and associates field errors", async (
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "設定を保存" })).not.toBeInTheDocument(),
   );
+});
+
+it("remote mode must be saved then explicitly sent to native consent, never auto-connects", async () => {
+  allowSettingsSave();
+  tauriMock.setCommand("speech_authorize_endpoint", () =>
+    Promise.reject({
+      field: "speech.bouyomiHost",
+      code: "consentDeclined",
+      message: "外部接続を許可しませんでした。送信していません。",
+      recovery: "接続先を確認してください。",
+    }),
+  );
+  const user = userEvent.setup();
+  const { stores } = mountApp("/settings");
+  await ready(stores);
+  const mode = screen.getByRole("checkbox", { name: /外部接続モード/ });
+  expect(mode).not.toBeChecked();
+  await user.click(mode);
+  expect(screen.getByText(/Twitchユーザー名・チャット・テスト文/)).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "保存済みの接続先をネイティブ確認で許可" }),
+  ).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "設定を保存" }));
+  await waitFor(() =>
+    expect(stores.settings.getState().settings?.speech.bouyomiRemoteMode).toBe(true),
+  );
+  const authorize = screen.getByRole("button", { name: "保存済みの接続先をネイティブ確認で許可" });
+  expect(authorize).toBeEnabled();
+  expect(tauriMock.invoke).not.toHaveBeenCalledWith("speech_authorize_endpoint");
+  const probesBeforeConsent = tauriMock.invoke.mock.calls.filter(
+    ([command]) => command === "speech_health_probe",
+  ).length;
+  await user.click(authorize);
+  await waitFor(() => expect(screen.getByText(/外部接続を許可しませんでした/)).toBeInTheDocument());
+  expect(tauriMock.invoke).toHaveBeenCalledWith("speech_authorize_endpoint");
+  expect(
+    tauriMock.invoke.mock.calls.filter(([command]) => command === "speech_health_probe"),
+  ).toHaveLength(probesBeforeConsent);
+});
+
+it("oversized confirmation and NG rules expose field errors and block saving", async () => {
+  const { stores, router } = mountApp("/settings");
+  await ready(stores);
+  const confirmation = screen.getByLabelText("接続成功時メッセージ");
+  fireEvent.change(confirmation, { target: { value: "😀".repeat(121) } });
+  expect(confirmation).toHaveAttribute("aria-invalid", "true");
+  expect(document.getElementById(confirmation.getAttribute("aria-describedby")!)).toHaveTextContent(
+    /120文字/,
+  );
+  expect(screen.getByRole("button", { name: "設定を保存" })).toBeDisabled();
+  fireEvent.change(confirmation, { target: { value: "" } });
+  await act(() => router.navigate("/filter"));
+  fireEvent.change(screen.getByLabelText("NG ワード", { exact: true }), {
+    target: { value: "x".repeat(501) },
+  });
+  expect(
+    within(screen.getByRole("region", { name: "除外リスト" })).getByRole("alert"),
+  ).toHaveTextContent(/500文字/);
+  expect(screen.getByRole("button", { name: "設定を保存" })).toBeDisabled();
 });
 
 it("Filter cancellation preserves a draft and discard restores navigation without saving", async () => {

@@ -37,6 +37,7 @@ fn main() {
             "speech_health_check",
             "speech_health_probe",
             "speech_connection_diagnostics",
+            "speech_authorize_endpoint",
             "speech_test",
             "speech_pause",
             "speech_resume",

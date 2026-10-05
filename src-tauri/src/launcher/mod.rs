@@ -10,12 +10,13 @@ mod repository;
 mod service;
 mod workers;
 
-pub(crate) use model::{
-    apply_launcher_edits, preflight_launcher_patch, validate_launcher_resources,
-    validate_launcher_structure, LauncherCapabilities, LauncherSettings, LauncherSettingsPatch,
-};
 #[cfg(test)]
-pub(crate) use model::{normalize_launcher_items, LauncherItem, LauncherItemKind};
+pub(crate) use model::normalize_launcher_items;
+pub(crate) use model::{
+    apply_launcher_edits, normalize_launcher_icon_data_url, preflight_launcher_patch,
+    validate_launcher_resources, validate_launcher_structure, LauncherCapabilities, LauncherItem,
+    LauncherItemKind, LauncherSettings, LauncherSettingsPatch,
+};
 pub(crate) use service::LauncherRuntime;
 
 #[cfg(test)]

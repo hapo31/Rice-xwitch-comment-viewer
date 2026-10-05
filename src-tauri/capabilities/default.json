@@ -27,6 +27,7 @@
     "allow-speech-health-check",
     "allow-speech-health-probe",
     "allow-speech-connection-diagnostics",
+    "allow-speech-authorize-endpoint",
     "allow-speech-test",
     "allow-speech-pause",
     "allow-speech-resume",
