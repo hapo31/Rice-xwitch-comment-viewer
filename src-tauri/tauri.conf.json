@@ -66,6 +66,9 @@
     "copyright": "Copyright (c) 2026 Rice contributors",
     "resources": { "../LICENSE": "LICENSE" },
     "targets": "all",
+    "windows": {
+      "minimumWebview2Version": "111.0.0.0"
+    },
     "icon": ["icons/icon.ico", "icons/icon.png"]
   }
 }

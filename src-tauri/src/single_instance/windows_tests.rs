@@ -320,6 +320,7 @@ fn native_maximum_launcher_render_and_ipc_budget() {
     assert_eq!(result["count"], 200);
     assert_eq!(result["rejected"], 4);
     assert_eq!(result["unchanged"], true);
+    assert_eq!(result["styleChecks"], 16);
     assert!(
         result["getMs"].as_f64().unwrap() < 2000.0,
         "full settings IPC retrieval within 2 seconds: {result}"

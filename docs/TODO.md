@@ -1,5 +1,7 @@
 # 実装 TODO
 
+- [ ] main CI の依存監査: Tailwind 3 のビルド依存から入る braces（GHSA-vfj7-8cjw-p6xm）を依存グラフから除去する。公式 Tailwind 4/Vite 構成へ移行し、既存配色・日本語フォント・寸法・キーボード focus を保持する。作業ブランチの監査・品質・Windows native CI の成功を確認するまで main へ反映しない。監査の閾値・例外・失敗条件は緩めない。
+
 - [x] Issue #76: Windows shortcutを起動直前に構造化して検証し、壊れた/移動したtargetをfailureへ返す。起動依頼の受付と対象起動の確認を区別し、日本語の修復/再登録案内、arguments/working directory、権限要求と直接exe/部分成功の回帰をWindows integrationとUIで検証する。
 
 2026-10-05: UIの全failure表示/準備完了未確認、async serviceの4-worker/cancel-before-spawn、header/target/cwd/arguments検証を実装した。LinuxでRust all-features244件/no-default193件、strict clippy/fmt、frontend282件とbuild/security/license/quality policy3件/context検査が成功した。Windowsの39件は成功したが、WSH fixtureの日本語TargetPath代入に失敗し、Issueは未完了。実在/MZ/109 UTF-16 unitsを確認し、本番/fixtureをIShellLinkW Unicode APIへ切り替えた。既存lockのwindows 0.62.2を参照するだけで依存版は不変。実Windows再検証までは完了扱いにしない。

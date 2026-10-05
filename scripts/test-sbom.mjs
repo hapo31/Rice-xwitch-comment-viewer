@@ -53,5 +53,6 @@ test("installed project graph produces referentially complete SBOM", { skip: !pr
   const bom = createSbom(input);
   assert.ok(bom.components.length > 400);
   assert.ok(bom.components.some((component) => component.purl?.startsWith("pkg:cargo/tauri@") && component.scope === "required"));
-  assert.ok(bom.components.some((component) => component.purl?.startsWith("pkg:npm/braces@") && component.scope === "excluded"));
+  assert.ok(bom.components.some((component) => component.purl?.startsWith("pkg:npm/tailwindcss@") && component.scope === "excluded"));
+  assert.ok(!bom.components.some((component) => component.purl?.startsWith("pkg:npm/braces@")));
 });

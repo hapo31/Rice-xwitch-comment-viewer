@@ -244,7 +244,7 @@ export function ChatView({
           <button
             type="button"
             onClick={returnToLatest}
-            className="absolute left-1/2 top-2 z-20 -translate-x-1/2 rounded border border-sky-500/50 bg-zinc-800 px-3 py-1 text-xs font-medium text-sky-300 shadow hover:bg-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+            className="absolute left-1/2 top-2 z-20 -translate-x-1/2 rounded-sm border border-sky-500/50 bg-zinc-800 px-3 py-1 text-xs font-medium text-sky-300 shadow-sm hover:bg-zinc-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-sky-400"
           >
             新着 {unseenMessageCount} 件を表示
           </button>

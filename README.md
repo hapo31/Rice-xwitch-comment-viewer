@@ -17,11 +17,13 @@ Rice は、Twitch 配信中のチャット確認と読み上げを一つにま�
 ## 必要なもの
 
 - Windows 10 または 11 の 64 bit PC（公開 Release は `x86_64-pc-windows-msvc` 向け）
-- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/consumer/)
+- 最新の Evergreen 版 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/consumer/)（画面の CSS は Chromium 111 以降を必要とします。古い固定版 Runtime は対象外です）
 - Twitch アカウントと、Twitch へ接続できるネットワーク
 - 読み上げを使う場合: 棒読みちゃん。本体側で TCP アプリ連携を有効にします。既定の接続先は `127.0.0.1:50001` です。
 
 WebView2 Runtime は Rice の画面表示に必要です。Rice 本体だけでも、読み上げなしでチャット受信・表示の準備を進められます。棒読みちゃん、Twitch、ネットワークはいずれも別サービス／別アプリです。
+
+installer は [Tauri の最低 WebView2 バージョン設定](https://v2.tauri.app/reference/config/#minimumwebview2version-1)を使い、111 より古い Runtime の更新を試みます。更新にはネットワーク接続が必要です。portable ZIP を使う場合は、先に Runtime を最新にしてください。
 
 ## 入手、インストール、検証
 

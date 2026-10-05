@@ -125,6 +125,8 @@ Tauri の最小ウィンドウ幅は 900px とする。Chat はこの最小幅�
 
 ## Tailwindデザイン指針
 
+Tailwind 4.3.3 と公式 `@tailwindcss/vite` を使い、`src/styles.css` の明示的な source と legacy config の読込を共通ビルド経路にする。Tailwind 3 からの移行で既存の sRGB 配色、日本語 font family、icon/タイル寸法、focus/forced-colors fallback を変えない。生成 CSS の unit test と Windows native WebView の computed-style/geometry 検査で境界を確認する。[公式のブラウザー要件](https://tailwindcss.com/docs/upgrade-guide#browser-requirements)は Chrome 111+。正式な Windows 10/11 では最新 Evergreen WebView2 を使い、古い固定 Runtime の互換性は保証しない。
+
 色:
 
 - 背景: `zinc-950`, `zinc-900`

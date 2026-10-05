@@ -1,5 +1,12 @@
 # 調査メモ
 
+## 2026-10-05 main CI: braces の除去
+
+- 最新 main 6d17a3a の 6 workflow は audit だけが失敗した（run37246805086）。blocking は [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) の braces <=3.0.3。GitHub advisory に修正版はなく、Tailwind 3.4.19 → chokidar/micromatch/fast-glob のビルド依存を除去する必要がある。無承認の例外や audit の閾値変更は行わない。
+- [公式 Vite 統合](https://tailwindcss.com/docs/installation/using-vite)に従い Tailwind / @tailwindcss/vite を MIT の 4.3.3 に固定する。autoprefixer を除去し、PostCSS の余分な Tailwind plugin は使わない。[upgrade guide](https://tailwindcss.com/docs/upgrade-guide)の @config 読込、outline-hidden、shadow-xs、backdrop-blur-xs 等の変更を適用する。元の sRGB 色と日本語フォント、placeholder/cursor の挙動を維持する。icon の bare drop-shadow は v4 の互換定義が v3 と同じ二層/alpha のため保持し、変更された sm の値へ置換しない。Chromium 111+ の最低 CSS 要件を README に明示し、Windows 10/11 と最新 Evergreen WebView2 を正式経路とする。
+- ローカルの初回 frozen install/build、frontend 288 test（生成 CSS 6 件を含む）、format/lint/typecheck/security/license、policy 20 件、Docker context が成功し、pnpm audit --audit-level high が成功（High/Critical 0、Moderate 8）。installed graph の SBOM も別途実行して 6/6 が成功し、braces の不存在と Tailwind の build scope を検査した。Rust 1.90 で all-features 244 件と strict clippy/fmt が成功した。lockfile の braces/micromatch/chokidar/fast-glob は除去された。Cargo 既知例外 2 件の解消を意味しない。
+- [最低 WebView2 設定](https://v2.tauri.app/reference/config/#minimumwebview2version-1)を 111.0.0.0 に設定して、古い runtime の更新を installer が試みるようにした。portable は別に手動更新を案内する。設定/文書の一致を生成 CSS と同じ test group に追加（合計 7 件）した。実際の旧 runtime 更新/packaged smoke は #91 の境界であり、設定だけで実動済みとは扱わない。実 Windows の 16 computed-style/geometry check、全品質・監査・native CI は追加検証中。成功を確認するまで main へ反映しない。
+
 ## 2026-10-05 Issue #76: shortcutの受付と対象process生成
 
 - Explorerのspawn成功を対象アプリの成功へ換算していた。通常exeへのlinkだけを起動都度解決し、target/cwdを再検証した上で直接CreateProcessする。結果のlaunchedCountはprocess生成確認だけと定義し、UIに準備完了未確認と全failureの名前・原因・修復/再登録を表示する。設定に解決targetをcacheしない。
