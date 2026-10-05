@@ -43,7 +43,7 @@ public static class RiceNativeProbe {
   }
   public static object State(int pid) {
     var h=Window(pid); Rect r; if(!GetWindowRect(h,out r)) throw new Exception("GetWindowRect failed");
-    var name=new StringBuilder(128), title=new StringBuilder(128); GetClassName(h,name,128); GetWindowText(h,title,128);
+    var name=new StringBuilder(128); var title=new StringBuilder(128); GetClassName(h,name,128); GetWindowText(h,title,128);
     return new { hwnd=h.ToInt64(), windowClass=name.ToString(), title=title.ToString(), left=r.Left, top=r.Top, width=r.Right-r.Left, height=r.Bottom-r.Top, minimized=IsIconic(h), maximized=IsZoomed(h) };
   }
   public static void Restore(int pid) { var h=Window(pid); ShowWindow(h,9); SetForegroundWindow(h); Thread.Sleep(250); }
