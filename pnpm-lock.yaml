@@ -23,6 +23,9 @@ dependencies:
   react-dom:
     specifier: ^19.3.0
     version: 19.3.0(react@19.3.0)
+  react-hook-form:
+    specifier: 7.89.0
+    version: 7.89.0(@types/react@19.3.0)(react@19.3.0)
   react-router-dom:
     specifier: ^6.28.0
     version: 6.30.3(react-dom@19.3.0)(react@19.3.0)
@@ -1523,6 +1526,20 @@ packages:
     dependencies:
       react: 19.3.0
       scheduler: 0.28.0
+
+  /react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0):
+    resolution: {integrity: sha512-vKcoCfy8RKZDrhSdqsRFp0uEOdS1AhLjOL6hR7Wmfzg1akNxEhaPf5WORx8SgEQPVXakdDyDkqQp+KNxVnnPHg==}
+    engines: {node: '>=18.0.0'}
+    peerDependencies:
+      '@types/react': '*'
+      react: ^16.8.0 || ^17 || ^18 || ^19
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+    dependencies:
+      '@types/react': 19.3.0
+      react: 19.3.0
+    dev: false
 
   /react-is@17.0.2:
     resolution: {integrity: sha512-w2GsyukL62IJnlaff/nRegPQR94C/XXamvMWmSHRJ4y7Ts/4ocGRmTHvOs8PSE6pB3dWOrD/nueuU5sduBsQ4w==}
