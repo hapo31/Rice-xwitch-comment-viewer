@@ -118,7 +118,7 @@ pub(super) struct LauncherService<'a> {
     events: &'a dyn LauncherEventSink,
 }
 impl LauncherService<'_> {
-    pub async fn add(&self, paths: Vec<String>) -> Result<Vec<LauncherItem>, String> {
+    pub async fn add(&self, paths: Vec<String>) -> Result<LauncherAddResult, String> {
         self.runtime.capabilities.ensure_supported()?;
         // Snapshot only. Never hold the repository mutex across FS/COM work.
         let existing = self.repository.snapshot()?;
@@ -146,7 +146,7 @@ impl LauncherService<'_> {
         })?;
         self.events.added(added_count);
         self.events.icon_warnings(&icon_warnings);
-        Ok(items)
+        Ok(LauncherAddResult { items, added_count })
     }
 
     pub fn remove(&self, item_id: &str) -> Result<Vec<LauncherItem>, String> {

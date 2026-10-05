@@ -151,13 +151,14 @@ async fn extractor_timeout_and_failure_fall_back_and_log_only_after_commit() {
         );
         let repository = FakeRepository::default();
         let events = RecordingEvents::default();
-        let items = runtime
+        let result = runtime
             .service(&repository, &events)
             .add(vec!["/fake/a.exe".into()])
             .await
             .unwrap();
-        assert_eq!(items.len(), 1);
-        assert!(items[0].icon_data_url.is_none());
+        assert_eq!(result.items.len(), 1);
+        assert_eq!(result.added_count, 1);
+        assert!(result.items[0].icon_data_url.is_none());
         assert_eq!(repository.saved.lock().unwrap().len(), 1);
         assert_eq!(*events.added.lock().unwrap(), [1]);
         let warnings = events.warnings.lock().unwrap();
@@ -166,6 +167,29 @@ async fn extractor_timeout_and_failure_fall_back_and_log_only_after_commit() {
         assert_eq!(warnings[0].target, PathBuf::from("/fake/a.exe"));
         assert_eq!(*resolver.calls.lock().unwrap(), ["/fake/a.exe"]);
     }
+}
+
+#[tokio::test]
+async fn add_result_counts_only_items_inserted_by_its_settings_transaction() {
+    let (runtime, _, _) = runtime(true, Arc::new(FakeExtractor(Ok(None))), workers(2));
+    let repository = FakeRepository::default();
+    repository.settings.lock().unwrap().launcher.items =
+        vec![item("already", "/fake/already.exe", 0)];
+    let events = RecordingEvents::default();
+    let service = runtime.service(&repository, &events);
+
+    let mixed = service
+        .add(vec!["/fake/already.exe".into(), "/fake/new.exe".into()])
+        .await
+        .unwrap();
+    assert_eq!(mixed.added_count, 1);
+    assert_eq!(mixed.items.len(), 2);
+    assert_eq!(mixed.items[1].target, "/fake/new.exe");
+
+    let duplicate = service.add(vec!["/fake/new.exe".into()]).await.unwrap();
+    assert_eq!(duplicate.added_count, 0);
+    assert_eq!(duplicate.items.len(), 2);
+    assert_eq!(*events.added.lock().unwrap(), [1, 0]);
 }
 
 #[tokio::test]
@@ -523,14 +547,17 @@ async fn extraction_allows_concurrent_service_add_remove_and_keeps_other_setting
         .service(repository.as_ref(), events.as_ref())
         .remove("old")
         .unwrap();
-    second
+    let second_result = second
         .service(repository.as_ref(), events.as_ref())
         .add(vec!["/fake/a.exe".into(), "/fake/b.exe".into()])
         .await
         .unwrap();
+    assert_eq!(second_result.added_count, 2);
     release.release();
     exited.await.unwrap();
-    let items = task.await.unwrap().unwrap();
+    let first_result = task.await.unwrap().unwrap();
+    assert_eq!(first_result.added_count, 0);
+    let items = first_result.items;
     assert_eq!(items.len(), 2);
     assert_eq!(
         items
