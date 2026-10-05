@@ -880,7 +880,7 @@ struct SystemAuthCredentialStore;
 impl AuthCredentialStore for SystemAuthCredentialStore {
     fn load(&self) -> AuthLoadResult {
         AuthStorage {
-            secure: &KeyringAuthStore,
+            secure: &SYSTEM_KEYRING_STORE,
             legacy: &LegacyAuthStore,
         }
         .load()
@@ -888,7 +888,7 @@ impl AuthCredentialStore for SystemAuthCredentialStore {
 
     fn save(&self, auth: &TwitchAuthState) -> anyhow::Result<Option<String>> {
         AuthStorage {
-            secure: &KeyringAuthStore,
+            secure: &SYSTEM_KEYRING_STORE,
             legacy: &LegacyAuthStore,
         }
         .save(auth)
@@ -896,7 +896,7 @@ impl AuthCredentialStore for SystemAuthCredentialStore {
 
     fn clear(&self) -> anyhow::Result<()> {
         AuthStorage {
-            secure: &KeyringAuthStore,
+            secure: &SYSTEM_KEYRING_STORE,
             legacy: &LegacyAuthStore,
         }
         .clear()
@@ -904,12 +904,21 @@ impl AuthCredentialStore for SystemAuthCredentialStore {
 }
 
 #[cfg(feature = "app")]
-struct KeyringAuthStore;
+struct KeyringAuthStore<'a> {
+    service: &'a str,
+    account: &'a str,
+}
 
 #[cfg(feature = "app")]
-impl AuthSecretStore for KeyringAuthStore {
+const SYSTEM_KEYRING_STORE: KeyringAuthStore<'static> = KeyringAuthStore {
+    service: KEYRING_SERVICE,
+    account: KEYRING_ACCOUNT,
+};
+
+#[cfg(feature = "app")]
+impl AuthSecretStore for KeyringAuthStore<'_> {
     fn load_secret(&self) -> anyhow::Result<Option<String>> {
-        let entry = keyring_entry()?;
+        let entry = self.entry()?;
         match entry.get_password() {
             Ok(secret) => Ok(Some(secret)),
             Err(keyring::Error::NoEntry) => Ok(None),
@@ -918,12 +927,12 @@ impl AuthSecretStore for KeyringAuthStore {
     }
 
     fn save_secret(&self, secret: &str) -> anyhow::Result<()> {
-        keyring_entry()?.set_password(secret)?;
+        self.entry()?.set_password(secret)?;
         Ok(())
     }
 
     fn clear_secret(&self) -> anyhow::Result<()> {
-        match keyring_entry()?.delete_credential() {
+        match self.entry()?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(error) => Err(error.into()),
         }
@@ -931,8 +940,10 @@ impl AuthSecretStore for KeyringAuthStore {
 }
 
 #[cfg(feature = "app")]
-fn keyring_entry() -> anyhow::Result<keyring::Entry> {
-    Ok(keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)?)
+impl KeyringAuthStore<'_> {
+    fn entry(&self) -> anyhow::Result<keyring::Entry> {
+        Ok(keyring::Entry::new(self.service, self.account)?)
+    }
 }
 
 #[cfg(feature = "app")]
@@ -3090,6 +3101,9 @@ enum PollAuthError {
 
 #[cfg(all(test, feature = "app"))]
 mod test_harness;
+
+#[cfg(all(test, feature = "app", target_os = "windows"))]
+mod windows_store_tests;
 
 #[cfg(test)]
 mod tests {

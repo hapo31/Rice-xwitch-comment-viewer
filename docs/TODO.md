@@ -1,5 +1,7 @@
 # 実装 TODO
 
+- [ ] Issue #91: Windowsでlocked/all-targets/all-featuresの全体テストと実secure store/Launcher分岐を継続実行する。manifest/tag由来のexact artifact集合、portable ZIPのCRC/内容/PE、隔離Windowsでportable起動とNSIS silent install/起動/uninstallを検証し、同じartifact bytesのsmoke成功をRelease公開の必須条件にする。OS socket buffer量に依存する既存順序fixtureは実dispatcher permitを制御して検証する。タグ・Releaseの発行なしで候補を検証できるread-only経路も用意する。
+
 - [x] Issue #64: versioned persistence wireをdomainから分離し、旧schemaを段階migrationする。全fieldはoptionalとして欠落・型/範囲/意味違反を既定値へ戻し、#88の共通validatorでload/saveの不変条件を揃える。未知future version/未知fieldを黙って捨てず、設定・Launcher・window保存と終了からの上書きを防ぐ。fixture、primary/backup保持、writer、両OS/native CIで検証する。
 
 2026-10-05 local検証: v0（番号なし/null/0）→v1、14 fixtureと7 schemaテスト、元bytesを保持するmigration backup、保存直前の将来版への交換、future backupの復旧を実装した。Rust all-features262件/no-default211件とfmt/strict clippy、frontend321件とformat/lint/typecheck/build/security/license、policy21件、Docker contextが成功。最大8MiB roundtripは4.56秒/追加Rust heap25.5MiBで既存予算内。Windows本番起動/Settings・Launcher IPC拒否/正常終了の追加テストと両OS CIが成功するまでは未完了とする。

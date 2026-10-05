@@ -1,5 +1,12 @@
 # 調査メモ
 
+## 2026-10-05 Issue #91: Windows全体テストと配布物の公開前検証
+
+- 現在のmainはRust/Node/Docker digestを既に1.90.0/22.22.0へ固定しているため、compiler policyを変更しない。既存Windows native CIはlibtestをcompileしてLauncher/focus/budget/schemaの選択実行だけだった。all-targets/all-featuresのharnessをbuildし、従来どおりCommon Controls v6 manifestをlibtestへ付けてから、要求されたlocked/all-targets/all-features全体テストを実行する。
+- #77で確認したWindows順序fixture3件の失敗は、8MiBがOSのsend bufferを必ず超えるという前提が原因。実production factory/runtime/SpeechSessionで小さなtalk packetを送信し、同じsessionを保持したままcontrol futureを一度pollしてPendingを確認、permit解放後にcontrol packetを確認する。人工的な待ち時間やOS buffer量を使わず、本番の共有gateとexact packetの順序を検証する。localで3/3とstrict全targets/allfeatures clippyが成功した。
+- production KeyringAuthStoreのservice/accountを小さなinstanceへ移し、従来のservice/accountは定数instanceとして維持する。Windows testだけPID/nonce由来の専用serviceへ偽credentialを書き、missing/read/save/overwrite/real write failure/last-value保持/delete/idempotent cleanupを確認する。実ユーザーのOAuth service/accountは参照しない。実Windowsで成功するまでは未確認扱いとする。
+- 配布物検証はmanifest/tag由来のexact集合・ZIP CRC/内容・PEと実NSIS install/launch/uninstallを公開gateへ結ぶ。NSISの[公式command line](https://nsis.sourceforge.io/Docs/Chapter3.html)に従い、/S、末尾のquoteなし/D=、uninstaller待機のため末尾の_?=を用い、CRCを無効化する/NCRCは使わない。tag/Releaseを発行せず実candidateを検証するread-only dispatchも用意する。これらはまだ実装・実行前であり、Issueは未完了。
+
 ## 2026-10-05 Issue #64: optional/versionedな設定と非対応データの保護
 
 - 最終source276c720は[品質全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37260473477)、[監査](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37260470825)、[両OS契約](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37260477961)、[Windows本番実動](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37260475850)、[保存権限](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37260479932)、[feature matrix](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37260481897)の全6workflowが成功した。重複schemaVersionを含むschema7テストが両OSで0失敗/0ignore、Rust通常262/no-default211、local frontend322と全gateも成功。Windows実WebViewでfuture schemaの本番startup/Settings・Launcher拒否/memory・primary・backup保持/正常exit/settings一覧3file/cleanupがverified:true（7.20秒、0ignore）。既存Launcher41/focus/16 stylesは保持し、200 tile render625.9ms/設定get490ms/JS heap差分34,560,078bytes（33.0MiB）、8MiB設定roundtrip Windows3.503秒/Linux2.745秒・追加Rust heap26,737,227bytesで既存予算内。下記の失敗・未確認記録は各source時点の履歴であり、最終headでは解消した。実配布物と第三者通知は#91/#102で別途検証する。

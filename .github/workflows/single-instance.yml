@@ -45,7 +45,7 @@ jobs:
       - name: Build the native library test harness
         id: harness
         run: |
-          $records = cargo test --locked --all-features --lib --no-run --message-format=json --manifest-path src-tauri/Cargo.toml
+          $records = cargo test --locked --all-targets --all-features --no-run --message-format=json --manifest-path src-tauri/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $binaries = @($records | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object {
             $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'rice_lib' -and $_.profile.test -and $_.executable
@@ -65,6 +65,10 @@ jobs:
             Sort-Object FullName | Select-Object -Last 1
           if (-not $mt) { throw "Windows SDK manifest tool is required" }
           & $mt.FullName -manifest src-tauri/tests/native-windows.manifest "-outputresource:$($env:RICE_NATIVE_TEST_BINARY);#1"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run all Windows targets and features, including native credentials and process adapters
+        run: |
+          cargo test --locked --all-targets --all-features --manifest-path src-tauri/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify Launcher service and filesystem boundary with production features
         env:
