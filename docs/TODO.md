@@ -1,8 +1,10 @@
 # 実装 TODO
 
-- [ ] Issue #64: versioned persistence wireをdomainから分離し、旧schemaを段階migrationする。全fieldはoptionalとして欠落・型/範囲/意味違反を既定値へ戻し、#88の共通validatorでload/saveの不変条件を揃える。未知future version/未知fieldを黙って捨てず、設定・Launcher・window保存と終了からの上書きを防ぐ。fixture、primary/backup保持、writer、両OS/native CIで検証する。
+- [x] Issue #64: versioned persistence wireをdomainから分離し、旧schemaを段階migrationする。全fieldはoptionalとして欠落・型/範囲/意味違反を既定値へ戻し、#88の共通validatorでload/saveの不変条件を揃える。未知future version/未知fieldを黙って捨てず、設定・Launcher・window保存と終了からの上書きを防ぐ。fixture、primary/backup保持、writer、両OS/native CIで検証する。
 
 2026-10-05 local検証: v0（番号なし/null/0）→v1、14 fixtureと7 schemaテスト、元bytesを保持するmigration backup、保存直前の将来版への交換、future backupの復旧を実装した。Rust all-features262件/no-default211件とfmt/strict clippy、frontend321件とformat/lint/typecheck/build/security/license、policy21件、Docker contextが成功。最大8MiB roundtripは4.56秒/追加Rust heap25.5MiBで既存予算内。Windows本番起動/Settings・Launcher IPC拒否/正常終了の追加テストと両OS CIが成功するまでは未完了とする。
+
+2026-10-05最終検証: source276c720の[品質全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37260473477)、[依存監査](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37260470825)、[両OS契約](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37260477961)、[Windows本番実動](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37260475850)、[保存権限](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37260479932)、[feature matrix](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37260481897)がすべて成功した。両OSのschema7件と通常不正値のsilent fallback、重複版番号の安全な既定値/read-only、実primary/backup保持を確認した。Windows実WebViewで本番startup、Settings/Launcher IPCの保存拒否、memory/元file/backup非変更、正常exit、settings一覧3file、隔離storage cleanupが成功（verified:true、0 ignore）。既存Launcher41件/focus/16 stylesを維持し、200 tile描画626ms/設定IPC490ms/JS heap差分33.0MiB、8MiB roundtrip Windows3.50秒/Linux2.75秒で予算内。最終local frontend322件と全gate、Rust262/no-default211も成功。最初のnative失敗はWebView storageの隔離とHashRouterに消されない通知経路を修正して解消し、拒否・保存保持の検査や監査閾値を緩めていない。配布物全般のsmoke/第三者通知は#91/#102の未完了境界として残す。
 
 - [x] main CI の依存監査: Tailwind 3 のビルド依存から入る braces（GHSA-vfj7-8cjw-p6xm）を依存グラフから除去する。公式 Tailwind 4/Vite 構成へ移行し、既存配色・日本語フォント・寸法・キーボード focus を保持する。作業ブランチの監査・品質・Windows native CI の成功を確認してから main へ反映する。監査の閾値・例外・失敗条件は緩めない。
 
