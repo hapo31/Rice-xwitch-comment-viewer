@@ -1,3 +1,4 @@
+import { getTwitchAuthLabel, getTwitchConnectionLabel } from "../presentation/twitch";
 import { Pause, Play, Radio, RotateCcw, SkipForward, Square, Trash2 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { countIncompleteQueueItems } from "../presentation/queue";
@@ -44,30 +45,14 @@ export function SidePanel({ state }: SidePanelProps) {
   );
   const queueCount = countIncompleteQueueItems(state.queueItems);
   const warnings = warningNotifications(state.notifications);
-  const twitchAuthLabel = {
-    unauthenticated: "未認証",
-    authorizing: "認証開始中",
-    polling: "認証確認中",
-    checking: "認証確認中",
-    authenticated: "ログイン済み",
-    expired: "再ログイン必要",
-    disconnecting: "認証解除中",
-    error: "認証エラー",
-  }[state.twitchAuthStatus];
+  const twitchAuthLabel = getTwitchAuthLabel(state.twitchAuthStatus);
   const twitchAuthTone =
     state.twitchAuthStatus === "authenticated"
       ? "ok"
       : state.twitchAuthStatus === "error"
         ? "danger"
         : "muted";
-  const twitchConnectionLabel = {
-    disconnected: "未接続",
-    connecting: "接続中",
-    connected: "受信中",
-    reconnecting: "再接続中",
-    authRequired: "再ログイン必要",
-    error: "接続エラー",
-  }[state.twitchConnectionStatus];
+  const twitchConnectionLabel = getTwitchConnectionLabel(state.twitchConnectionStatus);
   const twitchConnectionTone =
     state.twitchConnectionStatus === "connected"
       ? "ok"

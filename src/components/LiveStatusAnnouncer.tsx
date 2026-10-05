@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { speechHealthLabels, speechQueuePhaseLabels } from "../presentation/speech";
+import { getTwitchAuthLabel, getTwitchConnectionLabel } from "../presentation/twitch";
 import type { AppState } from "../stores/appStore";
 import type {
   AuthStatus,
@@ -22,26 +23,6 @@ export interface LiveStatusAnnouncement {
   message: string;
   priority: AnnouncementPriority;
 }
-
-const twitchAuthLabels: Record<AuthStatus, string> = {
-  unauthenticated: "未認証",
-  authorizing: "認証コードを発行中",
-  polling: "認証を確認中",
-  checking: "有効性を確認中",
-  authenticated: "ログイン済み",
-  expired: "再ログイン必要",
-  disconnecting: "認証を解除中",
-  error: "認証エラー",
-};
-
-const twitchConnectionLabels: Record<TwitchChatConnectionStatus, string> = {
-  disconnected: "未接続",
-  connecting: "接続中",
-  connected: "受信中",
-  reconnecting: "再接続中",
-  authRequired: "再ログイン必要",
-  error: "接続エラー",
-};
 
 export function toLiveStatusSnapshot(
   state: Pick<
@@ -72,7 +53,7 @@ export function getLiveStatusAnnouncement(
     isAuthError(current.twitchAuthStatus)
   ) {
     return {
-      message: `Twitch 認証: ${twitchAuthLabels[current.twitchAuthStatus]}`,
+      message: `Twitch 認証: ${getTwitchAuthLabel(current.twitchAuthStatus, "announcement")}`,
       priority: "alert",
     };
   }
@@ -87,7 +68,7 @@ export function getLiveStatusAnnouncement(
       return undefined;
     }
     return {
-      message: `Twitch 接続: ${twitchConnectionLabels[current.twitchConnectionStatus]}`,
+      message: `Twitch 接続: ${getTwitchConnectionLabel(current.twitchConnectionStatus)}`,
       priority: "alert",
     };
   }
@@ -108,7 +89,7 @@ export function getLiveStatusAnnouncement(
 
   if (previous.twitchAuthStatus !== current.twitchAuthStatus) {
     return {
-      message: `Twitch 認証: ${twitchAuthLabels[current.twitchAuthStatus]}`,
+      message: `Twitch 認証: ${getTwitchAuthLabel(current.twitchAuthStatus, "announcement")}`,
       priority: "status",
     };
   }
@@ -118,7 +99,7 @@ export function getLiveStatusAnnouncement(
       return undefined;
     }
     return {
-      message: `Twitch 接続: ${twitchConnectionLabels[current.twitchConnectionStatus]}`,
+      message: `Twitch 接続: ${getTwitchConnectionLabel(current.twitchConnectionStatus)}`,
       priority: "status",
     };
   }

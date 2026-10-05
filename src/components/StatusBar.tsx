@@ -1,3 +1,4 @@
+import { getTwitchAuthLabel, getTwitchConnectionLabel } from "../presentation/twitch";
 import { useEffect, useState } from "react";
 import { countIncompleteQueueItems } from "../presentation/queue";
 import { speechHealthLabels, speechQueuePhaseLabels } from "../presentation/speech";
@@ -33,24 +34,8 @@ export function StatusBar({ state }: StatusBarProps) {
   const port = state.settings?.speech.bouyomiPort ?? 50001;
   const queuedCount = countIncompleteQueueItems(state.queueItems);
   const warningCount = warningNotifications(state.notifications).length;
-  const twitchAuthLabel = {
-    unauthenticated: "未認証",
-    authorizing: "認証開始中",
-    polling: "認証確認中",
-    checking: "認証確認中",
-    authenticated: "ログイン済み",
-    expired: "再ログイン必要",
-    disconnecting: "認証解除中",
-    error: "認証エラー",
-  }[state.twitchAuthStatus];
-  const twitchConnectionLabel = {
-    disconnected: "未接続",
-    connecting: "接続中",
-    connected: "受信中",
-    reconnecting: "再接続中",
-    authRequired: "再ログイン必要",
-    error: "接続エラー",
-  }[state.twitchConnectionStatus];
+  const twitchAuthLabel = getTwitchAuthLabel(state.twitchAuthStatus);
+  const twitchConnectionLabel = getTwitchConnectionLabel(state.twitchConnectionStatus);
 
   return (
     <footer className="col-span-3 row-start-3 flex items-center justify-between border-t border-zinc-800 bg-zinc-900 px-2 text-xs text-zinc-300">

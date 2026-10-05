@@ -1,3 +1,4 @@
+import { getTwitchConnectionLabel } from "../../presentation/twitch";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { KeyRound } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -195,14 +196,7 @@ export function ChatView({
       state.twitchActiveConnection.broadcasterLogin.toLowerCase() !==
         configuredTarget.toLowerCase(),
   );
-  const connectionLabel = {
-    disconnected: "未接続",
-    connecting: "接続中",
-    connected: "受信中",
-    reconnecting: "再接続中",
-    authRequired: "再ログイン必要",
-    error: "接続エラー",
-  }[state.twitchConnectionStatus];
+  const connectionLabel = getTwitchConnectionLabel(state.twitchConnectionStatus);
   const connectionDotClass =
     state.twitchConnectionStatus === "connected"
       ? "bg-emerald-400"
