@@ -1,4 +1,5 @@
 //! Injected transports drive the production session, handover and supervisor.
+use super::chat_delivery::dispatch_chat_message;
 use super::*;
 use futures_util::{Sink, Stream};
 use std::pin::Pin;
@@ -66,17 +67,41 @@ impl Sink<Message> for FakeSocket {
         Poll::Ready(Ok(()))
     }
 }
-#[derive(Default)]
 struct Runtime {
     sockets: Mutex<VecDeque<anyhow::Result<FakeSocket>>>,
     urls: Mutex<Vec<String>>,
     subscriptions: Mutex<Vec<(String, String)>>,
     subscription_errors: Mutex<VecDeque<anyhow::Error>>,
+    /// UI chat-event sink.
     chats: Mutex<Vec<ChatMessage>>,
+    /// Speech enqueue sink.
+    speech_messages: Mutex<Vec<ChatMessage>>,
     statuses: Mutex<Vec<TwitchStatus>>,
     active_connections: Mutex<Vec<TwitchActiveConnection>>,
     logs: Mutex<Vec<String>>,
-    active_generation: Mutex<Option<u64>>,
+    active_generation: Mutex<ActiveGeneration>,
+}
+struct ActiveGeneration(Option<u64>);
+impl Default for ActiveGeneration {
+    fn default() -> Self {
+        Self(Some(7))
+    }
+}
+impl Default for Runtime {
+    fn default() -> Self {
+        Self {
+            sockets: Mutex::default(),
+            urls: Mutex::default(),
+            subscriptions: Mutex::default(),
+            subscription_errors: Mutex::default(),
+            chats: Mutex::default(),
+            speech_messages: Mutex::default(),
+            statuses: Mutex::default(),
+            active_connections: Mutex::default(),
+            logs: Mutex::default(),
+            active_generation: Mutex::default(),
+        }
+    }
 }
 impl EventSubRuntime for Runtime {
     type Socket = FakeSocket;
@@ -123,12 +148,13 @@ impl EventSubRuntime for Runtime {
         self.logs.lock().unwrap().push(message.into());
     }
     fn chat(&self, message: ChatMessage) {
-        let active_generation = *self.active_generation.lock().unwrap();
-        if active_generation
-            .is_none_or(|generation| message.belongs_to_connection_generation(generation))
-        {
-            self.chats.lock().unwrap().push(message);
-        }
+        let active_generation = self.active_generation.lock().unwrap();
+        dispatch_chat_message(
+            &message,
+            active_generation.0,
+            |message| self.chats.lock().unwrap().push(message.clone()),
+            |message| self.speech_messages.lock().unwrap().push(message.clone()),
+        );
     }
 }
 fn params() -> EventSubConnectionParams {
@@ -143,9 +169,13 @@ fn welcome(id: &str) -> Message {
     Message::Text(serde_json::json!({"metadata":{"message_type":"session_welcome","message_id":"welcome"},"payload":{"session":{"id":id,"keepalive_timeout_seconds":10}}}).to_string())
 }
 fn chat(id: &str) -> Message {
+    chat_for_channel(id, "broadcaster")
+}
+fn chat_for_channel(id: &str, channel_id: &str) -> Message {
     let mut value: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/channel_chat_message.json")).unwrap();
     value["payload"]["event"]["message_id"] = id.into();
+    value["payload"]["event"]["broadcaster_user_id"] = channel_id.into();
     Message::Text(value.to_string())
 }
 fn cache() -> MessageDedupe {
@@ -153,24 +183,114 @@ fn cache() -> MessageDedupe {
 }
 
 #[tokio::test]
-async fn late_chat_from_replaced_connection_is_rejected_by_the_delivery_boundary() {
+async fn shared_delivery_boundary_sends_the_same_message_to_both_sinks_or_rejects_both() {
     let runtime = Runtime::default();
-    *runtime.active_generation.lock().unwrap() = Some(7);
     let mut socket = FakeSocket::new([]);
     let mut seen = cache();
 
+    // A current generation reaches both sinks with identical serialized content.
     process_eventsub_frame(
         &runtime,
         &mut socket,
-        chat("stale-generation"),
+        chat("current-generation"),
         &mut seen,
         Utc::now(),
-        6,
+        7,
+    )
+    .await
+    .unwrap();
+    let ui = runtime.chats.lock().unwrap();
+    let speech = runtime.speech_messages.lock().unwrap();
+    assert_eq!(ui.len(), 1);
+    assert_eq!(speech.len(), 1);
+    assert_eq!(ui[0].connection_generation, Some(7));
+    assert_eq!(
+        serde_json::to_value(&ui[0]).unwrap(),
+        serde_json::to_value(&speech[0]).unwrap()
+    );
+    drop(speech);
+    drop(ui);
+
+    // EventSub duplicate delivery remains deduped before the shared boundary.
+    process_eventsub_frame(
+        &runtime,
+        &mut socket,
+        chat("current-generation"),
+        &mut seen,
+        Utc::now(),
+        7,
     )
     .await
     .unwrap();
 
-    assert!(runtime.chats.lock().unwrap().is_empty());
+    // A same-channel replacement rejects delayed frames from the old session,
+    // then delivers new-session frames to both sinks.
+    runtime.active_generation.lock().unwrap().0 = Some(8);
+    process_eventsub_frame(
+        &runtime,
+        &mut socket,
+        chat("late-old-generation"),
+        &mut seen,
+        Utc::now(),
+        7,
+    )
+    .await
+    .unwrap();
+    process_eventsub_frame(
+        &runtime,
+        &mut socket,
+        chat("new-generation"),
+        &mut seen,
+        Utc::now(),
+        8,
+    )
+    .await
+    .unwrap();
+
+    // A connection to another channel has its own generation and reaches both
+    // sinks with the same model.
+    runtime.active_generation.lock().unwrap().0 = Some(9);
+    process_eventsub_frame(
+        &runtime,
+        &mut socket,
+        chat_for_channel("other-channel", "other-broadcaster"),
+        &mut seen,
+        Utc::now(),
+        9,
+    )
+    .await
+    .unwrap();
+
+    // A stopped connection has no active generation and rejects both sinks.
+    runtime.active_generation.lock().unwrap().0 = None;
+    process_eventsub_frame(
+        &runtime,
+        &mut socket,
+        chat("after-stop"),
+        &mut seen,
+        Utc::now(),
+        8,
+    )
+    .await
+    .unwrap();
+
+    let ui = runtime.chats.lock().unwrap();
+    let speech = runtime.speech_messages.lock().unwrap();
+    assert_eq!(ui.len(), 3);
+    assert_eq!(speech.len(), 3);
+    let ui_messages: Vec<_> = ui.iter().map(|message| message.id.as_str()).collect();
+    let speech_messages: Vec<_> = speech.iter().map(|message| message.id.as_str()).collect();
+    assert_eq!(
+        ui_messages,
+        ["current-generation", "new-generation", "other-channel"]
+    );
+    assert_eq!(speech_messages, ui_messages);
+    assert_eq!(ui[1].connection_generation, Some(8));
+    assert_eq!(ui[2].channel_id, "other-broadcaster");
+    assert_eq!(ui[2].connection_generation, Some(9));
+    assert!(ui.iter().zip(speech.iter()).all(|(ui, speech)| {
+        serde_json::to_value(ui).unwrap() == serde_json::to_value(speech).unwrap()
+    }));
 }
 
 #[tokio::test(start_paused = true)]

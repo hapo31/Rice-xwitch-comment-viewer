@@ -5,6 +5,7 @@ use super::auth_state::{
     TwitchAuthState, ValidateResponse,
 };
 use super::auth_store::TwitchAuthStore;
+use super::chat_delivery::dispatch_chat_message;
 use super::chat_service::{ChatRuntime, TwitchConnectionHandle};
 use super::error::SubscriptionRequestError;
 use super::eventsub::{EventSubRuntime, EventSubSocket};
@@ -201,17 +202,20 @@ impl EventSubRuntime for TauriTwitchRuntime {
                 return;
             }
         };
-        let Some(connection) = current.as_ref() else {
-            return;
-        };
-        if !message.belongs_to_connection_generation(connection.generation) {
-            return;
-        }
-        // Keep stop/replacement behind this delivery boundary so UI and speech
-        // observe the same accepted message before its generation is invalidated.
-        emit_twitch_chat_message(&self.app, message.clone());
-        if let Err(error) = enqueue_chat_message_for_speech(self.app.clone(), message) {
-            emit_app_log(&self.app, AppLogLevel::Error, error);
-        }
+        let active_generation = current.as_ref().map(|connection| connection.generation);
+        // Keep stop/replacement behind this shared delivery boundary so UI and
+        // speech observe the same accepted model before its generation expires.
+        dispatch_chat_message(
+            &message,
+            active_generation,
+            |message| emit_twitch_chat_message(&self.app, message.clone()),
+            |message| {
+                if let Err(error) =
+                    enqueue_chat_message_for_speech(self.app.clone(), message.clone())
+                {
+                    emit_app_log(&self.app, AppLogLevel::Error, error);
+                }
+            },
+        );
     }
 }
