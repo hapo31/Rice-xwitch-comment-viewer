@@ -54,6 +54,7 @@ public static class RiceNativeProbe {
   [DllImport("user32.dll")] static extern IntPtr GetDlgItem(IntPtr dialog,int id);
   [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent,EnumerateWindow callback,IntPtr argument);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr window,uint message,IntPtr parameter,StringBuilder text);
+  [DllImport("user32.dll", EntryPoint="SendMessageTimeoutW", SetLastError=true)] static extern IntPtr ProbeMessage(IntPtr window,uint message,UIntPtr parameter,IntPtr data,uint flags,uint timeout,out UIntPtr result);
   public static IntPtr Window(int pid) {
     using (var process = Process.GetProcessById(pid)) {
       if (process.HasExited || !String.Equals(process.ProcessName,"rice",StringComparison.OrdinalIgnoreCase)) throw new Exception("Not the owned live Rice process");
@@ -127,7 +128,10 @@ public static class RiceNativeProbe {
       if(hit!=h) {
         uint owner; GetWindowThreadProcessId(hit,out owner); var name=new StringBuilder(128); GetClassName(hit,name,128);
         var raw=WindowFromPoint(p); uint rawOwner; GetWindowThreadProcessId(raw,out rawOwner); var rawName=new StringBuilder(128); GetClassName(raw,rawName,128);
-        throw new Exception("Owned UI focus point ("+p.X+","+p.Y+") is occluded by HWND "+hit.ToInt64()+", PID "+owner+", class "+name+"; raw HWND="+raw.ToInt64()+", PID="+rawOwner+", class="+rawName+"; owned="+State(pid));
+        UIntPtr nullResult,hitResult;
+        var nullStatus=ProbeMessage(h,0,UIntPtr.Zero,IntPtr.Zero,3,500,out nullResult); var nullError=Marshal.GetLastWin32Error();
+        var hitStatus=ProbeMessage(h,0x0084,UIntPtr.Zero,new IntPtr((p.Y<<16)|(p.X&0xFFFF)),3,500,out hitResult); var hitError=Marshal.GetLastWin32Error();
+        throw new Exception("Owned UI focus point ("+p.X+","+p.Y+") is occluded by HWND "+hit.ToInt64()+", PID "+owner+", class "+name+"; raw HWND="+raw.ToInt64()+", PID="+rawOwner+", class="+rawName+"; WM_NULL status="+nullStatus+", error="+nullError+"; WM_NCHITTEST status="+hitStatus+", result="+hitResult.ToUInt64()+", error="+hitError+"; owned="+State(pid));
       }
       SetCursorPos(p.X,p.Y); Button(2); Thread.Sleep(200); Button(4);
     } finally {
