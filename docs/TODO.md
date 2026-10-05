@@ -1,5 +1,9 @@
 # 実装 TODO
 
+- [ ] Issue #44: Twitchのmodel/error、認証service/store/OAuth、EventSub transport/state/subscription/dedupe/正規化を責務別moduleへ分割する。Tauri commandを薄いadapterにし、型付き状態制御、command/event payload、generationによる競合制御を維持する。fake transport/storeと明示clockを使う既存・追加回帰を分割後の本番経路へ適用し、両OS/feature matrix/native CIで確認する。
+
+2026-10-05段階1: main2b83b6aから専用worktreeで公開chat model、型付きAPI/認証/購読エラーと表示、EventSub wire/正規化、bounded dedupeを4つのprivate moduleへ抽出した。公開型のroot再export、payload、generation、token保存と接続処理は維持する。既存inline回帰をtests.rsへ移動し、mod.rsは4550行から2723行になった。元productionと既存テストはvisibility/format以外のtoken・文字列が同一であることも照合した。文言非依存の分類、明示receive clock/metadata fallback、TTL/capacity等の5回帰を追加し、Rust1.90のall-targets/all-features267件、no-default216件（いずれも0fail/0ignore）、fmt/strict clippy、frontend build、security/workflow/license guardが成功した。同時compile中の最初の全体実行では既存5秒budgetが5.26秒で失敗したが、閾値や条件を変えず単独再実行で4.67秒、no-defaultでも4.50秒の成功を確認した。認証service/store/OAuth、EventSub transport/state/subscriptionと薄いcommand adapter、分割後の両OS/native CIはまだ必要であり、Issueは未完了、mainへは未反映。
+
 - [x] Issue #75: main rendererのcore/plugin権限を実際のfrontend利用へ限定し、不要なemit/emit-to/image/menu/trayを拒否する。SDKのonCloseRequestedが間接利用するdestroyは通常終了のため保持する。明示allowlistのsnapshotと拡張拒否回帰を追加し、実Windows配布版でtitlebar・resize・native DnD・複数file dialog・backend event購読を検証する。配布版の成功前には完了扱いにしない。
 
 2026-10-05進捗: core/pluginは既に9権限へ縮小されており、SDKのnative close経路を確認して必要なdestroyを保持した。全customを含むallowlist snapshot、scope/default set/不要commandの拡張拒否、実release ACL拒否判定とloopback debugger対象検査、必須UI証跡の欠落拒否を追加した。関連local133件/0skipとsecurity/workflow/context policyが成功。source a79a9caの通常6workflowは成功し、[初期配布候補](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37280438448)ではWindows全体263件/実keyring/明示headful3件とDocker製の実配布物生成が成功したが、High ILでWebView2の環境overrideが無視されてsmokeが停止した。fresh runnerのRice AppID/exeだけに一時HKLM overrideを指定し、既存値非変更と所有値のfinally cleanupを維持している。
