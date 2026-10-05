@@ -171,6 +171,13 @@ export interface LauncherItem {
   order: number;
 }
 
+export interface LauncherAddResult {
+  /** Items after the atomic settings update. */
+  items: LauncherItem[];
+  /** Items this operation actually inserted while committing against current settings. */
+  addedCount: number;
+}
+
 export interface LauncherLaunchFailure {
   itemId: string;
   displayName: string;
