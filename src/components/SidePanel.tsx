@@ -1,15 +1,16 @@
-import { getTwitchAuthLabel, getTwitchConnectionLabel } from "../presentation/twitch";
 import { Pause, Play, Radio, RotateCcw, SkipForward, Square, Trash2 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-import { countIncompleteQueueItems } from "../presentation/queue";
-import { speechHealthLabels, speechQueuePhaseLabels } from "../presentation/speech";
-import { getRouteLabel, settingsRoute } from "../routes";
-import { warningNotifications, type AppState } from "../stores/appStore";
 import {
   useConnectionController,
   useNotificationController,
   useSpeechController,
 } from "../orchestration/domainControllerContext";
+import { countIncompleteQueueItems } from "../presentation/queue";
+import { speechHealthLabels, speechQueuePhaseLabels } from "../presentation/speech";
+import { getTwitchAuthLabel, getTwitchConnectionLabel } from "../presentation/twitch";
+import { getRouteLabel, settingsRoute } from "../routes";
+import type { AppState } from "../stores/appState";
+import { warningNotifications } from "../stores/logsStore";
 
 type SidePanelState = Pick<
   AppState,

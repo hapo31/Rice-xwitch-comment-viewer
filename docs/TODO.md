@@ -91,6 +91,8 @@
 
 ## 現在の進捗サマリ
 
+2026-10-06 Issue #203: appReducer/appStore.test の旧状態処理を除去し、AppState は読み取り用合成モデルとして appState.ts へ分離した。ログ ID／通知重複処理は logsStore を正本にし、明示 backend event ID の replay は抑制、IDなし同内容ログと表示IDの衝突は suffix で保持する。domain event bridge は store が受理したログにのみ通知等の副作用を行う。SettingsUpdateQueue と専用テストを削除し、失敗後継続・idle待機を createSettingsMutationOrchestrator で検証する。frontend 354件、typecheck/build、変更ファイル Biome check と diff check が成功。PR #251 は親レビュー待ちの Draft。
+
 2026-10-06: Issue #195の実装を専用 Draft PR #236 に分離した。AppShell配下へ controller/actions provider を組み立て、Twitch認証の非同期遷移、speech/queue/Launcher command、終了保護を責務別 controller/provider へ移した。画面はdomain別の安定action Contextと必要な selector を参照し、旧AppStateの再構成を除去した。初期レビューで見つかったDevice Code pollingのproduction lifecycle未接続、認証結果遷移の分散、実画面render計測の不足、手動操作/終了時の遅延応答競合を修正し、本番AppShell/provider/routes経由のtimer/render回帰へ更新した。親レビュー指摘を解消し、#205 の共通ラベルとの統合後は frontend 362件、format/lint/typecheck/build と diff check が成功。最終 CI と main 反映は PR #236 で確認する。
 
 2026-10-06 レビュー対応: Device Code pollingをAppShellのprompt/status lifecycleへ接続し、初回interval、pending/slowDown後のinterval更新、手動start/validate/disconnectの競合、期限切れ、unmount中の遅延応答/restore callback抑制をcontrollerと本番AppShell経由の回帰で確認した。追加レビュー対応として期限切れtimerもschedule時のgenerationとprompt identityを照合し、手動start/validate進行中のdeadline callbackと期限到達済みpromptの即時expireを遅延応答テストで保護する。#200のdiscriminated state/runtime contractsを含む最新mainを統合して全 frontend gate を再実行する。timerはschedule時のgeneration/promptを照合し、AuthOperationControllerは世代付き完了、手動優先、poll排他、dispose invalidationを管理する。認証結果・prompt・profile・statusと通知/error副作用は小さな純粋遷移モデルへまとめた。render回帰は実AppShell/provider/routes上のSettings/Logs/Launcher各bodyをProfiler計測し、queue revisionのみの連続更新を確認する。PRは親レビュー再確認待ちのためDraft、Issueはmain反映まで未完了。
@@ -393,7 +395,8 @@ Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態
 - [x] Issue #5: 変更のない Filter / Settings で非表示の保存ボタンをフォーカス順とアクセシビリティツリーから除外し、キーボード回帰テストを追加する。
 - [x] Issue #14: 通知を severity/source/correlation を持つ構造化モデルへ移し、成功通知を警告から分離し、同一障害の重複表示を抑止する。OAuth 認可待ち/待機延長の info 進捗も Logs と system Chat に記録する。
 
-- [ ] Issue #203: 旧 `appReducer` と `SettingsUpdateQueue` の重複実装を整理し、reducer/ID/通知重複判定と設定更新直列化の正本をそれぞれ domain store/orchestrator に統合する。既存回帰を本番経路へ移し、ID衝突と replay 重複を区別して検証する。
+- [x] Issue #203: 旧 `appReducer` と `SettingsUpdateQueue` を削除し、reducer/ID/通知重複判定と設定更新直列化の正本を domain store/orchestrator に統合する。既存回帰を本番経路へ移し、ID衝突と replay 重複を区別して検証した。
+  - frontend 354 tests、typecheck/build、変更ファイル Biome check、diff check が成功。最終レビューとCI・統合状況は PR #251 に記録する。
 Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離し、成功操作で警告を失わないようにした。frontend 326件、format/lint/typecheck/build を確認済み。独立レビュー・最終CI・統合状況は PR #242 に記録する。
 - [x] Issue #204: 対処待ち warning/error と info/success 履歴の保持上限を分離し、大量の成功通知で警告を失わないようにする。明示クリア・severity昇格・correlation重複排除・容量上限の logsReducer 回帰を追加した。
   - 最新 main（#193 / #196 / #198 / #202 と統合追補 #245）との統合検証: frontend 342 tests、format/lint/typecheck/build、diff check が成功。

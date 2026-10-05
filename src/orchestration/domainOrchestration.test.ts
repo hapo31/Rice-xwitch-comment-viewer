@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDomainStores } from "../stores/domainStores";
 import { defaultSpeechSettings, defaultTwitchSettings } from "../features/settings/defaults";
-import type { AppSettings } from "../types";
+import { createDomainStores } from "../stores/domainStores";
 import { utcTimestamp } from "../time";
+import type { AppSettings } from "../types";
 import {
-  restoreStartupAuth,
   createSettingsMutationOrchestrator,
-  subscribeDomainEvents,
   type DomainEventBridge,
+  restoreStartupAuth,
   type SettingsMutationDependencies,
+  subscribeDomainEvents,
 } from "./domainOrchestration";
 
 describe("domain orchestration", () => {
@@ -126,6 +126,45 @@ describe("domain orchestration", () => {
     cleanup();
   });
 
+  it("deduplicates explicit replay IDs and retains independent ID-less logs through the runtime bridge", async () => {
+    const stores = createDomainStores();
+    let logListener: Parameters<DomainEventBridge["subscribeAppLogEvents"]>[0] | undefined;
+    const bridge: DomainEventBridge = {
+      subscribeAppLogEvents: async (listener) => {
+        logListener = listener;
+        return () => {};
+      },
+      subscribeTwitchStatusEvents: async () => () => {},
+      subscribeTwitchChatMessageEvents: async () => () => {},
+      subscribeSpeechStatusEvents: async () => () => {},
+      subscribeSpeechQueueUpdatedEvents: async () => () => {},
+    };
+    const cleanup = subscribeDomainEvents({ stores, bridge, reportNotification: vi.fn() });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const replay = {
+      id: "backend-event-1",
+      level: "warning" as const,
+      message: "接続が切れました",
+      occurredAtMs: 1,
+    };
+    logListener?.(replay);
+    logListener?.(replay);
+    const independent = {
+      level: "warning" as const,
+      message: "同じ時刻の独立したログ",
+      occurredAtMs: 2,
+    };
+    logListener?.(independent);
+    logListener?.(independent);
+
+    expect(stores.logs.getState().logs.map((entry) => entry.id)).toEqual([
+      "2-warning-同じ時刻の独立したログ-1",
+      "2-warning-同じ時刻の独立したログ",
+      "backend-event-1",
+    ]);
+    cleanup();
+  });
+
   it("serializes settings mutations and publishes the backend result", async () => {
     const resolvers: Array<(value: AppSettings) => void> = [];
     const updateSettings = vi.fn<SettingsMutationDependencies["updateSettings"]>(
@@ -159,6 +198,28 @@ describe("domain orchestration", () => {
     resolvers[1]?.(secondResult);
     await expect(second).resolves.toBe(true);
     expect(loaded).toEqual([firstResult, secondResult]);
+  });
+
+  it("continues serialized mutations after a failed save and resolves waitForIdle", async () => {
+    const errors: unknown[] = [];
+    const loaded: AppSettings[] = [];
+    const orchestrator = createSettingsMutationOrchestrator({
+      updateSettings: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("save failed"))
+        .mockResolvedValue({
+          twitch: defaultTwitchSettings(),
+          speech: defaultSpeechSettings(),
+          launcher: { items: [] },
+        }),
+      onSettingsLoaded: (settings) => loaded.push(settings),
+      onError: (error) => errors.push(error),
+    });
+    await expect(orchestrator.mutate({ twitch: { autoConnect: true } })).resolves.toBe(false);
+    await expect(orchestrator.mutate({ twitch: { autoConnect: false } })).resolves.toBe(true);
+    await expect(orchestrator.waitForIdle()).resolves.toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(loaded).toHaveLength(1);
   });
 
   it("keeps startup auth command orchestration dependency-injectable", async () => {

@@ -1,21 +1,21 @@
-import type { AppAction } from "../stores/appStore";
+import { restoreAndValidateStartupAuth, type StartupAuthDependencies } from "../startupAuth";
+import type { AppAction } from "../stores/appState";
 import type { DomainStores } from "../stores/domainStores";
+import { subscribeWithCleanup } from "../tauri/subscriptions";
 import type {
-  AppLogEvent,
   AppEventsSnapshot,
-  SpeechStateSnapshot,
-  AuthStatus,
+  AppLogEvent,
   AppNotification,
   AppSettings,
   AppSettingsPatch,
+  AuthStatus,
   ChatMessage,
   SpeechQueueUpdatedEvent,
+  SpeechStateSnapshot,
   SpeechStatusEvent,
   TwitchChatMessageEvent,
   TwitchStatusEvent,
 } from "../types";
-import { subscribeWithCleanup } from "../tauri/subscriptions";
-import { restoreAndValidateStartupAuth, type StartupAuthDependencies } from "../startupAuth";
 
 /**
  * Transitional command boundary for the shell. The compatibility action names
@@ -149,9 +149,10 @@ export function subscribeDomainEvents({
 }: DomainEventSubscriptionOptions): () => void {
   let disposed = false;
   const log = (event: AppLogEvent, replay = false) => {
-    if (disposed || (event.id && stores.logs.getState().logs.some((log) => log.id === event.id)))
-      return;
+    if (disposed) return;
+    const previousLogs = stores.logs.getState().logs;
     dispatchDomainAction(stores, { type: "log.added", log: event });
+    if (stores.logs.getState().logs === previousLogs) return;
     if (event.level !== "info") reportNotification(event.level, "log", event.message, event.id);
     if (replay) replaySystemLog?.(event.message);
   };

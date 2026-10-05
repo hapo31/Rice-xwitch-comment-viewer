@@ -1,39 +1,50 @@
-import { presentError, reportPresentedError, type ErrorOperation } from "./presentation/errors";
 import {
   memo,
   Profiler,
+  type ProfilerOnRenderCallback,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ProfilerOnRenderCallback,
-  type ReactNode,
 } from "react";
 import { useNavigate } from "react-router-dom";
+import { AuthOperationController } from "./authOperation";
 import { ActivityBar } from "./components/ActivityBar";
+import {
+  DomainLiveStatusAnnouncer,
+  DomainSidePanel,
+  DomainStatusBar,
+} from "./components/domainShellViews";
 import { MainView } from "./components/MainView";
 import { ResizeHandles, TitleBar } from "./components/TitleBar";
 import { useDisplayScale } from "./hooks/useDisplayScale";
 import { useStreamHotkeys } from "./hooks/useStreamHotkeys";
 import { APP_SHELL_CLASS_NAME } from "./layout/appShell";
-import { claimStartupGuideForSession } from "./presentation/startupGuide";
-import {
-  autoConnectTimelineEvent,
-  speechRecoveryTimelineEvent,
-  SystemTimelineRouter,
-  timelineEventFromTwitchStatus,
-} from "./presentation/systemTimeline";
-import { AuthOperationController } from "./authOperation";
-import { DomainControllerActionsProvider } from "./orchestration/domainControllerContext";
 import {
   createLauncherController,
   createQueueController,
   createSpeechController,
 } from "./orchestration/domainCommandControllers";
+import { DomainControllerActionsProvider } from "./orchestration/domainControllerContext";
+import {
+  createSettingsMutationOrchestrator,
+  dispatchDomainAction,
+  subscribeDomainEvents,
+} from "./orchestration/domainOrchestration";
+import { ExitProtectionProvider, useExitController } from "./orchestration/ExitProtectionProvider";
+import { startSpeechHealthMonitor } from "./orchestration/speechHealthMonitor";
 import { createTwitchController } from "./orchestration/twitchController";
-
-import { type AppAction } from "./stores/appStore";
+import { type ErrorOperation, presentError, reportPresentedError } from "./presentation/errors";
+import { claimStartupGuideForSession } from "./presentation/startupGuide";
+import {
+  autoConnectTimelineEvent,
+  SystemTimelineRouter,
+  speechRecoveryTimelineEvent,
+  timelineEventFromTwitchStatus,
+} from "./presentation/systemTimeline";
+import { type AppAction } from "./stores/appState";
 import {
   useConnectionSelector,
   useDomainStores,
@@ -41,36 +52,24 @@ import {
   useSettingsSelector,
 } from "./stores/domainStores";
 import {
-  DomainLiveStatusAnnouncer,
-  DomainSidePanel,
-  DomainStatusBar,
-} from "./components/domainShellViews";
-import { utcNow } from "./time";
-import { subscribeWithCleanup } from "./tauri/subscriptions";
-import { ExitProtectionProvider, useExitController } from "./orchestration/ExitProtectionProvider";
-import {
   appExit,
-  getSettings,
   getAppEventsSnapshot,
+  getSettings,
+  isDesktopRuntime,
+  speechControl,
+  speechHealthProbe,
+  speechQueueReload,
   subscribeAppLogEvents,
   subscribeSpeechQueueUpdatedEvents,
   subscribeSpeechStatusEvents,
   subscribeTwitchChatMessageEvents,
   subscribeTwitchStatusEvents,
-  speechControl,
-  speechHealthProbe,
-  speechQueueReload,
   takeSettingsRecoveryNotice,
   twitchStopChat,
   updateSettings,
-  isDesktopRuntime,
 } from "./tauri/client";
-import {
-  createSettingsMutationOrchestrator,
-  dispatchDomainAction,
-  subscribeDomainEvents,
-} from "./orchestration/domainOrchestration";
-import { startSpeechHealthMonitor } from "./orchestration/speechHealthMonitor";
+import { subscribeWithCleanup } from "./tauri/subscriptions";
+import { utcNow } from "./time";
 import type {
   AppSettings,
   AppSettingsPatch,

@@ -1,10 +1,9 @@
 import { expect, it } from "vitest";
-import { utcTimestamp } from "../time";
-import fixture from "../tauri/fixtures/queue-outcomes.json";
 import { parseSpeechQueueOutcome } from "../tauri/bridge";
-import { appReducer, initialAppState } from "./appStore";
-import { chatReducer, initialChatState, syncChatMessageStatuses } from "./chatStore";
+import fixture from "../tauri/fixtures/queue-outcomes.json";
+import { utcTimestamp } from "../time";
 import type { QueueItem, UserChatMessage } from "../types";
+import { chatReducer, initialChatState, syncChatMessageStatuses } from "./chatStore";
 
 const message: UserChatMessage = {
   kind: "user",
@@ -38,25 +37,21 @@ it("updates reasons even when status is unchanged and preserves referential iden
   expect("speechOutcome" in retried[0]).toBe(false);
 });
 
-it("keeps event-before-chat and legacy/app reducers on the same outcome contract", () => {
+it("keeps event-before-chat and queue reload on the production outcome contract", () => {
   const domain = chatReducer(initialChatState, {
     type: "message.added",
     message,
     queueItems: [item],
   });
-  const app = appReducer(
-    { ...initialAppState, queueItems: [item] },
-    { type: "chat.message", message },
-  );
-  expect(domain.messages).toEqual(app.chatMessages);
+  expect(domain.messages).toEqual([expect.objectContaining({ id: message.id, status: "blocked" })]);
   const error: QueueItem = {
     ...item,
     status: "error",
     outcome: parseSpeechQueueOutcome(fixture[10]),
   };
-  expect(chatReducer(domain, { type: "queue.statuses.changed", items: [error] }).messages).toEqual(
-    appReducer(app, { type: "queue.changed", items: [error] }).chatMessages,
-  );
+  expect(
+    chatReducer(domain, { type: "queue.statuses.changed", items: [error] }).messages,
+  ).toMatchObject([{ status: "error", speechOutcome: error.outcome }]);
 });
 
 it("retains only the existing bounded 200 chat messages, including their outcomes", () => {
