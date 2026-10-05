@@ -193,7 +193,7 @@
 
 | Phase | 状態 | メモ |
 | --- | --- | --- |
-| Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込、原子的保存、破損時のbackup/既定値復旧を確認した。Issue #50 で UI 倍率を名前付き radio group にし、現在の選択状態と表示倍率を支援技術へ公開した。Issue #49 で route ごとの document title 更新と、PUSH 遷移後の画面見出しへのフォーカス移動を追加した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。 |
+| Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込、原子的保存、破損時のbackup/既定値復旧を確認した。Issue #50 で UI 倍率を名前付き radio group にし、現在の選択状態と表示倍率を支援技術へ公開した。Issue #49 で route ごとの document title 更新と、PUSH 遷移後の画面見出しへのフォーカス移動を追加した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。Issue #202 で既定値 factory を UI feature 非依存の settings model に集約し、browser preview の連続 patch を保持するようにした。frontend unit 300 件、typecheck、format check が成功した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 読み上げ、制御、接続診断、Settings 画面は実装済み。接続先は host/port を構造化し、IPv4・DNS・IPv6を共通の接続経路で扱う。接続確認は設定に応じて確認読み上げまたは無音の状態取得を行う。Issue #84 で接続エラーの復旧導線を Settings の［診断］へ統一し、backend から画面名を除去した。Issue #148 で起動後の自動復旧プローブを無音の状態取得だけに限定し、下流の音声合成アプリが未起動の間に読み上げ要求を送らないようにした。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring、session-only 保存失敗処理、旧 Linux 平文ファイルの移行/削除、Login 画面、起動時の保存済み認証の自動検証は実装済み。Issue #4 で認証とチャット接続の状態イベントに domain を追加し、表示文言に依存せず独立更新するようにした。Device Code の絶対期限に基づく残り時間と期限切れ時の再発行導線、Issue #30 の必須 `user:read:chat` scope 検証と不足時の再ログイン案内も実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映、再購読時の最新 access token 取得と 401 時の一度だけの refresh/retry（Issue #23）、更新後 access token の `/validate` に基づく scope 再検証（Issue #30）を実装。Issue #9 で Twitch 指定の `reconnect_url` への接続と旧 socket の受信を並行し、新しい welcome 後にのみ切り替え、失敗時は25秒の猶予後に通常再接続へ移行するようにした。Issue #74 で `receivedAt` を Rust から TypeScript まで UTC RFC 3339 に統一し、非文字列を含む不正 timestamp と leap second の frame 取得時刻 fallback、ローカル時刻表示をテストした。Issue #83 で設定値と世代付き実接続 identity を分離し、遅延 status/chat による表示巻き戻りを防止した。実 Twitch 環境での手動確認が必要。 |
@@ -207,7 +207,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 0: プロジェクト作成
 
-- [ ] Issue #202: Settings 既定値を UI feature 非依存の共通 model factory に集約し、preview の leaf patch を現在値へ累積適用する。可変値の非共有、異 section/同 section field の連続保存、再読込を回帰検証する。
+- [x] Issue #202: Settings 既定値を UI feature 非依存の共通 model factory に集約し、preview の leaf patch を現在値へ累積適用する。可変値の非共有、異 section/同 section field の連続保存、再読込を回帰検証する。
 
 - [x] Tauri + TypeScript + Tailwind の雛形を作る。
 - [x] `src-tauri/src` に `twitch`, `speech`, `settings`, `app_events` の境界を作る。
