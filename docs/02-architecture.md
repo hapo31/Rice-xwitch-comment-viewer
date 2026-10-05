@@ -234,7 +234,7 @@ backend は bounded な operational log ring と Twitch（auth/chat）/speech �
 
 ### フロントエンド通知
 
-対処が必要な通知は `{ id, severity, source, message, occurredAtMs, correlationId? }` として保持する。`severity` は `info` / `success` / `warning` / `error`、`source` は command / event / log / system を区別する。Side Panel と Status Bar の Warnings は warning / error のみを最新 5 件まで表示するため、成功通知で実警告を押し出さない。`correlationId` がある通知はその値で重複排除し、ID がない既存イベントは本文と 5 秒の受信時間で重複排除する。重複経路で severity が異なるときは、より重大な値を残す。info / success は Logs と system Chat に残す。
+対処が必要な通知は `{ id, severity, source, message, occurredAtMs, correlationId? }` として保持する。`severity` は `info` / `success` / `warning` / `error`、`source` は command / event / log / system を区別する。logs store は対処待ちの warning / error を notifications、info / success を notificationHistory に各100件まで独立して保持する。Side Panel と Status Bar の Warnings は対処待ち通知を最新5件まで表示し、成功通知が対処待ち通知の保持枠を消費しない。warnings.cleared は対処待ち通知だけを消す。`correlationId` がある通知はその値で重複排除し、ID がない既存イベントは本文と 5 秒の受信時間で重複排除する。重複経路で severity が異なるときは、より重大な値を残す。情報履歴から warning / error に昇格した通知は同じIDを保って対処待ち領域へ移す。info / success は Logs と system Chat に残す。
 
 ## 永続化
 
