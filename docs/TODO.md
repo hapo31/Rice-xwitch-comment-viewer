@@ -89,6 +89,8 @@
 
 ## 現在の進捗サマリ
 
+Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既存 Biome gate に any・enum・const enum・namespace の検査を追加した。frontend 322件と品質 policy 5件、format/lint/typecheck/build が成功し、最終 CI とレビューを待つ。
+
 2026-10-05: Dependabot全13件（#179–#182、#184–#192）のレビューと互換性修正を完了した。Tauri dialogのJS/Rust版一致検査、React 19の型・ref初期値・TitleBar DOMテスト移行を実施した。マージと後片付けの条件・検証結果・既存Windows入力の不安定性はPhase 5のDependabot項目に記録する。
 
 - [x] Issue #69: adapter healthとqueue phaseをbackend/frontendで独立保持し、paused中も無音probeを継続する。復旧は失敗項目を自動再送せず、UIの接続/準備完了を両状態から導出する。
@@ -505,5 +507,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [ ] 手動: Issue #27 として、Twitch 接続中・読み上げ待機中・未保存変更ありの X、Alt+F4、OS close-request で終了確認とキャンセル、承認後の接続停止・キュークリアを Windows 10/11 で確認する。
 
 ## 調査メモ
+
+- 2026-10-06 Issue #198: [Biome noExplicitAny](https://biomejs.dev/linter/rules/no-explicit-any/) の型引数制約の例外を維持する。条件型で任意の引数列から戻り値を推論する場合に限り、理由付きの行単位 `biome-ignore lint/suspicious/noExplicitAny` を使える。DTO、mock、値のキャストには使わず、ファイル単位の無効化はしない。`noEnum` は const enum を検出しないため `noConstEnum` も有効にした。既存 quality policy の正負 fixture で named/alias import と許容例外を含め検証し、別の AST 検査器や workflow は追加していない。
 
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
