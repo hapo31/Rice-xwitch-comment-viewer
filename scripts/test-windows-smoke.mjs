@@ -2,12 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { verifyWindowsSmoke } from "./verify-windows-smoke.mjs";
 function fixture() {
-  const exeHash = "e".repeat(64), manifestHash = "f".repeat(64);
-  const manifest = { commit: "a".repeat(40), tag: "v0.2.3", portableEntries: [{ name: "rice.exe", sha256: exeHash }] };
+  const exeHash = "e".repeat(64), installedHash = "d".repeat(64), manifestHash = "f".repeat(64);
+  const manifest = { commit: "a".repeat(40), tag: "v0.2.3", portableEntries: [{ name: "rice.exe", sha256: exeHash }], nsisExecutable: { name: "rice.exe", sha256: installedHash, bundleType: "nsis" } };
   const report = { schemaVersion: 1, status: "success", commit: manifest.commit, tag: manifest.tag, runId: "123", artifactManifestSha256: manifestHash, probes: [
     { name: "portable", pid: 1, windowShown: true, survivedMs: 5000, exitCode: 0, sha256: exeHash },
     { name: "silent-install", exitCode: 0 },
-    { name: "installed", pid: 2, windowShown: true, survivedMs: 5000, exitCode: 0, sha256: exeHash },
+    { name: "installed", pid: 2, windowShown: true, survivedMs: 5000, exitCode: 0, sha256: installedHash },
     { name: "silent-uninstall", exitCode: 0 },
   ] };
   const job = (name, steps) => ({ name, status: "completed", conclusion: "success", steps: steps.map(name => ({ name, status: "completed", conclusion: "success" })) });
@@ -34,6 +34,9 @@ for (const [name, mutate] of [
   ["loader/panic exit", f => f.report.probes[2].exitCode = -1073741511],
   ["no native window", f => f.report.probes[0].windowShown = false],
   ["installed different binary", f => f.report.probes[2].sha256 = "0".repeat(64)],
+  ["unpatched portable mistaken for installed NSIS", f => f.report.probes[2].sha256 = f.report.probes[0].sha256],
+  ["missing NSIS expectation", f => delete f.manifest.nsisExecutable],
+  ["wrong NSIS bundle type", f => f.manifest.nsisExecutable.bundleType = "msi"],
   ["missing runtime jobs despite plausible receipt", f => f.jobs.length = 0],
   ["failed Windows test", f => f.jobs[1].conclusion = "failure"],
   ["skipped smoke step", f => f.jobs[0].steps[0].conclusion = "skipped"],

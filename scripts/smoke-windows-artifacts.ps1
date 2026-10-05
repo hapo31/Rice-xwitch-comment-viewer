@@ -82,7 +82,7 @@ try {
     Run-Nsis $installer "/S /D=$installed" 'silent-install'
     $installedExe = Join-Path $installed 'rice.exe'
     if (-not (Test-Path -LiteralPath $installedExe -PathType Leaf)) { throw 'Installer did not create rice.exe in the isolated directory' }
-    if ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $portable 'rice.exe') -Algorithm SHA256).Hash) { throw 'Installed exe differs from the verified portable exe' }
+    if ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.nsisExecutable.sha256) { throw 'Installed exe differs from the exact expected NSIS executable' }
     if ((Get-FileHash -LiteralPath (Join-Path $installed 'LICENSE') -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $portable 'LICENSE') -Algorithm SHA256).Hash) { throw 'Installed LICENSE differs' }
     $registrations = @(Rice-Registrations)
     if ($registrations.Count -ne 1 -or $registrations[0].DisplayVersion -ne $manifest.version) { throw 'Missing/ambiguous NSIS registration or version' }

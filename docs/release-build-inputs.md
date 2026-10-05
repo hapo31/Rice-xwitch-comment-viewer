@@ -22,6 +22,6 @@ NSISは3.11のnative compiler source、同版のWindows headers/stubs/plugins ZI
 
 LICENSE、npm/Cargo lockfile、Cargo metadataは`.gitattributes`でLF checkoutを指定し、Git for Windowsのcore.autocrlf=trueでもcanonicalな正本bytesを保持します。CIのclone正例/負例で属性の効果を確認します。受け取ったartifactを正規化してdigestを合わせたり、license/lock比較を省略したりはしません。
 
-同じrunのartifactをfreshなGitHub-hosted Windowsへ渡し、portable起動、隔離NSIS silent install、同一exe・offline LICENSE・version/registry、installed起動、silent uninstallを検証します。各appは実main windowを表示して5秒以上異常終了せず、通常closeでexit0になる必要があります。smoke scriptは既存Rice profile/installationやself-hosted環境を拒否し、終了処理で対象PIDと新規GUID scratch/今回作成したprofileだけを扱います。
+同じrunのartifactをfreshなGitHub-hosted Windowsへ渡し、portable起動、隔離NSIS silent install、exactな期待exe・offline LICENSE・version/registry、installed起動、silent uninstallを検証します。固定Tauri CLI2.12.1はNSIS格納時に唯一の`__TAURI_BUNDLE_TYPE_VAR_UNK`変数を`__TAURI_BUNDLE_TYPE_VAR_NSS`へ置換し、bundle後に元exeを復元します。その3byteだけを反映したNSIS期待exeの容量・SHA-256をmanifestへ記録し、installed hashはこの期待値、portable hashは元bytesと完全一致させます。印の欠落/重複や他形式を拒否し、任意のbyte差分は許容しません。各appは実main windowを表示して5秒以上異常終了せず、通常closeでexit0になる必要があります。smoke scriptは既存Rice profile/installationやself-hosted環境を拒否し、終了処理で対象PIDと新規GUID scratch/今回作成したprofileだけを扱います。
 
 trusted publisherは同runのmanifest hashを持つreceiptだけでなく、GitHub APIでWindows全体/明示native/実installer smokeの各job・stepがsuccessであることも確認します。失敗・skip・欠落・古いtagにgateがない場合はRelease変更前に停止します。第三者ライセンス通知の整備（#102）はこの実動作gateとは別の未完了事項です。

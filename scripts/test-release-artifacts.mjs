@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, renameSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateRawSync } from "node:zlib";
-import { crc32, inspectPe, inspectPortable, expectations, writeBundle, verifyBundle } from "./verify-release-artifacts.mjs";
+import { crc32, inspectPe, inspectPortable, expectedNsisExecutable, expectations, writeBundle, verifyBundle } from "./verify-release-artifacts.mjs";
 
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
 const commit = "a".repeat(40);
@@ -13,6 +13,7 @@ function pe() {
   const bytes = Buffer.alloc(256);
   bytes.write("MZ"); bytes.writeUInt32LE(64, 0x3c); bytes.writeUInt32LE(0x4550, 64);
   bytes.writeUInt16LE(0x8664, 68); bytes.writeUInt16LE(0x20b, 88); bytes.writeUInt16LE(2, 156);
+  bytes.write("__TAURI_BUNDLE_TYPE_VAR_UNK", 192);
   return bytes;
 }
 function zip(files = [["rice.exe", pe()], ["LICENSE", Buffer.from("test-license\n")]], compressed = true) {
@@ -50,6 +51,25 @@ function fixture(t) {
   return { source, directory, options, plan };
 }
 test("CRC has a known independent standard vector", () => assert.equal(crc32(Buffer.from("123456789")), 0xcbf43926));
+test("derives the exact Tauri NSIS marker patch without changing the portable bytes", () => {
+  const bytes = pe(), original = Buffer.from(bytes), expected = Buffer.from(bytes);
+  expected.write("__TAURI_BUNDLE_TYPE_VAR_NSS", 192);
+  assert.deepEqual(expectedNsisExecutable(bytes), { name: "rice.exe", size: bytes.length, sha256: digest(expected), bundleType: "nsis" });
+  assert.deepEqual(bytes, original);
+  expected[240] ^= 1;
+  assert.notEqual(expectedNsisExecutable(bytes).sha256, digest(expected));
+});
+test("preserves the separate NSIS literal used by Tauri runtime comparisons", () => {
+  const bytes = pe(); bytes.write("__TAURI_BUNDLE_TYPE_VAR_NSS", 220);
+  const expected = Buffer.from(bytes); expected.write("__TAURI_BUNDLE_TYPE_VAR_NSS", 192);
+  assert.equal(expectedNsisExecutable(bytes).sha256, digest(expected));
+});
+for (const [name, mutate] of [
+  ["missing", bytes => bytes.fill(0, 192)],
+  ["duplicate", bytes => bytes.write("__TAURI_BUNDLE_TYPE_VAR_UNK", 220)],
+  ["already NSIS", bytes => bytes.write("__TAURI_BUNDLE_TYPE_VAR_NSS", 192)],
+  ["other bundle type", bytes => bytes.write("__TAURI_BUNDLE_TYPE_VAR_MSI", 192)],
+]) test(`rejects ${name} bundle-type marker`, () => { const bytes = pe(); mutate(bytes); assert.throws(() => expectedNsisExecutable(bytes), /bundle-type token/); });
 test("checks both stored and max-compression ZIP entries and PE structure", () => {
   for (const compressed of [false, true]) assert.deepEqual(inspectPortable(zip(undefined, compressed)).map(x => x.name), ["rice.exe", "LICENSE"]);
 });
@@ -57,6 +77,7 @@ test("writes and verifies an exact source-bound bundle (synthetic structural fix
   const f = fixture(t), manifest = writeBundle(f.source, f.directory, f.options);
   assert.deepEqual(verifyBundle(f.source, f.directory, f.options).manifest, manifest);
   assert.equal(manifest.artifacts.length, 5); assert.equal(manifest.portableEntries.length, 2);
+  assert.deepEqual(manifest.nsisExecutable, expectedNsisExecutable(pe()));
   assert.throws(() => verifyBundle(f.source, f.directory, { ...f.options, commit: "b".repeat(40) }), /source mismatch/);
   assert.throws(() => verifyBundle(f.source, f.directory, { ...f.options, tag: "v9.9.9" }), /version mismatch/);
 });
@@ -67,6 +88,7 @@ for (const [name, mutate] of [
   ["unknown nested directory", f => mkdirSync(join(f.directory, "other"))],
   ["license drift", f => writeFileSync(join(f.directory, "LICENSE"), "different")],
   ["manifest drift", f => { const file = join(f.directory, "ARTIFACT-MANIFEST.json"), value = JSON.parse(readFileSync(file)); value.version = "9.9.9"; writeFileSync(file, JSON.stringify(value)); }],
+  ["NSIS executable descriptor drift", f => { const file = join(f.directory, "ARTIFACT-MANIFEST.json"), value = JSON.parse(readFileSync(file)); value.nsisExecutable.sha256 = "0".repeat(64); writeFileSync(file, JSON.stringify(value)); }],
   ["checksum omission", f => writeFileSync(join(f.directory, "SHA256SUMS.txt"), "")],
   ["lockfile drift", f => writeFileSync(join(f.source, "pnpm-lock.yaml"), "changed")],
 ]) test(`rejects ${name}`, t => { const f = fixture(t); writeBundle(f.source, f.directory, f.options); mutate(f); assert.throws(() => verifyBundle(f.source, f.directory, f.options)); });

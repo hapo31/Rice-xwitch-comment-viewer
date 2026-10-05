@@ -10,8 +10,11 @@ export function verifyWindowsSmoke(report, manifest, manifestHash, runId, jobs) 
   if (report.schemaVersion !== 1 || report.status !== "success" || report.commit !== manifest.commit || report.tag !== manifest.tag || report.runId !== String(runId) || report.artifactManifestSha256 !== manifestHash) fail("Windows smoke receipt source/run/artifact mismatch");
   const requiredProbes = ["portable", "silent-install", "installed", "silent-uninstall"];
   if (!Array.isArray(report.probes) || !isDeepStrictEqual(report.probes.map(x => x.name).sort(), requiredProbes.sort())) fail("Missing/duplicate Windows smoke probes");
-  const exeHash = manifest.portableEntries.find(entry => entry.name === "rice.exe")?.sha256;
+  const portableHash = manifest.portableEntries.find(entry => entry.name === "rice.exe")?.sha256;
+  const installedHash = manifest.nsisExecutable?.sha256;
+  if (!/^[a-f0-9]{64}$/.test(portableHash ?? "") || !/^[a-f0-9]{64}$/.test(installedHash ?? "") || manifest.nsisExecutable?.bundleType !== "nsis" || manifest.nsisExecutable?.name !== "rice.exe") fail("Missing exact portable/NSIS executable expectations");
   for (const probe of report.probes) {
+    const exeHash = probe.name === "portable" ? portableHash : installedHash;
     if (probe.exitCode !== 0) fail("Failed Windows smoke probe");
     if (["portable", "installed"].includes(probe.name) && (probe.windowShown !== true || !Number.isFinite(probe.survivedMs) || probe.survivedMs < 5000 || probe.sha256 !== exeHash || !Number.isInteger(probe.pid) || probe.pid < 1)) fail("Unproven application startup/normal exit");
   }

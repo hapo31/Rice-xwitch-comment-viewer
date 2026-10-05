@@ -39,6 +39,22 @@ export function inspectPe(bytes, application = true) {
   return { machine, magic, subsystem };
 }
 
+// Tauri CLI 2.12.1 patches only this bundle-type token for NSIS, then restores
+// the original executable for the unbundled/portable output (bundle.rs).
+// Derive the exact installed bytes, never ignore arbitrary executable drift.
+export function expectedNsisExecutable(bytes) {
+  inspectPe(bytes);
+  const portable = Buffer.from("__TAURI_BUNDLE_TYPE_VAR_UNK");
+  const installed = Buffer.from("__TAURI_BUNDLE_TYPE_VAR_NSS");
+  // Other literal types can occur in Tauri's runtime comparisons. Only the
+  // unique original UNK variable is changed by the reviewed bundler.
+  const offset = bytes.indexOf(portable);
+  if (offset < 0 || bytes.indexOf(portable, offset + 1) !== -1) fail("Missing/ambiguous/unreviewed Tauri bundle-type token");
+  const patched = Buffer.from(bytes);
+  installed.copy(patched, offset);
+  return { name: "rice.exe", size: patched.length, sha256: hash(patched), bundleType: "nsis" };
+}
+
 // Accept the deterministic flat ZIP produced by Docker's zip -X, not arbitrary
 // archives. Validate both headers, exact local layout, inflated size and CRC.
 export function inspectPortable(bytes, expectedNames = ["rice.exe", "LICENSE"]) {
@@ -123,6 +139,7 @@ function inspect(source, directory, options, writing) {
   const manifest = {
     schemaVersion: plan.schemaVersion, version: plan.version, tag: plan.tag, commit: plan.commit, target: plan.target,
     installer: plan.installer, portable: plan.portable, installerPe,
+    nsisExecutable: expectedNsisExecutable(entries.find(entry => entry.name === "rice.exe").content),
     artifacts: names.map(name => { const content = read(join(directory, name)); return { name, size: content.length, sha256: hash(content) }; }),
     portableEntries: entries.map(({ content, ...entry }) => entry),
   };
