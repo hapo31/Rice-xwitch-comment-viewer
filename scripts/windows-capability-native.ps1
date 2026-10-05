@@ -35,6 +35,8 @@ public static class RiceNativeProbe {
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder text, int max);
   [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h,uint message,IntPtr wparam,IntPtr lparam);
   [DllImport("user32.dll")] static extern IntPtr GetDlgItem(IntPtr dialog,int id);
+  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent,EnumerateWindow callback,IntPtr argument);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr window,uint message,IntPtr parameter,string text);
   public static IntPtr Window(int pid) {
     using (var process = Process.GetProcessById(pid)) {
       if (process.HasExited || !String.Equals(process.ProcessName,"rice",StringComparison.OrdinalIgnoreCase)) throw new Exception("Not the owned live Rice process");
@@ -127,6 +129,20 @@ public static class RiceNativeProbe {
     // still operates the real native button; no dialog results are fabricated.
     if(!PostMessage(button,0x00F5,IntPtr.Zero,IntPtr.Zero)) throw new Exception("Owned native Open button refused click");
   }
+  public static void SetDialogFiles(int pid,string text) {
+    var dialog=Dialog(pid); var host=GetDlgItem(dialog,1148);
+    if(dialog==IntPtr.Zero || host==IntPtr.Zero) throw new Exception("Missing owned filename host");
+    IntPtr edit=IntPtr.Zero; int matches=0;
+    EnumChildWindows(host,(h,arg)=> {
+      uint owner; GetWindowThreadProcessId(h,out owner); var name=new StringBuilder(128); GetClassName(h,name,128);
+      if(owner==pid && name.ToString()=="Edit") { edit=h; matches++; } return true;
+    },IntPtr.Zero);
+    if(matches!=1) throw new Exception("Missing or ambiguous owned native filename Edit");
+    // ComboBoxEx32's UIA pane may hide its Edit/ValuePattern. WM_SETTEXT targets
+    // only that real child of the owned file dialog, then native Open validates
+    // and returns the real selection to rfd/Tauri.
+    if(SendMessage(edit,0x000C,IntPtr.Zero,text)==IntPtr.Zero) throw new Exception("Owned filename Edit refused text");
+  }
 }
 '@
 if ($ValidateOnly) {
@@ -175,8 +191,9 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                 $edit = $filenameHost.FindFirst([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Edit))
                 if ($null -eq $edit) { $edit = $filenameHost }
                 $pattern = $null
-                if (-not $edit.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { throw ("Filename edit lacks ValuePattern: id=" + $edit.Current.AutomationId + "; class=" + $edit.Current.ClassName + "; type=" + $edit.Current.ControlType.ProgrammaticName) }
-                $pattern.SetValue(($files | ForEach-Object { '"' + $_ + '"' }) -join ' ')
+                $fileText = ($files | ForEach-Object { '"' + $_ + '"' }) -join ' '
+                if ($edit.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { $pattern.SetValue($fileText) }
+                else { [RiceNativeProbe]::SetDialogFiles($RicePid, $fileText) }
                 $open = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.PropertyCondition]::new($idProperty, '1'))
                 if ($null -eq $open) { throw 'Missing owned file dialog Open button' }
                 $invokePattern = $null
