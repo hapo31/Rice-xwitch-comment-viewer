@@ -1,6 +1,6 @@
 # 実装 TODO
 
-- [ ] Issue #91: Windowsでlocked/all-targets/all-featuresの全体テストと実secure store/Launcher分岐を継続実行する。manifest/tag由来のexact artifact集合、portable ZIPのCRC/内容/PE、隔離Windowsでportable起動とNSIS silent install/起動/uninstallを検証し、同じartifact bytesのsmoke成功をRelease公開の必須条件にする。OS socket buffer量に依存する既存順序fixtureは実dispatcher permitを制御して検証する。タグ・Releaseの発行なしで候補を検証できるread-only経路も用意する。
+- [x] Issue #91: Windowsでlocked/all-targets/all-featuresの全体テストと実secure store/Launcher分岐を継続実行する。manifest/tag由来のexact artifact集合、portable ZIPのCRC/内容/PE、隔離Windowsでportable起動とNSIS silent install/起動/uninstallを検証し、同じartifact bytesのsmoke成功をRelease公開の必須条件にする。OS socket buffer量に依存する既存順序fixtureは実dispatcher permitを制御して検証する。タグ・Releaseの発行なしで候補を検証できるread-only経路も用意する。
 
 2026-10-05進捗: exact artifact/source/lock/CRC/PE/checksum verifierとWindows NSIS/portable probe、同runのreceiptと実Windows jobsをtrusted publisherで照合するgateを追加した。新しいartifact/receipt検証36件を含むlocal49件とworkflow/context policyが成功。source63d45e3の両OS契約は成功したがWindows全体実行はCommon Controls manifest消失によるloader failureで失敗し、Cargo runnerで起動直前に付け直す。runnerはpackage rootで実行されるため絶対pathにする。実全体テストとDocker製の本物のNSIS/ZIPをcandidate dispatchで確認するまでは未完了。tag/Releaseは作成しない。
 
@@ -11,6 +11,8 @@
 2026-10-05追加検証: source1c2c403の通常6workflowが成功し、[候補CI](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37270108901)ではDocker製の実installer/portable生成、exact artifact/CRC/PE/LICENSE/SBOMが成功した。Windowsは起動前のLICENSE byte比較で停止した。Gitのcore.autocrlf=trueによる同じ不一致を再現し、正本/LICENSE・2 lockfiles・Cargo.tomlをLF checkoutへ固定する。元bytesと検証条件は維持し、属性あり/なしのclone回帰2件を含むlocal83件が成功した。実portable起動/NSIS install/起動/uninstallは未確認であり、修正後sourceの候補で継続する。
 
 2026-10-05追加検証: source2f5fdaeの[候補CI](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37272350673)でWindowsの改行回帰2件、portableのnative window/9305ms生存/正常exit0、NSIS silent installのexit0が成功した。installed比較の不一致は、固定Tauri CLIの正規のbundle-type patch（UNK→NSSの3byteのみ）と実payloadの独立展開で一致した。元portableを保持したまま、NSISのexact期待hashをmanifestへ記録し、両形式ごとの完全なdigest比較へ修正する。installed起動/uninstallと修正後sourceの再検証が終わるまでは未完了。
+
+2026-10-05最終検証: source74ed02eの[品質9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37274393328)、[依存監査](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37274392934)、[両OS契約](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37274393311)、[Windows実動作](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37274393332)、[設定権限](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37274393175)、[機能構成](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37274393079)と[配布候補全工程](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37274393563)が成功した。Windows全体263件、実keyring、Launcher41件、明示headful3件が成功。実portableは6649ms、installedは5144ms生存してnative windowを表示し通常closeでexit0、NSIS silent install/uninstallもexit0となった。installed/LICENSE/version/registrationとuninstall後の除去、隔離cleanupも成功。同runのreceipt・exact manifest・GitHub最新jobsをtrusted verifierで再照合し、NSIS payloadの独立展開でも期待exeと正本LICENSEのdigest一致を確認した。local93件/全policyも成功。タグ・Releaseは作成しておらず、第三者通知の未完了境界#102は別に残す。
 
 - [x] Issue #64: versioned persistence wireをdomainから分離し、旧schemaを段階migrationする。全fieldはoptionalとして欠落・型/範囲/意味違反を既定値へ戻し、#88の共通validatorでload/saveの不変条件を揃える。未知future version/未知fieldを黙って捨てず、設定・Launcher・window保存と終了からの上書きを防ぐ。fixture、primary/backup保持、writer、両OS/native CIで検証する。
 
