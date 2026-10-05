@@ -67,6 +67,7 @@ impl Sink<Message> for FakeSocket {
         Poll::Ready(Ok(()))
     }
 }
+#[derive(Default)]
 struct Runtime {
     sockets: Mutex<VecDeque<anyhow::Result<FakeSocket>>>,
     urls: Mutex<Vec<String>>,
@@ -85,22 +86,6 @@ struct ActiveGeneration(Option<u64>);
 impl Default for ActiveGeneration {
     fn default() -> Self {
         Self(Some(7))
-    }
-}
-impl Default for Runtime {
-    fn default() -> Self {
-        Self {
-            sockets: Mutex::default(),
-            urls: Mutex::default(),
-            subscriptions: Mutex::default(),
-            subscription_errors: Mutex::default(),
-            chats: Mutex::default(),
-            speech_messages: Mutex::default(),
-            statuses: Mutex::default(),
-            active_connections: Mutex::default(),
-            logs: Mutex::default(),
-            active_generation: Mutex::default(),
-        }
     }
 }
 impl EventSubRuntime for Runtime {
@@ -199,17 +184,17 @@ async fn shared_delivery_boundary_sends_the_same_message_to_both_sinks_or_reject
     )
     .await
     .unwrap();
-    let ui = runtime.chats.lock().unwrap();
-    let speech = runtime.speech_messages.lock().unwrap();
-    assert_eq!(ui.len(), 1);
-    assert_eq!(speech.len(), 1);
-    assert_eq!(ui[0].connection_generation, Some(7));
-    assert_eq!(
-        serde_json::to_value(&ui[0]).unwrap(),
-        serde_json::to_value(&speech[0]).unwrap()
-    );
-    drop(speech);
-    drop(ui);
+    {
+        let ui = runtime.chats.lock().unwrap();
+        let speech = runtime.speech_messages.lock().unwrap();
+        assert_eq!(ui.len(), 1);
+        assert_eq!(speech.len(), 1);
+        assert_eq!(ui[0].connection_generation, Some(7));
+        assert_eq!(
+            serde_json::to_value(&ui[0]).unwrap(),
+            serde_json::to_value(&speech[0]).unwrap()
+        );
+    }
 
     // EventSub duplicate delivery remains deduped before the shared boundary.
     process_eventsub_frame(

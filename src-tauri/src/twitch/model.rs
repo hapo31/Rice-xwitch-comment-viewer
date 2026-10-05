@@ -21,6 +21,7 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
+    #[cfg(any(feature = "app", test))]
     pub(super) fn belongs_to_connection_generation(&self, generation: u64) -> bool {
         self.connection_generation == Some(generation)
     }
