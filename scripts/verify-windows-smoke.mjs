@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { verifyBundle } from "./verify-release-artifacts.mjs";
+import { verifyCapabilityProbe } from "./probe-windows-capabilities.mjs";
 
 const fail = message => { throw new Error(message); };
 export function verifyWindowsSmoke(report, manifest, manifestHash, runId, jobs) {
@@ -17,6 +18,7 @@ export function verifyWindowsSmoke(report, manifest, manifestHash, runId, jobs) 
     const exeHash = probe.name === "portable" ? portableHash : installedHash;
     if (probe.exitCode !== 0) fail("Failed Windows smoke probe");
     if (["portable", "installed"].includes(probe.name) && (probe.windowShown !== true || !Number.isFinite(probe.survivedMs) || probe.survivedMs < 5000 || probe.sha256 !== exeHash || !Number.isInteger(probe.pid) || probe.pid < 1)) fail("Unproven application startup/normal exit");
+    if (["portable", "installed"].includes(probe.name)) verifyCapabilityProbe(probe.capabilities, probe.pid, probe.name);
   }
   function requireJob(names, stepNames) {
     const matches = jobs.filter(job => names.includes(job.name));
@@ -30,6 +32,7 @@ export function verifyWindowsSmoke(report, manifest, manifestHash, runId, jobs) 
   // gate must not gain publication just by supplying a plausible JSON file.
   requireJob(["Smoke exact Windows release artifacts"], ["Install, launch and uninstall exact release candidates"]);
   requireJob(["Windows production tests / windows-focus", "windows-tests / windows-focus"], [
+    "Validate packaged capability probes and native UI helper",
     "Run all Windows targets and features, including native credentials and process adapters",
     "Verify real second launch exits, preserves settings and restores foreground window",
     "Verify maximum Launcher rendering, heap budget and production IPC rejection",

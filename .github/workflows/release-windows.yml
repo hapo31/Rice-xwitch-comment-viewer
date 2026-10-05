@@ -49,6 +49,8 @@ jobs:
           node scripts/verify-tauri-versions.mjs
           node --test scripts/test-tauri-versions.mjs
           node --test scripts/test-checkout-materials.mjs
+          node --test scripts/test-tauri-security.mjs
+          node --test scripts/test-windows-capabilities.mjs
           node --test scripts/test-project-license.mjs
           node scripts/test-twitch-client-id.mjs
           bash scripts/test-publish-release.sh

@@ -189,6 +189,19 @@ React の仮想スクロール、ウィンドウ倍率、Launcher tile は動的
 
 capability は `main` window の `default` だけを設定から明示的に有効化する。core API は event の listen/unlisten、現在の window の状態確認・移動・resize・native close 完了、Dialog の open に限定する。custom command は `tauri_build::AppManifest` へ列挙し、同じ main capability に明示した command だけを許可する。新しい window / capability / command を追加するときは、既存の default set を広げず、その利用箇所と permission を同じ変更で追加する。CSP や capability は backend の入力検証を代替しないため、外部 URL、Launcher path、設定値の Rust 側検証は維持する。
 
+Issue #75の最小集合は次の9 core/plugin permissionと既存の明示custom commandだけ。`test-tauri-security.mjs`はcustomも含む全体snapshot、実policyを使ったdefault/emit/image/menu/tray等の拡張・remote/window/webview/platform scope追加拒否を検証する。新しい許可は利用箇所とsnapshotの両方をreviewする。
+
+| permission | 本番frontendで必要な理由 |
+| --- | --- |
+| `core:event:allow-listen` / `allow-unlisten` | domain event、AppShellのclose、TitleBarのresize、Launcherのnative DnDの購読/解除 |
+| `core:window:allow-destroy` | SDKの`Window.onCloseRequested`が確認不要のnative close後に間接呼出しする。通常終了に必要であり、未使用ではない |
+| `core:window:allow-is-maximized` | TitleBarの最大化/復元アイコン同期 |
+| `core:window:allow-minimize` / `allow-toggle-maximize` | TitleBarの最小化/最大化/復元 |
+| `core:window:allow-start-dragging` / `allow-start-resize-dragging` | TitleBarの移動と8方向のresize handle |
+| `dialog:allow-open` | Launcherの`.exe`/`.lnk`複数選択。save/message等のrenderer権限は不要 |
+
+配布候補のWindows検査は変更していない実portable/NSIS exeを起動し、子process限定のWebView2 loopback debuggerから本番IPC/DOMへ接続する。11実core/plugin commandはrelease固有の`not allowed by ACL`を厳密確認し、command-not-found/feature-disabled/引数errorを代用しない。実HWNDの最小化/最大化/復元・native移動/resize、backendが発行した保存logのlisten/unlisten、所有fixture2fileのnative dialog選択とOLE FileDrop1fileによる本番Launcher登録/解除を検査する。portableはnative closeとSDK destroy、installedはtitlebar/app_exitで通常終了させる。検証記録はPID/source/run/exact artifact digestへ結び付け、未検証項目をpublisherで拒否する。debuggerはfresh GitHub-hosted runnerの所有Rice子tree・loopbackだけに限定し、production config/CSP/ACL・global環境/registryは変更しない。
+
 Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、base64部分64KiB / PNG file48KiB、PNGのchecksum・終端・単一frame・最大128×128pxを検証する。PNG decoder作業領域は1MiB、pixel出力bufferは128KiB以内。保存済みの不正/旧上限超過iconは読み込み時に汎用iconへfallbackし、新規追加の上限超過は全体を拒否する。合計data URLは4MiB以内。inline PNGをquotaで制限するため、cache用の追加filesystem権限や`assetProtocol`は有効化しない。
 
 Launcherの資源境界（#71）: 最大200件、pathは各4096UTF-8 bytes・合計128KiB、IDは64 ASCII bytes以内の英数字/ハイフン/下線、表示名1〜120 Unicode文字、group1〜64文字（いずれも制御文字なし）、背景色`#RRGGBB`。追加要求のJSONは256KiB、設定patch/保存JSONは8MiB、要求treeは4096nodes/深さ16まで。Tauriのparse済みbodyを`Request`で借用し、アプリDTOをcloneする前に検査する。framework自体の初回transport parseのallocationを制限できたとは扱わない。

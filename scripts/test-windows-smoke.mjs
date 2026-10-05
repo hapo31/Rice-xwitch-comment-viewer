@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { verifyWindowsSmoke } from "./verify-windows-smoke.mjs";
+import { deniedCommands } from "./probe-windows-capabilities.mjs";
 function fixture() {
   const exeHash = "e".repeat(64), installedHash = "d".repeat(64), manifestHash = "f".repeat(64);
   const manifest = { commit: "a".repeat(40), tag: "v0.2.3", portableEntries: [{ name: "rice.exe", sha256: exeHash }], nsisExecutable: { name: "rice.exe", sha256: installedHash, bundleType: "nsis" } };
@@ -10,8 +11,12 @@ function fixture() {
     { name: "installed", pid: 2, windowShown: true, survivedMs: 5000, exitCode: 0, sha256: installedHash },
     { name: "silent-uninstall", exitCode: 0 },
   ] };
+  for (const probe of report.probes.filter(x => ["portable", "installed"].includes(x.name))) {
+    probe.capabilities = { schemaVersion: 1, status: "success", pid: probe.pid, deniedCommands, minimize: true, maximize: true, restore: true, titlebarDrag: true, resizeDrag: true, backendEvent: true, unlisten: true, nativeFileDrop: true, nativeMultipleFileDialog: true, launcherCleanup: true, titlebarCloseRequested: probe.name === "installed", selectedCount: 2, droppedCount: 1 };
+  }
   const job = (name, steps) => ({ name, status: "completed", conclusion: "success", steps: steps.map(name => ({ name, status: "completed", conclusion: "success" })) });
   const jobs = [job("Smoke exact Windows release artifacts", ["Install, launch and uninstall exact release candidates"]), job("Windows production tests / windows-focus", [
+    "Validate packaged capability probes and native UI helper",
     "Run all Windows targets and features, including native credentials and process adapters",
     "Verify real second launch exits, preserves settings and restores foreground window",
     "Verify maximum Launcher rendering, heap budget and production IPC rejection",
@@ -37,6 +42,12 @@ for (const [name, mutate] of [
   ["unpatched portable mistaken for installed NSIS", f => f.report.probes[2].sha256 = f.report.probes[0].sha256],
   ["missing NSIS expectation", f => delete f.manifest.nsisExecutable],
   ["wrong NSIS bundle type", f => f.manifest.nsisExecutable.bundleType = "msi"],
+  ["missing packaged capability proof", f => delete f.report.probes[0].capabilities],
+  ["native drop not checked", f => f.report.probes[0].capabilities.nativeFileDrop = false],
+  ["only one dialog selection", f => f.report.probes[0].capabilities.selectedCount = 1],
+  ["other process UI proof", f => f.report.probes[2].capabilities.pid = 999],
+  ["missing denied command", f => f.report.probes[0].capabilities.deniedCommands = deniedCommands.slice(1)],
+  ["titlebar close skipped", f => f.report.probes[2].capabilities.titlebarCloseRequested = false],
   ["missing runtime jobs despite plausible receipt", f => f.jobs.length = 0],
   ["failed Windows test", f => f.jobs[1].conclusion = "failure"],
   ["skipped smoke step", f => f.jobs[0].steps[0].conclusion = "skipped"],

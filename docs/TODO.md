@@ -1,5 +1,9 @@
 # 実装 TODO
 
+- [ ] Issue #75: main rendererのcore/plugin権限を実際のfrontend利用へ限定し、不要なemit/emit-to/image/menu/trayを拒否する。SDKのonCloseRequestedが間接利用するdestroyは通常終了のため保持する。明示allowlistのsnapshotと拡張拒否回帰を追加し、実Windows配布版でtitlebar・resize・native DnD・複数file dialog・backend event購読を検証する。配布版の成功前には完了扱いにしない。
+
+2026-10-05進捗: core/pluginは既に9権限へ縮小されており、SDKのnative close経路を確認して必要なdestroyを保持した。全customを含むallowlist snapshot、scope/default set/不要commandの拡張拒否、実release ACL拒否判定とloopback debugger対象検査、必須UI証跡の欠落拒否を追加した。関連local95件/0skipとsecurity/workflow/context policyが成功。実配布版のnative操作・複数file dialog・OLE DnD・event購読の検査を組み込んだが、Windows候補での実行はまだ未完了でありIssueは閉じない。
+
 - [x] Issue #91: Windowsでlocked/all-targets/all-featuresの全体テストと実secure store/Launcher分岐を継続実行する。manifest/tag由来のexact artifact集合、portable ZIPのCRC/内容/PE、隔離Windowsでportable起動とNSIS silent install/起動/uninstallを検証し、同じartifact bytesのsmoke成功をRelease公開の必須条件にする。OS socket buffer量に依存する既存順序fixtureは実dispatcher permitを制御して検証する。タグ・Releaseの発行なしで候補を検証できるread-only経路も用意する。
 
 2026-10-05進捗: exact artifact/source/lock/CRC/PE/checksum verifierとWindows NSIS/portable probe、同runのreceiptと実Windows jobsをtrusted publisherで照合するgateを追加した。新しいartifact/receipt検証36件を含むlocal49件とworkflow/context policyが成功。source63d45e3の両OS契約は成功したがWindows全体実行はCommon Controls manifest消失によるloader failureで失敗し、Cargo runnerで起動直前に付け直す。runnerはpackage rootで実行されるため絶対pathにする。実全体テストとDocker製の本物のNSIS/ZIPをcandidate dispatchで確認するまでは未完了。tag/Releaseは作成しない。

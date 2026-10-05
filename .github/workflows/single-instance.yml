@@ -18,7 +18,7 @@ jobs:
           persist-credentials: false
       - name: Validate Windows test runner and artifact smoke syntax
         run: |
-          foreach ($file in @('scripts/run-windows-test.ps1', 'scripts/smoke-windows-artifacts.ps1')) {
+          foreach ($file in @('scripts/run-windows-test.ps1', 'scripts/smoke-windows-artifacts.ps1', 'scripts/windows-capability-native.ps1')) {
             $tokens = $null
             $errors = $null
             $null = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $env:GITHUB_WORKSPACE $file), [ref]$tokens, [ref]$errors)
@@ -33,6 +33,12 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ steps.inputs.outputs.node }}
+      - name: Validate packaged capability probes and native UI helper
+        run: |
+          node --test scripts/test-tauri-security.mjs scripts/test-windows-capabilities.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Capability policy tests failed' }
+          & powershell.exe -NoProfile -STA -ExecutionPolicy RemoteSigned -File scripts/windows-capability-native.ps1 -RicePid 1 -FixtureRoot (Join-Path $env:RUNNER_TEMP 'rice-helper-compile') -ValidateOnly
+          if ($LASTEXITCODE -ne 0) { throw 'Native UI helper compilation failed' }
       - name: Build the real embedded frontend
         run: |
           corepack enable

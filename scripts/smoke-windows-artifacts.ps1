@@ -40,6 +40,16 @@ function Probe-App([string]$Executable, [string]$Name) {
     $startInfo.UseShellExecute = $false
     $startInfo.WorkingDirectory = Split-Path -Parent $Executable
     $startInfo.Environment['WEBVIEW2_USER_DATA_FOLDER'] = Join-Path $scratch ("webview-" + $Name)
+    # Debugging is scoped to this disposable child, never the shipped binary,
+    # global environment or registry. Refuse non-loopback/foreign listeners.
+    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+    $listener.Start()
+    $debugPort = $listener.LocalEndpoint.Port
+    $listener.Stop()
+    $startInfo.Environment['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = "--remote-debugging-port=$debugPort"
+    $fixtures = Join-Path $scratch ("fixtures-" + $Name)
+    $null = New-Item -ItemType Directory -Path $fixtures
+    foreach ($file in @('capability-a.exe', 'capability-b.exe', 'capability-drop.exe')) { Copy-Item -LiteralPath $Executable -Destination (Join-Path $fixtures $file) }
     $process = [Diagnostics.Process]::Start($startInfo)
     $watch = [Diagnostics.Stopwatch]::StartNew()
     try {
@@ -52,10 +62,28 @@ function Probe-App([string]$Executable, [string]$Name) {
             Start-Sleep -Milliseconds 100
         }
         if ($process.MainWindowHandle -eq [IntPtr]::Zero) { throw "$Name did not show a native window" }
-        if (-not $process.CloseMainWindow()) { throw "$Name rejected normal window close" }
+        $connections = @(Get-NetTCPConnection -State Listen -LocalPort $debugPort -ErrorAction Stop)
+        if ($connections.Count -eq 0) { throw 'Missing owned loopback WebView debugger' }
+        foreach ($connection in $connections) {
+            if ($connection.LocalAddress -notin @('127.0.0.1', '::1')) { throw 'WebView debugger must not listen on a public interface' }
+            $ownerPid = [int]$connection.OwningProcess
+            for ($depth = 0; $depth -lt 12 -and $ownerPid -ne $process.Id; $depth++) {
+                $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$ownerPid"
+                if ($null -eq $owner -or $owner.ParentProcessId -eq $ownerPid) { break }
+                $ownerPid = [int]$owner.ParentProcessId
+            }
+            if ($ownerPid -ne $process.Id) { throw 'Debugger listener does not belong to the owned Rice process tree' }
+        }
+        $capabilityReport = Join-Path $scratch ("capabilities-" + $Name + '.json')
+        & node (Join-Path $PSScriptRoot 'probe-windows-capabilities.mjs') $debugPort $process.Id $fixtures $capabilityReport $Name
+        if ($LASTEXITCODE -ne 0) { throw "$Name packaged capability/native UI probe failed" }
+        $capabilityProof = Get-Content -LiteralPath $capabilityReport -Raw -Encoding utf8 | ConvertFrom-Json
+        # Installed checks the real titlebar close button (app_exit). Portable
+        # checks WM_CLOSE and the SDK's indirect destroy command as well.
+        if ($Name -eq 'portable' -and -not $process.CloseMainWindow()) { throw "$Name rejected normal window close" }
         if (-not $process.WaitForExit(15000)) { throw "$Name did not exit normally after window close" }
         if ($process.ExitCode -ne 0) { throw "$Name normal exit failed: $($process.ExitCode)" }
-        $script:reportData.probes += [ordered]@{ name = $Name; pid = $process.Id; survivedMs = [int]$watch.Elapsed.TotalMilliseconds; windowShown = $true; exitCode = $process.ExitCode; sha256 = (Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash.ToLowerInvariant() }
+        $script:reportData.probes += [ordered]@{ name = $Name; pid = $process.Id; survivedMs = [int]$watch.Elapsed.TotalMilliseconds; windowShown = $true; exitCode = $process.ExitCode; sha256 = (Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash.ToLowerInvariant(); capabilities = $capabilityProof }
     } finally {
         if (-not $process.HasExited) { $process.Kill($true); $process.WaitForExit() }
         $process.Dispose()
