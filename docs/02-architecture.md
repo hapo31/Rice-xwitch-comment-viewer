@@ -22,7 +22,11 @@ src-tauri/
 
 ### Frontend domain store 境界
 
-`DomainProvider` は chat、queue、connection、settings、logs を独立した `useSyncExternalStore` source として保持する。各画面は `use*Selector` で必要な slice だけを購読し、Chat event は Chat store の subscriber だけを通知する。Launcher は settings の launcher selector、警告は logs store の notifications slice を使う。`App` は provider と shell の wiring のみを行い、Tauri の event 購読、認証復元、設定 mutation は `domainOrchestration` の dependency-injected boundary に集約する。
+`DomainProvider` は chat、queue、connection、settings、logs を独立した `useSyncExternalStore` source として保持する。各画面は `use*Selector` で必要な slice だけを購読し、Chat event は Chat store の subscriber だけを通知する。Launcher は settings の launcher selector、警告は logs store の notifications slice を使う。`AppShell` は配置と controller provider の組み立てを担当し、`ApplicationControllerProvider` が起動時の設定・認証復元と Tauri event 購読を起動する。認証遷移と副作用は `twitchController`、speech/queue/Launcher のcommand処理は用途別 controller、終了確認は `ExitProtectionProvider` に置く。設定更新は既存の直列化 orchestrator に集約する。
+
+domain store が状態の唯一のsourceであり、React Context はdomain単位の安定した操作APIと unsaved/exit の操作だけを渡す。画面は表示に必要なstore selectorとaction contextを直接参照し、`MainView` はroute title・focus通知だけを担当する。controller providerは画面状態を集約した旧 `AppState` を再構成しない。Jotai等の状態管理依存は追加しない。
+
+Device Code認証の結果、status、prompt、profile、通知/error副作用は`authFlowTransition`の小さな純粋モデルで一緒に決める。`AuthOperationController`は世代付きの操作開始/完了、手動操作による古い応答の無効化、単一pollの排他、provider破棄時のinvalidateを担う。AppShell effectはprompt/status lifecycleに沿ってpoll timerを開始・cleanupし、timerはschedule時の世代とprompt情報を照合してからpollまたは期限切れを要求する。世代が変わった後、異なるpromptになった後、手動認証操作中は期限切れtimerも状態や通知を更新しない。期限切れはauth flowへ通知する。XStateの[`invoke`](https://stately.ai/docs/invoke)と[遅延遷移](https://stately.ai/docs/delayed-transitions)はpromise完了による遷移とstate退出時のtimer解除を提供するが、この認証には追加actor/runtime依存と移行費用がある。promise actor退出後の結果破棄も実行中のTauri commandを止める保証ではなく、backend generation保護は別途必要である。そのため、現在の操作競合と短いDevice Code timerは明示reducer/controllerで管理し、XStateは導入しない。
 
 旧 `AppState/appReducer` は presentation/test compatibility facade として残し、runtime の更新経路には使用しない。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
 
@@ -242,7 +246,7 @@ backend は bounded な operational log ring と Twitch（auth/chat）/speech �
 
 ### フロントエンド通知
 
-対処が必要な通知は `{ id, severity, source, message, occurredAtMs, correlationId? }` として保持する。`severity` は `info` / `success` / `warning` / `error`、`source` は command / event / log / system を区別する。Side Panel と Status Bar の Warnings は warning / error のみを最新 5 件まで表示するため、成功通知で実警告を押し出さない。`correlationId` がある通知はその値で重複排除し、ID がない既存イベントは本文と 5 秒の受信時間で重複排除する。重複経路で severity が異なるときは、より重大な値を残す。info / success は Logs と system Chat に残す。
+対処が必要な通知は `{ id, severity, source, message, occurredAtMs, correlationId? }` として保持する。`severity` は `info` / `success` / `warning` / `error`、`source` は command / event / log / system を区別する。logs store は対処待ちの warning / error を notifications、info / success を notificationHistory に各100件まで独立して保持する。Side Panel と Status Bar の Warnings は対処待ち通知を最新5件まで表示し、成功通知が対処待ち通知の保持枠を消費しない。warnings.cleared は対処待ち通知だけを消す。`correlationId` がある通知はその値で重複排除し、ID がない既存イベントは本文と 5 秒の受信時間で重複排除する。重複経路で severity が異なるときは、より重大な値を残す。情報履歴から warning / error に昇格した通知は同じIDを保って対処待ち領域へ移す。info / success は Logs と system Chat に残す。
 
 ## 永続化
 
