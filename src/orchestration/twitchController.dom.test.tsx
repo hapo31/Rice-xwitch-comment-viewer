@@ -155,7 +155,7 @@ describe("Twitch controller auth-operation lifecycle", () => {
       vi.spyOn(window, "confirm").mockReturnValue(true);
       const pendingStart = deferred<TwitchDeviceAuthStart>();
       const pendingValidation = deferred<{ profile: TwitchUserProfile }>();
-      const pendingDisconnect = deferred<void>();
+      const pendingDisconnect = deferred<null>();
       tauriMock.setCommand("twitch_start_auth", () => pendingStart.promise);
       tauriMock.setCommand("twitch_validate_auth", () => pendingValidation.promise);
       tauriMock.setCommand("twitch_disconnect", () => pendingDisconnect.promise);
@@ -178,7 +178,7 @@ describe("Twitch controller auth-operation lifecycle", () => {
 
       if (operation === "start") pendingStart.resolve({ ...prompt, userCode: "NEW-CODE" });
       else if (operation === "validate") pendingValidation.resolve({ profile });
-      else pendingDisconnect.resolve();
+      else pendingDisconnect.resolve(null);
       await act(async () => manual);
 
       expect(tauriMock.invoke).not.toHaveBeenCalledWith("twitch_poll_auth");

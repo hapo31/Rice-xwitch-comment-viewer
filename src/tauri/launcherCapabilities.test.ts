@@ -1,3 +1,4 @@
+import { createDefaultAppSettings } from "../settings/model";
 import { afterEach, expect, it, vi } from "vitest";
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -54,7 +55,7 @@ it("sends only editable metadata through the settings patch contract", async () 
     groupId: "配信",
     order: 2,
   };
-  invoke.mockResolvedValue({ launcher: { items: [] } });
+  invoke.mockResolvedValue(createDefaultAppSettings());
   await updateSettings({ launcher: { items: [edit] } });
   expect(invoke).toHaveBeenCalledWith("settings_update", {
     patch: { launcher: { items: [edit] } },

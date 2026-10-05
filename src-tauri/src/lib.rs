@@ -8,6 +8,8 @@ mod speech;
 mod twitch;
 #[cfg(all(test, feature = "app"))]
 mod twitch_test_ports;
+#[cfg(test)]
+mod wire_contracts;
 
 #[cfg(feature = "app")]
 use app_events::{
@@ -66,6 +68,8 @@ fn app_open_external_url(url: String) -> Result<(), String> {
 
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 struct AppBuildInfo {
     version: &'static str,
     is_dev: bool,

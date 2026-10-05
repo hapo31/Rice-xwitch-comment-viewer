@@ -124,6 +124,8 @@ pub struct BouyomiTalkConfig {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct BouyomiConnectionDiagnostics {
     pub configured_addr: String,
     pub attempted: Vec<BouyomiConnectionAttempt>,
@@ -132,6 +134,8 @@ pub struct BouyomiConnectionDiagnostics {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct BouyomiConnectionAttempt {
     pub addr: String,
     pub status: BouyomiConnectionStatus,
@@ -141,6 +145,7 @@ pub struct BouyomiConnectionAttempt {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum BouyomiConnectionStatus {
     Connected,
     Failed,

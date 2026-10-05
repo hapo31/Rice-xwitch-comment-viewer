@@ -130,9 +130,19 @@ pub(super) async fn run_eventsub_connection_with<R: EventSubRuntime>(
         .await
         {
             if let Some(terminal) = error.downcast_ref::<EventSubTerminalError>() {
-                // Terminal API and revocation failures have already emitted their
-                // actionable UI status. Never turn configuration/auth failures into
-                // an infinite reconnect loop.
+                // The supervisor owns the terminal Chat transition for both API
+                // errors and revocations. Record it before this task exits.
+                let (status, message) = match terminal {
+                    EventSubTerminalError::AuthRequired { .. } => {
+                        // Auth already carries the recovery instruction. Keep the
+                        // Chat state current without duplicating its system entry.
+                        (TwitchStatus::AuthRequired, None)
+                    }
+                    EventSubTerminalError::Permanent { message } => {
+                        (TwitchStatus::Error, Some(message.clone()))
+                    }
+                };
+                app.chat_status(status, message, params.generation);
                 app.log(AppLogLevel::Error, terminal.to_string());
                 break;
             }
@@ -328,6 +338,7 @@ pub(super) async fn handover_eventsub_session<R: EventSubRuntime>(
                                 reconnect_error = Some(anyhow::anyhow!("新しい EventSub WebSocket が welcome 前に再接続要求を返しました。"));
                                 reconnect_socket = None;
                             }
+                            Err(error) if error.is::<EventSubTerminalError>() => return Err(error),
                             Err(error) => {
                                 reconnect_error = Some(error);
                                 reconnect_socket = None;
@@ -442,11 +453,6 @@ pub(super) async fn process_eventsub_frame<R: EventSubRuntime>(
                     let terminal = match subscription.as_ref().map(|item| item.status.as_str()) {
                         Some("authorization_revoked") => {
                             let message = format!("Twitch EventSub 購読の認可が取り消されました。Login から再ログインしてください: {reason}");
-                            app.chat_status(
-                                TwitchStatus::AuthRequired,
-                                None,
-                                connection_generation,
-                            );
                             app.status(
                                 TwitchStatusDomain::Auth,
                                 TwitchStatus::AuthRequired,
@@ -456,29 +462,14 @@ pub(super) async fn process_eventsub_frame<R: EventSubRuntime>(
                         }
                         Some("user_removed") => {
                             let message = format!("Twitch EventSub の対象ユーザーが存在しません。接続チャンネルを確認してください: {reason}");
-                            app.chat_status(
-                                TwitchStatus::Error,
-                                Some(message.clone()),
-                                connection_generation,
-                            );
                             EventSubTerminalError::Permanent { message }
                         }
                         Some("version_removed") => {
                             let message = format!("Twitch EventSub の購読バージョンが廃止されました。アプリを更新してください: {reason}");
-                            app.chat_status(
-                                TwitchStatus::Error,
-                                Some(message.clone()),
-                                connection_generation,
-                            );
                             EventSubTerminalError::Permanent { message }
                         }
                         _ => {
                             let message = format!("Twitch EventSub 購読が取り消されました。再接続せず停止します: {reason}");
-                            app.chat_status(
-                                TwitchStatus::Error,
-                                Some(message.clone()),
-                                connection_generation,
-                            );
                             EventSubTerminalError::Permanent { message }
                         }
                     };
