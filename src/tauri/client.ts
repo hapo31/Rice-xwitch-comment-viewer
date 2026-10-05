@@ -151,13 +151,15 @@ export async function updateSettings(patch: AppSettingsPatch): Promise<AppSettin
       if (!item) throw new Error("登録済みのアプリだけを編集できます。");
       return { ...item, ...edit };
     });
-    previewSettings = normalizeSettings({
-      ...previewSettings,
-      ...patch,
-      twitch: { ...previewSettings.twitch, ...patch.twitch },
-      speech: { ...previewSettings.speech, ...patch.speech },
-      launcher: { items: items ?? previewSettings.launcher.items },
-    });
+    previewSettings = structuredClone(
+      normalizeSettings({
+        ...previewSettings,
+        ...patch,
+        twitch: { ...previewSettings.twitch, ...patch.twitch },
+        speech: { ...previewSettings.speech, ...patch.speech },
+        launcher: { items: items ?? previewSettings.launcher.items },
+      }),
+    );
     return structuredClone(previewSettings);
   }
 
@@ -237,14 +239,14 @@ export async function speechConnectionDiagnostics(): Promise<BouyomiConnectionDi
   if (!isTauriRuntime) {
     return {
       configuredAddr: formatBouyomiAddress(
-        createDefaultAppSettings().speech.bouyomiHost,
-        createDefaultAppSettings().speech.bouyomiPort,
+        previewSettings.speech.bouyomiHost,
+        previewSettings.speech.bouyomiPort,
       ),
       attempted: [
         {
           addr: formatBouyomiAddress(
-            createDefaultAppSettings().speech.bouyomiHost,
-            createDefaultAppSettings().speech.bouyomiPort,
+            previewSettings.speech.bouyomiHost,
+            previewSettings.speech.bouyomiPort,
           ),
           status: "failed",
           message: "ブラウザプレビューでは接続診断をスキップします。",

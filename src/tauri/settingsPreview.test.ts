@@ -34,3 +34,24 @@ it("returns copies so callers cannot mutate the preview store", async () => {
   result.speech.blockedUsers.push("viewer");
   expect((await getSettings()).speech.blockedUsers).toEqual([]);
 });
+
+it("snapshots input arrays and uses saved preview speech settings for diagnostics", async () => {
+  vi.stubGlobal("window", {});
+  const { getSettings, speechConnectionDiagnostics, updateSettings } = await import("./client");
+  const blockedUsers = ["viewer"];
+  const blockedWords = ["spoiler"];
+
+  await updateSettings({
+    speech: { blockedUsers, blockedWords, bouyomiHost: "localhost", bouyomiPort: 50002 },
+  });
+  blockedUsers.push("later");
+  blockedWords[0] = "changed";
+
+  expect((await getSettings()).speech).toMatchObject({
+    blockedUsers: ["viewer"],
+    blockedWords: ["spoiler"],
+  });
+  const diagnostics = await speechConnectionDiagnostics();
+  expect(diagnostics.configuredAddr).toBe("localhost:50002");
+  expect(diagnostics.attempted[0]?.addr).toBe("localhost:50002");
+});
