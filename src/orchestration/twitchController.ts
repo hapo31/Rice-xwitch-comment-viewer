@@ -27,7 +27,7 @@ import { restoreStartupAuth } from "./domainOrchestration";
 
 export interface TwitchControllerDependencies {
   operations: AuthOperationController;
-  dispatch: (action: AppAction) => void;
+  dispatch: (action: Exclude<AppAction, { type: "twitch.connectionStatus" }>) => void;
   getAuthPrompt: () => TwitchDeviceAuthStart | undefined;
   getAuthStatus: () => AuthStatus;
   getAuthProfile: () => TwitchUserProfile | undefined;
@@ -114,7 +114,6 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
       const prompt = await twitchStartAuth();
       if (!deps.operations.isCurrent(operation)) return;
       transitionAuth({ type: "prompt.started", prompt });
-      deps.dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       deps.reportInfo("Twitch の認証コードを発行しました。");
     } catch (error) {
       if (!deps.operations.isCurrent(operation)) return;
@@ -133,7 +132,6 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
       if (!deps.operations.isCurrent(operation)) return;
       if (result.status === "authorized") {
         transitionAuth({ type: "poll.authorized", profile: result.profile });
-        deps.dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
         routeAuthStorageWarning(result, deps.reportNotification, deps.reportSystemMessage);
       } else {
         if (result.status === "pending" || result.status === "slowDown")
@@ -159,13 +157,11 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
       const result = await twitchValidateAuth();
       if (!deps.operations.isCurrent(operation)) return false;
       transitionAuth({ type: "validate.valid", profile: result.profile });
-      deps.dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       routeAuthStorageWarning(result, deps.reportNotification, deps.reportSystemMessage);
       return true;
     } catch (error) {
       if (!deps.operations.isCurrent(operation)) return false;
       transitionAuth({ type: "validate.invalid", error });
-      deps.dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       return false;
     } finally {
       deps.operations.finishOperation(operation);
@@ -175,7 +171,6 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
   async function connect({ automatic = false }: { automatic?: boolean } = {}) {
     try {
       await deps.waitForSettings();
-      deps.dispatch({ type: "twitch.connectionStatus", status: "connecting" });
       if (automatic) {
         deps.routeAutoConnectTimeline(
           autoConnectTimelineEvent("started", "Twitch チャットの自動接続を開始します。"),
@@ -184,7 +179,6 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
       await twitchConnect(deps.getChannelLogin());
       deps.reportInfo("Twitch チャット接続を開始しました。");
     } catch (error) {
-      deps.dispatch({ type: "twitch.connectionStatus", status: "error" });
       deps.reportError(error, "chat");
       if (automatic) {
         deps.routeAutoConnectTimeline(
@@ -202,9 +196,7 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
       return;
     try {
       await twitchStopChat();
-      deps.dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
     } catch (error) {
-      deps.dispatch({ type: "twitch.connectionStatus", status: "error" });
       deps.reportError(error, "chat");
     }
   }
@@ -217,7 +209,6 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
       await twitchDisconnect();
       if (!deps.operations.isCurrent(operation)) return;
       transitionAuth({ type: "disconnect.succeeded" });
-      deps.dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
     } catch (error) {
       if (!deps.operations.isCurrent(operation)) return;
       transitionAuth({ type: "disconnect.failed", error });

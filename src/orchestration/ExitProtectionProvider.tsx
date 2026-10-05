@@ -83,9 +83,6 @@ export function ExitProtectionProvider({
       hasActiveChat ? twitchStopChat() : Promise.resolve(),
       hasPendingSpeech ? speechControl("clear") : Promise.resolve(),
     ]);
-    if (hasActiveChat && results[0].status === "fulfilled") {
-      dispatchDomainAction(stores, { type: "twitch.connectionStatus", status: "disconnected" });
-    }
     if (hasPendingSpeech && results[1].status === "fulfilled" && !isDesktopRuntime()) {
       dispatchDomainAction(stores, { type: "speech.status", status: "idle" });
     }
