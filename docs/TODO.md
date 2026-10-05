@@ -406,6 +406,7 @@ Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離
   - 最新 main（#193 / #196 / #198 / #202 と統合追補 #245）との統合検証: frontend 342 tests、format/lint/typecheck/build、diff check が成功。
 - 2026-10-06 Issue #204: 実際に使用する logsReducer で warning/error を notifications、info/success を notificationHistory へ分離した。昇格時は元のIDを保ち履歴から対処待ちへ移し、correlationId と本文/5秒の重複排除、明示クリア、独立した保持上限を回帰する。旧 appReducer の整理は別Issue #203 の範囲とし、runtime の正本を直接検証した。
 
+- [ ] Issue #213: 未保存の保存処理と保存後の終了/画面遷移を操作世代で分離し、キャンセル・重複保存・古い成功応答からの遅延終了を防ぐ。実 AppShell の遷移/終了・再試行・失敗を deferred 応答で検証する。
 - [x] Issue #28: Filter / Settings の未保存変更を Activity Bar 遷移・履歴戻る・ウィンドウ終了で共通確認し、保存・破棄・キャンセルをキーボード操作可能にする。native close listener は mount 中に一度だけ登録し、直後の終了要求も保護する。
 - [x] Issue #193: Filter / Settings の保存済み値と世代付き編集patchを分離し、保存応答が開始後の追加入力・元値への編集を上書きしない。接続先が変わったときだけ endpoint 許可メッセージを消す。
 - [x] Issue #193: 親レビュー指摘を反映し、最終レビュー対象 commit `1f5df20411f48cbdfd96b31f4c21110004c9a175` を確認した。PR #235 で最終 CI と統合を管理する。
