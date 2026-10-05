@@ -14,6 +14,7 @@ using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 public static class RiceNativeProbe {
+  [UnmanagedFunctionPointer(CallingConvention.Winapi)] public delegate bool EnumerateWindow(IntPtr window,IntPtr argument);
   [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
   [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
   [StructLayout(LayoutKind.Sequential)] public struct Mouse { public int dx, dy; public uint data, flags, time; public UIntPtr extra; }
@@ -28,7 +29,7 @@ public static class RiceNativeProbe {
   [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int width,int height,uint flags);
   [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
   [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
-  [DllImport("user32.dll")] static extern bool EnumWindows(Func<IntPtr,IntPtr,bool> callback, IntPtr arg);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumerateWindow callback, IntPtr arg);
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder text, int max);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder text, int max);
@@ -119,7 +120,13 @@ public static class RiceNativeProbe {
   }
 }
 '@
-if ($ValidateOnly) { Write-Output 'Native capability helper compiled successfully'; exit 0 }
+if ($ValidateOnly) {
+    # Exercise callback marshaling too; compilation alone cannot detect an
+    # invalid generic P/Invoke delegate. PID -1 never matches a real process.
+    if ([RiceNativeProbe]::Dialog(-1) -ne [IntPtr]::Zero) { throw 'Unexpected HWND for impossible PID' }
+    Write-Output 'Native capability helper compiled and HWND enumeration validated'
+    exit 0
+}
 function Owned-Files($Paths) {
     $result = @()
     foreach ($path in $Paths) {
