@@ -42,12 +42,26 @@ fn native_instance_fixture() {
     context.config_mut().build.dev_url = None;
     // Windows known-folder APIs need not honor APPDATA environment variables.
     // Use Tauri's native override for every app directory and webview storage.
-    context.config_mut().app.app_directories_override =
-        Some(tauri::utils::config::AppDirectoriesOverride::Root(
-            std::env::var_os("RICE_NATIVE_TEST_ROOT")
-                .expect("isolated root")
-                .into(),
-        ));
+    let root =
+        std::path::PathBuf::from(std::env::var_os("RICE_NATIVE_TEST_ROOT").expect("isolated root"));
+    context.config_mut().app.app_directories_override = Some(
+        if std::env::var_os("RICE_SETTINGS_SCHEMA_NATIVE").is_some() {
+            // Root overrides deliberately share data/local-data. Match normal
+            // Windows separation so WebView cache is not mistaken for a
+            // settings temporary file, while every path stays isolated.
+            tauri::utils::config::AppDirectoriesOverride::Directories(
+                tauri::utils::config::AppDirectoryOverrides {
+                    config: Some(root.join("config")),
+                    data: Some(root.join("settings")),
+                    local_data: Some(root.join("webview")),
+                    cache: Some(root.join("cache")),
+                    log: Some(root.join("logs")),
+                },
+            )
+        } else {
+            tauri::utils::config::AppDirectoriesOverride::Root(root)
+        },
+    );
     let state = AppState {
         twitch_auth_store: TwitchAuthStore::with_backend(std::sync::Arc::new(NoCredentials)),
         ..AppState::default()
@@ -360,6 +374,10 @@ fn native_future_settings_preserved_through_ipc_and_exit() {
             result = Some(record);
         }
     }
+    println!(
+        "Native settings schema: {}",
+        result.as_ref().expect("IPC result")
+    );
     let mut status = None;
     wait_until(
         || {
@@ -380,19 +398,16 @@ fn native_future_settings_preserved_through_ipc_and_exit() {
         std::fs::read_to_string(path.with_file_name("settings.json.bak")).unwrap(),
         FUTURE_BACKUP
     );
-    assert!(
-        std::fs::read_dir(path.parent().unwrap())
-            .unwrap()
-            .all(|entry| {
-                let name = entry.unwrap().file_name();
-                matches!(
-                    name.to_str(),
-                    Some("settings.json" | "settings.json.bak" | "settings.writer.lock")
-                )
-            }),
+    let mut names: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(
+        names,
+        ["settings.json", "settings.json.bak", "settings.writer.lock"],
         "no temporary or quarantine files"
     );
-    println!("Native settings schema: {}", result.as_ref().unwrap());
     drop(owner);
     remove_fixture_directory(&root);
     assert_eq!(
