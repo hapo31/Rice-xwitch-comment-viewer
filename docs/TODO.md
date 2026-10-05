@@ -326,9 +326,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 5: 配信運用向け仕上げ
 
-Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離し、成功操作で警告を失わないようにした。frontend 326件、format/lint/typecheck/build を確認済み。独立レビュー・最終CI・統合状況は PR #242 に記録する。
 
-- [x] Issue #204: 対処待ち warning/error と info/success 履歴の保持上限を分離し、大量の成功通知で警告を失わないようにする。明示クリア・severity昇格・correlation重複排除・容量上限の logsReducer 回帰を追加した。
 
 - [x] Dependabot PR #179–#182、#184–#192 の全13件を一件ずつ専用 worktree でレビューし、必要なCI互換性修正を実装する。各PRは全PR checksと当該headのWindows開発build成功を確認してからマージし、worktreeと作業用ローカルbranchを削除して次へ進む。
 
@@ -374,6 +372,11 @@ Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離
 - [x] Issue #36: Chat の新着を重複なく集約して支援技術へ通知し、Settings でライブ通知を ON/OFF できるようにする。
 - [x] Issue #5: 変更のない Filter / Settings で非表示の保存ボタンをフォーカス順とアクセシビリティツリーから除外し、キーボード回帰テストを追加する。
 - [x] Issue #14: 通知を severity/source/correlation を持つ構造化モデルへ移し、成功通知を警告から分離し、同一障害の重複表示を抑止する。OAuth 認可待ち/待機延長の info 進捗も Logs と system Chat に記録する。
+
+Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離し、成功操作で警告を失わないようにした。frontend 326件、format/lint/typecheck/build を確認済み。独立レビュー・最終CI・統合状況は PR #242 に記録する。
+- [x] Issue #204: 対処待ち warning/error と info/success 履歴の保持上限を分離し、大量の成功通知で警告を失わないようにする。明示クリア・severity昇格・correlation重複排除・容量上限の logsReducer 回帰を追加した。
+- 2026-10-06 Issue #204: 実際に使用する logsReducer で warning/error を notifications、info/success を notificationHistory へ分離した。昇格時は元のIDを保ち履歴から対処待ちへ移し、correlationId と本文/5秒の重複排除、明示クリア、独立した保持上限を回帰する。旧 appReducer の整理は別Issue #203 の範囲とし、runtime の正本を直接検証した。
+
 - [x] Issue #28: Filter / Settings の未保存変更を Activity Bar 遷移・履歴戻る・ウィンドウ終了で共通確認し、保存・破棄・キャンセルをキーボード操作可能にする。native close listener は mount 中に一度だけ登録し、直後の終了要求も保護する。
 - [x] Issue #38: Settings / Filter の設定群へ同一階層・同スタイルの見出しを追加し、見出し一覧のアクセシビリティテストを追加する。
 - [x] Issue #6: NG ユーザー/NG ワードと速度/音程/音量のフォームコントロールへラベルを関連付け、既定値を含む現在値を支援技術へ公開する。
@@ -510,4 +513,3 @@ Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離
 
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
 
-- 2026-10-06 Issue #204: 実際に使用する logsReducer で warning/error を notifications、info/success を notificationHistory へ分離した。昇格時は元のIDを保ち履歴から対処待ちへ移し、correlationId と本文/5秒の重複排除、明示クリア、独立した保持上限を回帰する。旧 appReducer の整理は別Issue #203 の範囲とし、runtime の正本を直接検証した。
