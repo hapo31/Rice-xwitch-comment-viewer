@@ -4,7 +4,7 @@ Set-StrictMode -Version Latest
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or -not $env:RUNNER_TEMP) { throw 'Native UI probes require a disposable GitHub-hosted Windows runner' }
 $fixture = [IO.Path]::GetFullPath($FixtureRoot)
 if (-not $fixture.StartsWith([IO.Path]::GetFullPath($env:RUNNER_TEMP) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Fixtures must be below RUNNER_TEMP' }
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing, UIAutomationClient, UIAutomationTypes
 Add-Type -ReferencedAssemblies System.dll, System.Core.dll, System.Windows.Forms.dll, System.Drawing.dll -TypeDefinition @'
 using System;
 using System.Diagnostics;
@@ -127,15 +127,11 @@ public static class RiceNativeProbe {
     EnumWindows((h,arg)=> { uint owner; GetWindowThreadProcessId(h,out owner); var name=new StringBuilder(128); GetClassName(h,name,128); if(owner==pid && name.ToString()=="#32770" && GetDlgItem(h,1148)!=IntPtr.Zero && GetDlgItem(h,1)!=IntPtr.Zero) found=h; return true; },IntPtr.Zero);
     return found;
   }
-  public static void OpenDialog(int pid) {
+  public static IntPtr OpenButton(int pid) {
     var dialog=Dialog(pid); if(dialog==IntPtr.Zero) throw new Exception("Missing owned file dialog");
     var button=GetDlgItem(dialog,1); uint owner; GetWindowThreadProcessId(button,out owner);
     if(button==IntPtr.Zero || owner!=pid) throw new Exception("Missing owned native Open button");
-    // Physical input also commits the filename Edit's pending focus/selection
-    // state. BM_CLICK does not reliably do that for IFileDialog's split button.
-    Rect r; if(!GetWindowRect(button,out r) || r.Right<=r.Left || r.Bottom<=r.Top) throw new Exception("Invalid owned Open button bounds");
-    SetForegroundWindow(dialog); Thread.Sleep(200);
-    SetCursorPos(r.Left+(r.Right-r.Left)/3,r.Top+(r.Bottom-r.Top)/2); Button(2); Button(4);
+    return button;
   }
   public static void SetDialogFiles(int pid,string text) {
     var dialog=Dialog(pid); var host=GetDlgItem(dialog,1148);
@@ -196,7 +192,19 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                 # Wait above for the actual compound native controls. UIA can
                 # expose only a temporary Pane while IFileDialog initializes.
                 [RiceNativeProbe]::SetDialogFiles($RicePid, $fileText)
-                [RiceNativeProbe]::OpenDialog($RicePid)
+                # IFileDialog's native HWND can exist before its accessibility
+                # provider is ready. Bind to the owned Open button HWND and wait
+                # for its real InvokePattern; no fabricated return or BM_CLICK.
+                $openHandle = [RiceNativeProbe]::OpenButton($RicePid)
+                $invokePattern = $null
+                $openWatch = [Diagnostics.Stopwatch]::StartNew()
+                while ($openWatch.Elapsed.TotalSeconds -lt 10) {
+                    $open = [Windows.Automation.AutomationElement]::FromHandle($openHandle)
+                    if ($null -ne $open -and $open.Current.ProcessId -eq $RicePid -and $open.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$invokePattern)) { break }
+                    Start-Sleep -Milliseconds 100
+                }
+                if ($null -eq $invokePattern) { throw 'Owned native Open button did not expose InvokePattern' }
+                $invokePattern.Invoke()
                 $value = [ordered]@{ selectedCount = $files.Count; ownerPid = $RicePid; nativeDialog = $true }
             }
             default { throw 'Unknown native UI action' }
