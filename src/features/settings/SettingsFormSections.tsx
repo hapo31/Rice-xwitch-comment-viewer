@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { Controller, useFormContext, useWatch } from "react-hook-form";
+import { Controller } from "react-hook-form";
 import { Network, PlugZap, Volume2 } from "lucide-react";
 import {
   FieldError,
@@ -9,6 +9,7 @@ import {
 } from "../../components/SettingsFormControls";
 import { focusIndicatorClass } from "../../presentation/focus";
 import { presentError } from "../../presentation/errors";
+import { useFormDraftContext } from "./useFormDraft";
 import { authorizeSpeechEndpoint } from "../../tauri/client";
 import type { AppSettings, AppSettingsPatch, BouyomiConnectionDiagnostics } from "../../types";
 import {
@@ -77,28 +78,40 @@ export function ChatReceptionSection() {
 }
 
 export function AutomaticSpeechSection() {
-  const { control } = useFormContext<SettingsDraft>();
+  const { control, getValues } = useFormDraftContext<SettingsDraft>();
   return (
     <SettingsSection id="automatic-speech" title="自動読み上げ">
       <Controller
         control={control}
         name="autoSpeak"
         render={({ field }) => (
-          <ToggleRow label="自動読み上げ" checked={field.value} onChange={field.onChange} />
+          <ToggleRow
+            label="自動読み上げ"
+            checked={getValues("autoSpeak")}
+            onChange={field.onChange}
+          />
         )}
       />
       <Controller
         control={control}
         name="readUserName"
         render={({ field }) => (
-          <ToggleRow label="ユーザー名を読む" checked={field.value} onChange={field.onChange} />
+          <ToggleRow
+            label="ユーザー名を読む"
+            checked={getValues("readUserName")}
+            onChange={field.onChange}
+          />
         )}
       />
       <Controller
         control={control}
         name="readEmotes"
         render={({ field }) => (
-          <ToggleRow label="emote を読む" checked={field.value} onChange={field.onChange} />
+          <ToggleRow
+            label="emote を読む"
+            checked={getValues("readEmotes")}
+            onChange={field.onChange}
+          />
         )}
       />
     </SettingsSection>
@@ -106,7 +119,7 @@ export function AutomaticSpeechSection() {
 }
 
 export function SpeechConnectionSection() {
-  const { control } = useFormContext<SettingsDraft>();
+  const { control, getValues } = useFormDraftContext<SettingsDraft>();
   const { savedSpeech, isDirty } = useSettingsActions();
   const [consentMessage, setConsentMessage] = useState("");
   const [isAuthorizing, setIsAuthorizing] = useState(false);
@@ -124,7 +137,7 @@ export function SpeechConnectionSection() {
           <>
             <ToggleRow
               label="外部接続モード（明示許可が必要）"
-              checked={field.value}
+              checked={getValues("remoteMode")}
               onChange={(value) => {
                 setConsentMessage("");
                 field.onChange(value);
@@ -134,7 +147,7 @@ export function SpeechConnectionSection() {
               通常は127.0.0.0/8・::1だけに接続します。外部接続はprivate
               LAN/VPN限定で、Twitchユーザー名・チャット・テスト文を相手認証なしの平文TCPで送信します。信頼する相手だけを許可し、暗号化トンネル/VPNを使用してください。public・link-local宛先は接続しません。モード選択だけでは許可されません。
             </p>
-            {field.value && (
+            {getValues("remoteMode") && (
               <>
                 <button
                   type="button"
@@ -174,9 +187,10 @@ export function SpeechConnectionSection() {
         control={control}
         name="host"
         render={({ field }) => {
-          const valid = isValidBouyomiHost(field.value);
+          const host = getValues("host");
+          const valid = isValidBouyomiHost(host);
           const message =
-            field.value.trim().length === 0
+            host.trim().length === 0
               ? "棒読みちゃんのホストを入力してください。"
               : "IPv4、DNS名、または角括弧なしのIPv6アドレスを入力してください。";
           return (
@@ -187,7 +201,7 @@ export function SpeechConnectionSection() {
               <div>
                 <input
                   id="bouyomi-host"
-                  value={field.value}
+                  value={host}
                   onChange={field.onChange}
                   aria-invalid={!valid}
                   aria-describedby={!valid ? "bouyomi-host-error" : undefined}
@@ -203,7 +217,8 @@ export function SpeechConnectionSection() {
         control={control}
         name="port"
         render={({ field }) => {
-          const valid = isValidPort(field.value);
+          const port = getValues("port");
+          const valid = isValidPort(port);
           return (
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-b border-zinc-800 py-3">
               <label className="text-sm text-zinc-400" htmlFor="bouyomi-port">
@@ -213,7 +228,7 @@ export function SpeechConnectionSection() {
                 <input
                   id="bouyomi-port"
                   inputMode="numeric"
-                  value={field.value}
+                  value={port}
                   onChange={field.onChange}
                   aria-invalid={!valid}
                   aria-describedby={!valid ? "bouyomi-port-error" : undefined}
@@ -308,7 +323,7 @@ export function SpeechHealthCheckButton() {
 }
 
 export function VoiceSettingsSection() {
-  const { control } = useFormContext<SettingsDraft>();
+  const { control, getValues } = useFormDraftContext<SettingsDraft>();
   return (
     <SettingsSection id="voice-settings" title="声質">
       <Controller
@@ -318,7 +333,7 @@ export function VoiceSettingsSection() {
           <RangeRow
             id="bouyomi-speed"
             label="速度"
-            value={field.value}
+            value={getValues("speed")}
             min={-1}
             max={300}
             onChange={field.onChange}
@@ -332,7 +347,7 @@ export function VoiceSettingsSection() {
           <RangeRow
             id="bouyomi-tone"
             label="音程"
-            value={field.value}
+            value={getValues("tone")}
             min={-1}
             max={200}
             onChange={field.onChange}
@@ -346,7 +361,7 @@ export function VoiceSettingsSection() {
           <RangeRow
             id="bouyomi-volume"
             label="音量"
-            value={field.value}
+            value={getValues("volume")}
             min={-1}
             max={100}
             onChange={field.onChange}
@@ -357,7 +372,8 @@ export function VoiceSettingsSection() {
         control={control}
         name="voice"
         render={({ field }) => {
-          const valid = isValidBouyomiVoice(field.value);
+          const voice = getValues("voice");
+          const valid = isValidBouyomiVoice(voice);
           return (
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-center border-t border-zinc-800 py-3">
               <label className="text-sm text-zinc-400" htmlFor="bouyomi-voice">
@@ -367,7 +383,7 @@ export function VoiceSettingsSection() {
                 <input
                   id="bouyomi-voice"
                   inputMode="numeric"
-                  value={field.value}
+                  value={voice}
                   onChange={field.onChange}
                   aria-invalid={!valid}
                   aria-describedby={!valid ? "bouyomi-voice-error" : undefined}
@@ -389,8 +405,8 @@ export function VoiceSettingsSection() {
 }
 
 export function ConnectionSuccessSpeechSection() {
-  const { control } = useFormContext<SettingsDraft>();
-  const enabled = useWatch({ control, name: "connectionSuccessSpeechEnabled" });
+  const { control, getValues } = useFormDraftContext<SettingsDraft>();
+  const enabled = getValues("connectionSuccessSpeechEnabled");
   return (
     <SettingsSection id="connection-success-speech" title="接続成功時の読み上げ">
       <Controller
@@ -399,7 +415,7 @@ export function ConnectionSuccessSpeechSection() {
         render={({ field }) => (
           <ToggleRow
             label="接続成功時に読み上げさせる"
-            checked={field.value}
+            checked={getValues("connectionSuccessSpeechEnabled")}
             onChange={field.onChange}
           />
         )}
@@ -408,7 +424,8 @@ export function ConnectionSuccessSpeechSection() {
         control={control}
         name="connectionSuccessSpeechText"
         render={({ field }) => {
-          const valid = isValidConfirmationText(field.value);
+          const text = getValues("connectionSuccessSpeechText");
+          const valid = isValidConfirmationText(text);
           return (
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start py-3">
               <label
@@ -420,7 +437,7 @@ export function ConnectionSuccessSpeechSection() {
               <div className="space-y-1">
                 <input
                   id="connection-success-speech-text"
-                  value={field.value}
+                  value={text}
                   aria-invalid={!valid}
                   aria-describedby={!valid ? "confirmation-text-error" : undefined}
                   disabled={!enabled}
@@ -429,7 +446,7 @@ export function ConnectionSuccessSpeechSection() {
                   className={`h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 placeholder:text-zinc-400 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-950 disabled:text-zinc-400 ${focusIndicatorClass}`}
                 />
                 <div className="text-right text-xs text-zinc-400">
-                  {Array.from(field.value).length}/120
+                  {Array.from(text).length}/120
                 </div>
                 {!valid && (
                   <FieldError

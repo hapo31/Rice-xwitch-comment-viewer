@@ -1,4 +1,4 @@
-import { FormProvider } from "react-hook-form";
+import { useWatch } from "react-hook-form";
 import type { AppSettings, AppSettingsPatch, BouyomiConnectionDiagnostics } from "../../types";
 import { FloatingSaveButton } from "../../components/SettingsFormControls";
 import { routeHeadingId } from "../../routeAccessibility";
@@ -10,7 +10,12 @@ import {
   isValidPort,
 } from "../../validation";
 import { defaultSpeechSettings, defaultTwitchSettings } from "./defaults";
-import { createSettingsDraft, createSettingsSpeechPatch, hasSpeechPatch } from "./formModels";
+import {
+  createSettingsDraft,
+  createSettingsSpeechPatch,
+  hasSpeechPatch,
+  settingsFieldsForPatch,
+} from "./formModels";
 import {
   AutomaticSpeechSection,
   ChatReceptionSection,
@@ -22,7 +27,7 @@ import {
   SpeechTestSection,
   VoiceSettingsSection,
 } from "./SettingsFormSections";
-import { useFormDraft } from "./useFormDraft";
+import { FormDraftProvider, useFormDraft } from "./useFormDraft";
 
 export function SettingsView({
   settings,
@@ -40,7 +45,8 @@ export function SettingsView({
   const twitchSettings = { ...defaultTwitchSettings(), ...settings?.twitch };
   const speechSettings = { ...defaultSpeechSettings(), ...settings?.speech };
   const form = useFormDraft(createSettingsDraft(speechSettings));
-  const draft = form.watch();
+  useWatch({ control: form.control });
+  const draft = form.getValues();
   const patch = createSettingsSpeechPatch(draft, speechSettings);
   const isDirty = hasSpeechPatch(patch) || form.isSaving;
   const isPortValid = isValidPort(draft.port);
@@ -63,19 +69,20 @@ export function SettingsView({
     .join(" ");
 
   async function saveSettings(): Promise<boolean> {
-    if (
-      !isHostValid ||
-      !isPortValid ||
-      !isVoiceValid ||
-      !isConfirmationValid ||
-      !hasSpeechPatch(patch)
-    ) {
+    const currentDraft = form.getValues();
+    const currentPatch = createSettingsSpeechPatch(currentDraft, speechSettings);
+    const currentValuesValid =
+      isValidBouyomiHost(currentDraft.host) &&
+      isValidPort(currentDraft.port) &&
+      isValidBouyomiVoice(currentDraft.voice) &&
+      isValidConfirmationText(currentDraft.connectionSuccessSpeechText);
+    if (!currentValuesValid || !hasSpeechPatch(currentPatch)) {
       return false;
     }
-    const snapshot = form.beginSave();
+    const snapshot = form.beginSave(settingsFieldsForPatch(currentPatch));
     let succeeded = false;
     try {
-      succeeded = await onSettingsUpdate({ speech: patch });
+      succeeded = await onSettingsUpdate({ speech: currentPatch });
       return succeeded;
     } finally {
       form.finishSave(snapshot, succeeded);
@@ -89,7 +96,7 @@ export function SettingsView({
   useUnsavedChanges("settings", { isDirty, save: saveSettings, discard: discardSettings });
 
   return (
-    <FormProvider {...form}>
+    <FormDraftProvider form={form}>
       <SettingsActionsProvider
         value={{
           twitch: twitchSettings,
@@ -139,6 +146,6 @@ export function SettingsView({
           />
         </main>
       </SettingsActionsProvider>
-    </FormProvider>
+    </FormDraftProvider>
   );
 }

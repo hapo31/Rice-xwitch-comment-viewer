@@ -103,6 +103,45 @@ export function hasSpeechPatch(patch: NonNullable<AppSettingsPatch["speech"]>): 
   return Object.keys(patch).length > 0;
 }
 
+export function settingsFieldsForPatch(
+  patch: NonNullable<AppSettingsPatch["speech"]>,
+): (keyof SettingsDraft)[] {
+  const fields: Partial<Record<keyof AppSettings["speech"], keyof SettingsDraft>> = {
+    bouyomiHost: "host",
+    bouyomiPort: "port",
+    bouyomiRemoteMode: "remoteMode",
+    bouyomiSpeed: "speed",
+    bouyomiTone: "tone",
+    bouyomiVolume: "volume",
+    bouyomiVoice: "voice",
+    autoSpeak: "autoSpeak",
+    readUserName: "readUserName",
+    readEmotes: "readEmotes",
+    connectionSuccessSpeechEnabled: "connectionSuccessSpeechEnabled",
+    connectionSuccessSpeechText: "connectionSuccessSpeechText",
+  };
+  return (Object.keys(patch) as (keyof typeof fields)[]).flatMap((key) => {
+    const field = fields[key];
+    return field ? [field] : [];
+  });
+}
+
+export function filterFieldsForPatch(
+  patch: NonNullable<AppSettingsPatch["speech"]>,
+): (keyof FilterDraft)[] {
+  const fields: Partial<Record<keyof AppSettings["speech"], keyof FilterDraft>> = {
+    blockedUsers: "blockedUsers",
+    blockedWords: "blockedWords",
+    urlHandling: "urlHandling",
+    maxCommentLength: "maxLength",
+    repeatSuppressionSeconds: "repeatSeconds",
+  };
+  return (Object.keys(patch) as (keyof typeof fields)[]).flatMap((key) => {
+    const field = fields[key];
+    return field ? [field] : [];
+  });
+}
+
 function stringArrayEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }

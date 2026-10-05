@@ -1,4 +1,4 @@
-import { Controller, useFormContext } from "react-hook-form";
+import { Controller } from "react-hook-form";
 import {
   NumberRuleRow,
   RuleTextArea,
@@ -6,6 +6,7 @@ import {
 } from "../../components/SettingsFormControls";
 import { focusIndicatorClass } from "../../presentation/focus";
 import { blockedRulesError, parseBlockedUserList, parseBlockedWordList } from "../../validation";
+import { useFormDraftContext } from "../settings/useFormDraft";
 import type { FilterDraft } from "../settings/formModels";
 
 export function FilterConditionsSection({
@@ -15,7 +16,7 @@ export function FilterConditionsSection({
   maxLengthValid: boolean;
   repeatSecondsValid: boolean;
 }) {
-  const { control } = useFormContext<FilterDraft>();
+  const { control, getValues } = useFormDraftContext<FilterDraft>();
   return (
     <SettingsSection id="speech-rules" title="読み上げ条件">
       <Controller
@@ -28,7 +29,7 @@ export function FilterConditionsSection({
             </label>
             <select
               id="rule-url-handling"
-              value={field.value}
+              value={getValues("urlHandling")}
               onChange={field.onChange}
               className={`h-9 w-52 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
             >
@@ -46,7 +47,7 @@ export function FilterConditionsSection({
           <NumberRuleRow
             id="rule-max-length"
             label="最大文字数"
-            value={field.value}
+            value={getValues("maxLength")}
             onChange={field.onChange}
             valid={maxLengthValid}
             error="1 から 500 の範囲で入力してください。"
@@ -60,7 +61,7 @@ export function FilterConditionsSection({
           <NumberRuleRow
             id="rule-repeat-seconds"
             label="連投抑制秒（0は無効、1〜30秒は指定間隔）"
-            value={field.value}
+            value={getValues("repeatSeconds")}
             onChange={field.onChange}
             valid={repeatSecondsValid}
             error="0（無効）または 1 から 30 の範囲で入力してください。"
@@ -72,9 +73,9 @@ export function FilterConditionsSection({
 }
 
 export function BlockedRulesSection() {
-  const { control, watch } = useFormContext<FilterDraft>();
-  const blockedUsers = watch("blockedUsers");
-  const blockedWords = watch("blockedWords");
+  const { control, getValues } = useFormDraftContext<FilterDraft>();
+  const blockedUsers = getValues("blockedUsers");
+  const blockedWords = getValues("blockedWords");
   const blockedUserRules = parseBlockedUserList(blockedUsers);
   const blockedWordRules = parseBlockedWordList(blockedWords);
   const ruleError = blockedRulesError(blockedUserRules.items, blockedWordRules.items);
@@ -96,7 +97,7 @@ export function BlockedRulesSection() {
           <RuleTextArea
             id="rule-blocked-users"
             label="NG ユーザー"
-            value={field.value}
+            value={getValues("blockedUsers")}
             onChange={field.onChange}
             itemCount={blockedUserRules.items.length}
             overflowCount={blockedUserRules.overflowCount}
@@ -110,7 +111,7 @@ export function BlockedRulesSection() {
           <RuleTextArea
             id="rule-blocked-words"
             label="NG ワード"
-            value={field.value}
+            value={getValues("blockedWords")}
             onChange={field.onChange}
             itemCount={blockedWordRules.items.length}
             overflowCount={blockedWordRules.overflowCount}

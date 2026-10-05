@@ -1,12 +1,17 @@
-import { FormProvider } from "react-hook-form";
+import { useWatch } from "react-hook-form";
 import { FloatingSaveButton } from "../../components/SettingsFormControls";
 import type { AppSettings, AppSettingsPatch } from "../../types";
 import { routeHeadingId } from "../../routeAccessibility";
 import { useUnsavedChanges } from "../../unsavedChanges";
 import { isValidRepeatSuppressionSeconds } from "../../validation";
 import { defaultSpeechSettings } from "../settings/defaults";
-import { createFilterDraft, createFilterSpeechPatch, hasSpeechPatch } from "../settings/formModels";
-import { useFormDraft } from "../settings/useFormDraft";
+import {
+  createFilterDraft,
+  createFilterSpeechPatch,
+  filterFieldsForPatch,
+  hasSpeechPatch,
+} from "../settings/formModels";
+import { FormDraftProvider, useFormDraft } from "../settings/useFormDraft";
 import {
   BlockedRulesSection,
   FilterConditionsSection,
@@ -22,7 +27,8 @@ export function FilterView({
 }) {
   const speechSettings = { ...defaultSpeechSettings(), ...settings?.speech };
   const form = useFormDraft(createFilterDraft(speechSettings));
-  const draft = form.watch();
+  useWatch({ control: form.control });
+  const draft = form.getValues();
   const patch = createFilterSpeechPatch(draft, speechSettings);
   const isDirty = hasSpeechPatch(patch) || form.isSaving;
   const validation = validateFilterDraft(draft);
@@ -30,11 +36,18 @@ export function FilterView({
     validation.maxLengthValid && validation.repeatSecondsValid && validation.rulesValid;
 
   async function saveFilter(): Promise<boolean> {
-    if (!isValid || !hasSpeechPatch(patch)) return false;
-    const snapshot = form.beginSave();
+    const currentDraft = form.getValues();
+    const currentValidation = validateFilterDraft(currentDraft);
+    const currentPatch = createFilterSpeechPatch(currentDraft, speechSettings);
+    const currentIsValid =
+      currentValidation.maxLengthValid &&
+      currentValidation.repeatSecondsValid &&
+      currentValidation.rulesValid;
+    if (!currentIsValid || !hasSpeechPatch(currentPatch)) return false;
+    const snapshot = form.beginSave(filterFieldsForPatch(currentPatch));
     let succeeded = false;
     try {
-      succeeded = await onSettingsUpdate({ speech: patch });
+      succeeded = await onSettingsUpdate({ speech: currentPatch });
       return succeeded;
     } finally {
       form.finishSave(snapshot, succeeded);
@@ -44,7 +57,7 @@ export function FilterView({
   useUnsavedChanges("filter", { isDirty, save: saveFilter, discard: form.discard });
 
   return (
-    <FormProvider {...form}>
+    <FormDraftProvider form={form}>
       <main className="relative col-start-3 row-start-2 min-w-0 overflow-hidden bg-zinc-950">
         <header className="flex h-12 items-center justify-between border-b border-zinc-800 bg-zinc-900 px-4">
           <div className="min-w-0">
@@ -76,6 +89,6 @@ export function FilterView({
           onClick={() => void saveFilter()}
         />
       </main>
-    </FormProvider>
+    </FormDraftProvider>
   );
 }
