@@ -17,6 +17,8 @@ pub(super) const UNSUPPORTED_LAUNCHER_MESSAGE: &str = "アプリの登録・起�
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct LauncherCapabilities {
     pub can_register_applications: bool,
     pub can_launch_applications: bool,
@@ -54,6 +56,8 @@ pub(super) const MAX_ICON_DECODED_BYTES: usize = 128 * 1024;
 pub(super) const MAX_PNG_DECODER_BYTES: usize = 1024 * 1024;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct LauncherSettings {
     #[serde(default, deserialize_with = "deserialize_launcher_items")]
     pub items: Vec<LauncherItem>,
@@ -91,6 +95,8 @@ fn deserialize_launcher_items<'de, D: Deserializer<'de>>(
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct LauncherItem {
     pub id: String,
     pub kind: LauncherItemKind,
@@ -112,6 +118,7 @@ pub struct LauncherItem {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum LauncherItemKind {
     Application,
     Website,
@@ -405,6 +412,8 @@ pub(crate) fn validate_launcher_structure(items: &[LauncherItem]) -> Result<(), 
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct LauncherAddResult {
     pub items: Vec<LauncherItem>,
     pub added_count: usize,
@@ -412,6 +421,8 @@ pub struct LauncherAddResult {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct LauncherLaunchFailure {
     pub item_id: String,
     pub display_name: String,
@@ -420,6 +431,8 @@ pub struct LauncherLaunchFailure {
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct LauncherLaunchResult {
     /// Verified target process creation only; not shell acceptance/app readiness.
     pub launched_count: usize,
