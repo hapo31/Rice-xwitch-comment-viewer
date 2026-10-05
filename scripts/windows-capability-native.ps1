@@ -4,7 +4,7 @@ Set-StrictMode -Version Latest
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or -not $env:RUNNER_TEMP) { throw 'Native UI probes require a disposable GitHub-hosted Windows runner' }
 $fixture = [IO.Path]::GetFullPath($FixtureRoot)
 if (-not $fixture.StartsWith([IO.Path]::GetFullPath($env:RUNNER_TEMP) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Fixtures must be below RUNNER_TEMP' }
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing, UIAutomationClient, UIAutomationTypes
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type -ReferencedAssemblies System.dll, System.Core.dll, System.Windows.Forms.dll, System.Drawing.dll -TypeDefinition @'
 using System;
 using System.Diagnostics;
@@ -18,12 +18,15 @@ public static class RiceNativeProbe {
   [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
   [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
   [StructLayout(LayoutKind.Sequential)] public struct Mouse { public int dx, dy; public uint data, flags, time; public UIntPtr extra; }
-  [StructLayout(LayoutKind.Explicit, Size=32)] public struct Union { [FieldOffset(0)] public Mouse mouse; }
+  [StructLayout(LayoutKind.Sequential)] public struct Keyboard { public ushort key, scan; public uint flags, time; public UIntPtr extra; }
+  [StructLayout(LayoutKind.Explicit, Size=32)] public struct Union { [FieldOffset(0)] public Mouse mouse; [FieldOffset(0)] public Keyboard keyboard; }
   [StructLayout(LayoutKind.Sequential)] public struct Input { public uint type; public Union value; }
+  [StructLayout(LayoutKind.Sequential)] public struct GuiThread { public uint size, flags; public IntPtr active, focus, capture, menuOwner, moveSize, caret; public Rect caretRect; }
   [DllImport("user32.dll")] static extern uint SendInput(uint n, Input[] inputs, int size);
   [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] static extern bool GetCursorPos(out Point p);
   [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GuiThread info);
   [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out Rect r);
   [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref Point p);
   [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
@@ -38,7 +41,7 @@ public static class RiceNativeProbe {
   [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h,uint message,IntPtr wparam,IntPtr lparam);
   [DllImport("user32.dll")] static extern IntPtr GetDlgItem(IntPtr dialog,int id);
   [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent,EnumerateWindow callback,IntPtr argument);
-  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr window,uint message,IntPtr parameter,string text);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr window,uint message,IntPtr parameter,StringBuilder text);
   public static IntPtr Window(int pid) {
     using (var process = Process.GetProcessById(pid)) {
       if (process.HasExited || !String.Equals(process.ProcessName,"rice",StringComparison.OrdinalIgnoreCase)) throw new Exception("Not the owned live Rice process");
@@ -82,6 +85,15 @@ public static class RiceNativeProbe {
   static void Button(uint flags) {
     var input=new Input { type=0, value=new Union { mouse=new Mouse { flags=flags } } };
     if(SendInput(1,new [] {input},Marshal.SizeOf(typeof(Input))) != 1) throw new Exception("SendInput failed");
+  }
+  static Input Key(ushort key,ushort scan,uint flags) { return new Input { type=1,value=new Union {keyboard=new Keyboard {key=key,scan=scan,flags=flags}} }; }
+  static void Keys(Input[] keys) {
+    if(SendInput((uint)keys.Length,keys,Marshal.SizeOf(typeof(Input)))!=(uint)keys.Length) throw new Exception("Native keyboard input failed");
+  }
+  static void RequireDialogFocus(int pid,IntPtr dialog,IntPtr edit) {
+    uint owner; var foreground=GetForegroundWindow(); var thread=GetWindowThreadProcessId(foreground,out owner);
+    var info=new GuiThread {size=(uint)Marshal.SizeOf(typeof(GuiThread))};
+    if(foreground!=dialog || owner!=pid || !GetGUIThreadInfo(thread,ref info) || info.focus!=edit) throw new Exception("Owned filename Edit is not the focused native control");
   }
   static void Move(Point from, Point to) {
     for(int step=1;step<=20;step++) { SetCursorPos(from.X+(to.X-from.X)*step/20,from.Y+(to.Y-from.Y)*step/20); Thread.Sleep(40); }
@@ -127,12 +139,6 @@ public static class RiceNativeProbe {
     EnumWindows((h,arg)=> { uint owner; GetWindowThreadProcessId(h,out owner); var name=new StringBuilder(128); GetClassName(h,name,128); if(owner==pid && name.ToString()=="#32770" && GetDlgItem(h,1148)!=IntPtr.Zero && GetDlgItem(h,1)!=IntPtr.Zero) found=h; return true; },IntPtr.Zero);
     return found;
   }
-  public static IntPtr OpenButton(int pid) {
-    var dialog=Dialog(pid); if(dialog==IntPtr.Zero) throw new Exception("Missing owned file dialog");
-    var button=GetDlgItem(dialog,1); uint owner; GetWindowThreadProcessId(button,out owner);
-    if(button==IntPtr.Zero || owner!=pid) throw new Exception("Missing owned native Open button");
-    return button;
-  }
   public static void SetDialogFiles(int pid,string text) {
     var dialog=Dialog(pid); var host=GetDlgItem(dialog,1148);
     if(dialog==IntPtr.Zero || host==IntPtr.Zero) throw new Exception("Missing owned filename host");
@@ -142,10 +148,24 @@ public static class RiceNativeProbe {
       if(owner==pid && name.ToString()=="Edit") { edit=h; matches++; } return true;
     },IntPtr.Zero);
     if(matches!=1) throw new Exception("Missing or ambiguous owned native filename Edit");
-    // ComboBoxEx32's UIA pane may hide its Edit/ValuePattern. WM_SETTEXT targets
-    // only that real child of the owned file dialog, then native Open validates
-    // and returns the real selection to rfd/Tauri.
-    if(SendMessage(edit,0x000C,IntPtr.Zero,text)==IntPtr.Zero) throw new Exception("Owned filename Edit refused text");
+    // Type into the actual focused native Edit, including normal EN_CHANGE/
+    // dialog validation, rather than bypassing it with WM_SETTEXT or UIA.
+    SetForegroundWindow(dialog); Thread.Sleep(250); Rect r;
+    if(!GetWindowRect(edit,out r) || r.Right<=r.Left || r.Bottom<=r.Top) throw new Exception("Invalid native filename Edit bounds");
+    SetCursorPos(r.Left+(r.Right-r.Left)/2,r.Top+(r.Bottom-r.Top)/2); Button(2); Button(4); Thread.Sleep(200);
+    RequireDialogFocus(pid,dialog,edit);
+    Keys(new [] {Key(0x11,0,0),Key(0x41,0,0),Key(0x41,0,2),Key(0x11,0,2)}); Thread.Sleep(100);
+    var keys=new Input[text.Length*2];
+    for(int n=0;n<text.Length;n++) { keys[n*2]=Key(0,text[n],4); keys[n*2+1]=Key(0,text[n],6); }
+    Keys(keys);
+    string actual=null; var watch=Stopwatch.StartNew();
+    while(watch.ElapsedMilliseconds<5000) {
+      var buffer=new StringBuilder(text.Length+2); SendMessage(edit,0x000D,new IntPtr(buffer.Capacity),buffer); actual=buffer.ToString();
+      if(actual==text) break; Thread.Sleep(100);
+    }
+    if(actual!=text) throw new Exception("Native filename input mismatch: "+actual);
+    RequireDialogFocus(pid,dialog,edit);
+    Keys(new [] {Key(0x0D,0,0),Key(0x0D,0,2)});
   }
 }
 '@
@@ -189,28 +209,9 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                 }
                 if ($dialog -eq [IntPtr]::Zero) { throw 'Owned native file-open dialog did not appear' }
                 $fileText = ($files | ForEach-Object { '"' + $_ + '"' }) -join ' '
-                # Wait above for the actual compound native controls. UIA can
-                # expose only a temporary Pane while IFileDialog initializes.
+                # Wait for the actual compound native controls, then enter and
+                # accept the real file selection through native keyboard input.
                 [RiceNativeProbe]::SetDialogFiles($RicePid, $fileText)
-                # IFileDialog's native HWND can exist before its accessibility
-                # provider is ready. The native split-button HWND need not be
-                # the virtual UIA button exposing InvokePattern. Search the
-                # owned dialog tree and require a unique owned Open button.
-                $null = [RiceNativeProbe]::OpenButton($RicePid)
-                $root = [Windows.Automation.AutomationElement]::FromHandle($dialog)
-                $openCondition = [Windows.Automation.AndCondition]::new(
-                    [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty, '1'),
-                    [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Button)
-                )
-                $invokePattern = $null
-                $openWatch = [Diagnostics.Stopwatch]::StartNew()
-                while ($openWatch.Elapsed.TotalSeconds -lt 10) {
-                    $buttons = $root.FindAll([Windows.Automation.TreeScope]::Descendants, $openCondition)
-                    if ($buttons.Count -eq 1 -and $buttons[0].Current.ProcessId -eq $RicePid -and $buttons[0].TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$invokePattern)) { break }
-                    Start-Sleep -Milliseconds 100
-                }
-                if ($null -eq $invokePattern) { throw 'Owned native Open button did not expose InvokePattern' }
-                $invokePattern.Invoke()
                 $value = [ordered]@{ selectedCount = $files.Count; ownerPid = $RicePid; nativeDialog = $true }
             }
             default { throw 'Unknown native UI action' }
