@@ -1,5 +1,7 @@
 # 実装 TODO
 
+- [x] Issue #195: AppShellの認証・接続・speech・Launcher・終了保護をcontroller/providerへ分離し、各画面がdomain selector/actionを直接利用する。巨大な旧AppStateの再構成とMainView経由のcallback転送をなくし、無関係な画面の再renderを計測回帰で保証する。認証の遷移は既存のgeneration/poll排他と手動優先を保ち、XState invoke/delayと小さなreducerを比較して判断する。
+
 - [x] Issue #44: Twitchのmodel/error、認証service/store/OAuth、EventSub transport/state/subscription/dedupe/正規化を責務別moduleへ分割する。Tauri commandを薄いadapterにし、型付き状態制御、command/event payload、generationによる競合制御を維持する。fake transport/storeと明示clockを使う既存・追加回帰を分割後の本番経路へ適用し、両OS/feature matrix/native CIで確認する。
 
 2026-10-05段階1: main2b83b6aから専用worktreeで公開chat model、型付きAPI/認証/購読エラーと表示、EventSub wire/正規化、bounded dedupeを4つのprivate moduleへ抽出した。公開型のroot再export、payload、generation、token保存と接続処理は維持する。既存inline回帰をtests.rsへ移動し、mod.rsは4550行から2723行になった。元productionと既存テストはvisibility/format以外のtoken・文字列が同一であることも照合した。文言非依存の分類、明示receive clock/metadata fallback、TTL/capacity等の5回帰を追加し、Rust1.90のall-targets/all-features267件、no-default216件（いずれも0fail/0ignore）、fmt/strict clippy、frontend build、security/workflow/license guardが成功した。同時compile中の最初の全体実行では既存5秒budgetが5.26秒で失敗したが、閾値や条件を変えず単独再実行で4.67秒、no-defaultでも4.50秒の成功を確認した。認証service/store/OAuth、EventSub transport/state/subscriptionと薄いcommand adapter、分割後の両OS/native CIはまだ必要であり、Issueは未完了、mainへは未反映。
@@ -89,7 +91,11 @@
 
 ## 現在の進捗サマリ
 
-2026-10-06: Issue #207 で EventSub 正規化時に ChatMessage へ接続 generation を付け、同じ値のまま UI と speech へ渡すようにした。production runtime は connection handle mutex の下で generation を照合し、旧世代 callback を UI/speech 両方の配送前に拒否する。fake runtime の遅延旧世代回帰と、同一 channel の再接続・別 channel での連投抑制 reset を追加した。Rust feature matrix の default/no-default test、PR quality の Rust test/clippy/format が成功した。ローカルの no-default suite は sandbox TCP bind と最大payload budget の制約で12件失敗したが、同じ commit の CI matrix は成功した。実 Twitch 環境の手動確認は未実施。
+2026-10-06: Issue #207 で EventSub 正規化時に ChatMessage へ接続 generation を付け、同じ値のまま UI と speech へ渡す。親レビュー対応で generation 検証と両sink配送を共有 `dispatch_chat_message` に集約し、本番 runtime と fake が同じ境界を使用するようにした。回帰は同一 channel の世代交換、旧世代の遅延通知、停止後の通知、別 channel、UI/speech 両sinkの同一内容と順序を確認する。main `2802a4a` を統合した。Tauri非依存 boundary test、frontend 366件、format/lint/typecheck/build が成功した。app feature fake統合テストは環境に GTK/glib pkg-config がないため未実行で、CI確認が必要。実 Twitch 環境の手動確認は未実施。
+
+2026-10-06: Issue #195の実装を専用 Draft PR #236 に分離した。AppShell配下へ controller/actions provider を組み立て、Twitch認証の非同期遷移、speech/queue/Launcher command、終了保護を責務別 controller/provider へ移した。画面はdomain別の安定action Contextと必要な selector を参照し、旧AppStateの再構成を除去した。初期レビューで見つかったDevice Code pollingのproduction lifecycle未接続、認証結果遷移の分散、実画面render計測の不足、手動操作/終了時の遅延応答競合を修正し、本番AppShell/provider/routes経由のtimer/render回帰へ更新した。親レビュー指摘を解消し、#205 の共通ラベルとの統合後は frontend 362件、format/lint/typecheck/build と diff check が成功。最終 CI と main 反映は PR #236 で確認する。
+
+2026-10-06 レビュー対応: Device Code pollingをAppShellのprompt/status lifecycleへ接続し、初回interval、pending/slowDown後のinterval更新、手動start/validate/disconnectの競合、期限切れ、unmount中の遅延応答/restore callback抑制をcontrollerと本番AppShell経由の回帰で確認した。追加レビュー対応として期限切れtimerもschedule時のgenerationとprompt identityを照合し、手動start/validate進行中のdeadline callbackと期限到達済みpromptの即時expireを遅延応答テストで保護する。#200のdiscriminated state/runtime contractsを含む最新mainを統合して全 frontend gate を再実行する。timerはschedule時のgeneration/promptを照合し、AuthOperationControllerは世代付き完了、手動優先、poll排他、dispose invalidationを管理する。認証結果・prompt・profile・statusと通知/error副作用は小さな純粋遷移モデルへまとめた。render回帰は実AppShell/provider/routes上のSettings/Logs/Launcher各bodyをProfiler計測し、queue revisionのみの連続更新を確認する。PRは親レビュー再確認待ちのためDraft、Issueはmain反映まで未完了。
 
 Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既存 Biome gate に any・enum・const enum・namespace の検査を追加した。frontend 322件と品質 policy 5件、format/lint/typecheck/build が成功し、独立レビューを完了した。最終コミットの CI 結果と統合状況は PR #238 に記録する。
 
@@ -335,6 +341,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 5: 配信運用向け仕上げ
 
+
 - [x] Issue #198: テスト mock の明示的 any を実 DTO／関数型へ置換し、既存 Biome 品質ゲートで any・enum・namespace の禁止と型レベル用途の限定例外を検証する。既存 quality policy に正負 fixture を追加し、関連テスト・format・lint・型検査・build を確認した。
 
 - [x] Dependabot PR #179–#182、#184–#192 の全13件を一件ずつ専用 worktree でレビューし、必要なCI互換性修正を実装する。各PRは全PR checksと当該headのWindows開発build成功を確認してからマージし、worktreeと作業用ローカルbranchを削除して次へ進む。
@@ -388,6 +395,12 @@ Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態
 - [x] Issue #36: Chat の新着を重複なく集約して支援技術へ通知し、Settings でライブ通知を ON/OFF できるようにする。
 - [x] Issue #5: 変更のない Filter / Settings で非表示の保存ボタンをフォーカス順とアクセシビリティツリーから除外し、キーボード回帰テストを追加する。
 - [x] Issue #14: 通知を severity/source/correlation を持つ構造化モデルへ移し、成功通知を警告から分離し、同一障害の重複表示を抑止する。OAuth 認可待ち/待機延長の info 進捗も Logs と system Chat に記録する。
+
+Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離し、成功操作で警告を失わないようにした。frontend 326件、format/lint/typecheck/build を確認済み。独立レビュー・最終CI・統合状況は PR #242 に記録する。
+- [x] Issue #204: 対処待ち warning/error と info/success 履歴の保持上限を分離し、大量の成功通知で警告を失わないようにする。明示クリア・severity昇格・correlation重複排除・容量上限の logsReducer 回帰を追加した。
+  - 最新 main（#193 / #196 / #198 / #202 と統合追補 #245）との統合検証: frontend 342 tests、format/lint/typecheck/build、diff check が成功。
+- 2026-10-06 Issue #204: 実際に使用する logsReducer で warning/error を notifications、info/success を notificationHistory へ分離した。昇格時は元のIDを保ち履歴から対処待ちへ移し、correlationId と本文/5秒の重複排除、明示クリア、独立した保持上限を回帰する。旧 appReducer の整理は別Issue #203 の範囲とし、runtime の正本を直接検証した。
+
 - [x] Issue #28: Filter / Settings の未保存変更を Activity Bar 遷移・履歴戻る・ウィンドウ終了で共通確認し、保存・破棄・キャンセルをキーボード操作可能にする。native close listener は mount 中に一度だけ登録し、直後の終了要求も保護する。
 - [x] Issue #193: Filter / Settings の保存済み値と世代付き編集patchを分離し、保存応答が開始後の追加入力・元値への編集を上書きしない。接続先が変わったときだけ endpoint 許可メッセージを消す。
 - [x] Issue #193: 親レビュー指摘を反映し、最終レビュー対象 commit `1f5df20411f48cbdfd96b31f4c21110004c9a175` を確認した。PR #235 で最終 CI と統合を管理する。
@@ -468,6 +481,12 @@ Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態
 - [x] 起動時の仮チャットを設定状態に応じた system 操作案内へ置き換える。
 - [x] 配信中に判断しやすい日本語エラー文言を整理する（Issue #46: 操作別の原因・復旧案内と Logs の技術詳細）。
 - [x] Issue #45: 内部の Speech/Queue 状態値を日本語の表示文言へ集約し、状態アイコンの重複した支援技術向け読み上げをなくす。
+
+- [x] Issue #205: Twitch認証・接続ラベルをpresentationに集約し、短い視覚表示と詳しい読み上げの意図した差を明示する。状態の型網羅性と実AppShellの画面/支援技術の代表状態を検証した。frontend全326件、format/lint/typecheck/buildが成功。最終レビューとCI・統合状況はPR #244に記録する。
+  - 最新 main（#193 / #196 / #198 / #202 と統合追補 #245）との統合検証: frontend 340 tests、format/lint/typecheck/build、diff check が成功。
+
+Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベルは視覚表示2か所とライブ通知で長短差があった。共通の網羅したmappingと読み上げ用の明示的な差分へ統一し、暗黙の英語fallbackを設けない。
+
 - [x] キュー行の状態表示テストを追加する。
 - [x] 設定フォームのバリデーションテストを追加する。
 - [x] Issue #31: chat、queue、connection、settings、logs の state/action 境界を独立 store に分離し、Chat event で無関係な画面を再 render しない selector 購読と auth/event/settings orchestration のテストを追加する。

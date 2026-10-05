@@ -2,7 +2,19 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { flushSync } from "react-dom";
 import { expect, it } from "vitest";
 import { createDomainStores, DomainProvider } from "../../stores/domainStores";
-import type { AppSettings, LauncherAddResult, LauncherItem } from "../../types";
+import type {
+  AppSettings,
+  AppSettingsPatch,
+  BouyomiConnectionDiagnostics,
+  LauncherAddResult,
+  LauncherItem,
+  LauncherLaunchResult,
+} from "../../types";
+import {
+  DomainControllerActionsProvider,
+  type DomainControllerActions,
+} from "../../orchestration/domainControllerContext";
+import { createLauncherController } from "../../orchestration/domainCommandControllers";
 import { defaultSettings, tauriMock } from "../../testing/tauriMock";
 import { DomainLauncherView } from "../domainViews";
 
@@ -16,22 +28,54 @@ function launcherItem(id: string, target: string, order: number): LauncherItem {
   };
 }
 
-function mountLauncher(
-  stores: ReturnType<typeof createDomainStores>,
-  onAdd: (paths: string[]) => Promise<LauncherAddResult>,
-) {
+function mountLauncher(stores: ReturnType<typeof createDomainStores>) {
   stores.settings.dispatch({
     type: "settings.loaded",
     settings: structuredClone(defaultSettings) as AppSettings,
   });
+  const launcher = createLauncherController({
+    reportError: () => undefined,
+    reportInfo: () => undefined,
+    dispatchLauncherItems: (items) => {
+      flushSync(() => stores.settings.dispatch({ type: "launcher.items.changed", items }));
+    },
+  });
+  const actions: DomainControllerActions = {
+    updateSettings: async (_patch: AppSettingsPatch) => true,
+    speechHealthCheck: () => undefined,
+    speechDiagnostics: async (): Promise<BouyomiConnectionDiagnostics> => ({
+      configuredAddr: "127.0.0.1:50001",
+      attempted: [],
+      recommendation: "",
+    }),
+    speechTest: () => undefined,
+    speechControl: () => undefined,
+    queueReload: () => undefined,
+    queueRemove: () => undefined,
+    queueDismiss: () => undefined,
+    queueDismissHistory: () => undefined,
+    queueRetry: () => undefined,
+    launcherAdd: launcher.add,
+    launcherRemove: async () => [],
+    launcherLaunch: async (): Promise<LauncherLaunchResult> => ({ launchedCount: 0, failures: [] }),
+    launcherLaunchAll: async (): Promise<LauncherLaunchResult> => ({
+      launchedCount: 0,
+      failures: [],
+    }),
+    twitchStartAuth: () => undefined,
+    twitchPollAuth: () => undefined,
+    twitchValidateAuth: async () => true,
+    twitchDisconnect: () => undefined,
+    twitchConnect: () => undefined,
+    twitchStopChat: () => undefined,
+    openExternalUrl: () => undefined,
+    clearWarnings: () => undefined,
+  };
   const view = render(
     <DomainProvider stores={stores}>
-      <DomainLauncherView
-        onAdd={onAdd}
-        onRemove={async () => []}
-        onLaunch={async () => ({ launchedCount: 0, failures: [] })}
-        onLaunchAll={async () => ({ launchedCount: 0, failures: [] })}
-      />
+      <DomainControllerActionsProvider actions={actions}>
+        <DomainLauncherView />
+      </DomainControllerActionsProvider>
     </DomainProvider>,
   );
   return view;
@@ -50,7 +94,7 @@ it("reports new, mixed and duplicate outcomes after the real settings store rend
   const first = launcherItem("first", "C:\\first.exe", 0);
   const second = launcherItem("second", "C:\\second.exe", 1);
   let callCount = 0;
-  mountLauncher(stores, async () => {
+  tauriMock.setCommand("launcher_add", () => {
     callCount += 1;
     const result: LauncherAddResult =
       callCount === 1
@@ -58,11 +102,9 @@ it("reports new, mixed and duplicate outcomes after the real settings store rend
         : callCount === 2
           ? { items: [first, second], addedCount: 1 }
           : { items: [first, second], addedCount: 0 };
-    flushSync(() => {
-      stores.settings.dispatch({ type: "launcher.items.changed", items: result.items });
-    });
     return result;
   });
+  mountLauncher(stores);
   await waitForDragDropListener();
 
   drop(["C:\\first.exe"]);
@@ -85,13 +127,14 @@ it("keeps concurrent add notices tied to each operation result after shared stat
     resolve: (result: LauncherAddResult) => void;
     paths: string[];
   }> = [];
-  mountLauncher(
-    stores,
-    (paths) =>
-      new Promise((resolve) => {
-        pending.push({ resolve, paths });
-      }),
-  );
+  tauriMock.setCommand("launcher_add", (args?: Record<string, unknown>) => {
+    const rawPaths = args?.paths;
+    const paths = Array.isArray(rawPaths)
+      ? rawPaths.filter((path: unknown): path is string => typeof path === "string")
+      : [];
+    return new Promise<LauncherAddResult>((resolve) => pending.push({ resolve, paths }));
+  });
+  mountLauncher(stores);
   await waitForDragDropListener();
 
   drop(["C:\\shared.exe"]);
@@ -104,17 +147,11 @@ it("keeps concurrent add notices tied to each operation result after shared stat
 
   const committed = { items: [shared], addedCount: 1 };
   act(() => {
-    flushSync(() => {
-      stores.settings.dispatch({ type: "launcher.items.changed", items: committed.items });
-    });
     pending[1].resolve(committed);
   });
   expect(await screen.findByText("1 件を登録しました。")).toBeVisible();
 
   act(() => {
-    flushSync(() => {
-      stores.settings.dispatch({ type: "launcher.items.changed", items: committed.items });
-    });
     pending[0].resolve({ ...committed, addedCount: 0 });
   });
   expect(await screen.findByText("選択したアプリはすでに登録されています。")).toBeVisible();

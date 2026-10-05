@@ -2,9 +2,17 @@
 
 ## 2026-10-06
 
-- Issue #207: EventSub runtime は generation を別引数で渡し、`emit_twitch_chat_message` だけが clone に値を付与していたため、speech enqueue 側は `None` を保持していた。正規化時点で domain `ChatMessage` に generation を入れ、callback と serializer の引数から別 generation を除いた。
-- 接続所有の `twitch_connection` mutex は stop/replacement が現在 handle を無効化する境界でもある。runtime adapter はその lock を保持して message generation を照合し、同一 message の UI emit と speech enqueue を実行する。古い task が停止/交換後に callback しても現行 handle がないか generation が異なるため、両方へ配信しない。fake EventSub runtime は同じモデルの generation predicate を使う。
-- 追加回帰では正規化時の generation 保持と serializer field、旧世代 fake callback の拒否、同一 channel の generation 切替・別 channel の連投抑制 cache reset を確認した。Rust no-default の対象テスト2件と `cargo fmt --all -- --check` が成功した。ローカル no-default suite は206件成功、network bind が必要なBouyomi test11件がsandboxの`PermissionDenied`、最大payload budget test1件が隔離条件のassertionで失敗した。default feature のtest buildはローカルに GTK/glib pkg-config がなく開始できなかったが、exact head `3b4ad5f5d37b44dcecd5c349d8e2de357e58f5ae` のRust feature matrix default/no-default testとPR qualityのRust test/clippy/formatはCIで成功した。実Twitch通信は未確認。
+### Issue #207: 接続世代を共有 delivery boundary で検証
+
+- Issue #207: EventSub 正規化時点で domain `ChatMessage` に generation を一度付け、callback と serializer が別 generation を渡さない形にした。親レビューで fake が独自 predicate を持ち `None` を受け入れる点が見つかったため、production runtime と fake の両方が `dispatch_chat_message` を通し、active generation がない場合も両sinkへ配送しないようにした。
+- 接続所有の `twitch_connection` mutex は stop/replacement が現在 handle を無効化する境界でもある。production runtime は lock を保持したまま共有 boundary を呼び、同じ message を UI emit と speech enqueue に渡す。回帰は正常配送時に両sinkの内容と generation が同一であること、同一 channel の世代交換時に旧世代の遅延通知を両方で拒否すること、別 channel の配送、停止後の拒否、重複排除とsink順序を確認する。
+- main の `2802a4a` を統合。`chat_delivery.rs` のTauri非依存な共有関数テストは no-default で成功し、frontend 366件、format/lint/typecheck/build も成功した。app featureの EventSub fake統合テストは GTK/glib の pkg-config が作業環境にないため起動できず、PR #248 の CI で確認する。実 Twitch 通信は未確認。
+### Issue #195: frontend controller境界と認証遷移
+
+- Chat/Queue/connection/settings/logsの状態は既存の独立external storeを引き続き正本とし、画面stateを旧AppStateへ合成しない。Contextはドメイン別の安定action facadeを提供し、画面ごとのselector/action購読を保つ。`MainView`から操作callbackをrouteへ渡す経路を外し、AppShellはcontroller providerと画面配置を組み立てる。
+- Auth controllerへstartup restore、start/poll/validate/disconnect/connect/stopとDevice Code timerを集約した。明示的なoperation reducerはgenerationを進めて以前の結果を無効化し、poll同時実行を防ぐ。終了時のfrontend応答破棄だけでは実行中native commandを止めないため、backend世代調停は維持する。
+- XState公式資料は[`invoke`](https://stately.ai/docs/invoke)でpromise結果をstate遷移へ結び、invoke元stateの退出時に結果を破棄することと、[delayed transitions](https://stately.ai/docs/delayed-transitions)を記載している。今回の遷移・timerは現在のgeneration/poll排他と少数の結果分岐に限られ、新runtime依存を増やす価値はなく小さなreducerを採用した。XStateを採用してもnative command cancellationやbackend generation protectionは別途必要。
+- Profiler回帰でqueue storeのみを更新した時にSettings/Logs/Launcherのrender commitが増えないことを確認する。実装と関連frontend全体の確認はDraft PR #236で続ける。
 
 ## 2026-10-05 Issue #101: Rice自身のMIT正本と実配布物の最終照合
 

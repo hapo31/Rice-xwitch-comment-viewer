@@ -5,7 +5,9 @@ export type StoredAppLogEvent = AppLogEvent & { id: string };
 
 export interface LogsState {
   logs: StoredAppLogEvent[];
+  /** Unresolved actionable notices have a capacity independent of informational history. */
   notifications: AppNotification[];
+  notificationHistory: AppNotification[];
 }
 
 export type LogsAction =
@@ -14,7 +16,14 @@ export type LogsAction =
   | { type: "logs.cleared" }
   | { type: "warnings.cleared" };
 
-export const initialLogsState: LogsState = { logs: [], notifications: [] };
+export const initialLogsState: LogsState = { logs: [], notifications: [], notificationHistory: [] };
+const notificationLimits = { notifications: 100, notificationHistory: 100 } as const;
+
+function notificationBucket(notification: AppNotification): keyof typeof notificationLimits {
+  return notification.severity === "warning" || notification.severity === "error"
+    ? "notifications"
+    : "notificationHistory";
+}
 
 export function logsReducer(state: LogsState, action: LogsAction): LogsState {
   switch (action.type) {
@@ -31,32 +40,39 @@ export function logsReducer(state: LogsState, action: LogsAction): LogsState {
         ...action.notification,
         id: action.notification.id ?? notificationId(action.notification),
       };
-      const duplicateIndex = state.notifications.findIndex((existing) =>
-        isDuplicateNotification(existing, notification),
+      const existing = [...state.notifications, ...state.notificationHistory].find((entry) =>
+        isDuplicateNotification(entry, notification),
       );
-      if (duplicateIndex >= 0) {
-        const existing = state.notifications[duplicateIndex];
+      const target = notificationBucket(notification);
+      if (existing) {
         if (
           notificationSeverityRank(notification.severity) <=
           notificationSeverityRank(existing.severity)
         )
           return state;
-        const notifications = [...state.notifications];
-        notifications[duplicateIndex] = { ...existing, severity: notification.severity };
-        return { ...state, notifications };
+        const source = notificationBucket(existing);
+        const promoted = { ...existing, severity: notification.severity };
+        if (source === target) {
+          return {
+            ...state,
+            [target]: state[target].map((entry) => (entry === existing ? promoted : entry)),
+          };
+        }
+        return {
+          ...state,
+          [source]: state[source].filter((entry) => entry !== existing),
+          [target]: [promoted, ...state[target]].slice(0, notificationLimits[target]),
+        };
       }
-      return { ...state, notifications: [notification, ...state.notifications].slice(0, 100) };
+      return {
+        ...state,
+        [target]: [notification, ...state[target]].slice(0, notificationLimits[target]),
+      };
     }
     case "logs.cleared":
       return { ...state, logs: [] };
     case "warnings.cleared":
-      return {
-        ...state,
-        notifications: state.notifications.filter(
-          (notification) =>
-            notification.severity !== "warning" && notification.severity !== "error",
-        ),
-      };
+      return { ...state, notifications: [] };
     default:
       return state;
   }
