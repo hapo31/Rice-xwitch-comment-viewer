@@ -14,6 +14,16 @@ on:
         description: "PR head commit SHA to build"
         required: true
         type: string
+      candidate_run:
+        description: "Optional successful release run for read-only packaged UI diagnostics"
+        required: false
+        default: ""
+        type: string
+      candidate_commit:
+        description: "Exact source SHA of that unchanged application candidate"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -25,10 +35,11 @@ concurrency:
 jobs:
   dev-build:
     name: Dev build
+    if: inputs.candidate_run == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref || github.event.pull_request.head.sha }}
           persist-credentials: false
@@ -58,3 +69,13 @@ jobs:
             echo "- Mode: debug, no installer bundle"
             echo "- Result: \`${{ job.status }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  packaged-capability-diagnostics:
+    if: github.event_name == 'workflow_dispatch' && inputs.candidate_run != ''
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/windows-capability-diagnostics.yml
+    with:
+      candidate_run: ${{ inputs.candidate_run }}
+      candidate_commit: ${{ inputs.candidate_commit }}

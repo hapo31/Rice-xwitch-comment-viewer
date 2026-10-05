@@ -1,5 +1,10 @@
 # 調査メモ
 
+## 2026-10-05 Issue #101: Rice自身のMIT正本と実配布物の最終照合
+
+- 権利者が既に配置したMIT正本のSHA-256 eeb4b00cfe4a9c135ab47b643c44f4c0b747318c0d52cee8580bf7c3d2ca0667を維持した。npm/Cargo/bundle metadata、README、inbound=outboundの貢献条件、外部GPL参考実装をコピーしない方針を照合し、現在のGitHub repository license APIもSPDX MIT/正本LICENSEを返す。欠落/改変/metadata不一致/installer・portable同梱漏れ/貢献条件欠落のpolicy7件が成功した。
+- [実配布候補37274393563](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37274393563)のsource74ed02eは正本LICENSEを直接artifact、portable ZIP、NSIS installer resourceへ含む。manifest/CRC/checksumと同runのWindows検証記録を再照合した。NSISの独立展開でもLICENSEの正本digest一致を確認し、fresh Windowsでsilent install後のoffline LICENSE比較、installed実起動、uninstallとresource除去が成功した。この候補のタグ・Releaseは作成していない。Rice自身のMIT表示と、まだ未完了の第三者通知#102の配布条件を混同しない。
+
 ## 2026-10-05 Issue #91: Windows全体テストと配布物の公開前検証
 
 - source74ed02eの[候補37274393563](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37274393563)は全11jobsが成功し、通常6workflowも成功した。Windows全体263件/0failure/3ignoredと、別stepで明示実行するheadful3件の各1件/0ignore、実Credential ManagerとLauncher41件を確認した。実WebViewの16 style検査、200 tile624.4ms/設定get501.7ms/追加JS heap30.4MiB、future schema verified:trueも成功した。receiptはportable PID3116/6649ms/正常exit0とinstalled PID5996/5144ms/正常exit0、silent install/uninstall各exit0の4probeを記録した。manifest SHA-256はa6c3017edd12574f76c9da5e05bbd7b8f7b6d65520b0a92f8757baf93ee16e9e、portable exeは1f7732cfef13e0879eb6f3e04cc18052d8d8da6038f13de0137ca512bbdb28f3、期待NSIS exeは1dac1847aca3631138f91f3819f73cc0435f3de0377133773cfb635d46885cafで、同run最新jobs/stepsと実receiptをtrusted verifierで再照合した。NSISを独立展開し、実payloadが期待exeと一致しLICENSEも正本eeb4b00cfe4a9c135ab47b643c44f4c0b747318c0d52cee8580bf7c3d2ca0667と一致することを確認した。Windowsでもinstalled LICENSE/version/registration、uninstall後のapp/resource/registration除去と今回のscratch/profile cleanupが成功した。SBOM7093 componentのNSIS3.11実compiler hashは5d034cfda6635fd7e281df852dcf1aad304614542db3665044c99a24f55b078fでbuild材料と一致した。候補はmanual event/tag:nullであり、タグ・Releaseは作成していない。第三者通知#102やpackaged IPC/UI追加検査#75は、この成功だけで完了扱いにしない。
