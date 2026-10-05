@@ -1,16 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDomainStores } from "../stores/domainStores";
+import { defaultSpeechSettings, defaultTwitchSettings } from "../features/settings/defaults";
+import type { AppSettings } from "../types";
+import { utcTimestamp } from "../time";
 import {
   restoreStartupAuth,
   createSettingsMutationOrchestrator,
   subscribeDomainEvents,
   type DomainEventBridge,
+  type SettingsMutationDependencies,
 } from "./domainOrchestration";
 
 describe("domain orchestration", () => {
   it("routes a Twitch chat event to chat only and cleans up deferred listeners", async () => {
     const stores = createDomainStores();
-    let chatListener: ((event: any) => void) | undefined;
+    let chatListener:
+      | Parameters<DomainEventBridge["subscribeTwitchChatMessageEvents"]>[0]
+      | undefined;
     const unlisten = vi.fn();
     const renders = { chat: 0, queue: 0, connection: 0, settings: 0, logs: 0 };
     stores.chat.subscribe(() => renders.chat++);
@@ -48,7 +54,7 @@ describe("domain orchestration", () => {
       text: "hello",
       fragments: [],
       badges: [],
-      receivedAt: "2026-08-01T00:00:00Z",
+      receivedAt: utcTimestamp("2026-08-01T00:00:00Z"),
     });
     expect(stores.chat.getState().messages).toHaveLength(1);
     expect(stores.logs.getState().logs).toHaveLength(0);
@@ -59,8 +65,10 @@ describe("domain orchestration", () => {
 
   it("drops chat events from an old connection generation", async () => {
     const stores = createDomainStores();
-    let chatListener: ((event: any) => void) | undefined;
-    let statusListener: ((event: any) => void) | undefined;
+    let chatListener:
+      | Parameters<DomainEventBridge["subscribeTwitchChatMessageEvents"]>[0]
+      | undefined;
+    let statusListener: Parameters<DomainEventBridge["subscribeTwitchStatusEvents"]>[0] | undefined;
     const unlisten = vi.fn();
     const bridge: DomainEventBridge = {
       subscribeAppLogEvents: async () => unlisten,
@@ -90,14 +98,14 @@ describe("domain orchestration", () => {
       },
     });
     const base = {
-      platform: "twitch",
+      platform: "twitch" as const,
       userId: "user-1",
       userLogin: "viewer",
       userDisplayName: "Viewer",
       text: "hello",
       fragments: [],
       badges: [],
-      receivedAt: "2026-08-01T00:00:00Z",
+      receivedAt: utcTimestamp("2026-08-01T00:00:00Z"),
     };
     chatListener?.({
       ...base,
@@ -119,11 +127,11 @@ describe("domain orchestration", () => {
   });
 
   it("serializes settings mutations and publishes the backend result", async () => {
-    const resolvers: Array<(value: any) => void> = [];
-    const updateSettings = vi.fn(
-      (_patch: any): Promise<any> => new Promise((resolve) => resolvers.push(resolve)),
+    const resolvers: Array<(value: AppSettings) => void> = [];
+    const updateSettings = vi.fn<SettingsMutationDependencies["updateSettings"]>(
+      () => new Promise((resolve) => resolvers.push(resolve)),
     );
-    const loaded: any[] = [];
+    const loaded: AppSettings[] = [];
     const orchestrator = createSettingsMutationOrchestrator({
       updateSettings,
       onSettingsLoaded: (settings) => loaded.push(settings),
@@ -134,13 +142,20 @@ describe("domain orchestration", () => {
     await Promise.resolve();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(updateSettings).toHaveBeenCalledTimes(1);
-    const firstResult = { twitch: { autoConnect: true }, speech: {}, launcher: { items: [] } };
+    const firstResult: AppSettings = {
+      twitch: { ...defaultTwitchSettings, autoConnect: true },
+      speech: structuredClone(defaultSpeechSettings),
+      launcher: { items: [] },
+    };
     resolvers[0]?.(firstResult);
     await first;
     await Promise.resolve();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(updateSettings).toHaveBeenCalledTimes(2);
-    const secondResult = { twitch: { autoConnect: false }, speech: {}, launcher: { items: [] } };
+    const secondResult: AppSettings = {
+      ...firstResult,
+      twitch: { ...firstResult.twitch, autoConnect: false },
+    };
     resolvers[1]?.(secondResult);
     await expect(second).resolves.toBe(true);
     expect(loaded).toEqual([firstResult, secondResult]);
