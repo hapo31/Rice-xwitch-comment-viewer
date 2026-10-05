@@ -6,6 +6,7 @@ import {
   timelineEventFromTwitchStatus,
 } from "./systemTimeline";
 import { getChatMessagePresentation } from "./chat";
+import type { SystemTimelineEvent } from "../models/systemTimeline";
 
 describe("system timeline routing", () => {
   it("routes EventSub and auth transitions but excludes keepalives", () => {
@@ -74,10 +75,10 @@ describe("system timeline routing", () => {
   it("deduplicates an unchanged transition and records recovery after a change", () => {
     const router = new SystemTimelineRouter();
     const reconnecting = {
-      source: "twitch-connection" as const,
+      source: "twitch-connection",
       transition: "reconnecting",
       message: "再接続中",
-    };
+    } satisfies SystemTimelineEvent;
     expect(router.shouldRecord(reconnecting)).toBe(true);
     expect(router.shouldRecord(reconnecting)).toBe(false);
     expect(router.shouldRecord({ ...reconnecting, transition: "connected" })).toBe(true);

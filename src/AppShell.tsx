@@ -17,6 +17,7 @@ import {
   timelineEventFromTwitchStatus,
 } from "./presentation/systemTimeline";
 import { AuthOperationController } from "./authOperation";
+import type { SystemTimelineEvent } from "./models/systemTimeline";
 
 import { hasActiveTwitchChat, hasPendingSpeechWork, requiresExitConfirmation } from "./exitSafety";
 import { type AppAction, initialAppState } from "./stores/appStore";
@@ -322,7 +323,7 @@ export function AppShell() {
     addSystemChatMessage(message);
   }
 
-  function routeSystemTimelineEvent(event: Parameters<SystemTimelineRouter["shouldRecord"]>[0]) {
+  function routeSystemTimelineEvent(event: SystemTimelineEvent) {
     if (systemTimelineRouter.current.shouldRecord(event)) addSystemChatMessage(event.message);
   }
 
@@ -342,8 +343,7 @@ export function AppShell() {
         reportNotification,
         replaySystemLog: addSystemChatMessage,
         onRestored: () => setEventsRestored(true),
-        routeSystemTimelineEvent: (event) =>
-          routeSystemTimelineEvent(event as Parameters<SystemTimelineRouter["shouldRecord"]>[0]),
+        routeSystemTimelineEvent,
         speechRecoveryMessage: speechRecoveryTimelineEvent,
         twitchTimelineEvent: timelineEventFromTwitchStatus,
       }),

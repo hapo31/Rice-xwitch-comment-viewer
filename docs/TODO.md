@@ -89,6 +89,8 @@
 
 ## 現在の進捗サマリ
 
+Issue #199 は system timeline の中立モデルと型付き購読境界、source 別 transition 契約を実装した。初期 snapshot の認証/speech 通知、連続重複と復旧後の再通知、購読終了後の無視、不正 callback の型エラーを検証し、最終レビューと CI を待つ。
+
 2026-10-05: Dependabot全13件（#179–#182、#184–#192）のレビューと互換性修正を完了した。Tauri dialogのJS/Rust版一致検査、React 19の型・ref初期値・TitleBar DOMテスト移行を実施した。マージと後片付けの条件・検証結果・既存Windows入力の不安定性はPhase 5のDependabot項目に記録する。
 
 - [x] Issue #69: adapter healthとqueue phaseをbackend/frontendで独立保持し、paused中も無音probeを継続する。復旧は失敗項目を自動再送せず、UIの接続/準備完了を両状態から導出する。
@@ -505,5 +507,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [ ] 手動: Issue #27 として、Twitch 接続中・読み上げ待機中・未保存変更ありの X、Alt+F4、OS close-request で終了確認とキャンセル、承認後の接続停止・キュークリアを Windows 10/11 で確認する。
 
 ## 調査メモ
+
+- 2026-10-06 Issue #199: `SystemTimelineEvent` を presentation から `models/systemTimeline.ts` へ移し、domain orchestration と AppShell も同じ型を使う。source/transition は判別可能 union とし、認証の状態＋案内文による重複抑制は維持する。実購読＋snapshot replay＋router の回帰と `@ts-expect-error` の型契約回帰を追加した。frontend 324件、format/lint/typecheck/build が成功した。実Twitch/棒読みちゃんとの手動通信は未実施。
 
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。

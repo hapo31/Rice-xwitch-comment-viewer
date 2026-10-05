@@ -1,10 +1,5 @@
 import type { SpeechStatus, TwitchStatusEvent } from "../types";
-
-export interface SystemTimelineEvent {
-  source: "twitch-auth" | "twitch-connection" | "speech";
-  transition: string;
-  message: string;
-}
+import type { SystemTimelineEvent } from "../models/systemTimeline";
 
 /** Suppresses repeated state until that source changes state. */
 export class SystemTimelineRouter {
@@ -23,12 +18,9 @@ export function timelineEventFromTwitchStatus(
   const message = event.message?.trim();
   if (!message || /keepalive/i.test(message)) return undefined;
 
-  const source = event.domain === "auth" ? "twitch-auth" : "twitch-connection";
-  return {
-    source,
-    transition: source === "twitch-auth" ? `${event.status}:${message}` : event.status,
-    message,
-  };
+  return event.domain === "auth"
+    ? { source: "twitch-auth", transition: `${event.status}:${message}`, message }
+    : { source: "twitch-connection", transition: event.status, message };
 }
 
 export function speechRecoveryTimelineEvent(
