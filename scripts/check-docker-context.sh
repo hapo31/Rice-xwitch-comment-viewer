@@ -24,6 +24,7 @@ expected_exceptions=(
   '!scripts/record-build-materials.mjs'
   '!scripts/verify-project-license.mjs'
   '!scripts/verify-tauri-versions.mjs'
+  '!scripts/nsis-toolchain-probe.nsi'
   '!src/'
   '!src/**'
   '!src-tauri/'
@@ -47,6 +48,7 @@ expected_copy_sources=(
   package.json
   pnpm-lock.yaml
   postcss.config.js
+  scripts/nsis-toolchain-probe.nsi
   scripts/record-build-materials.mjs
   scripts/verify-project-license.mjs
   scripts/verify-release-build-inputs.mjs
@@ -140,6 +142,7 @@ manifest_files=(
   scripts/verify-project-license.mjs
   scripts/verify-tauri-versions.mjs
   package.json
+  scripts/nsis-toolchain-probe.nsi
   pnpm-lock.yaml
   index.html
   postcss.config.js

@@ -23,6 +23,7 @@
 !scripts/record-build-materials.mjs
 !scripts/verify-project-license.mjs
 !scripts/verify-tauri-versions.mjs
+!scripts/nsis-toolchain-probe.nsi
 !src/
 !src/**
 !src-tauri/

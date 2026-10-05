@@ -12,6 +12,8 @@ Debian の署名・package hash 検証は維持します。過去 snapshot の `
 
 ## Windows候補と公開gate
 
+NSISは3.11のnative compiler source、同版のWindows headers/stubs/plugins ZIP、その2つの取得URL・SHA-256・compiler build時刻をmanifestへ固定します。Debian snapshot/Rust/Nodeの固定は維持します。buildは取得後にdigestを検証し、公開版の内部version情報を付けてcompilerだけを構築、必要なRestartManager/MUI2/System pluginで小さなinstallerを生成してからRice本体へ進みます。Docker runtimeはcompilerの版とheaderを照合し、BUILD-MATERIALSにはnative compiler自体のSHA-256も残します。このtools probeは配布installerの実Windows検証の代わりではありません。
+
 `package.json` と `pnpm-lock.yaml` の Tauri API/CLI はレビュー済みのexact versionに固定し、Rust lockのTauri coreとmajor/minorが一致する必要があります。`verify-tauri-versions.mjs` は通常frontend buildとDocker buildのinstalled graphも検査します。compiler policyの更新やTauri自身のversion checkを無効化する代わりにはしません。
 
 `Release Windows` の手動dispatchは選択したcommitを同じDocker経路でbuildし、tagやGitHub Releaseを作らずに候補を検証します。公開workflowは成功したtag push eventだけを対象とし、dispatch結果を公開へ換算しません。
