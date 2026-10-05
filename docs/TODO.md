@@ -326,7 +326,9 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 5: 配信運用向け仕上げ
 
-- [ ] Issue #204: 対処待ち warning/error と info/success 履歴の保持上限を分離し、大量の成功通知で警告を失わないようにする。明示クリア・severity昇格・correlation重複排除・容量上限の logsReducer 回帰を追加する。
+Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離し、成功操作で警告を失わないようにした。frontend 326件、format/lint/typecheck/build を確認済み。独立レビュー・最終CI・統合状況は PR #242 に記録する。
+
+- [x] Issue #204: 対処待ち warning/error と info/success 履歴の保持上限を分離し、大量の成功通知で警告を失わないようにする。明示クリア・severity昇格・correlation重複排除・容量上限の logsReducer 回帰を追加した。
 
 - [x] Dependabot PR #179–#182、#184–#192 の全13件を一件ずつ専用 worktree でレビューし、必要なCI互換性修正を実装する。各PRは全PR checksと当該headのWindows開発build成功を確認してからマージし、worktreeと作業用ローカルbranchを削除して次へ進む。
 
@@ -507,3 +509,5 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 ## 調査メモ
 
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
+
+- 2026-10-06 Issue #204: 実際に使用する logsReducer で warning/error を notifications、info/success を notificationHistory へ分離した。昇格時は元のIDを保ち履歴から対処待ちへ移し、correlationId と本文/5秒の重複排除、明示クリア、独立した保持上限を回帰する。旧 appReducer の整理は別Issue #203 の範囲とし、runtime の正本を直接検証した。
