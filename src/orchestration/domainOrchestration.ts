@@ -1,5 +1,6 @@
 import type { AppAction } from "../stores/appStore";
 import type { DomainStores } from "../stores/domainStores";
+import type { SystemTimelineEvent } from "../models/systemTimeline";
 import type {
   AppLogEvent,
   AppEventsSnapshot,
@@ -128,12 +129,12 @@ export interface DomainEventSubscriptionOptions {
     message: string,
     correlationId?: string,
   ) => void;
-  routeSystemTimelineEvent?: (event: { message: string }) => void;
+  routeSystemTimelineEvent?: (event: SystemTimelineEvent) => void;
   speechRecoveryMessage?: (
     message: string,
     status: SpeechStatusEvent["status"],
-  ) => { message: string };
-  twitchTimelineEvent?: (event: TwitchStatusEvent) => { message: string } | undefined;
+  ) => SystemTimelineEvent;
+  twitchTimelineEvent?: (event: TwitchStatusEvent) => SystemTimelineEvent | undefined;
 }
 
 /** Register all backend event listeners as one cleanup-safe domain boundary. */
@@ -166,7 +167,7 @@ export function subscribeDomainEvents({
       event.connectionGeneration < current.twitchConnectionGeneration
     )
       return;
-    if (event.domain === "chat" && event.status !== "validating") {
+    if (event.domain === "chat") {
       dispatchDomainAction(stores, {
         type: "twitch.connectionStatus",
         status: event.status,

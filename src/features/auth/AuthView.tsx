@@ -9,6 +9,11 @@ import { defaultTwitchSettings } from "../settings/defaults";
 import { FieldError } from "../../components/SettingsFormControls";
 import { formatDeviceAuthRemainingTime, getDeviceAuthRemainingSeconds } from "./deviceAuthExpiry";
 
+type AuthViewState = Pick<
+  AppState,
+  "settings" | "twitchAuthStatus" | "twitchProfile" | "twitchAuthPrompt" | "twitchActiveConnection"
+>;
+
 export function AuthView({
   state,
   onSettingsUpdate,
@@ -18,7 +23,7 @@ export function AuthView({
   onTwitchDisconnect,
   onOpenExternalUrl,
 }: {
-  state: AppState;
+  state: AuthViewState;
   onSettingsUpdate: (patch: AppSettingsPatch) => Promise<boolean>;
   onTwitchStartAuth: () => void;
   onTwitchPollAuth: () => void;
@@ -27,7 +32,7 @@ export function AuthView({
   onOpenExternalUrl: (url: string) => void;
 }) {
   const twitchSettings = {
-    ...defaultTwitchSettings,
+    ...defaultTwitchSettings(),
     ...state.settings?.twitch,
   };
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);

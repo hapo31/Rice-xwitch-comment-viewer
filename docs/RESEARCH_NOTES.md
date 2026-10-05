@@ -1,5 +1,12 @@
 # 調査メモ
 
+## 2026-10-06 Issue #195: frontend controller境界と認証遷移
+
+- Chat/Queue/connection/settings/logsの状態は既存の独立external storeを引き続き正本とし、画面stateを旧AppStateへ合成しない。Contextはドメイン別の安定action facadeを提供し、画面ごとのselector/action購読を保つ。`MainView`から操作callbackをrouteへ渡す経路を外し、AppShellはcontroller providerと画面配置を組み立てる。
+- Auth controllerへstartup restore、start/poll/validate/disconnect/connect/stopとDevice Code timerを集約した。明示的なoperation reducerはgenerationを進めて以前の結果を無効化し、poll同時実行を防ぐ。終了時のfrontend応答破棄だけでは実行中native commandを止めないため、backend世代調停は維持する。
+- XState公式資料は[`invoke`](https://stately.ai/docs/invoke)でpromise結果をstate遷移へ結び、invoke元stateの退出時に結果を破棄することと、[delayed transitions](https://stately.ai/docs/delayed-transitions)を記載している。今回の遷移・timerは現在のgeneration/poll排他と少数の結果分岐に限られ、新runtime依存を増やす価値はなく小さなreducerを採用した。XStateを採用してもnative command cancellationやbackend generation protectionは別途必要。
+- Profiler回帰でqueue storeのみを更新した時にSettings/Logs/Launcherのrender commitが増えないことを確認する。実装と関連frontend全体の確認はDraft PR #236で続ける。
+
 ## 2026-10-05 Issue #101: Rice自身のMIT正本と実配布物の最終照合
 
 - 権利者が既に配置したMIT正本のSHA-256 eeb4b00cfe4a9c135ab47b643c44f4c0b747318c0d52cee8580bf7c3d2ca0667を維持した。npm/Cargo/bundle metadata、README、inbound=outboundの貢献条件、外部GPL参考実装をコピーしない方針を照合し、現在のGitHub repository license APIもSPDX MIT/正本LICENSEを返す。欠落/改変/metadata不一致/installer・portable同梱漏れ/貢献条件欠落のpolicy7件が成功した。
