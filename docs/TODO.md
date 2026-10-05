@@ -91,9 +91,11 @@
 
 ## 現在の進捗サマリ
 
-2026-10-06: Issue #195の実装を専用 Draft PR #236 に分離した。AppShell配下へ controller/actions provider を組み立て、Twitch認証の非同期遷移、speech/queue/Launcher command、終了保護を責務別 controller/provider へ移した。画面はdomain別の安定action Contextと必要な selector を参照し、旧AppStateの再構成を除去した。初期レビューで見つかったDevice Code pollingのproduction lifecycle未接続、認証結果遷移の分散、実画面render計測の不足を修正し、本番AppShell/provider/routes経由のtimer/render回帰へ更新した。PRは親レビュー待ちのためDraftを維持し、Issueはmain反映まで未完了。
+2026-10-06: Issue #195の実装を専用 Draft PR #236 に分離した。AppShell配下へ controller/actions provider を組み立て、Twitch認証の非同期遷移、speech/queue/Launcher command、終了保護を責務別 controller/provider へ移した。画面はdomain別の安定action Contextと必要な selector を参照し、旧AppStateの再構成を除去した。初期レビューで見つかったDevice Code pollingのproduction lifecycle未接続、認証結果遷移の分散、実画面render計測の不足、手動操作/終了時の遅延応答競合を修正し、本番AppShell/provider/routes経由のtimer/render回帰へ更新した。PRは親レビュー待ちのためDraftを維持し、Issueはmain反映まで未完了。
 
-2026-10-06 レビュー対応: Device Code pollingをAppShellのprompt/status lifecycleへ接続し、初回interval、pending/slowDown後のinterval更新、手動操作時のcancel、期限切れ、unmount cleanupを本番AppShell経由のfake-timer回帰で確認した。認証結果・prompt・profile・statusと通知/error副作用は小さな純粋遷移モデルへまとめ、timerとgeneration/poll排他はcontrollerに残した。render回帰は実AppShell/provider/routes上のSettings/Logs/Launcher各bodyをProfiler計測し、queue revisionのみの連続更新を確認する。親レビュー再確認とmain反映待ちのためIssueは未完了。
+2026-10-06 レビュー対応: Device Code pollingをAppShellのprompt/status lifecycleへ接続し、初回interval、pending/slowDown後のinterval更新、手動start/validate/disconnectの競合、期限切れ、unmount中の遅延応答/restore callback抑制をcontrollerと本番AppShell経由の回帰で確認した。timerはschedule時のgeneration/promptを照合し、AuthOperationControllerは世代付き完了、手動優先、poll排他、dispose invalidationを管理する。認証結果・prompt・profile・statusと通知/error副作用は小さな純粋遷移モデルへまとめた。render回帰は実AppShell/provider/routes上のSettings/Logs/Launcher各bodyをProfiler計測し、queue revisionのみの連続更新を確認する。PRは親レビュー再確認待ちのためDraft、Issueはmain反映まで未完了。
+
+Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既存 Biome gate に any・enum・const enum・namespace の検査を追加した。frontend 322件と品質 policy 5件、format/lint/typecheck/build が成功し、独立レビューを完了した。最終コミットの CI 結果と統合状況は PR #238 に記録する。
 
 2026-10-05: Dependabot全13件（#179–#182、#184–#192）のレビューと互換性修正を完了した。Tauri dialogのJS/Rust版一致検査、React 19の型・ref初期値・TitleBar DOMテスト移行を実施した。マージと後片付けの条件・検証結果・既存Windows入力の不安定性はPhase 5のDependabot項目に記録する。
 
@@ -199,7 +201,7 @@
 
 | Phase | 状態 | メモ |
 | --- | --- | --- |
-| Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込、原子的保存、破損時のbackup/既定値復旧を確認した。Issue #50 で UI 倍率を名前付き radio group にし、現在の選択状態と表示倍率を支援技術へ公開した。Issue #49 で route ごとの document title 更新と、PUSH 遷移後の画面見出しへのフォーカス移動を追加した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。 |
+| Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込、原子的保存、破損時のbackup/既定値復旧を確認した。Issue #50 で UI 倍率を名前付き radio group にし、現在の選択状態と表示倍率を支援技術へ公開した。Issue #49 で route ごとの document title 更新と、PUSH 遷移後の画面見出しへのフォーカス移動を追加した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。Issue #202 で既定値 factory を UI feature 非依存の settings model に集約し、browser preview の連続 patch と入力配列の snapshot を保持し、接続診断にも保存済み host/port を反映するようにした。frontend unit 301 件、typecheck、format check が成功した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 読み上げ、制御、接続診断、Settings 画面は実装済み。接続先は host/port を構造化し、IPv4・DNS・IPv6を共通の接続経路で扱う。接続確認は設定に応じて確認読み上げまたは無音の状態取得を行う。Issue #84 で接続エラーの復旧導線を Settings の［診断］へ統一し、backend から画面名を除去した。Issue #148 で起動後の自動復旧プローブを無音の状態取得だけに限定し、下流の音声合成アプリが未起動の間に読み上げ要求を送らないようにした。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring、session-only 保存失敗処理、旧 Linux 平文ファイルの移行/削除、Login 画面、起動時の保存済み認証の自動検証は実装済み。Issue #4 で認証とチャット接続の状態イベントに domain を追加し、表示文言に依存せず独立更新するようにした。Device Code の絶対期限に基づく残り時間と期限切れ時の再発行導線、Issue #30 の必須 `user:read:chat` scope 検証と不足時の再ログイン案内も実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映、再購読時の最新 access token 取得と 401 時の一度だけの refresh/retry（Issue #23）、更新後 access token の `/validate` に基づく scope 再検証（Issue #30）を実装。Issue #9 で Twitch 指定の `reconnect_url` への接続と旧 socket の受信を並行し、新しい welcome 後にのみ切り替え、失敗時は25秒の猶予後に通常再接続へ移行するようにした。Issue #74 で `receivedAt` を Rust から TypeScript まで UTC RFC 3339 に統一し、非文字列を含む不正 timestamp と leap second の frame 取得時刻 fallback、ローカル時刻表示をテストした。Issue #83 で設定値と世代付き実接続 identity を分離し、遅延 status/chat による表示巻き戻りを防止した。実 Twitch 環境での手動確認が必要。 |
@@ -212,6 +214,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 通常 devcontainer には lock 済みの GitHub CLI feature を追加し、Codex の認証情報・履歴・セッションを `rice-codex-home` named volume に永続化した。
 
 ## Phase 0: プロジェクト作成
+
+- [x] Issue #202: Settings 既定値を UI feature 非依存の共通 model factory に集約し、preview の leaf patch を現在値へ累積適用する。可変値の非共有、異 section/同 section field の連続保存、再読込を回帰検証する。
 
 - [x] Tauri + TypeScript + Tailwind の雛形を作る。
 - [x] `src-tauri/src` に `twitch`, `speech`, `settings`, `app_events` の境界を作る。
@@ -332,6 +336,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 5: 配信運用向け仕上げ
 
+- [x] Issue #198: テスト mock の明示的 any を実 DTO／関数型へ置換し、既存 Biome 品質ゲートで any・enum・namespace の禁止と型レベル用途の限定例外を検証する。既存 quality policy に正負 fixture を追加し、関連テスト・format・lint・型検査・build を確認した。
+
 - [x] Dependabot PR #179–#182、#184–#192 の全13件を一件ずつ専用 worktree でレビューし、必要なCI互換性修正を実装する。各PRは全PR checksと当該headのWindows開発build成功を確認してからマージし、worktreeと作業用ローカルbranchを削除して次へ進む。
 
 2026-10-05最終PR進捗: #190はRust dialog 2.8.1との版一致とplugin回帰検査12件を追加し、全16 checksと開発build成功後にマージした。#192も使用中アイコンがv1のbrand icon削除に該当しないことを[公式移行ガイド](https://lucide.dev/guide/react/migration)で確認し、frontend322件・全16 checks・開発build成功後にマージした。両worktreeは削除済み。最後の[#191](https://github.com/hapo31/Rice-xwitch-comment-viewer/pull/191)では[React 19移行ガイド](https://react.dev/blog/2024/04/25/react-19-upgrade-guide)に合わせてReact DOM型も19.3.0へ揃え、5か所のuseRefへundefined初期値を明示した。TitleBarテストはHTML属性順の比較から、既存jsdom projectでgroup/radioの名前・値・全選択状態と現在倍率の検証へ移した。StrictModeの購読cleanupを含むfrontend322件、typecheck/build/format/lint、Tauri版・renderer権限検査は成功した。Dependabotの自動rebaseも取り込み、無関係なWASM更新を入れずに検証済みtreeを保持した。文書を含む最終headの全PR checksとWindows開発build成功をマージ条件とし、マージ済み・保存先から到達可能・cleanを確認してからworktreeを削除する。新たなRelease公開や新依存構成での配布物smokeは今回の対象に含めない。
@@ -390,6 +396,9 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Windows 10 スタートメニュー風の Launcher 画面を追加する。
 - [x] Launcher でアプリの選択/DnD登録、削除、単体起動、一斉起動を実装する。
 - [x] Launcher の登録内容を永続化し、将来の色変更・グループ・並べ替え・Webリンクに拡張できるモデルにする。
+- [x] Issue #196: Launcher追加処理が`added`/`duplicate`/`rejected`の操作結果を明示し、共有state更新とPromise解決の順序や並行追加に依存せず正しい通知を表示する。実装・回帰テスト・親レビューを完了した。最終コミットの CI 結果と統合状況は PR #237 に記録する。
+
+2026-10-06 Issue #196: `launcher_add`はsettings transactionで実際に追加した`addedCount`と更新後のitemsを返すようにし、Launcher通知は共有stateの件数差分を参照しない。実DomainStoresとLauncherViewを接続し、`flushSync`で共有stateをPromise解決前に更新してから結果を返すDOM回帰を追加した。新規/混在/重複通知と同一targetの並行結果独立性を確認する。Frontend全gate（format/lint/typecheck/test 324件/build）とsecurity/license policyが成功。Rust toolchainがこの実行環境にないためRust回帰のローカル実行は未確認。親レビューで追加した実store更新順序のDOM回帰2件も成功。Rustを含む最終CI結果はPR #237に記録する。
 - [x] Issue #68: Launcher のアイコン抽出を timeout/kill/reap 付きの上限制御 worker へ移し、設定 lock 外で実行して競合する設定変更を merge する。抽出失敗は汎用アイコンと bounded Logs へフォールバックする。
 - [x] Issue #18: Launcher の削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応させる。
 - [x] Issue #24: チャット・ログ・状態更新時にも Launcher の DnD listener を再登録せず、mount 中の購読を維持し、最新 handler と遅延登録後の cleanup をテストする。
@@ -509,5 +518,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [ ] 手動: Issue #27 として、Twitch 接続中・読み上げ待機中・未保存変更ありの X、Alt+F4、OS close-request で終了確認とキャンセル、承認後の接続停止・キュークリアを Windows 10/11 で確認する。
 
 ## 調査メモ
+
+- 2026-10-06 Issue #198: [Biome noExplicitAny](https://biomejs.dev/linter/rules/no-explicit-any/) の型引数制約の例外を維持する。条件型で任意の引数列から戻り値を推論する場合に限り、理由付きの行単位 `biome-ignore lint/suspicious/noExplicitAny` を使える。DTO、mock、値のキャストには使わず、ファイル単位の無効化はしない。`noEnum` は const enum を検出しないため `noConstEnum` も有効にした。既存 quality policy の正負 fixture で named/alias import と許容例外を含め検証し、別の AST 検査器や workflow は追加していない。
 
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。

@@ -37,11 +37,11 @@ export function SettingsView({
   onSpeechTest: (text?: string) => void;
 }) {
   const twitchSettings = {
-    ...defaultTwitchSettings,
+    ...defaultTwitchSettings(),
     ...settings?.twitch,
   };
   const speechSettings = {
-    ...defaultSpeechSettings,
+    ...defaultSpeechSettings(),
     ...settings?.speech,
   };
   const [host, setHost] = useState(speechSettings.bouyomiHost);

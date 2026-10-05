@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo, useRef, type Context, type ReactNod
 import type {
   AppSettingsPatch,
   BouyomiConnectionDiagnostics,
+  LauncherAddResult,
   LauncherItem,
   LauncherLaunchResult,
 } from "../types";
@@ -17,7 +18,7 @@ export interface DomainControllerActions {
   queueDismiss: (itemId: string) => void;
   queueDismissHistory: () => void;
   queueRetry: (itemId: string) => void;
-  launcherAdd: (paths: string[]) => Promise<LauncherItem[]>;
+  launcherAdd: (paths: string[]) => Promise<LauncherAddResult>;
   launcherRemove: (itemId: string) => Promise<LauncherItem[]>;
   launcherLaunch: (itemId: string) => Promise<LauncherLaunchResult>;
   launcherLaunchAll: () => Promise<LauncherLaunchResult>;

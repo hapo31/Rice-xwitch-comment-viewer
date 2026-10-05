@@ -76,7 +76,6 @@ import type {
   AppSettingsPatch,
   NotificationSeverity,
   NotificationSource,
-  BouyomiConnectionDiagnostics,
 } from "./types";
 
 const showStartupGuideForSession = claimStartupGuideForSession(window.sessionStorage);
@@ -115,6 +114,8 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
   const startupAuthAttempted = useRef(false);
   const authOperations = useRef(new AuthOperationController());
   const systemTimelineRouter = useRef(new SystemTimelineRouter());
+
+  useEffect(() => () => authOperations.current.invalidate(), []);
 
   useEffect(() => {
     Promise.all([getSettings(), takeSettingsRecoveryNotice()])

@@ -81,20 +81,28 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
   async function restore() {
     const operation = deps.operations.begin("restore");
     transitionAuth({ type: "restore.started" });
-    const auth = await restoreStartupAuth({
-      getStoredAuth: twitchGetStoredAuth,
-      validateAuth: twitchValidateAuth,
-      reportSystemMessage: deps.reportSystemMessage,
-      reportTechnicalError: deps.reportTechnicalError,
-    });
-    if (!deps.operations.isCurrent(operation)) return;
-    if (auth.status === "authenticated") {
-      transitionAuth({ type: "restore.authenticated", profile: auth.result.profile });
-      routeAuthStorageWarning(auth.result, deps.reportNotification, deps.reportSystemMessage);
-    } else if (auth.status === "missing") {
-      transitionAuth({ type: "restore.missing" });
-    } else if (auth.status === "error") {
-      transitionAuth({ type: "restore.failed", message: auth.error });
+    try {
+      const auth = await restoreStartupAuth({
+        getStoredAuth: twitchGetStoredAuth,
+        validateAuth: twitchValidateAuth,
+        reportSystemMessage: (message) => {
+          if (deps.operations.isCurrent(operation)) deps.reportSystemMessage(message);
+        },
+        reportTechnicalError: (message) => {
+          if (deps.operations.isCurrent(operation)) deps.reportTechnicalError(message);
+        },
+      });
+      if (!deps.operations.isCurrent(operation)) return;
+      if (auth.status === "authenticated") {
+        transitionAuth({ type: "restore.authenticated", profile: auth.result.profile });
+        routeAuthStorageWarning(auth.result, deps.reportNotification, deps.reportSystemMessage);
+      } else if (auth.status === "missing") {
+        transitionAuth({ type: "restore.missing" });
+      } else if (auth.status === "error") {
+        transitionAuth({ type: "restore.failed", message: auth.error });
+      }
+    } finally {
+      deps.operations.finishOperation(operation);
     }
   }
 
@@ -110,11 +118,13 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
     } catch (error) {
       if (!deps.operations.isCurrent(operation)) return;
       transitionAuth({ type: "prompt.failed", error });
+    } finally {
+      deps.operations.finishOperation(operation);
     }
   }
 
-  async function pollAuth(options: { quietWaiting?: boolean } = {}) {
-    const operation = deps.operations.tryBeginPoll();
+  async function pollAuth(options: { quietWaiting?: boolean; expectedGeneration?: number } = {}) {
+    const operation = deps.operations.tryBeginPoll(options.expectedGeneration);
     if (operation === undefined) return;
     transitionAuth({ type: "poll.started" });
     try {
@@ -156,6 +166,8 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
       transitionAuth({ type: "validate.invalid", error });
       deps.dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
       return false;
+    } finally {
+      deps.operations.finishOperation(operation);
     }
   }
 
@@ -208,6 +220,8 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
     } catch (error) {
       if (!deps.operations.isCurrent(operation)) return;
       transitionAuth({ type: "disconnect.failed", error });
+    } finally {
+      deps.operations.finishOperation(operation);
     }
   }
 
@@ -221,6 +235,7 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
 
   function schedulePoll(prompt: TwitchDeviceAuthStart | undefined): () => void {
     if (!prompt) return () => undefined;
+    const generation = deps.operations.getState().generation;
     const remainingMs = Math.max(0, prompt.expiresAtMs - Date.now());
     if (remainingMs === 0) {
       expireAuthPrompt();
@@ -229,10 +244,15 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
     const pollDelayMs = Math.min(Math.max(prompt.interval, 1) * 1000, remainingMs);
     const timer = window.setTimeout(() => {
       const current = deps.getAuthPrompt();
-      if (current && getDeviceAuthRemainingSeconds(current.expiresAtMs) > 0) {
-        void pollAuth({ quietWaiting: true });
+      if (
+        current?.userCode === prompt.userCode &&
+        current.expiresAtMs === prompt.expiresAtMs &&
+        current.interval === prompt.interval &&
+        getDeviceAuthRemainingSeconds(current.expiresAtMs) > 0
+      ) {
+        void pollAuth({ quietWaiting: true, expectedGeneration: generation });
       } else if (current) {
-        expireAuthPrompt();
+        if (getDeviceAuthRemainingSeconds(current.expiresAtMs) === 0) expireAuthPrompt();
       }
     }, pollDelayMs);
     return () => window.clearTimeout(timer);

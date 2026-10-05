@@ -8,8 +8,10 @@ export interface AuthOperationState {
 
 export type AuthOperationEvent =
   | { type: "begin"; operation: Exclude<AuthOperationName, "poll"> }
-  | { type: "poll.begin" }
-  | { type: "poll.finish"; generation: number };
+  | { type: "operation.finish"; generation: number }
+  | { type: "poll.begin"; generation: number }
+  | { type: "poll.finish"; generation: number }
+  | { type: "invalidate" };
 
 export const initialAuthOperationState: AuthOperationState = {
   generation: 0,
@@ -30,7 +32,12 @@ export function authOperationReducer(
         pollGeneration: undefined,
       };
     case "poll.begin":
-      if (state.pollGeneration === state.generation) return state;
+      if (
+        event.generation !== state.generation ||
+        state.activeOperation !== undefined ||
+        state.pollGeneration === state.generation
+      )
+        return state;
       return {
         ...state,
         activeOperation: "poll",
@@ -40,6 +47,20 @@ export function authOperationReducer(
       if (event.generation !== state.generation || state.pollGeneration !== event.generation)
         return state;
       return { ...state, activeOperation: undefined, pollGeneration: undefined };
+    case "operation.finish":
+      if (
+        event.generation !== state.generation ||
+        state.activeOperation === undefined ||
+        state.activeOperation === "poll"
+      )
+        return state;
+      return { ...state, activeOperation: undefined };
+    case "invalidate":
+      return {
+        generation: state.generation + 1,
+        activeOperation: undefined,
+        pollGeneration: undefined,
+      };
   }
 }
 
@@ -55,14 +76,22 @@ export class AuthOperationController {
     return generation === this.state.generation;
   }
 
-  tryBeginPoll(): number | undefined {
+  tryBeginPoll(expectedGeneration = this.state.generation): number | undefined {
     const previous = this.state;
-    this.transition({ type: "poll.begin" });
+    this.transition({ type: "poll.begin", generation: expectedGeneration });
     return this.state === previous ? undefined : this.state.generation;
   }
 
   finishPoll(generation: number) {
     this.transition({ type: "poll.finish", generation });
+  }
+
+  finishOperation(generation: number) {
+    this.transition({ type: "operation.finish", generation });
+  }
+
+  invalidate() {
+    this.transition({ type: "invalidate" });
   }
 
   getState(): AuthOperationState {

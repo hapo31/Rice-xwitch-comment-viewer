@@ -18,6 +18,7 @@ describe("AuthOperationController", () => {
   it("allows only one poll for the current generation", () => {
     const controller = new AuthOperationController();
     const generation = controller.begin();
+    controller.finishOperation(generation);
 
     expect(controller.tryBeginPoll()).toBe(generation);
     expect(controller.getState()).toMatchObject({
@@ -38,7 +39,14 @@ describe("AuthOperationController", () => {
       type: "begin",
       operation: "restore",
     });
-    const polling = authOperationReducer(restoring, { type: "poll.begin" });
+    const releasedRestore = authOperationReducer(restoring, {
+      type: "operation.finish",
+      generation: restoring.generation,
+    });
+    const polling = authOperationReducer(releasedRestore, {
+      type: "poll.begin",
+      generation: releasedRestore.generation,
+    });
     const manual = authOperationReducer(polling, { type: "begin", operation: "start" });
 
     expect(manual).toEqual({
@@ -54,8 +62,10 @@ describe("AuthOperationController", () => {
   it("does not let a stale poll unlock a newer poll", () => {
     const controller = new AuthOperationController();
     const stale = controller.begin();
+    controller.finishOperation(stale);
     expect(controller.tryBeginPoll()).toBe(stale);
     const current = controller.begin();
+    controller.finishOperation(current);
     expect(controller.tryBeginPoll()).toBe(current);
     controller.finishPoll(stale);
 
@@ -76,5 +86,32 @@ describe("AuthOperationController", () => {
 
     expect(controller.isCurrent(startup)).toBe(false);
     expect(controller.isCurrent(newAuthentication)).toBe(true);
+  });
+
+  it("rejects due timers during manual work and stale timers after manual work finishes", () => {
+    const controller = new AuthOperationController();
+    const timerGeneration = controller.getState().generation;
+    const start = controller.begin("start");
+
+    expect(controller.tryBeginPoll(timerGeneration)).toBeUndefined();
+    expect(controller.tryBeginPoll(start)).toBeUndefined();
+    controller.finishOperation(start);
+    expect(controller.getState().activeOperation).toBeUndefined();
+    expect(controller.tryBeginPoll(timerGeneration)).toBeUndefined();
+    expect(controller.tryBeginPoll(start)).toBe(start);
+  });
+
+  it("invalidates in-flight work on disposal and clears active arbitration", () => {
+    const controller = new AuthOperationController();
+    const generation = controller.begin("validate");
+    controller.invalidate();
+
+    expect(controller.isCurrent(generation)).toBe(false);
+    expect(controller.getState()).toMatchObject({
+      generation: generation + 1,
+      activeOperation: undefined,
+      pollGeneration: undefined,
+    });
+    expect(controller.tryBeginPoll(generation)).toBeUndefined();
   });
 });

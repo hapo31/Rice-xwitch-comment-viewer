@@ -26,7 +26,7 @@ src-tauri/
 
 domain store が状態の唯一のsourceであり、React Context はdomain単位の安定した操作APIと unsaved/exit の操作だけを渡す。画面は表示に必要なstore selectorとaction contextを直接参照し、`MainView` はroute title・focus通知だけを担当する。controller providerは画面状態を集約した旧 `AppState` を再構成しない。Jotai等の状態管理依存は追加しない。
 
-Device Code認証の結果、status、prompt、profile、通知/error副作用は`authFlowTransition`の小さな純粋モデルで一緒に決める。`AuthOperationController`は操作generationと単一pollの排他だけを担い、AppShell effectはprompt/status lifecycleに沿ってpoll timerを開始・cleanupし、期限切れをモデルへ通知する。XStateの[`invoke`](https://stately.ai/docs/invoke)と[遅延遷移](https://stately.ai/docs/delayed-transitions)はpromise完了による遷移とstate退出時のtimer解除を提供するが、この認証には追加actor/runtime依存と移行費用がある。promise actor退出後の結果破棄も実行中のTauri commandを止める保証ではなく、backend generation保護は別途必要である。そのため、現在の操作競合と短いDevice Code timerは明示reducer/controllerで管理し、XStateは導入しない。
+Device Code認証の結果、status、prompt、profile、通知/error副作用は`authFlowTransition`の小さな純粋モデルで一緒に決める。`AuthOperationController`は世代付きの操作開始/完了、手動操作による古い応答の無効化、単一pollの排他、provider破棄時のinvalidateを担う。AppShell effectはprompt/status lifecycleに沿ってpoll timerを開始・cleanupし、timerはschedule時の世代とprompt情報を照合してからpollを要求する。期限切れはauth flowへ通知する。XStateの[`invoke`](https://stately.ai/docs/invoke)と[遅延遷移](https://stately.ai/docs/delayed-transitions)はpromise完了による遷移とstate退出時のtimer解除を提供するが、この認証には追加actor/runtime依存と移行費用がある。promise actor退出後の結果破棄も実行中のTauri commandを止める保証ではなく、backend generation保護は別途必要である。そのため、現在の操作競合と短いDevice Code timerは明示reducer/controllerで管理し、XStateは導入しない。
 
 旧 `AppState/appReducer` は presentation/test compatibility facade として残し、runtime の更新経路には使用しない。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
 
@@ -88,6 +88,8 @@ domain/endpointの境界値は同じJSON fixtureをRustとフォームで検証�
 `launcher/model.rs`は永続DTO・編集DTO・quota/PNG検証・正規化・path identity/ID/orderのpureな境界とする。Tauri、filesystem確認、PowerShell、process起動をimportしない。`ports.rs`の小さなobject-safe traitを通じて、`service.rs`の登録/削除/単体・一斉起動へresolver、icon extractor、application launcher、repository、event sinkを注入する。
 
 `AppState.launcher_runtime`がアプリ全体で1つのworker poolとadapterを保持する。`commands.rs`はborrowed IPCのpreflight/DTO変換、repository/event sinkのwiring、service呼出しだけを行う。`repository.rs`は共有設定の最新candidateへmutationを1回適用し、既存のsettings transactionで検証・永続化した後だけメモリへ公開する。Launcher以外のsectionも保持する。保存失敗時は追加/削除の成功ログやicon fallback通知を発行しない。filesystem/COM処理中にsettings lockを保持しない。
+
+`launcher_add`は更新後の`items`と、そのtransactionで実際に追加した`addedCount`を返す。UIはPromise解決時の共有state件数から追加数を推測しない。並行追加が同じtargetを含む場合もrepositoryの最新candidateへのcommit内で件数を確定する。
 
 `workers.rs`は最大4つのblocking taskを共通poolで制限する。取得待ち6秒・job待ち7秒を維持し、timeout後も実workerが終了するまでpermitを返さない。`platform/target.rs`だけが実ファイルの存在/種類/canonical pathを確認し、WindowsではDOS/UNCへ変換する。`platform/windows/icon.rs`はPowerShell/COMの5秒timeout、kill/reap、bounded pipe回収を担当する。`platform/windows/launch.rs`はapplication pathだけを受け取り、Launcherのkindを解釈しない。Websiteの予約/拒否と将来のdispatch追加はservice/modelに閉じる。
 

@@ -7,8 +7,36 @@ import {
   DomainControllerActionsProvider,
   type DomainControllerActions,
 } from "../orchestration/domainControllerContext";
+import { defaultSpeechSettings, defaultTwitchSettings } from "../features/settings/defaults";
 
-const actions = {} as DomainControllerActions;
+const actions: DomainControllerActions = {
+  updateSettings: async () => true,
+  speechHealthCheck: () => undefined,
+  speechDiagnostics: async () => ({
+    configuredAddr: "127.0.0.1:50001",
+    attempted: [],
+    recommendation: "",
+  }),
+  speechTest: () => undefined,
+  speechControl: () => undefined,
+  queueReload: () => undefined,
+  queueRemove: () => undefined,
+  queueDismiss: () => undefined,
+  queueDismissHistory: () => undefined,
+  queueRetry: () => undefined,
+  launcherAdd: async () => ({ items: [], addedCount: 0 }),
+  launcherRemove: async () => [],
+  launcherLaunch: async () => ({ launchedCount: 0, failures: [] }),
+  launcherLaunchAll: async () => ({ launchedCount: 0, failures: [] }),
+  twitchStartAuth: () => undefined,
+  twitchPollAuth: () => undefined,
+  twitchValidateAuth: async () => true,
+  twitchDisconnect: () => undefined,
+  twitchConnect: () => undefined,
+  twitchStopChat: () => undefined,
+  openExternalUrl: () => undefined,
+  clearWarnings: () => undefined,
+};
 
 describe("SidePanel speech recovery", () => {
   it("shows the active channel separately from a changed configured channel", () => {
@@ -25,13 +53,8 @@ describe("SidePanel speech recovery", () => {
                 broadcasterLogin: "channel_a",
               },
               settings: {
-                twitch: {
-                  channelLogin: "channel_b",
-                  autoConnect: false,
-                  confirmBeforeStopChat: true,
-                  liveChatAnnouncements: true,
-                },
-                speech: {} as any,
+                twitch: { ...defaultTwitchSettings(), channelLogin: "channel_b" },
+                speech: defaultSpeechSettings(),
                 launcher: { items: [] },
               },
             }}

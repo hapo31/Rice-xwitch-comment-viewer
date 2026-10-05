@@ -13,11 +13,14 @@
         "useHookAtTopLevel": "error"
       },
       "suspicious": {
+        "noConstEnum": "error",
+        "noExplicitAny": "error",
         "noDebugger": "error",
         "noDuplicateObjectKeys": "error",
         "noDuplicateParameters": "error",
         "noDoubleEquals": "error"
       },
+      "style": { "noEnum": "error", "noNamespace": "error" },
       "security": { "noDangerouslySetInnerHtml": "error", "noGlobalEval": "error" }
     }
   }

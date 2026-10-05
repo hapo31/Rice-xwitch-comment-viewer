@@ -141,9 +141,9 @@ export function createLauncherController(
   return {
     async add(paths: string[]) {
       try {
-        const items = await launcherAdd(paths);
-        feedback.dispatchLauncherItems(items);
-        return items;
+        const result = await launcherAdd(paths);
+        feedback.dispatchLauncherItems(result.items);
+        return result;
       } catch (error) {
         feedback.reportError(error, "launcher");
         throw error;
