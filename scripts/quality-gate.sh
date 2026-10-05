@@ -9,7 +9,7 @@ case "${1:-}" in
   frontend-lint) pnpm run lint; pnpm run check:security ;;
   frontend-typecheck) pnpm run typecheck ;;
   frontend-test) pnpm test ;;
-  frontend-build) pnpm build ;;
+  frontend-build) node scripts/verify-tauri-versions.mjs --installed; pnpm build ;;
   rust-format) cargo fmt --check --manifest-path src-tauri/Cargo.toml ;;
   rust-clippy) cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings ;;
   rust-test) cargo test --locked --manifest-path src-tauri/Cargo.toml --all-features ;;

@@ -86,6 +86,8 @@ expectEqual(appCommands, handledCommands, "application command ACL manifest");
 const expectedPermissions = [
   "core:event:allow-listen",
   "core:event:allow-unlisten",
+  // Window.onCloseRequested destroys the native window after an unprevented
+  // close. This is an indirect SDK use, not an unused renderer permission.
   "core:window:allow-destroy",
   "core:window:allow-is-maximized",
   "core:window:allow-minimize",
@@ -97,6 +99,8 @@ const expectedPermissions = [
 ];
 expectEqual(capability.windows, ["main"], "capability windows");
 expectEqual(capability.permissions, expectedPermissions, "renderer permissions");
+expectEqual(Object.keys(capability).sort(), ["$schema", "identifier", "description", "windows", "permissions"].sort(), "capability fields (no additional scope or platform override)");
+expectEqual(capability.identifier, "default", "capability identifier");
 if ("remote" in capability) {
   fail("bundled main-window capability must not allow remote origins");
 }
