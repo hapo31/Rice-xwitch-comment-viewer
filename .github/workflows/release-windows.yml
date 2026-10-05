@@ -48,6 +48,7 @@ jobs:
           node scripts/verify-project-license.mjs
           node scripts/verify-tauri-versions.mjs
           node --test scripts/test-tauri-versions.mjs
+          node --test scripts/test-checkout-materials.mjs
           node --test scripts/test-project-license.mjs
           node scripts/test-twitch-client-id.mjs
           bash scripts/test-publish-release.sh
@@ -206,6 +207,8 @@ jobs:
           path: release-artifacts
       - name: Install, launch and uninstall exact release candidates
         run: |
+          node --test scripts/test-checkout-materials.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Canonical checkout material tests failed' }
           ./scripts/smoke-windows-artifacts.ps1 -Artifacts release-artifacts -Commit $env:GITHUB_SHA -Tag $env:EXPECTED_TAG
       - name: Retain Windows smoke receipt
         if: always()

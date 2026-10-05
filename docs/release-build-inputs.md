@@ -20,6 +20,8 @@ NSISは3.11のnative compiler source、同版のWindows headers/stubs/plugins ZI
 
 `ARTIFACT-MANIFEST.json` は3つのversion manifestとtag（候補はnull）、source commit、reviewed target、exactなinstaller/portable/support file集合、各file hash・容量、portable内のflatなrice.exe/LICENSEのCRC・hashを記録します。検査はZIPのlocal/central一致、CRC、bounded inflate、PE GUI/x64、元LICENSE、build材料とlock digest、SHA256SUMSの完全一致を要求します。
 
+LICENSE、npm/Cargo lockfile、Cargo metadataは`.gitattributes`でLF checkoutを指定し、Git for Windowsのcore.autocrlf=trueでもcanonicalな正本bytesを保持します。CIのclone正例/負例で属性の効果を確認します。受け取ったartifactを正規化してdigestを合わせたり、license/lock比較を省略したりはしません。
+
 同じrunのartifactをfreshなGitHub-hosted Windowsへ渡し、portable起動、隔離NSIS silent install、同一exe・offline LICENSE・version/registry、installed起動、silent uninstallを検証します。各appは実main windowを表示して5秒以上異常終了せず、通常closeでexit0になる必要があります。smoke scriptは既存Rice profile/installationやself-hosted環境を拒否し、終了処理で対象PIDと新規GUID scratch/今回作成したprofileだけを扱います。
 
 trusted publisherは同runのmanifest hashを持つreceiptだけでなく、GitHub APIでWindows全体/明示native/実installer smokeの各job・stepがsuccessであることも確認します。失敗・skip・欠落・古いtagにgateがない場合はRelease変更前に停止します。第三者ライセンス通知の整備（#102）はこの実動作gateとは別の未完了事項です。

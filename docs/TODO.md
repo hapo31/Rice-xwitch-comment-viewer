@@ -8,6 +8,8 @@
 
 2026-10-05追加進捗: source95fc65aの通常6workflowはすべて成功し、[候補内のWindows実動作](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37264663033)も263件/実keyring/明示headful3件が成功した。Dockerで本番release exeを生成した後、bookwormのNSISにWin/RestartManager.nshがなくinstaller作成が停止した。NSIS3.11のnative compilerと同版のWindows headers/stubs/pluginsを公式配布のSHA-256固定入力で組み合わせ、実compiler版番号・内部packed version・必要header/pluginによるinstaller生成をlocalで確認した。入力policy13件を含むlocal74件とcontext/workflow/license guardが成功。compiler/source/Windows bundleのhashはbuild材料に残し、実Rice installer/portableのcandidate検証が成功するまでは未完了。
 
+2026-10-05追加検証: source1c2c403の通常6workflowが成功し、[候補CI](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37270108901)ではDocker製の実installer/portable生成、exact artifact/CRC/PE/LICENSE/SBOMが成功した。Windowsは起動前のLICENSE byte比較で停止した。Gitのcore.autocrlf=trueによる同じ不一致を再現し、正本/LICENSE・2 lockfiles・Cargo.tomlをLF checkoutへ固定する。元bytesと検証条件は維持し、属性あり/なしのclone回帰2件を含むlocal83件が成功した。実portable起動/NSIS install/起動/uninstallは未確認であり、修正後sourceの候補で継続する。
+
 - [x] Issue #64: versioned persistence wireをdomainから分離し、旧schemaを段階migrationする。全fieldはoptionalとして欠落・型/範囲/意味違反を既定値へ戻し、#88の共通validatorでload/saveの不変条件を揃える。未知future version/未知fieldを黙って捨てず、設定・Launcher・window保存と終了からの上書きを防ぐ。fixture、primary/backup保持、writer、両OS/native CIで検証する。
 
 2026-10-05 local検証: v0（番号なし/null/0）→v1、14 fixtureと7 schemaテスト、元bytesを保持するmigration backup、保存直前の将来版への交換、future backupの復旧を実装した。Rust all-features262件/no-default211件とfmt/strict clippy、frontend321件とformat/lint/typecheck/build/security/license、policy21件、Docker contextが成功。最大8MiB roundtripは4.56秒/追加Rust heap25.5MiBで既存予算内。Windows本番起動/Settings・Launcher IPC拒否/正常終了の追加テストと両OS CIが成功するまでは未完了とする。
