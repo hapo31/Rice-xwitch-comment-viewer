@@ -131,7 +131,7 @@ jobs:
 
       - name: Retain dependency audit results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-dependency-audit-${{ github.run_id }}
           path: audit-reports/
@@ -167,7 +167,7 @@ jobs:
           node scripts/verify-release-artifacts.mjs release-artifacts --tag "${EXPECTED_TAG}" --commit "${GITHUB_SHA}"
 
       - name: Upload release artifact bundle
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rice-windows-${{ github.run_id }}
           path: release-artifacts/*
@@ -176,7 +176,7 @@ jobs:
 
       - name: Upload immutable release provenance
         if: github.event_name == 'push'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rice-release-provenance-${{ github.ref_name }}
           path: release-provenance.json
@@ -214,7 +214,7 @@ jobs:
           ./scripts/smoke-windows-artifacts.ps1 -Artifacts release-artifacts -Commit $env:GITHUB_SHA -Tag $env:EXPECTED_TAG
       - name: Retain Windows smoke receipt
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rice-windows-smoke-${{ github.run_id }}
           path: windows-smoke-report.json
