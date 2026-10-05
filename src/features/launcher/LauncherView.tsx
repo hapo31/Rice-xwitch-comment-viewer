@@ -372,7 +372,7 @@ export function LauncherView({
               return (
                 <article
                   key={item.id}
-                  className="group relative isolate overflow-visible border border-white/10 text-white shadow-sm focus-within:ring-2 focus-within:ring-sky-300"
+                  className="group relative isolate overflow-visible border border-white/10 text-white shadow-xs focus-within:ring-2 focus-within:ring-sky-300"
                   style={{ backgroundColor: launcherTileColor(item) }}
                 >
                   <button
@@ -525,7 +525,7 @@ export function LauncherView({
         </div>
 
         {isDragActive && (
-          <div className="pointer-events-none absolute inset-3 z-40 flex items-center justify-center border-2 border-dashed border-sky-400 bg-sky-950/85 text-sky-100 backdrop-blur-sm">
+          <div className="pointer-events-none absolute inset-3 z-40 flex items-center justify-center border-2 border-dashed border-sky-400 bg-sky-950/85 text-sky-100 backdrop-blur-xs">
             <div className="flex flex-col items-center gap-3 text-sm font-medium">
               <Plus className="h-10 w-10" />
               ここにドロップして追加

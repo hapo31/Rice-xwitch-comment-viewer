@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  blockedRulesError,
+  isValidBlockedWord,
+  isValidConfirmationText,
   formatBouyomiAddress,
   isValidBouyomiHost,
   isValidBouyomiVoice,
@@ -10,6 +13,28 @@ import {
   parseBlockedWordList,
   RULE_LIST_LIMIT,
 } from "./validation";
+import validationFixtures from "./tauri/fixtures/settings-validation.json";
+
+describe("shared backend/form settings boundaries", () => {
+  it.each(validationFixtures)("validates $kind boundary $repeat/$count ($valid)", (fixture) => {
+    const value =
+      fixture.value ?? `${(fixture.unit ?? "").repeat(fixture.repeat ?? 1)}${fixture.suffix ?? ""}`;
+    const valid =
+      fixture.kind === "login"
+        ? isValidTwitchChannelLogin(value)
+        : fixture.kind === "host"
+          ? isValidBouyomiHost(value)
+          : fixture.kind === "confirmation"
+            ? isValidConfirmationText(value)
+            : fixture.kind === "word"
+              ? isValidBlockedWord(value)
+              : blockedRulesError(
+                  [],
+                  Array.from({ length: fixture.count ?? 0 }, () => value),
+                ) === undefined;
+    expect(valid).toBe(fixture.valid);
+  });
+});
 
 describe("settings validation", () => {
   it("validates Twitch channel logins", () => {

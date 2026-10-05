@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -37,6 +37,11 @@ jobs:
           scripts/test-publish-release.sh
           node --test scripts/test-release-repository-policy.mjs
           node --test scripts/test-release-build-inputs.mjs
+          node --test scripts/test-release-artifacts.mjs scripts/test-windows-smoke.mjs
+          node --test scripts/test-tauri-versions.mjs
+          node --test scripts/test-checkout-materials.mjs
+          node --test scripts/test-tauri-security.mjs
+          node --test scripts/test-windows-capabilities.mjs
           scripts/check-docker-context.sh
       - name: Check release workflow privilege boundary
         run: node scripts/verify-release-workflow-policy.mjs
