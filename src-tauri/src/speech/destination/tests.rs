@@ -193,14 +193,22 @@ async fn native_consent_is_bound_to_endpoint_all_addresses_and_this_process_only
             .len(),
         2
     );
-    assert!(policy
-        .connection_addresses(&BouyomiAddress::new("other.test", 50001).unwrap(), true)
-        .await
-        .is_err());
-    assert!(policy
-        .connection_addresses(&BouyomiAddress::new("speech.test", 50002).unwrap(), true)
-        .await
-        .is_err());
+    // Inspect identity differences without an unrelated request revoking the
+    // grant used below to verify an observed DNS change.
+    assert_ne!(
+        policy.identity(&endpoint()).await.unwrap(),
+        policy
+            .identity(&BouyomiAddress::new("other.test", 50001).unwrap())
+            .await
+            .unwrap()
+    );
+    assert_ne!(
+        policy.identity(&endpoint()).await.unwrap(),
+        policy
+            .identity(&BouyomiAddress::new("speech.test", 50002).unwrap())
+            .await
+            .unwrap()
+    );
     assert!(DestinationPolicy::with_resolver(resolver.clone())
         .connection_addresses(&endpoint(), true)
         .await
@@ -211,11 +219,69 @@ async fn native_consent_is_bound_to_endpoint_all_addresses_and_this_process_only
         .await
         .is_err());
     resolver.change(&["10.0.0.1", "fd00::1"]);
+    assert!(policy
+        .connection_addresses(&endpoint(), true)
+        .await
+        .is_err());
+    *policy.last_prompt.lock().unwrap() = None;
+    policy
+        .install(
+            policy
+                .prepare_approval(&endpoint(), true, &consent)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(consent.calls.load(Ordering::SeqCst), 2);
+    assert!(policy.connection_addresses(&endpoint(), true).await.is_ok());
+    resolver.change(&["127.0.0.1"]);
+    assert!(policy.connection_addresses(&endpoint(), true).await.is_ok());
+    resolver.change(&["10.0.0.1", "fd00::1"]);
+    assert!(policy
+        .connection_addresses(&endpoint(), true)
+        .await
+        .is_err());
     policy.revoke();
     assert!(policy
         .connection_addresses(&endpoint(), true)
         .await
         .is_err());
+}
+
+#[tokio::test]
+async fn another_host_or_port_revokes_the_grant_instead_of_reusing_it() {
+    for other in [
+        BouyomiAddress::new("other.test", 50001).unwrap(),
+        BouyomiAddress::new("speech.test", 50002).unwrap(),
+    ] {
+        let policy = DestinationPolicy::with_resolver(Resolver::new(&["10.0.0.1"]));
+        let consent = Consent::new(true);
+        policy
+            .install(
+                policy
+                    .prepare_approval(&endpoint(), true, &consent)
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            policy
+                .connection_addresses(&other, true)
+                .await
+                .unwrap_err()
+                .code,
+            "consentRequired"
+        );
+        assert_eq!(
+            policy
+                .connection_addresses(&endpoint(), true)
+                .await
+                .unwrap_err()
+                .code,
+            "consentRequired"
+        );
+        assert_eq!(consent.calls.load(Ordering::SeqCst), 1);
+    }
 }
 
 #[tokio::test]

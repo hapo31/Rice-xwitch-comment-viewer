@@ -6,6 +6,8 @@
 
 - [ ] Issue #88: 設定patch/Twitch login/endpoint/NG ruleをbackendの共通domain validatorで検証し、未知field・文字数/UTF-8/総量境界をstructured errorと共有fixtureで保証する。棒読みちゃんは通常loopback限定、remoteは明示mode・native consent・解決済みaddressの照合/固定を全送信経路へ適用し、renderer/file変更とDNS rebindingを拒否する。
 
+2026-10-05 local検証: mainのCI復旧commit138fc80へ基点を更新し、Rust 1.90のall-features255件/no-default204件とfmt/strict clippy、frontend321件とformat/lint/typecheck/build/security/license、policy21件、Docker contextが成功した。実settings fileの偽consent拒否、primary/backup/memory非変更、DNS変更後に元IPへ戻っても再許可が必要な7つのdestinationテストを含む。最大200 icon/4MiBと有効NG rulesの設定を8MiBまでpaddingしたroundtripはlocal3.81秒/追加Rust heap25.5MiBで予算内。Windows本番IPC/両OS検証と作業ブランチ6workflowの成功を確認するまでは未完了とし、mainへ反映しない。
+
 - [x] Issue #76: Windows shortcutを起動直前に構造化して検証し、壊れた/移動したtargetをfailureへ返す。起動依頼の受付と対象起動の確認を区別し、日本語の修復/再登録案内、arguments/working directory、権限要求と直接exe/部分成功の回帰をWindows integrationとUIで検証する。
 
 2026-10-05: UIの全failure表示/準備完了未確認、async serviceの4-worker/cancel-before-spawn、header/target/cwd/arguments検証を実装した。LinuxでRust all-features244件/no-default193件、strict clippy/fmt、frontend282件とbuild/security/license/quality policy3件/context検査が成功した。Windowsの39件は成功したが、WSH fixtureの日本語TargetPath代入に失敗し、Issueは未完了。実在/MZ/109 UTF-16 unitsを確認し、本番/fixtureをIShellLinkW Unicode APIへ切り替えた。既存lockのwindows 0.62.2を参照するだけで依存版は不変。実Windows再検証までは完了扱いにしない。

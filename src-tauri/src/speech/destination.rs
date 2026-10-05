@@ -147,7 +147,23 @@ impl DestinationPolicy {
         endpoint: &BouyomiAddress,
         remote_mode: bool,
     ) -> Result<Vec<SocketAddr>, ValidationError> {
-        let identity = self.identity(endpoint).await?;
+        let identity = self.identity(endpoint).await.inspect_err(|_| {
+            self.revoke();
+        })?;
+        {
+            let mut approved = self
+                .approved
+                .lock()
+                .map_err(|_| error("policyUnavailable", "外部接続の許可状態を確認できません。"))?;
+            // Observing a changed endpoint/DNS set invalidates the grant, even
+            // if DNS later returns to the original IPs or temporarily loopback.
+            if approved
+                .as_ref()
+                .is_some_and(|approved| approved != &identity)
+            {
+                *approved = None;
+            }
+        }
         if identity
             .addresses
             .iter()
