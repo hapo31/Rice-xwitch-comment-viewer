@@ -344,6 +344,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 - [x] Issue #48: Tauri bridge の `Option` を JSON field omission に統一し、Rust/TypeScript の camelCase・nullability 契約、Device Code 後の保存警告経路を共通 fixture と runtime validation で検証する。
 - [ ] Issue #201: 全 command 応答と event を runtime schema で検証し、Rust wire 型生成と schema 型一致・生成差分検査を導入する。既存 domain 変換と IPC 境界を保持する。
+  - 作業進捗: Zod 4 schema から frontend DTO を導出し、ts-rs 12 の Serde 型生成と全51 wire 型の双方向一致検査を導入。全32 command の正常/不正応答と unit null を検証し、frontend 371 tests・型検査・lint・format・build、Rust 型生成が成功。#200 契約との統合と最終レビューを継続する。
+  - 性能計測: Node 24 / 同一 fixture・1000回 warmup・5回の中央値。chat 10,000件は旧5.0ms→schema8.2ms、200項目 queue snapshot 1,000回は旧44.9ms→38.5ms。bundle は469.8kB→553.4kB（gzip142.3→167.2kB）。機能境界の厳密化を優先し、500kB chunk 警告の上限変更や未計測の高速化は行わない。
 
 - [x] `issue-fix-batch` スキルを用途別ルールへ分解し、`AGENTS.md` から必要時に参照する構成へ移行する。関連する PR／Issue の close 後に worktree と修正用ブランチを削除する。
 

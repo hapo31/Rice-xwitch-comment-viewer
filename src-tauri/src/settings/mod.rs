@@ -28,6 +28,8 @@ static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct AppSettings {
     pub twitch: TwitchSettings,
     pub speech: SpeechSettings,
@@ -39,6 +41,8 @@ pub struct AppSettings {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct WindowSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<WindowPosition>,
@@ -46,6 +50,8 @@ pub struct WindowSettings {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct WindowPosition {
     pub x: i32,
     pub y: i32,
@@ -53,6 +59,8 @@ pub struct WindowPosition {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct TwitchSettings {
     pub channel_login: String,
     pub auto_connect: bool,
@@ -64,6 +72,8 @@ pub struct TwitchSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct SpeechSettings {
     pub adapter: SpeechAdapterKind,
     #[serde(default = "default_bouyomi_host")]
@@ -101,12 +111,14 @@ pub struct SpeechSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum SpeechAdapterKind {
     Bouyomi,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum UrlHandling {
     Replace,
     Read,
@@ -271,6 +283,8 @@ pub struct SettingsStore;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct SettingsRecoveryNotice {
     pub message: String,
 }

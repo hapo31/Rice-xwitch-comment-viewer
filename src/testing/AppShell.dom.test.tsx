@@ -106,7 +106,7 @@ it("late startup and explicit reload preserve all item reasons and expose keyboa
   expect(
     within(skippedRow as HTMLElement).getByRole("button", { name: /履歴から削除/ }),
   ).toBeEnabled();
-  tauriMock.setCommand("speech_queue_dismiss", () => undefined);
+  tauriMock.setCommand("speech_queue_dismiss", () => null);
   await user.click(within(skippedRow as HTMLElement).getByRole("button", { name: /履歴から削除/ }));
   await waitFor(() =>
     expect(tauriMock.invoke).toHaveBeenCalledWith("speech_queue_dismiss", { itemId: "speech-7" }),
