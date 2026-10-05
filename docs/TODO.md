@@ -1,5 +1,9 @@
 # 実装 TODO
 
+- [ ] Issue #206: Twitch の validate と EventSub refresh を共通の credential service/revision で管理する。成功・失敗・scope 不足・永続化結果を同一 credential revision と照合し、古い応答が新しい認証を上書き・解除しないようにする。同一 credential の refresh を必要に応じて共有し、deferred fake transport で各競合順序を回帰化する。
+
+2026-10-06 着手計画: auth_service.rs と subscription.rs の認証更新/失効経路、および auth_state.rs・auth_store.rs の generation と永続化境界を調査する。revision を含む共通 service に refresh/validate/rotation/clear/save の判定を集約し、validate 対 EventSub、refresh 対 refresh、scope 不足、遅延保存を deferred fake で検証する。Rust の Twitch 関連回帰、fmt、clippy を実行し、設計文書と実装の整合を確認する。
+
 - [x] Issue #44: Twitchのmodel/error、認証service/store/OAuth、EventSub transport/state/subscription/dedupe/正規化を責務別moduleへ分割する。Tauri commandを薄いadapterにし、型付き状態制御、command/event payload、generationによる競合制御を維持する。fake transport/storeと明示clockを使う既存・追加回帰を分割後の本番経路へ適用し、両OS/feature matrix/native CIで確認する。
 
 2026-10-05段階1: main2b83b6aから専用worktreeで公開chat model、型付きAPI/認証/購読エラーと表示、EventSub wire/正規化、bounded dedupeを4つのprivate moduleへ抽出した。公開型のroot再export、payload、generation、token保存と接続処理は維持する。既存inline回帰をtests.rsへ移動し、mod.rsは4550行から2723行になった。元productionと既存テストはvisibility/format以外のtoken・文字列が同一であることも照合した。文言非依存の分類、明示receive clock/metadata fallback、TTL/capacity等の5回帰を追加し、Rust1.90のall-targets/all-features267件、no-default216件（いずれも0fail/0ignore）、fmt/strict clippy、frontend build、security/workflow/license guardが成功した。同時compile中の最初の全体実行では既存5秒budgetが5.26秒で失敗したが、閾値や条件を変えず単独再実行で4.67秒、no-defaultでも4.50秒の成功を確認した。認証service/store/OAuth、EventSub transport/state/subscriptionと薄いcommand adapter、分割後の両OS/native CIはまだ必要であり、Issueは未完了、mainへは未反映。
