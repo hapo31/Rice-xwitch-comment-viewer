@@ -1,5 +1,5 @@
 //! Scripted ports exercise the same services used by the Tauri commands.
-use super::auth_service::{AuthRuntime, TwitchAuthService};
+use super::auth_service::{clear_twitch_auth_state_with_store, AuthRuntime, TwitchAuthService};
 use super::auth_state::*;
 use super::auth_store::{AuthCredentialStore, AuthLoadResult, TwitchAuthStore};
 use super::chat_service::{ChatRuntime, TwitchChatService, TwitchConnectionHandle};
@@ -91,7 +91,7 @@ struct Transport {
     refreshes: Mutex<VecDeque<Reply<anyhow::Result<TokenResponse>>>>,
     users: Mutex<VecDeque<Reply<anyhow::Result<HelixUser>>>>,
     sockets: Mutex<VecDeque<FakeSocket>>,
-    subscriptions: Mutex<VecDeque<Result<(), SubscriptionRequestError>>>,
+    subscriptions: Mutex<VecDeque<Reply<Result<(), SubscriptionRequestError>>>>,
     subscription_calls: Mutex<Vec<(String, String, String)>>,
     lookup_calls: Mutex<Vec<String>>,
     validation_calls: AtomicUsize,
@@ -260,12 +260,11 @@ impl SubscriptionRuntime for Runtime {
             session_id.into(),
             access_token.into(),
         ));
-        self.http
-            .subscriptions
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or(Ok(()))
+        let reply = self.http.subscriptions.lock().unwrap().pop_front();
+        match reply {
+            Some(reply) => reply.receive().await,
+            None => Ok(()),
+        }
     }
 }
 impl EventSubRuntime for Runtime {
@@ -731,6 +730,56 @@ async fn stale_validate_success_after_credential_revision_change_is_not_saved() 
 }
 
 #[tokio::test]
+async fn logout_invalidates_delayed_validate_before_waiting_for_refresh_lock() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    let before = runtime.auth.lock().unwrap().clone();
+    let gate = Gate::default();
+    runtime
+        .http
+        .validations
+        .lock()
+        .unwrap()
+        .push_back(Reply::delayed(Ok(validate("old-reader")), &gate));
+
+    let validation = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { TwitchAuthService::new(&runtime).validate().await }
+    });
+    gate.started.notified().await;
+
+    let logout = tokio::spawn({
+        let auth = runtime.auth.clone();
+        let store = runtime.store.clone();
+        async move { clear_twitch_auth_state_with_store(auth, &store).await }
+    });
+    for _ in 0..100 {
+        if runtime.auth.lock().unwrap().token.is_none() {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    {
+        let auth = runtime.auth.lock().unwrap();
+        assert!(auth.token.is_none());
+        assert_ne!(auth.generation, before.generation);
+        assert_ne!(auth.credential_revision, before.credential_revision);
+    }
+
+    gate.release.notify_one();
+    assert!(validation.await.unwrap().is_err());
+    logout.await.unwrap().unwrap();
+    assert!(runtime.auth.lock().unwrap().token.is_none());
+    assert_eq!(runtime.backend.clears.load(Ordering::Relaxed), 1);
+    assert!(!runtime
+        .statuses
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|status| matches!(status, TwitchStatus::Connected)));
+}
+
+#[tokio::test]
 async fn auth_service_validate_transient_failure_keeps_auth_but_invalid_grant_clears_it() {
     for definitive in [false, true] {
         let runtime = Runtime::default();
@@ -941,12 +990,10 @@ async fn chat_service_replacement_aborts_pending_old_lookup_and_logout_clears_cu
 async fn subscription_service_refreshes_once_and_persists_before_retry() {
     let runtime = Runtime::default();
     runtime.authorize();
-    runtime
-        .http
-        .subscriptions
-        .lock()
-        .unwrap()
-        .extend([Err(SubscriptionRequestError::Unauthorized), Ok(())]);
+    runtime.http.subscriptions.lock().unwrap().extend([
+        Reply::ready(Err(SubscriptionRequestError::Unauthorized)),
+        Reply::ready(Ok(())),
+    ]);
     runtime
         .http
         .refreshes
@@ -1003,12 +1050,10 @@ async fn validate_rotation_serializes_an_eventsub_refresh_started_with_the_old_r
         .lock()
         .unwrap()
         .push_back(Reply::ready(Ok(token())));
-    runtime
-        .http
-        .subscriptions
-        .lock()
-        .unwrap()
-        .extend([Err(SubscriptionRequestError::Unauthorized), Ok(())]);
+    runtime.http.subscriptions.lock().unwrap().extend([
+        Reply::ready(Err(SubscriptionRequestError::Unauthorized)),
+        Reply::ready(Ok(())),
+    ]);
 
     let validation = tokio::spawn({
         let runtime = runtime.clone();
@@ -1054,10 +1099,10 @@ async fn concurrent_eventsub_refreshes_share_one_rotation_for_the_same_revision(
         .unwrap()
         .push_back(Reply::ready(Ok(validate("reader"))));
     runtime.http.subscriptions.lock().unwrap().extend([
-        Err(SubscriptionRequestError::Unauthorized),
-        Err(SubscriptionRequestError::Unauthorized),
-        Ok(()),
-        Ok(()),
+        Reply::ready(Err(SubscriptionRequestError::Unauthorized)),
+        Reply::ready(Err(SubscriptionRequestError::Unauthorized)),
+        Reply::ready(Ok(())),
+        Reply::ready(Ok(())),
     ]);
 
     let first = tokio::spawn({
@@ -1089,6 +1134,76 @@ async fn concurrent_eventsub_refreshes_share_one_rotation_for_the_same_revision(
 }
 
 #[tokio::test]
+async fn stale_subscription_unauthorized_preserves_the_credential_sent_with_the_request() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    let gate = Gate::default();
+    runtime.http.subscriptions.lock().unwrap().extend([
+        Reply::ready(Err(SubscriptionRequestError::Unauthorized)),
+        Reply::delayed(Err(SubscriptionRequestError::Unauthorized), &gate),
+    ]);
+    runtime
+        .http
+        .refreshes
+        .lock()
+        .unwrap()
+        .push_back(Reply::ready(Ok(token())));
+    runtime
+        .http
+        .validations
+        .lock()
+        .unwrap()
+        .push_back(Reply::ready(Ok(validate("rotated-reader"))));
+
+    let subscription = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { create_chat_message_subscription(&runtime, &params(), "session").await }
+    });
+    gate.started.notified().await;
+    let (generation, snapshot) = {
+        let mut auth = runtime.auth.lock().unwrap();
+        auth.replace_token(
+            TokenResponse {
+                access_token: "latest-access".into(),
+                refresh_token: "latest-refresh".into(),
+                scope: vec![CHAT_READ_SCOPE.into()],
+                expires_in: 7200,
+            },
+            profile("latest-reader"),
+        )
+        .unwrap();
+        (auth.generation, auth.clone())
+    };
+    runtime
+        .store
+        .save_if_current(runtime.auth.clone(), generation, snapshot)
+        .await
+        .unwrap();
+    gate.release.notify_one();
+
+    let error = subscription.await.unwrap().unwrap_err();
+    assert!(!error.is::<EventSubTerminalError>());
+    let auth = runtime.auth.lock().unwrap();
+    assert_eq!(auth.token.as_ref().unwrap().access_token, "latest-access");
+    assert_eq!(auth.token.as_ref().unwrap().refresh_token, "latest-refresh");
+    let persisted = runtime.backend.saved.lock().unwrap().clone().unwrap();
+    assert_eq!(persisted.token.unwrap().access_token, "latest-access");
+    assert_eq!(runtime.backend.clears.load(Ordering::Relaxed), 0);
+    assert_eq!(runtime.auth_required.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        runtime
+            .http
+            .subscription_calls
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|call| call.2.as_str())
+            .collect::<Vec<_>>(),
+        ["old-access", "new-access"]
+    );
+}
+
+#[tokio::test]
 async fn subscription_service_uses_typed_failures_not_japanese_display_text() {
     for status in [400, 403, 503] {
         let runtime = Runtime::default();
@@ -1103,11 +1218,11 @@ async fn subscription_service_uses_typed_failures_not_japanese_display_text() {
             .subscriptions
             .lock()
             .unwrap()
-            .push_back(Err(if status >= 500 {
+            .push_back(Reply::ready(Err(if status >= 500 {
                 SubscriptionRequestError::Retryable(error.into())
             } else {
                 SubscriptionRequestError::Permanent(error)
-            }));
+            })));
         let result = create_chat_message_subscription(&runtime, &params(), "session")
             .await
             .unwrap_err();

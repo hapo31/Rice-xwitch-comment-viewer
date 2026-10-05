@@ -1,13 +1,11 @@
 //! Twitch subscription responsibility boundary.
 use super::auth_service::{
-    clear_credentials_if_current, persist_credential_rotation, refresh_credentials_if_current,
-    stale_credential_message, AuthRuntime, MissingTwitchScope, StaleCredentialResponse,
+    clear_credentials_if_current, refresh_credentials_if_current, stale_credential_message,
+    AuthRuntime, MissingTwitchScope, StaleCredentialResponse,
 };
-use super::auth_state::{
-    EventSubAuthCredentials, EventSubConnectionParams, TokenResponse, TwitchAuthState,
-    TwitchUserProfile,
-};
-use super::auth_store::TwitchAuthStore;
+#[cfg(test)]
+use super::auth_state::TwitchAuthState;
+use super::auth_state::{EventSubAuthCredentials, EventSubConnectionParams};
 use super::error::{
     subscription_error_user_message, EventSubTerminalError, SubscriptionRequestError,
     TwitchApiError,
@@ -41,11 +39,11 @@ pub(super) async fn create_chat_message_subscription(
     let subscription_client_id = credentials.client_id.clone();
     let refresh_app = app;
     let refresh_credentials = credentials.clone();
-    let used_credentials = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let used_credentials = std::sync::Arc::new(std::sync::Mutex::new(Some(credentials.clone())));
     let refresh_used_credentials = used_credentials.clone();
 
     match retry_eventsub_subscription(
-        credentials.access_token,
+        credentials.access_token.clone(),
         |access_token| {
             let client_id = subscription_client_id.clone();
             async move {
@@ -58,18 +56,11 @@ pub(super) async fn create_chat_message_subscription(
             let credentials = refresh_credentials.clone();
             let used_credentials = refresh_used_credentials.clone();
             async move {
-                let access_token = refresh_eventsub_access_token(app, &credentials).await?;
-                let current = app
-                    .auth()
-                    .lock()
-                    .map_err(|error| {
-                        SubscriptionRequestError::Retryable(anyhow::anyhow!(error.to_string()))
-                    })?
-                    .eventsub_credentials()
-                    .map_err(SubscriptionRequestError::Retryable)?;
+                let (access_token, request_credentials) =
+                    refresh_eventsub_access_token(app, &credentials).await?;
                 *used_credentials.lock().map_err(|error| {
                     SubscriptionRequestError::Retryable(anyhow::anyhow!(error.to_string()))
-                })? = Some(current);
+                })? = Some(request_credentials);
                 Ok(access_token)
             }
         },
@@ -79,25 +70,27 @@ pub(super) async fn create_chat_message_subscription(
         Ok(()) => Ok(()),
         Err(SubscriptionRequestError::Unauthorized) => {
             let message = "Twitch 認証を更新しても EventSub 購読が拒否されました。Login から再ログインしてください。";
-            let credentials = used_credentials
+            let request_credentials = used_credentials
                 .lock()
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?
                 .clone()
-                .unwrap_or(credentials);
+                .expect("the initial subscription attempt always has a credential snapshot");
             let cleared = clear_credentials_if_current(
                 app,
-                credentials.generation,
-                credentials.credential_revision,
-                &credentials.access_token,
-                &credentials.refresh_token,
+                request_credentials.generation,
+                request_credentials.credential_revision,
+                &request_credentials.access_token,
+                &request_credentials.refresh_token,
                 message,
                 false,
             )
-            .await?;
+            .await
+            .map_err(anyhow::Error::msg)?;
             if !cleared {
-                return Err(anyhow::Error::new(EventSubTerminalError::AuthRequired {
-                    message: stale_credential_message(),
-                }));
+                return Err(SubscriptionRequestError::Retryable(anyhow::anyhow!(
+                    stale_credential_message()
+                ))
+                .into());
             }
             Err(anyhow::Error::new(EventSubTerminalError::AuthRequired {
                 message: message.to_string(),
@@ -111,25 +104,27 @@ pub(super) async fn create_chat_message_subscription(
         Err(SubscriptionRequestError::Permanent(error)) => {
             let message = subscription_error_user_message(&error);
             if matches!(error, TwitchApiError::Http { status: 403, .. }) {
-                let credentials = used_credentials
+                let request_credentials = used_credentials
                     .lock()
                     .map_err(|error| anyhow::anyhow!(error.to_string()))?
                     .clone()
-                    .unwrap_or(credentials);
+                    .expect("the initial subscription attempt always has a credential snapshot");
                 let cleared = clear_credentials_if_current(
                     app,
-                    credentials.generation,
-                    credentials.credential_revision,
-                    &credentials.access_token,
-                    &credentials.refresh_token,
+                    request_credentials.generation,
+                    request_credentials.credential_revision,
+                    &request_credentials.access_token,
+                    &request_credentials.refresh_token,
                     &message,
                     false,
                 )
-                .await?;
+                .await
+                .map_err(anyhow::Error::msg)?;
                 if !cleared {
-                    return Err(anyhow::Error::new(EventSubTerminalError::AuthRequired {
-                        message: stale_credential_message(),
-                    }));
+                    return Err(SubscriptionRequestError::Retryable(anyhow::anyhow!(
+                        stale_credential_message()
+                    ))
+                    .into());
                 }
                 Err(anyhow::Error::new(EventSubTerminalError::AuthRequired {
                     message,
@@ -173,7 +168,7 @@ where
 pub(super) async fn refresh_eventsub_access_token(
     app: &impl SubscriptionRuntime,
     credentials: &EventSubAuthCredentials,
-) -> Result<String, SubscriptionRequestError> {
+) -> Result<(String, EventSubAuthCredentials), SubscriptionRequestError> {
     let _credential_update = app.store().lock_credential_update().await;
     let latest_credentials = app
         .auth()
@@ -186,13 +181,14 @@ pub(super) async fn refresh_eventsub_access_token(
         || latest_credentials.access_token != credentials.access_token
         || latest_credentials.refresh_token != credentials.refresh_token
     {
-        return Ok(latest_credentials.access_token);
+        return Ok((latest_credentials.access_token.clone(), latest_credentials));
     }
 
     let (_profile, storage_warning) = match refresh_credentials_if_current(app, credentials).await {
         Ok(result) => result,
         Err(error) if error.is::<StaleCredentialResponse>() => {
-            return latest_eventsub_access_token(app);
+            return latest_eventsub_credentials(app)
+                .map(|latest| (latest.access_token.clone(), latest));
         }
         Err(error) => {
             if let Some(scope_error) = error.downcast_ref::<MissingTwitchScope>() {
@@ -207,16 +203,17 @@ pub(super) async fn refresh_eventsub_access_token(
                     true,
                 )
                 .await
-                .map_err(SubscriptionRequestError::Retryable)?
+                .map_err(|error| SubscriptionRequestError::Retryable(anyhow::Error::msg(error)))?
                 {
                     return Err(SubscriptionRequestError::AuthRequired(message));
                 }
-                return latest_eventsub_access_token(app);
+                return latest_eventsub_credentials(app)
+                    .map(|latest| (latest.access_token.clone(), latest));
             }
             return Err(classify_eventsub_refresh_error(app, credentials, error).await);
         }
     };
-    let access_token = latest_eventsub_access_token(app)?;
+    let request_credentials = latest_eventsub_credentials(app)?;
 
     app.auth_log(
         AppLogLevel::Info,
@@ -225,34 +222,20 @@ pub(super) async fn refresh_eventsub_access_token(
     if let Some(warning) = storage_warning {
         app.auth_log(AppLogLevel::Warning, warning);
     }
-    Ok(access_token)
+    Ok((
+        request_credentials.access_token.clone(),
+        request_credentials,
+    ))
 }
 
-fn latest_eventsub_access_token(
+fn latest_eventsub_credentials(
     app: &impl SubscriptionRuntime,
-) -> Result<String, SubscriptionRequestError> {
+) -> Result<EventSubAuthCredentials, SubscriptionRequestError> {
     app.auth()
         .lock()
         .map_err(|error| anyhow::anyhow!(error.to_string()))?
         .eventsub_credentials()
-        .map(|credentials| credentials.access_token)
         .map_err(SubscriptionRequestError::Retryable)
-}
-
-pub(super) async fn persist_eventsub_rotation(
-    auth_state: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,
-    store: &TwitchAuthStore,
-    credentials: &EventSubAuthCredentials,
-    refreshed: TokenResponse,
-    profile: TwitchUserProfile,
-) -> Result<(String, bool, Option<String>), SubscriptionRequestError> {
-    match persist_credential_rotation(auth_state, store, credentials, refreshed, profile).await {
-        Ok(result) => Ok(result),
-        Err(error) if error.is::<StaleCredentialResponse>() => Err(
-            SubscriptionRequestError::Retryable(anyhow::anyhow!(stale_credential_message())),
-        ),
-        Err(error) => Err(SubscriptionRequestError::Retryable(error)),
-    }
 }
 
 /// Classifies OAuth refresh and validation failures before they reach the EventSub
@@ -294,6 +277,7 @@ pub(super) async fn classify_eventsub_refresh_error(
     SubscriptionRequestError::Permanent(api_error)
 }
 
+#[cfg(test)]
 pub(super) fn clear_auth_for_eventsub_missing_scope_if_current(
     auth: &mut TwitchAuthState,
     expected: &EventSubAuthCredentials,

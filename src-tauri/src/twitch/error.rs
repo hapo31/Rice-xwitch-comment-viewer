@@ -78,6 +78,7 @@ pub(super) enum EventSubTerminalError {
     Permanent { message: String },
 }
 
+#[cfg(test)]
 pub(super) fn is_definitive_auth_failure(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<TwitchApiError>()

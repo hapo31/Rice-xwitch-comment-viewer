@@ -67,7 +67,9 @@ pub(super) async fn refresh_credentials_if_current(
                 credentials.credential_revision,
                 &credentials.access_token,
                 &credentials.refresh_token,
-            )? {
+            )
+            .map_err(anyhow::Error::msg)?
+            {
                 return Err(anyhow::Error::new(StaleCredentialResponse));
             }
             return Err(error);
@@ -80,7 +82,9 @@ pub(super) async fn refresh_credentials_if_current(
             credentials.credential_revision,
             &credentials.access_token,
             &credentials.refresh_token,
-        )? {
+        )
+        .map_err(anyhow::Error::msg)?
+        {
             return Err(anyhow::Error::new(StaleCredentialResponse));
         }
         return Err(anyhow::Error::new(MissingTwitchScope(error.to_string())));
@@ -563,9 +567,9 @@ pub(super) async fn clear_twitch_auth_state_with_store(
     auth_state: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,
     store: &TwitchAuthStore,
 ) -> Result<(), String> {
-    let _credential_update = store.lock_credential_update().await;
     // Invalidate the in-memory generation before waiting for the store. This
-    // prevents a concurrent save from being accepted after logout begins.
+    // prevents an in-flight refresh or validation from publishing success while
+    // logout waits for the shared credential-update lock.
     let (previous_auth, generation, credential_revision) = {
         let mut auth = auth_state.lock().map_err(|error| error.to_string())?;
         let previous_auth = auth.clone();
@@ -576,6 +580,7 @@ pub(super) async fn clear_twitch_auth_state_with_store(
         (previous_auth, generation, auth.credential_revision)
     };
 
+    let _credential_update = store.lock_credential_update().await;
     match store
         .clear_if_current(auth_state.clone(), generation, credential_revision)
         .await

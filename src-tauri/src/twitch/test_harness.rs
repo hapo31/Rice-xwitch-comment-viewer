@@ -401,7 +401,7 @@ async fn production_refresh_validates_and_saves_rotation_before_retrying_subscri
         || async {
             let (token, profile) = refresh_and_validate(&http, &credentials).await?;
             let (access, changed, warning) =
-                persist_eventsub_rotation(auth.clone(), &store, &credentials, token, profile)
+                persist_credential_rotation(auth.clone(), &store, &credentials, token, profile)
                     .await?;
             assert!(changed);
             assert!(warning.is_none());
@@ -434,7 +434,7 @@ async fn production_validate_result_and_rotation_after_logout_cannot_restore_aut
         apply_validated_profile(&mut auth.lock().unwrap(), generation, profile.clone()).is_err()
     );
     assert!(
-        persist_eventsub_rotation(auth.clone(), &store, &credentials, token, profile)
+        persist_credential_rotation(auth.clone(), &store, &credentials, token, profile)
             .await
             .is_err()
     );

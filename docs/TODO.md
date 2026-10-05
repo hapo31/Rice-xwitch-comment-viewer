@@ -4,6 +4,8 @@
 
 2026-10-06 実装進捗: 共通 credential revision と credential-update lock を導入し、validate と EventSub の refresh・scope 判定・rotation・保存を共通 helper へ集約した。古い success/error/revocation/scope failure と遅延 save/clear は generation・revision・token identity が一致する場合だけ適用する。deferred fake で validate 対 EventSub refresh、refresh 対 refresh、revision 変更後の invalid_grant・遅延成功、同一 generation 内の古い保存、保存中の revision 変更を固定した。architecture と Twitch ingestion の設計メモも更新した。`cargo fmt --check`・`git diff --check` は成功し、公式 Debian DBus package を `/tmp` の sysroot に置いた環境で `cargo test --lib twitch:: --no-default-features` は20件成功した。no-default featureでは `service_tests` が有効にならないため、deferred regressionの実行結果はCIで確認する。no-default clippy は既存のno-app dead-code warningsを許容して完了したが、strict clippy とGitHub CIは未確認。
 
+2026-10-06 レビュー修正: 送信した subscription token と失敗時に照合する EventSubAuthCredentials をrefresh関数の同じ返却値から記録し、待機中に認証が変わった古い401/403は credential clear/AuthRequired ではなく retryable として扱う。deferred subscription fake で送信後に認証をrotationしてから401が戻る順序を追加し、最新のメモリ/保存credential保持とterminal auth errorなしを検証する。logout は共有更新lockを待つ前にgeneration/revisionを無効化し、遅延 validate と logout の順序を回帰化した。test-onlyでしか使われない保存/clear helper wrapperを削除し、本番未使用のprivate itemを残さない。環境DNS制限でgit fetchは失敗したためGitHub REST compareを使用。現在の `main` (`98bfd81`) は `d966846` から45 commit進み、frontend、Auth controller、Settings、timeline、docsのみの変更で、Twitch Rust factory/serviceの追加差分はない。#205 の status presentation factory も frontend側の変更で認証serviceと競合しない。他Issue branchは取り込んでいない。Rust 1.90 app feature Twitch service tests 83件と `cargo clippy --all-targets --features app -- -D warnings` が成功した。
+
 2026-10-06 着手計画: auth_service.rs と subscription.rs の認証更新/失効経路、および auth_state.rs・auth_store.rs の generation と永続化境界を調査する。revision を含む共通 service に refresh/validate/rotation/clear/save の判定を集約し、validate 対 EventSub、refresh 対 refresh、scope 不足、遅延保存を deferred fake で検証する。Rust の Twitch 関連回帰、fmt、clippy を実行し、設計文書と実装の整合を確認する。
 
 - [x] Issue #44: Twitchのmodel/error、認証service/store/OAuth、EventSub transport/state/subscription/dedupe/正規化を責務別moduleへ分割する。Tauri commandを薄いadapterにし、型付き状態制御、command/event payload、generationによる競合制御を維持する。fake transport/storeと明示clockを使う既存・追加回帰を分割後の本番経路へ適用し、両OS/feature matrix/native CIで確認する。
@@ -95,7 +97,7 @@
 
 ## 現在の進捗サマリ
 
-2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、deferred fake の競合回帰と設計メモを追加した。local fmt/diff check と `--no-default-features` のTwitch基礎20件、dead-codeを許容したno-default clippyは成功した。service regressionとstrict clippyは未確認。PR #243 のCIと独立レビューを確認後に最終完了状態を反映する。
+2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、レビューで見つかったsubscription token identity/logout orderingも回帰化した。最新mainとのAPI compareでRust factory/service差分との競合なしを確認した。Rust fmt、diff check、`--no-default-features` Twitch基礎20件、dead-codeを許容したno-default clippy、app-feature Twitch service tests 83件、strict app-feature all-target clippyが成功した。PR #243 のCIと親再レビュー後に最終完了状態を反映する。
 
 Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既存 Biome gate に any・enum・const enum・namespace の検査を追加した。frontend 322件と品質 policy 5件、format/lint/typecheck/build が成功し、独立レビューを完了した。最終コミットの CI 結果と統合状況は PR #238 に記録する。
 

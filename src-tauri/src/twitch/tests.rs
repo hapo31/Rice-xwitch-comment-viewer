@@ -365,6 +365,7 @@ async fn stale_save_after_same_generation_credential_rotation_is_rejected() {
         let mut auth = auth_state.lock().unwrap();
         let snapshot = auth.clone();
         let generation = auth.generation;
+        let profile = auth.profile.clone().unwrap();
         auth.replace_token(
             TokenResponse {
                 access_token: "rotated-access".into(),
@@ -372,7 +373,7 @@ async fn stale_save_after_same_generation_credential_rotation_is_rejected() {
                 scope: vec!["user:read:chat".into()],
                 expires_in: 7200,
             },
-            auth.profile.clone().unwrap(),
+            profile,
         )
         .unwrap();
         assert_eq!(auth.generation, generation);
@@ -420,6 +421,7 @@ async fn delayed_save_reports_stale_revision_then_persists_the_newer_credentials
 
     let new_snapshot = {
         let mut auth = auth_state.lock().unwrap();
+        let profile = auth.profile.clone().unwrap();
         auth.replace_token(
             TokenResponse {
                 access_token: "newer-access-token".into(),
@@ -427,7 +429,7 @@ async fn delayed_save_reports_stale_revision_then_persists_the_newer_credentials
                 scope: vec!["user:read:chat".into()],
                 expires_in: 7200,
             },
-            auth.profile.clone().unwrap(),
+            profile,
         )
         .unwrap();
         assert_eq!(auth.generation, generation);
