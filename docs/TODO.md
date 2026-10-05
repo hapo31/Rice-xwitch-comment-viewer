@@ -261,6 +261,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 - [x] Issue #8: frontend/backend の認証操作に generation を導入し、認証開始・解除後の遅延 poll/validate 結果と資格情報保存を破棄する。Device Code poll は同一セッションで一件だけ実行し、denied/expired 後に pending を終了する。
 - [x] Issue #4: Twitch の認証・チャット接続 status event を domain で識別し、frontend が表示文言で状態を判定しないようにする。
+- [ ] Issue #197: 接続中の認証確認の成功・一時失敗で Chat 状態や実接続 identity を消さず、Auth の command 応答と backend Chat event の所有権を分離して実 AppShell DOM で応答順序を検証する。
 - [x] Twitch Client ID を `.env` / build env から内部既定値として読み込む。
 - [x] Twitch Client ID を Settings UI と設定 JSON の公開項目から外す。
 - [x] OAuth Device Code Flow の開始とポーリングを実装する。
