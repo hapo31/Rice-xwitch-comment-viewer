@@ -192,8 +192,24 @@ impl EventSubRuntime for TauriTwitchRuntime {
     fn log(&self, level: AppLogLevel, message: impl Into<String>) {
         emit_app_log(&self.app, level, message);
     }
-    fn chat(&self, message: ChatMessage, connection_generation: u64) {
-        emit_twitch_chat_message(&self.app, message.clone(), connection_generation);
+    fn chat(&self, message: ChatMessage) {
+        let state = self.app.state::<AppState>();
+        let current = match state.twitch_connection.lock() {
+            Ok(current) => current,
+            Err(error) => {
+                emit_app_log(&self.app, AppLogLevel::Error, error.to_string());
+                return;
+            }
+        };
+        let Some(connection) = current.as_ref() else {
+            return;
+        };
+        if !message.belongs_to_connection_generation(connection.generation) {
+            return;
+        }
+        // Keep stop/replacement behind this delivery boundary so UI and speech
+        // observe the same accepted message before its generation is invalidated.
+        emit_twitch_chat_message(&self.app, message.clone());
         if let Err(error) = enqueue_chat_message_for_speech(self.app.clone(), message) {
             emit_app_log(&self.app, AppLogLevel::Error, error);
         }

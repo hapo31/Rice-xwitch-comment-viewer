@@ -76,6 +76,7 @@ struct Runtime {
     statuses: Mutex<Vec<TwitchStatus>>,
     active_connections: Mutex<Vec<TwitchActiveConnection>>,
     logs: Mutex<Vec<String>>,
+    active_generation: Mutex<Option<u64>>,
 }
 impl EventSubRuntime for Runtime {
     type Socket = FakeSocket;
@@ -121,9 +122,13 @@ impl EventSubRuntime for Runtime {
     fn log(&self, _: AppLogLevel, message: impl Into<String>) {
         self.logs.lock().unwrap().push(message.into());
     }
-    fn chat(&self, mut message: ChatMessage, connection_generation: u64) {
-        message.connection_generation = Some(connection_generation);
-        self.chats.lock().unwrap().push(message);
+    fn chat(&self, message: ChatMessage) {
+        let active_generation = *self.active_generation.lock().unwrap();
+        if active_generation
+            .is_none_or(|generation| message.belongs_to_connection_generation(generation))
+        {
+            self.chats.lock().unwrap().push(message);
+        }
     }
 }
 fn params() -> EventSubConnectionParams {
@@ -145,6 +150,27 @@ fn chat(id: &str) -> Message {
 }
 fn cache() -> MessageDedupe {
     MessageDedupe::new(DEDUPE_CACHE_LIMIT, DEDUPE_CACHE_TTL)
+}
+
+#[tokio::test]
+async fn late_chat_from_replaced_connection_is_rejected_by_the_delivery_boundary() {
+    let runtime = Runtime::default();
+    *runtime.active_generation.lock().unwrap() = Some(7);
+    let mut socket = FakeSocket::new([]);
+    let mut seen = cache();
+
+    process_eventsub_frame(
+        &runtime,
+        &mut socket,
+        chat("stale-generation"),
+        &mut seen,
+        Utc::now(),
+        6,
+    )
+    .await
+    .unwrap();
+
+    assert!(runtime.chats.lock().unwrap().is_empty());
 }
 
 #[tokio::test(start_paused = true)]

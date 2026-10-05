@@ -20,6 +20,12 @@ pub struct ChatMessage {
     pub connection_generation: Option<u64>,
 }
 
+impl ChatMessage {
+    pub(super) fn belongs_to_connection_generation(&self, generation: u64) -> bool {
+        self.connection_generation == Some(generation)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Platform {
