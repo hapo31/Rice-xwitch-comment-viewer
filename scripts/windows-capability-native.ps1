@@ -92,7 +92,13 @@ public static class RiceNativeProbe {
     bool wasTopmost=(GetWindowLong(h,-20)&8)!=0;
     try {
       if(!SetWindowPos(h,new IntPtr(-1),0,0,0,0,0x0013)) throw new Exception("Cannot expose owned UI for focus");
-      Thread.Sleep(200); var p=Screen(pid,x,y); var hit=GetAncestor(WindowFromPoint(p),2);
+      var p=Screen(pid,x,y); var hit=IntPtr.Zero; var ready=Stopwatch.StartNew();
+      // IsIconic/IsZoomed flags can update before the compositor completes
+      // rapid maximize/restore/minimize transitions. Wait for the actual OS
+      // hit-test to expose our window, not merely for a fixed short delay.
+      while(ready.ElapsedMilliseconds<5000) {
+        hit=GetAncestor(WindowFromPoint(p),2); if(hit==h) break; Thread.Sleep(100);
+      }
       if(hit!=h) {
         uint owner; GetWindowThreadProcessId(hit,out owner); var name=new StringBuilder(128); GetClassName(hit,name,128);
         throw new Exception("Owned UI focus point ("+p.X+","+p.Y+") is occluded by HWND "+hit.ToInt64()+", PID "+owner+", class "+name+"; owned="+State(pid));
