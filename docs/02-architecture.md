@@ -47,9 +47,9 @@ Rust backend
 
 | コンポーネント | 責務 |
 | --- | --- |
-| `TwitchAuthService` | Device Code Flow、トークン更新、`/validate`、ユーザーID取得 |
-| `EventSubClient` | WebSocket接続、welcome/keepalive/reconnect/revocation処理 |
-| `TwitchChatService` | `channel.chat.message`購読、イベント重複排除、チャット正規化 |
+| `TwitchAuthService` | Device Code Flow、トークン更新、`/validate`、認証世代による古い応答の拒否 |
+| `EventSubClient` | WebSocket接続、welcome/keepalive/reconnect/revocation、購読・重複排除・正規化へのdispatch |
+| `TwitchChatService` | チャンネル入力検証とHelixユーザー取得、接続taskの所有・交換、受信停止と連携解除 |
 | `SpeechQueue` | 優先度、停止/再開/スキップ、連投抑制、バックプレッシャ |
 | `SpeechFormatter` | 読み上げ文生成、ユーザー名付与、絵文字/URL/長文処理 |
 | `SpeechAdapter` | 読み上げ先を抽象化するtrait |
@@ -58,6 +58,16 @@ Rust backend
 | `SettingsStore` | optional/versionedな永続wireを移行・共通検証し、不正な項目だけ既定値へ戻す。JSON構文/容量の破損はbackupまたは既定値へ復旧する。未知の版・項目は読取り専用。原子的保存の成功後だけ候補を共有メモリへ反映する。OAuthトークンは扱わない |
 | `TwitchAuthStore` | Twitch OAuth状態をOS keyringへ保存/復元/削除する |
 | `LauncherService` | 登録アプリのパス検証、重複排除、単体/一斉起動を扱う |
+
+### Twitch責務分割（Issue #44）
+
+`twitch/model.rs`は公開chat DTOだけを保持し、既存の`crate::twitch::*`で再exportする。camelCase/optional field omissionとcommand/event payloadは変更しない。`error.rs`はHTTP status/OAuth codeの型付き分類と日本語表示を分け、表示文言が認証解除・retry可否を決めない。`normalization.rs`はEventSub wireとchat正規化を担当し、欠損/不正timestampには呼出元が渡した受信時刻を使う。`dedupe.rs`は接続全体で共有するbounded cacheと明示`Instant`によるTTLを保持する。この2つのpure境界はTauri、keyring、network clientに依存しない。
+
+`auth_state.rs`は認証DTO・世代・scopeの規則、`auth_service.rs`は認証操作、`auth_store.rs`はcredential I/Oの直列化とkeyring/旧Linuxファイルの移行、`oauth.rs`はHTTP wireとOAuth transportを担当する。`chat_service.rs`は接続taskのライフサイクル、`eventsub.rs`はsession/handover/backoff、`subscription.rs`は最新credential取得・401時1回refresh・保存後の再購読を担当する。ファイル移動で保存/削除の世代照合やHTTP deadlineを緩めない。
+
+`commands.rs`は既存7 commandの引数/戻り値を維持する薄いadapterで、`runtime.rs`だけがTauriのmanaged state、event送信、speech enqueueと本番transportを接続する。認証serviceには`AuthRuntime`/`DeviceOAuthTransport`、チャットserviceには`ChatRuntime`、EventSubには`EventSubRuntime`、購読には`SubscriptionRuntime`を注入する。`TwitchAuthStore::with_backend`で保存先を差し替えられる。Device Codeのwall clockと通知のreceive/monotonic clockもruntimeから渡し、非同期deadlineはTokio test clockで制御する。serviceはTauri/reqwest/keyringをimportしない。
+
+既存の認証競合・bridge fixture・再接続回帰は`tests.rs`/`test_harness.rs`へ保持し、`service_tests.rs`で同じ本番serviceをscripted transport/store/clockへ接続する。Device Code各応答、並行start/poll、保存後の認証通知、失敗した解除、チャンネルの事前検証、接続交換、停止時の認証保持、解除時の削除、型付き購読失敗とrefresh保存順、clockによるTTLを検証する。各leafの分類・receive clock・TTL/capacity回帰と、serviceへのインフラ依存/command名の退行を検出する境界チェックも維持する。
 
 Launcherのアプリ登録・起動はWindows専用。`app_build_info.launcher`で`canRegisterApplications/canLaunchApplications/reason`を型付きで返す。UIは取得成功まで安全側に無効化し、非対応OSでは選択・DnD購読・単体/一斉起動を提供しない。backendも登録commandと設定patchによる新規登録/target変更を保存前に拒否し、起動をfilesystem操作前に拒否する。既存設定の項目は他OSでも表示・並び替え/表示名変更・削除でき、OS標準ランチャーまたはWindows版を案内する（Issue #79）。
 
