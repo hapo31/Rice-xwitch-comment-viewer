@@ -5,22 +5,32 @@ import { countIncompleteQueueItems } from "../presentation/queue";
 import { speechHealthLabels, speechQueuePhaseLabels } from "../presentation/speech";
 import { getRouteLabel, settingsRoute } from "../routes";
 import { warningNotifications, type AppState } from "../stores/appStore";
+import {
+  useConnectionController,
+  useNotificationController,
+  useSpeechController,
+} from "../orchestration/domainControllerContext";
+
+type SidePanelState = Pick<
+  AppState,
+  | "settings"
+  | "twitchActiveConnection"
+  | "twitchAuthStatus"
+  | "twitchConnectionStatus"
+  | "speechAdapterHealth"
+  | "speechQueuePhase"
+  | "queueItems"
+  | "notifications"
+>;
 
 interface SidePanelProps {
-  state: AppState;
-  onSpeechControl: (command: "pause" | "resume" | "skip" | "clear") => void;
-  onTwitchConnect: () => void;
-  onTwitchStopChat: () => void;
-  onWarningsClear: () => void;
+  state: SidePanelState;
 }
 
-export function SidePanel({
-  state,
-  onSpeechControl,
-  onTwitchConnect,
-  onTwitchStopChat,
-  onWarningsClear,
-}: SidePanelProps) {
+export function SidePanel({ state }: SidePanelProps) {
+  const speechActions = useSpeechController();
+  const connectionActions = useConnectionController();
+  const notificationActions = useNotificationController();
   const location = useLocation();
   if (location.pathname === "/launcher") {
     return null;
@@ -110,13 +120,13 @@ export function SidePanel({
               label="開始"
               icon={Radio}
               disabled={!canStartChat}
-              onClick={onTwitchConnect}
+              onClick={connectionActions.twitchConnect}
             />
             <CommandButton
               label="停止"
               icon={Square}
               disabled={!canStopChat}
-              onClick={onTwitchStopChat}
+              onClick={connectionActions.twitchStopChat}
               danger
             />
           </div>
@@ -129,14 +139,26 @@ export function SidePanel({
             <span className="font-mono text-zinc-100">{queueCount}</span>
           </div>
           <div className="mt-2 grid grid-cols-4 gap-1">
-            <IconButton label="再開" icon={Play} onClick={() => onSpeechControl("resume")} />
-            <IconButton label="一時停止" icon={Pause} onClick={() => onSpeechControl("pause")} />
+            <IconButton
+              label="再開"
+              icon={Play}
+              onClick={() => speechActions.speechControl("resume")}
+            />
+            <IconButton
+              label="一時停止"
+              icon={Pause}
+              onClick={() => speechActions.speechControl("pause")}
+            />
             <IconButton
               label="スキップ"
               icon={SkipForward}
-              onClick={() => onSpeechControl("skip")}
+              onClick={() => speechActions.speechControl("skip")}
             />
-            <IconButton label="クリア" icon={RotateCcw} onClick={() => onSpeechControl("clear")} />
+            <IconButton
+              label="クリア"
+              icon={RotateCcw}
+              onClick={() => speechActions.speechControl("clear")}
+            />
           </div>
         </section>
 
@@ -148,7 +170,7 @@ export function SidePanel({
               aria-label="警告をクリア"
               title="警告をクリア"
               disabled={warnings.length === 0}
-              onClick={onWarningsClear}
+              onClick={notificationActions.clearWarnings}
               className="flex h-7 w-7 items-center justify-center border border-zinc-800 bg-zinc-850 text-zinc-400 hover:border-zinc-600 hover:text-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-700"
             >
               <Trash2 className="h-3.5 w-3.5" />

@@ -29,7 +29,10 @@ export interface StartupGuideMessage {
 }
 
 export function getStartupGuideMessages(
-  state: AppState,
+  state: Pick<
+    AppState,
+    "twitchAuthStatus" | "settings" | "speechAdapterHealth" | "speechQueuePhase"
+  >,
   receivedAt: UtcTimestamp,
 ): StartupGuideMessage[] {
   const isAuthenticated = state.twitchAuthStatus === "authenticated";

@@ -1,13 +1,21 @@
 import { presentError, reportPresentedError, type ErrorOperation } from "./presentation/errors";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useBlocker, useNavigate } from "react-router-dom";
+import {
+  memo,
+  Profiler,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ProfilerOnRenderCallback,
+  type ReactNode,
+} from "react";
+import { useNavigate } from "react-router-dom";
 import { ActivityBar } from "./components/ActivityBar";
 import { MainView } from "./components/MainView";
 import { ResizeHandles, TitleBar } from "./components/TitleBar";
 import { useDisplayScale } from "./hooks/useDisplayScale";
 import { useStreamHotkeys } from "./hooks/useStreamHotkeys";
-import { getDeviceAuthRemainingSeconds } from "./features/auth/deviceAuthExpiry";
 import { APP_SHELL_CLASS_NAME } from "./layout/appShell";
 import { claimStartupGuideForSession } from "./presentation/startupGuide";
 import {
@@ -19,8 +27,15 @@ import {
 import { AuthOperationController } from "./authOperation";
 import type { SystemTimelineEvent } from "./models/systemTimeline";
 
-import { hasActiveTwitchChat, hasPendingSpeechWork, requiresExitConfirmation } from "./exitSafety";
-import { type AppAction, initialAppState } from "./stores/appStore";
+import { DomainControllerActionsProvider } from "./orchestration/domainControllerContext";
+import {
+  createLauncherController,
+  createQueueController,
+  createSpeechController,
+} from "./orchestration/domainCommandControllers";
+import { createTwitchController } from "./orchestration/twitchController";
+
+import { type AppAction } from "./stores/appStore";
 import {
   useConnectionSelector,
   useDomainStores,
@@ -34,90 +49,58 @@ import {
 } from "./components/domainShellViews";
 import { utcNow } from "./time";
 import { subscribeWithCleanup } from "./tauri/subscriptions";
-import {
-  ActiveOperationsExitDialog,
-  createNativeCloseHandler,
-  UnsavedChangesContext,
-  UnsavedChangesDialog,
-  type UnsavedChange,
-} from "./unsavedChanges";
+import { ExitProtectionProvider, useExitController } from "./orchestration/ExitProtectionProvider";
 import {
   appExit,
-  appOpenExternalUrl,
   getSettings,
   getAppEventsSnapshot,
-  launcherAdd,
-  launcherLaunch,
-  launcherLaunchAll,
-  launcherRemove,
   subscribeAppLogEvents,
   subscribeSpeechQueueUpdatedEvents,
   subscribeSpeechStatusEvents,
   subscribeTwitchChatMessageEvents,
   subscribeTwitchStatusEvents,
-  speechConnectionDiagnostics,
   speechControl,
-  speechQueueDismiss,
-  speechQueueDismissHistory,
-  speechHealthCheck,
   speechHealthProbe,
   speechQueueReload,
-  speechQueueRemove,
-  speechQueueRetry,
-  speechTest,
   takeSettingsRecoveryNotice,
-  twitchConnect,
-  twitchDisconnect,
-  twitchGetStoredAuth,
-  twitchPollAuth,
-  twitchStartAuth,
   twitchStopChat,
-  twitchValidateAuth,
   updateSettings,
   isDesktopRuntime,
 } from "./tauri/client";
 import {
   createSettingsMutationOrchestrator,
   dispatchDomainAction,
-  restoreStartupAuth,
   subscribeDomainEvents,
 } from "./orchestration/domainOrchestration";
-import { routeAuthStorageWarning } from "./orchestration/authWarnings";
 import { startSpeechHealthMonitor } from "./orchestration/speechHealthMonitor";
 import type {
   AppSettings,
   AppSettingsPatch,
-  BouyomiConnectionDiagnostics,
-  LauncherAddResult,
-  LauncherLaunchResult,
   NotificationSeverity,
   NotificationSource,
 } from "./types";
 
 const showStartupGuideForSession = claimStartupGuideForSession(window.sessionStorage);
 
-export function AppShell() {
+export function AppShell({ onRouteCommit }: { onRouteCommit?: ProfilerOnRenderCallback } = {}) {
+  return (
+    <ApplicationControllerProvider>
+      <AppShellLayout onRouteCommit={onRouteCommit} />
+    </ApplicationControllerProvider>
+  );
+}
+
+function ApplicationControllerProvider({ children }: { children: ReactNode }) {
   const stores = useDomainStores();
   const [eventsRestored, setEventsRestored] = useState(false);
   const connection = useConnectionSelector((value) => value);
   const settings = useSettingsSelector((value) => value.settings);
   const queue = useQueueSelector((value) => value);
-  const state = useMemo(
-    () => ({
-      ...initialAppState,
-      ...connection,
-      settings,
-      queueItems: queue.items,
-      speechQueuePhase: queue.phase,
-    }),
-    [connection, settings, queue],
-  );
   const dispatch = useCallback(
     (action: AppAction) => dispatchDomainAction(stores, action),
     [stores],
   );
   const navigate = useNavigate();
-  const displayScale = useDisplayScale();
   const autoConnectAttempted = useRef(false);
   const settingsMutation = useRef(
     createSettingsMutationOrchestrator({
@@ -133,100 +116,8 @@ export function AppShell() {
   const startupAuthAttempted = useRef(false);
   const authOperations = useRef(new AuthOperationController());
   const systemTimelineRouter = useRef(new SystemTimelineRouter());
-  const unsavedChanges = useRef(new Map<string, UnsavedChange>());
-  const closeConfirmationRequiredRef = useRef(false);
-  const [, setUnsavedChangesVersion] = useState(0);
-  const [closeRequested, setCloseRequested] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
 
-  const unsavedChangesRegistry = useMemo(
-    () => ({
-      register(id: string, change: UnsavedChange) {
-        unsavedChanges.current.set(id, change);
-        setUnsavedChangesVersion((version) => version + 1);
-      },
-      unregister(id: string) {
-        unsavedChanges.current.delete(id);
-        setUnsavedChangesVersion((version) => version + 1);
-      },
-    }),
-    [],
-  );
-  const activeUnsavedChange = [...unsavedChanges.current.values()].find((change) => change.isDirty);
-  const hasActiveChat = hasActiveTwitchChat(state.twitchConnectionStatus);
-  const hasPendingSpeech = hasPendingSpeechWork(state.speechQueuePhase, state.queueItems);
-  const exitConfirmationRequired = requiresExitConfirmation(
-    state.twitchConnectionStatus,
-    state.speechQueuePhase,
-    state.queueItems,
-    Boolean(activeUnsavedChange),
-  );
-  closeConfirmationRequiredRef.current = exitConfirmationRequired;
-  const blocker = useBlocker(Boolean(activeUnsavedChange));
-
-  const completeWindowClose = useCallback(async () => {
-    setCloseRequested(false);
-    setIsClosing(true);
-    const results = await Promise.allSettled([
-      hasActiveChat ? twitchStopChat() : Promise.resolve(),
-      hasPendingSpeech ? speechControl("clear") : Promise.resolve(),
-    ]);
-    if (hasActiveChat && results[0].status === "fulfilled") {
-      dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
-    }
-    if (hasPendingSpeech && results[1].status === "fulfilled") {
-      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "idle" });
-    }
-    for (const result of results) {
-      if (result.status === "rejected") reportError(result.reason, "exit");
-    }
-    try {
-      await appExit();
-    } catch (error) {
-      setIsClosing(false);
-      reportError(error, "exit");
-    }
-  }, [hasActiveChat, hasPendingSpeech]);
-
-  const requestWindowClose = useCallback(() => {
-    if (exitConfirmationRequired) {
-      setCloseRequested(true);
-      return;
-    }
-    void completeWindowClose();
-  }, [completeWindowClose, exitConfirmationRequired]);
-
-  useEffect(() => {
-    if (!isDesktopRuntime()) return;
-
-    return subscribeWithCleanup(
-      [
-        () =>
-          getCurrentWindow().onCloseRequested(
-            createNativeCloseHandler(closeConfirmationRequiredRef, () => {
-              setCloseRequested(true);
-            }),
-          ),
-      ],
-      () =>
-        reportNotification(
-          "warning",
-          "event",
-          "終了確認の監視に失敗しました。未保存の変更を確認してから終了してください。",
-          "app-close-subscription",
-        ),
-    );
-  }, []);
-
-  useEffect(() => {
-    const preventUnload = (event: BeforeUnloadEvent) => {
-      if (!activeUnsavedChange) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", preventUnload);
-    return () => window.removeEventListener("beforeunload", preventUnload);
-  }, [activeUnsavedChange]);
+  useEffect(() => () => authOperations.current.invalidate(), []);
 
   useEffect(() => {
     Promise.all([getSettings(), takeSettingsRecoveryNotice()])
@@ -255,34 +146,7 @@ export function AppShell() {
     }
     startupAuthAttempted.current = true;
 
-    const operation = authOperations.current.begin();
-    dispatch({ type: "twitch.authStatus", status: "checking" });
-    void restoreStartupAuth({
-      getStoredAuth: twitchGetStoredAuth,
-      validateAuth: twitchValidateAuth,
-      reportSystemMessage: addSystemChatMessage,
-      reportTechnicalError: (message) =>
-        dispatch({ type: "log.added", log: { level: "error", message, occurredAtMs: Date.now() } }),
-    }).then((auth) => {
-      if (!authOperations.current.isCurrent(operation)) return;
-      if (auth.status === "authenticated") {
-        dispatch({ type: "twitch.profile", profile: auth.result.profile });
-        dispatch({ type: "twitch.authStatus", status: "authenticated" });
-        routeAuthStorageWarning(auth.result, reportNotification, addSystemChatMessage);
-        return;
-      }
-
-      if (auth.status === "missing") {
-        dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
-        return;
-      }
-
-      if (auth.status === "error") {
-        dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
-        dispatch({ type: "twitch.profile", profile: undefined });
-        reportNotification("error", "command", auth.error);
-      }
-    });
+    void twitchController.restore();
   }, [eventsRestored]);
 
   function addSystemChatMessage(text: string) {
@@ -328,6 +192,65 @@ export function AppShell() {
     if (systemTimelineRouter.current.shouldRecord(event)) addSystemChatMessage(event.message);
   }
 
+  const twitchController = useMemo(
+    () =>
+      createTwitchController({
+        operations: authOperations.current,
+        dispatch,
+        getAuthPrompt: () => stores.connection.getState().twitchAuthPrompt,
+        getAuthStatus: () => stores.connection.getState().twitchAuthStatus,
+        getAuthProfile: () => stores.connection.getState().twitchProfile,
+        getChannelLogin: () =>
+          settingsSnapshot.current?.twitch.channelLogin ??
+          stores.settings.getState().settings?.twitch.channelLogin,
+        getConfirmBeforeStopChat: () =>
+          stores.settings.getState().settings?.twitch.confirmBeforeStopChat ?? true,
+        waitForSettings: () => settingsMutation.current.waitForIdle(),
+        reportSystemMessage: addSystemChatMessage,
+        reportInfo,
+        reportNotification,
+        reportError,
+        reportTechnicalError: (message) =>
+          dispatch({
+            type: "log.added",
+            log: { level: "error", message, occurredAtMs: Date.now() },
+          }),
+        routeAutoConnectTimeline: routeSystemTimelineEvent,
+      }),
+    [dispatch, stores],
+  );
+
+  useEffect(
+    () =>
+      connection.twitchAuthStatus === "unauthenticated"
+        ? twitchController.schedulePoll(connection.twitchAuthPrompt)
+        : undefined,
+    [connection.twitchAuthPrompt, connection.twitchAuthStatus, twitchController],
+  );
+
+  const commandControllers = useMemo(
+    () => ({
+      speech: createSpeechController({
+        reportError,
+        reportInfo,
+        dispatchSpeechStatus: (status) => dispatch({ type: "speech.status", status }),
+      }),
+      queue: createQueueController({
+        reportError,
+        reportInfo,
+        dispatchQueueSnapshot: (snapshot) => {
+          if (snapshot) dispatch({ type: "speech.snapshot", snapshot });
+        },
+      }),
+      launcher: createLauncherController({
+        reportError,
+        reportInfo,
+        dispatchLauncherItems: (items) => dispatch({ type: "launcher.changed", items }),
+      }),
+    }),
+    [dispatch],
+  );
+
   useEffect(
     () =>
       subscribeDomainEvents({
@@ -354,22 +277,23 @@ export function AppShell() {
     if (
       !eventsRestored ||
       autoConnectAttempted.current ||
-      !state.settings?.twitch.autoConnect ||
-      state.twitchAuthStatus !== "authenticated" ||
-      state.twitchConnectionStatus !== "disconnected"
+      !settings?.twitch.autoConnect ||
+      connection.twitchAuthStatus !== "authenticated" ||
+      connection.twitchConnectionStatus !== "disconnected"
     )
       return;
     autoConnectAttempted.current = true;
-    void handleTwitchConnect({ automatic: true });
+    void twitchController.connect({ automatic: true });
   }, [
     eventsRestored,
-    state.settings?.twitch.autoConnect,
-    state.twitchAuthStatus,
-    state.twitchConnectionStatus,
+    settings?.twitch.autoConnect,
+    connection.twitchAuthStatus,
+    connection.twitchConnectionStatus,
+    twitchController,
   ]);
 
   useEffect(() => {
-    if (!eventsRestored || !state.settings || !isDesktopRuntime()) return;
+    if (!eventsRestored || !settings || !isDesktopRuntime()) return;
     return startSpeechHealthMonitor({
       probe: speechHealthProbe,
       getHealth: () => stores.connection.getState().speechAdapterHealth,
@@ -379,251 +303,35 @@ export function AppShell() {
         routeSystemTimelineEvent(speechRecoveryTimelineEvent(message, phase));
       },
     });
-  }, [eventsRestored, state.settings?.speech.bouyomiHost, state.settings?.speech.bouyomiPort]);
+  }, [eventsRestored, settings?.speech.bouyomiHost, settings?.speech.bouyomiPort]);
 
-  async function handleSpeechTest(text?: string) {
-    try {
-      const speechText = typeof text === "string" ? text : "テスト読み上げです。";
-      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "speaking" });
-      await speechTest(speechText);
-      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "idle" });
-      reportInfo("テスト読み上げを送信しました。");
-    } catch (error) {
-      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "error" });
-      reportError(error, "speech");
-    }
-  }
-
-  async function handleSpeechHealthCheck() {
-    try {
-      const message = await speechHealthCheck();
-      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "idle" });
-      reportInfo(message);
-    } catch (error) {
-      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "disconnected" });
-      reportError(error, "speech");
-    }
-  }
-
-  async function handleSpeechDiagnostics(): Promise<BouyomiConnectionDiagnostics> {
-    try {
-      const diagnostics = await speechConnectionDiagnostics();
-      reportInfo(diagnostics.recommendation);
-      return diagnostics;
-    } catch (error) {
-      reportError(error, "speech");
-      throw error;
-    }
-  }
+  const handleSpeechTest = commandControllers.speech.test;
+  const handleSpeechHealthCheck = commandControllers.speech.healthCheck;
+  const handleSpeechDiagnostics = commandControllers.speech.diagnostics;
 
   function handleSettingsUpdate(patch: AppSettingsPatch): Promise<boolean> {
     return settingsMutation.current.mutate(patch);
   }
 
-  async function handleTwitchStartAuth() {
-    const operation = authOperations.current.begin();
-    dispatch({ type: "twitch.authStatus", status: "authorizing" });
-    try {
-      const prompt = await twitchStartAuth();
-      if (!authOperations.current.isCurrent(operation)) return;
-      dispatch({ type: "twitch.authPrompt", prompt });
-      dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
-      dispatch({ type: "twitch.profile", profile: undefined });
-      dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
-      reportInfo("Twitch の認証コードを発行しました。");
-    } catch (error) {
-      if (!authOperations.current.isCurrent(operation)) return;
-      dispatch({ type: "twitch.authStatus", status: "error" });
-      reportError(error, "auth");
-    }
-  }
+  const handleTwitchStartAuth = twitchController.startAuth;
+  const handleTwitchPollAuth = () => {
+    void twitchController.pollAuth();
+  };
+  const handleTwitchValidateAuth = twitchController.validateAuth;
+  const handleTwitchConnect = () => {
+    void twitchController.connect();
+  };
+  const handleTwitchStopChat = () => {
+    void twitchController.stopChat();
+  };
+  const handleTwitchDisconnect = twitchController.disconnect;
+  const handleOpenExternalUrl = twitchController.openExternalUrl;
 
-  useEffect(() => {
-    if (!state.twitchAuthPrompt) {
-      return;
-    }
-
-    if (getDeviceAuthRemainingSeconds(state.twitchAuthPrompt.expiresAtMs) === 0) {
-      return;
-    }
-
-    const delay = Math.max(state.twitchAuthPrompt.interval, 1) * 1000;
-    const timer = window.setTimeout(() => {
-      if (
-        state.twitchAuthPrompt &&
-        getDeviceAuthRemainingSeconds(state.twitchAuthPrompt.expiresAtMs) > 0
-      ) {
-        void handleTwitchPollAuth({ quietWaiting: true });
-      }
-    }, delay);
-
-    return () => window.clearTimeout(timer);
-  }, [state.twitchAuthPrompt]);
-
-  async function handleTwitchPollAuth(options: { quietWaiting?: boolean } = {}) {
-    const operation = authOperations.current.tryBeginPoll();
-    if (operation === undefined) return;
-    dispatch({ type: "twitch.authStatus", status: "polling" });
-    try {
-      const result = await twitchPollAuth();
-      if (!authOperations.current.isCurrent(operation)) return;
-      if (result.status === "authorized") {
-        dispatch({ type: "twitch.authStatus", status: "authenticated" });
-        dispatch({ type: "twitch.authPrompt", prompt: undefined });
-        dispatch({ type: "twitch.profile", profile: result.profile });
-        dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
-        reportInfo(`Twitch に ${result.profile.login} としてログインしました。`);
-        routeAuthStorageWarning(result, reportNotification, addSystemChatMessage);
-      } else {
-        dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
-        if (
-          state.twitchAuthPrompt &&
-          (result.status === "pending" || result.status === "slowDown")
-        ) {
-          dispatch({
-            type: "twitch.authPrompt",
-            prompt: {
-              ...state.twitchAuthPrompt,
-              interval: result.interval,
-            },
-          });
-        }
-        if (
-          !options.quietWaiting ||
-          (result.status !== "pending" && result.status !== "slowDown")
-        ) {
-          if (result.status === "pending" || result.status === "slowDown") {
-            reportInfo(result.message, "event");
-          } else {
-            reportNotification(
-              result.status === "denied" || result.status === "expired" ? "warning" : "info",
-              "event",
-              result.message,
-            );
-          }
-        }
-        if (result.status === "expired" || result.status === "denied") {
-          dispatch({ type: "twitch.authPrompt", prompt: undefined });
-        }
-      }
-    } catch (error) {
-      if (!authOperations.current.isCurrent(operation)) return;
-      dispatch({ type: "twitch.authStatus", status: "error" });
-      reportError(error, "auth");
-    } finally {
-      authOperations.current.finishPoll(operation);
-    }
-  }
-
-  async function handleTwitchValidateAuth() {
-    const operation = authOperations.current.begin();
-    dispatch({ type: "twitch.authStatus", status: "checking" });
-    try {
-      const result = await twitchValidateAuth();
-      if (!authOperations.current.isCurrent(operation)) return false;
-      dispatch({ type: "twitch.authStatus", status: "authenticated" });
-      dispatch({ type: "twitch.profile", profile: result.profile });
-      dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
-      reportInfo("Twitch 認証は有効です。");
-      routeAuthStorageWarning(result, reportNotification, addSystemChatMessage);
-      return true;
-    } catch (error) {
-      if (!authOperations.current.isCurrent(operation)) return false;
-      dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
-      dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
-      dispatch({ type: "twitch.authPrompt", prompt: undefined });
-      dispatch({ type: "twitch.profile", profile: undefined });
-      reportError(error, "auth");
-      return false;
-    }
-  }
-
-  async function handleTwitchConnect({ automatic = false }: { automatic?: boolean } = {}) {
-    try {
-      await settingsMutation.current.waitForIdle();
-      const channelLogin =
-        settingsSnapshot.current?.twitch.channelLogin ?? state.settings?.twitch.channelLogin;
-      dispatch({ type: "twitch.connectionStatus", status: "connecting" });
-      if (automatic)
-        routeSystemTimelineEvent(
-          autoConnectTimelineEvent("started", "Twitch チャットの自動接続を開始します。"),
-        );
-      await twitchConnect(channelLogin);
-      reportInfo("Twitch チャット接続を開始しました。");
-    } catch (error) {
-      dispatch({ type: "twitch.connectionStatus", status: "error" });
-      reportError(error, "chat");
-      if (automatic)
-        routeSystemTimelineEvent(
-          autoConnectTimelineEvent(
-            "failed",
-            `Twitch チャットの自動接続に失敗しました: ${presentError(error, "chat").message}`,
-          ),
-        );
-    }
-  }
-
-  async function handleTwitchStopChat() {
-    const shouldConfirm = state.settings?.twitch.confirmBeforeStopChat ?? true;
-    if (shouldConfirm && !window.confirm("Twitch チャット受信を停止しますか？")) {
-      return;
-    }
-
-    try {
-      await twitchStopChat();
-      dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
-    } catch (error) {
-      dispatch({ type: "twitch.connectionStatus", status: "error" });
-      reportError(error, "chat");
-    }
-  }
-
-  async function handleTwitchDisconnect() {
-    if (!window.confirm("Twitch 連携を解除しますか？")) {
-      return;
-    }
-
-    const operation = authOperations.current.begin();
-    dispatch({ type: "twitch.authStatus", status: "disconnecting" });
-    try {
-      await twitchDisconnect();
-      if (!authOperations.current.isCurrent(operation)) return;
-      dispatch({ type: "twitch.authStatus", status: "unauthenticated" });
-      dispatch({ type: "twitch.connectionStatus", status: "disconnected" });
-      dispatch({ type: "twitch.authPrompt", prompt: undefined });
-      dispatch({ type: "twitch.profile", profile: undefined });
-    } catch (error) {
-      if (!authOperations.current.isCurrent(operation)) return;
-      reportError(error, "auth");
-    }
-  }
-
-  async function handleOpenExternalUrl(url: string) {
-    try {
-      await appOpenExternalUrl(url);
-    } catch (error) {
-      reportError(error, "externalUrl");
-    }
-  }
-
-  async function handleSpeechControl(command: "pause" | "resume" | "skip" | "clear") {
-    if (command === "clear" && !window.confirm("待機中の読み上げをクリアしますか？")) {
-      return;
-    }
-
-    try {
-      await speechControl(command);
-      if (!isDesktopRuntime())
-        dispatch({ type: "speech.status", status: command === "pause" ? "paused" : "idle" });
-    } catch (error) {
-      if (!isDesktopRuntime()) dispatch({ type: "speech.status", status: "error" });
-      reportError(error, "speech");
-    }
-  }
+  const handleSpeechControl = commandControllers.speech.control;
 
   useStreamHotkeys({
     onToggleSpeech: () => {
-      void handleSpeechControl(state.speechQueuePhase === "paused" ? "resume" : "pause");
+      void handleSpeechControl(queue.phase === "paused" ? "resume" : "pause");
     },
     onSkipSpeech: () => {
       void handleSpeechControl("skip");
@@ -631,177 +339,97 @@ export function AppShell() {
     onOpenSettings: () => navigate("/settings"),
   });
 
-  async function handleQueueReload() {
-    try {
-      const snapshot = await speechQueueReload();
-      if (snapshot) dispatch({ type: "speech.snapshot", snapshot });
-    } catch (error) {
-      reportError(error, "queue");
-    }
-  }
-
-  async function handleQueueRemove(itemId: string) {
-    try {
-      await speechQueueRemove(itemId);
-    } catch (error) {
-      reportError(error, "queue");
-    }
-  }
-
-  async function handleQueueDismiss(itemId: string) {
-    try {
-      await speechQueueDismiss(itemId);
-    } catch (error) {
-      reportError(error, "queue");
-    }
-  }
-
-  async function handleQueueDismissHistory() {
-    if (!window.confirm("表示中の読み上げ履歴をクリアしますか？")) {
-      return;
-    }
-
-    try {
-      await speechQueueDismissHistory();
-    } catch (error) {
-      reportError(error, "queue");
-    }
-  }
-
-  async function handleQueueRetry(itemId: string) {
-    try {
-      await speechQueueRetry(itemId);
-    } catch (error) {
-      reportError(error, "queue");
-    }
-  }
-
-  const handleLauncherAdd = useCallback(async (paths: string[]): Promise<LauncherAddResult> => {
-    try {
-      const result = await launcherAdd(paths);
-      dispatch({ type: "launcher.changed", items: result.items });
-      return result;
-    } catch (error) {
-      reportError(error, "launcher");
-      throw error;
-    }
-  }, []);
-
-  async function handleLauncherRemove(itemId: string) {
-    try {
-      const items = await launcherRemove(itemId);
-      dispatch({ type: "launcher.changed", items });
-      return items;
-    } catch (error) {
-      reportError(error, "launcher");
-      throw error;
-    }
-  }
-
-  async function reportLauncherResult(result: LauncherLaunchResult) {
-    if (result.failures.length > 0) {
-      const firstFailure = result.failures[0];
-      reportError(
-        new Error(`${firstFailure.displayName} を起動できませんでした: ${firstFailure.message}`),
-        "launcher",
-      );
-    }
-    return result;
-  }
-
-  async function handleLauncherLaunch(itemId: string) {
-    try {
-      return reportLauncherResult(await launcherLaunch(itemId));
-    } catch (error) {
-      reportError(error, "launcher");
-      throw error;
-    }
-  }
-
-  async function handleLauncherLaunchAll() {
-    try {
-      return reportLauncherResult(await launcherLaunchAll());
-    } catch (error) {
-      reportError(error, "launcher");
-      throw error;
-    }
-  }
+  const handleQueueReload = commandControllers.queue.reload;
+  const handleQueueRemove = commandControllers.queue.remove;
+  const handleQueueDismiss = commandControllers.queue.dismiss;
+  const handleQueueDismissHistory = commandControllers.queue.dismissHistory;
+  const handleQueueRetry = commandControllers.queue.retry;
+  const handleLauncherAdd = commandControllers.launcher.add;
+  const handleLauncherRemove = commandControllers.launcher.remove;
+  const handleLauncherLaunch = commandControllers.launcher.launch;
+  const handleLauncherLaunchAll = commandControllers.launcher.launchAll;
 
   return (
-    <UnsavedChangesContext.Provider value={unsavedChangesRegistry}>
-      <div className={APP_SHELL_CLASS_NAME}>
-        <TitleBar
-          scale={displayScale.scale}
-          scaleMode={displayScale.mode}
-          onScaleModeChange={displayScale.setMode}
-          onClose={requestWindowClose}
-        />
-        <ActivityBar />
-        <DomainSidePanel
-          onSpeechControl={handleSpeechControl}
-          onTwitchConnect={handleTwitchConnect}
-          onTwitchStopChat={handleTwitchStopChat}
-          onWarningsClear={() => dispatch({ type: "warnings.cleared" })}
-        />
-        <MainView
-          showStartupGuide={showStartupGuideForSession}
-          onSettingsUpdate={handleSettingsUpdate}
-          onSpeechHealthCheck={handleSpeechHealthCheck}
-          onSpeechDiagnostics={handleSpeechDiagnostics}
-          onSpeechTest={handleSpeechTest}
-          onSpeechControl={handleSpeechControl}
-          onQueueReload={handleQueueReload}
-          onQueueRemove={handleQueueRemove}
-          onQueueDismiss={handleQueueDismiss}
-          onQueueDismissHistory={handleQueueDismissHistory}
-          onQueueRetry={handleQueueRetry}
-          onLauncherAdd={handleLauncherAdd}
-          onLauncherRemove={handleLauncherRemove}
-          onLauncherLaunch={handleLauncherLaunch}
-          onLauncherLaunchAll={handleLauncherLaunchAll}
-          onTwitchStartAuth={handleTwitchStartAuth}
-          onTwitchPollAuth={handleTwitchPollAuth}
-          onTwitchValidateAuth={handleTwitchValidateAuth}
-          onTwitchDisconnect={handleTwitchDisconnect}
-          onOpenExternalUrl={handleOpenExternalUrl}
-        />
-        <DomainStatusBar />
-        <DomainLiveStatusAnnouncer />
-        <ResizeHandles />
-        {(blocker.state === "blocked" || closeRequested) && activeUnsavedChange && (
-          <UnsavedChangesDialog
-            onCancel={() => {
-              if (blocker.state === "blocked") blocker.reset();
-              setCloseRequested(false);
-            }}
-            onDiscard={() => {
-              activeUnsavedChange.discard();
-              if (closeRequested) {
-                void completeWindowClose();
-              } else if (blocker.state === "blocked") {
-                blocker.proceed();
-              }
-            }}
-            onSave={() => {
-              void activeUnsavedChange.save().then((saved) => {
-                if (!saved) return;
-                if (closeRequested) {
-                  void completeWindowClose();
-                } else if (blocker.state === "blocked") {
-                  blocker.proceed();
-                }
-              });
-            }}
-          />
-        )}
-        {closeRequested && !activeUnsavedChange && (
-          <ActiveOperationsExitDialog
-            isClosing={isClosing}
-            onCancel={() => setCloseRequested(false)}
-            onConfirm={() => void completeWindowClose()}
-          />
-        )}
-      </div>
-    </UnsavedChangesContext.Provider>
+    <ExitProtectionProvider reportError={reportError}>
+      <DomainControllerActionsProvider
+        actions={{
+          updateSettings: handleSettingsUpdate,
+          speechHealthCheck: handleSpeechHealthCheck,
+          speechDiagnostics: handleSpeechDiagnostics,
+          speechTest: handleSpeechTest,
+          speechControl: handleSpeechControl,
+          queueReload: handleQueueReload,
+          queueRemove: handleQueueRemove,
+          queueDismiss: handleQueueDismiss,
+          queueDismissHistory: handleQueueDismissHistory,
+          queueRetry: handleQueueRetry,
+          launcherAdd: handleLauncherAdd,
+          launcherRemove: handleLauncherRemove,
+          launcherLaunch: handleLauncherLaunch,
+          launcherLaunchAll: handleLauncherLaunchAll,
+          twitchStartAuth: handleTwitchStartAuth,
+          twitchPollAuth: () => {
+            void handleTwitchPollAuth();
+          },
+          twitchValidateAuth: handleTwitchValidateAuth,
+          twitchDisconnect: handleTwitchDisconnect,
+          twitchConnect: () => {
+            void handleTwitchConnect();
+          },
+          twitchStopChat: () => {
+            void handleTwitchStopChat();
+          },
+          openExternalUrl: handleOpenExternalUrl,
+          clearWarnings: () => dispatch({ type: "warnings.cleared" }),
+        }}
+      >
+        {children}
+      </DomainControllerActionsProvider>
+    </ExitProtectionProvider>
+  );
+}
+
+const AppShellLayout = memo(function AppShellLayout({
+  onRouteCommit,
+}: {
+  onRouteCommit?: ProfilerOnRenderCallback;
+}) {
+  const displayScale = useDisplayScale();
+  return (
+    <div className={APP_SHELL_CLASS_NAME}>
+      <CloseAwareTitleBar
+        scale={displayScale.scale}
+        scaleMode={displayScale.mode}
+        onScaleModeChange={displayScale.setMode}
+      />
+      <ActivityBar />
+      <DomainSidePanel />
+      <Profiler id="app-route-body" onRender={onRouteCommit ?? (() => undefined)}>
+        <MainView showStartupGuide={showStartupGuideForSession} />
+      </Profiler>
+      <DomainStatusBar />
+      <DomainLiveStatusAnnouncer />
+      <ResizeHandles />
+    </div>
+  );
+});
+
+function CloseAwareTitleBar({
+  scale,
+  scaleMode,
+  onScaleModeChange,
+}: {
+  scale: number;
+  scaleMode: Parameters<typeof TitleBar>[0]["scaleMode"];
+  onScaleModeChange: Parameters<typeof TitleBar>[0]["onScaleModeChange"];
+}) {
+  const { requestWindowClose } = useExitController();
+  return (
+    <TitleBar
+      scale={scale}
+      scaleMode={scaleMode}
+      onScaleModeChange={onScaleModeChange}
+      onClose={requestWindowClose}
+    />
   );
 }
