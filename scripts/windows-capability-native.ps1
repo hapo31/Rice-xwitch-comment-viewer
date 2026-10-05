@@ -28,6 +28,7 @@ public static class RiceNativeProbe {
   [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point point);
   [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr window,uint flags);
+  [DllImport("user32.dll", EntryPoint="GetWindowLongW")] static extern int GetWindowLong(IntPtr window,int index);
   [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GuiThread info);
   [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out Rect r);
   [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref Point p);
@@ -83,12 +84,20 @@ public static class RiceNativeProbe {
   public static void Focus(int pid,int x,int y) {
     var h=Window(pid);
     // Windows can deny SetForegroundWindow after NSIS ran in another process.
-    // Fixture setup raises only the owned UI in the normal Z-order (no always-
-    // on-top/UAC/global policy change), then activates it with physical input.
-    if(!SetWindowPos(h,IntPtr.Zero,0,0,0,0,0x0013)) throw new Exception("Cannot expose owned UI for focus");
-    Thread.Sleep(200); var p=Screen(pid,x,y);
-    if(GetAncestor(WindowFromPoint(p),2)!=h) throw new Exception("Owned UI focus point is occluded");
-    SetCursorPos(p.X,p.Y); Button(2); Thread.Sleep(200); Button(4);
+    // Expose only the owned fixture while physically activating it. Preserve
+    // its original topmost style in finally; no UAC/global focus-policy change.
+    bool wasTopmost=(GetWindowLong(h,-20)&8)!=0;
+    try {
+      if(!SetWindowPos(h,new IntPtr(-1),0,0,0,0,0x0013)) throw new Exception("Cannot expose owned UI for focus");
+      Thread.Sleep(200); var p=Screen(pid,x,y); var hit=GetAncestor(WindowFromPoint(p),2);
+      if(hit!=h) {
+        uint owner; GetWindowThreadProcessId(hit,out owner); var name=new StringBuilder(128); GetClassName(hit,name,128);
+        throw new Exception("Owned UI focus point is occluded by HWND "+hit.ToInt64()+", PID "+owner+", class "+name);
+      }
+      SetCursorPos(p.X,p.Y); Button(2); Thread.Sleep(200); Button(4);
+    } finally {
+      if(!SetWindowPos(h,new IntPtr(wasTopmost?-1:-2),0,0,0,0,0x0013)) throw new Exception("Cannot restore owned UI Z-order style");
+    }
     Thread.Sleep(750); // Separate the setup click from a titlebar double click.
     if(GetForegroundWindow()!=h) throw new Exception("Physical activation did not focus the owned Rice UI");
   }
