@@ -41,17 +41,40 @@ export const speechRecoveryActions = [
   "none",
 ] as const;
 export type SpeechRecoveryAction = (typeof speechRecoveryActions)[number];
-type SpeechOutcomeDetails = {
-  message: string;
-  retryable: boolean;
-  recoveryAction: SpeechRecoveryAction;
-  occurredAtMs: number;
-};
+export const retryableSpeechReasons = [
+  "connectionRefused",
+  "connectTimeout",
+  "connectFailed",
+  "connectionLost",
+] as const;
+type SpeechOutcomeDetails = { message: string; occurredAtMs: number };
 export type SpeechQueueOutcome = SpeechOutcomeDetails &
   (
-    | { kind: "blocked"; reasonCode: (typeof speechOutcomeReasonCodes.blocked)[number] }
-    | { kind: "skipped"; reasonCode: (typeof speechOutcomeReasonCodes.skipped)[number] }
-    | { kind: "error"; reasonCode: (typeof speechOutcomeReasonCodes.error)[number] }
+    | {
+        kind: "blocked";
+        reasonCode: (typeof speechOutcomeReasonCodes.blocked)[number];
+        retryable: false;
+        recoveryAction: "reviewFilters";
+      }
+    | { kind: "skipped"; reasonCode: "overflow"; retryable: false; recoveryAction: "reviewQueue" }
+    | {
+        kind: "skipped";
+        reasonCode: Exclude<(typeof speechOutcomeReasonCodes.skipped)[number], "overflow">;
+        retryable: false;
+        recoveryAction: "none";
+      }
+    | {
+        kind: "error";
+        reasonCode: (typeof speechOutcomeReasonCodes.error)[number];
+        retryable: false;
+        recoveryAction: "diagnoseSpeech" | "confirmDelivery";
+      }
+    | {
+        kind: "error";
+        reasonCode: (typeof retryableSpeechReasons)[number];
+        retryable: true;
+        recoveryAction: "diagnoseSpeech";
+      }
   );
 
 export interface AppSettingsPatch {
@@ -271,14 +294,12 @@ export interface AppNotification {
   correlationId?: string;
 }
 
-export type TwitchConnectionStatus =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "validating"
-  | "reconnecting"
-  | "authRequired"
-  | "error";
+export const twitchStatusesByDomain = {
+  auth: ["disconnected", "connecting", "connected", "validating", "authRequired", "error"],
+  chat: ["disconnected", "connecting", "connected", "reconnecting", "authRequired", "error"],
+} as const;
+export type TwitchConnectionStatus = (typeof twitchStatusesByDomain)[TwitchStatusDomain][number];
+export type TwitchAuthConnectionStatus = (typeof twitchStatusesByDomain.auth)[number];
 
 export type TwitchAuthRequiredReason = "missingRequiredScope";
 export type TwitchStatusDomain = "auth" | "chat";
@@ -289,24 +310,23 @@ export interface TwitchActiveConnection {
   broadcasterLogin: string;
 }
 
-export type TwitchChatConnectionStatus =
-  | "disconnected"
-  | "connecting"
-  | "connected"
-  | "reconnecting"
-  | "authRequired"
-  | "error";
+export type TwitchChatConnectionStatus = (typeof twitchStatusesByDomain.chat)[number];
 
-export interface TwitchStatusEvent {
-  revision?: number;
-  domain: TwitchStatusDomain;
-  status: TwitchConnectionStatus;
-  reason?: TwitchAuthRequiredReason;
-  connectionGeneration?: number;
-  activeConnection?: TwitchActiveConnection;
-  message?: string;
-  occurredAtMs: number;
-}
+type TwitchStatusDetails = { revision?: number; message?: string; occurredAtMs: number };
+export type TwitchStatusEvent = TwitchStatusDetails &
+  (
+    | ({ domain: "auth"; connectionGeneration?: never; activeConnection?: never } & (
+        | { status: "authRequired"; reason?: TwitchAuthRequiredReason }
+        | { status: Exclude<TwitchAuthConnectionStatus, "authRequired">; reason?: never }
+      ))
+    | {
+        domain: "chat";
+        status: TwitchChatConnectionStatus;
+        reason?: never;
+        connectionGeneration?: number;
+        activeConnection?: TwitchActiveConnection;
+      }
+  );
 
 export interface SpeechStatusEvent {
   revision?: number;

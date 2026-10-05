@@ -89,6 +89,8 @@
 
 ## 現在の進捗サマリ
 
+Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態・付随情報を判別可能 union に揃えた。既存21 outcome fixtureと新しい型/runtime共通の正負 fixtureを検証し、frontend 326件とformat/lint/typecheck/buildが成功した。最終レビューと CI は未完了。
+
 2026-10-05: Dependabot全13件（#179–#182、#184–#192）のレビューと互換性修正を完了した。Tauri dialogのJS/Rust版一致検査、React 19の型・ref初期値・TitleBar DOMテスト移行を実施した。マージと後片付けの条件・検証結果・既存Windows入力の不安定性はPhase 5のDependabot項目に記録する。
 
 - [x] Issue #69: adapter healthとqueue phaseをbackend/frontendで独立保持し、paused中も無音probeを継続する。復旧は失敗項目を自動再送せず、UIの接続/準備完了を両状態から導出する。
@@ -505,5 +507,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [ ] 手動: Issue #27 として、Twitch 接続中・読み上げ待機中・未保存変更ありの X、Alt+F4、OS close-request で終了確認とキャンセル、承認後の接続停止・キュークリアを Windows 10/11 で確認する。
 
 ## 調査メモ
+
+- 2026-10-06 Issue #200: Rust の auth service と app_events の本番送信は、Auth に接続世代/identityを持たせず、missingRequiredScope を AuthRequired にだけ付ける。Frontend の domain 別状態配列を型/parserで共用し、12種類の不正組合せを同じ値でコンパイル時とruntimeの両方から拒否した。既存21 outcome fixture、旧payloadのoptional省略、errorの安全な再送と送達確認の既存分岐は保持する。追加のschema libraryやRust wire変更は行わず、汎用parserの整理は別Issue #201に残す。
 
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
