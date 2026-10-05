@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
@@ -258,6 +258,65 @@ it("Filter uses real input/validation/save and associates field errors", async (
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "設定を保存" })).not.toBeInTheDocument(),
   );
+});
+
+it("remote mode must be saved then explicitly sent to native consent, never auto-connects", async () => {
+  allowSettingsSave();
+  tauriMock.setCommand("speech_authorize_endpoint", () =>
+    Promise.reject({
+      field: "speech.bouyomiHost",
+      code: "consentDeclined",
+      message: "外部接続を許可しませんでした。送信していません。",
+      recovery: "接続先を確認してください。",
+    }),
+  );
+  const user = userEvent.setup();
+  const { stores } = mountApp("/settings");
+  await ready(stores);
+  const mode = screen.getByRole("checkbox", { name: /外部接続モード/ });
+  expect(mode).not.toBeChecked();
+  await user.click(mode);
+  expect(screen.getByText(/Twitchユーザー名・チャット・テスト文/)).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "保存済みの接続先をネイティブ確認で許可" }),
+  ).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "設定を保存" }));
+  await waitFor(() =>
+    expect(stores.settings.getState().settings?.speech.bouyomiRemoteMode).toBe(true),
+  );
+  const authorize = screen.getByRole("button", { name: "保存済みの接続先をネイティブ確認で許可" });
+  expect(authorize).toBeEnabled();
+  expect(tauriMock.invoke).not.toHaveBeenCalledWith("speech_authorize_endpoint");
+  const probesBeforeConsent = tauriMock.invoke.mock.calls.filter(
+    ([command]) => command === "speech_health_probe",
+  ).length;
+  await user.click(authorize);
+  await waitFor(() => expect(screen.getByText(/外部接続を許可しませんでした/)).toBeInTheDocument());
+  expect(tauriMock.invoke).toHaveBeenCalledWith("speech_authorize_endpoint");
+  expect(
+    tauriMock.invoke.mock.calls.filter(([command]) => command === "speech_health_probe"),
+  ).toHaveLength(probesBeforeConsent);
+});
+
+it("oversized confirmation and NG rules expose field errors and block saving", async () => {
+  const { stores, router } = mountApp("/settings");
+  await ready(stores);
+  const confirmation = screen.getByLabelText("接続成功時メッセージ");
+  fireEvent.change(confirmation, { target: { value: "😀".repeat(121) } });
+  expect(confirmation).toHaveAttribute("aria-invalid", "true");
+  expect(document.getElementById(confirmation.getAttribute("aria-describedby")!)).toHaveTextContent(
+    /120文字/,
+  );
+  expect(screen.getByRole("button", { name: "設定を保存" })).toBeDisabled();
+  fireEvent.change(confirmation, { target: { value: "" } });
+  await act(() => router.navigate("/filter"));
+  fireEvent.change(screen.getByLabelText("NG ワード", { exact: true }), {
+    target: { value: "x".repeat(501) },
+  });
+  expect(
+    within(screen.getByRole("region", { name: "除外リスト" })).getByRole("alert"),
+  ).toHaveTextContent(/500文字/);
+  expect(screen.getByRole("button", { name: "設定を保存" })).toBeDisabled();
 });
 
 it("Filter cancellation preserves a draft and discard restores navigation without saving", async () => {

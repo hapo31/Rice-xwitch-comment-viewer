@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(feature = "app")]
 use tauri::Manager;
 
+pub(crate) mod validation;
 mod writer;
 
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -67,6 +68,9 @@ pub struct SpeechSettings {
     #[serde(default = "default_bouyomi_host")]
     pub bouyomi_host: String,
     pub bouyomi_port: u16,
+    /// Opt-in request only. Native consent is never persisted in settings.
+    #[serde(default)]
+    pub bouyomi_remote_mode: bool,
     #[serde(default = "default_bouyomi_speed")]
     pub bouyomi_speed: i16,
     #[serde(default = "default_bouyomi_tone")]
@@ -197,6 +201,7 @@ impl Default for AppSettings {
                 adapter: SpeechAdapterKind::Bouyomi,
                 bouyomi_host: default_bouyomi_host(),
                 bouyomi_port: 50001,
+                bouyomi_remote_mode: false,
                 bouyomi_speed: -1,
                 bouyomi_tone: -1,
                 bouyomi_volume: -1,
@@ -219,7 +224,7 @@ impl Default for AppSettings {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsPatch {
     pub twitch: Option<TwitchSettingsPatch>,
     pub speech: Option<SpeechSettingsPatch>,
@@ -227,7 +232,7 @@ pub struct SettingsPatch {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TwitchSettingsPatch {
     pub channel_login: Option<String>,
     pub auto_connect: Option<bool>,
@@ -236,11 +241,12 @@ pub struct TwitchSettingsPatch {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SpeechSettingsPatch {
     pub adapter: Option<SpeechAdapterKind>,
     pub bouyomi_host: Option<String>,
     pub bouyomi_port: Option<u16>,
+    pub bouyomi_remote_mode: Option<bool>,
     pub bouyomi_speed: Option<i16>,
     pub bouyomi_tone: Option<i16>,
     pub bouyomi_volume: Option<i16>,
@@ -290,13 +296,35 @@ fn deserialize_settings(text: &str) -> Result<AppSettings, String> {
 }
 
 /// Inspect the framework-owned JSON tree before cloning any application DTO.
-fn parse_settings_request(value: &serde_json::Value) -> Result<SettingsPatch, String> {
-    crate::resource_limits::validate_json_request(value, MAX_SETTINGS_JSON_BYTES)?;
+fn parse_settings_request(
+    value: &serde_json::Value,
+) -> Result<SettingsPatch, validation::ValidationError> {
+    crate::resource_limits::validate_json_request(value, validation::MAX_PATCH_BYTES)
+        .map_err(|message| validation::ValidationError::new("patch", "payloadTooLarge", message))?;
+    if value
+        .as_object()
+        .is_none_or(|object| object.len() != 1 || !object.contains_key("patch"))
+    {
+        return Err(validation::ValidationError::new(
+            "patch",
+            "unknownField",
+            "設定要求に未知の項目があります。入力項目を確認してください。",
+        ));
+    }
     let patch = value
         .get("patch")
         .ok_or_else(|| "更新する設定を指定してください。".to_string())?;
-    crate::launcher::preflight_launcher_patch(patch)?;
-    serde_json::from_value(patch.clone()).map_err(|_| "設定の項目または型が無効です。登録先・ID・アイコンは変更できません。入力内容を見直してください。".into())
+    validation::preflight_wire(patch)?;
+    crate::launcher::preflight_launcher_patch(patch).map_err(|message| {
+        validation::ValidationError::new("launcher.items", "invalidLauncher", message)
+    })?;
+    serde_json::from_value(patch.clone()).map_err(|_| {
+        validation::ValidationError::new(
+            "patch",
+            "invalidPayload",
+            "設定の項目または型が無効です。入力内容を見直してください。",
+        )
+    })
 }
 
 fn read_settings_text(path: &Path) -> anyhow::Result<Result<String, String>> {
@@ -703,9 +731,17 @@ pub(crate) fn update_settings_transaction(
     update: impl FnOnce(&mut AppSettings) -> Result<(), String>,
     save: impl FnOnce(&AppSettings) -> Result<(), String>,
 ) -> Result<(), String> {
+    update_settings_transaction_with_error(settings, update, save)
+}
+
+fn update_settings_transaction_with_error<E: From<String>>(
+    settings: &mut AppSettings,
+    update: impl FnOnce(&mut AppSettings) -> Result<(), E>,
+    save: impl FnOnce(&AppSettings) -> Result<(), E>,
+) -> Result<(), E> {
     let mut candidate = settings.clone();
     update(&mut candidate)?;
-    validate_launcher_resources(&candidate.launcher.items)?;
+    validate_launcher_resources(&candidate.launcher.items).map_err(E::from)?;
     save(&candidate)?;
     *settings = candidate;
     Ok(())
@@ -717,22 +753,58 @@ pub fn settings_update(
     app: tauri::AppHandle<tauri::Wry>,
     state: tauri::State<'_, AppState>,
     request: tauri::ipc::Request<'_>,
-) -> Result<AppSettings, String> {
+) -> Result<AppSettings, validation::ValidationError> {
     let patch = parse_settings_request(crate::resource_limits::request_json(&request)?)?;
     let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
-    update_settings_transaction(
-        &mut settings,
-        |candidate| apply_patch(candidate, patch),
-        |candidate| SettingsStore::save(&app, candidate).map_err(|error| error.to_string()),
-    )?;
+    let previous_endpoint = (
+        settings.speech.bouyomi_host.clone(),
+        settings.speech.bouyomi_port,
+        settings.speech.bouyomi_remote_mode,
+    );
+    apply_validated_settings_patch(&mut settings, patch, |candidate| {
+        SettingsStore::save(&app, candidate).map_err(|_| {
+            validation::ValidationError::new(
+                "settings",
+                "persistenceFailed",
+                "設定を保存できませんでした。保存先の空き容量・権限を確認してください。",
+            )
+        })
+    })?;
+    if previous_endpoint
+        != (
+            settings.speech.bouyomi_host.clone(),
+            settings.speech.bouyomi_port,
+            settings.speech.bouyomi_remote_mode,
+        )
+    {
+        state.speech_runtime.destination_policy().revoke();
+    }
     emit_app_log(&app, AppLogLevel::Info, "設定を保存しました。");
     Ok(settings.clone())
+}
+
+fn apply_validated_settings_patch(
+    settings: &mut AppSettings,
+    patch: SettingsPatch,
+    save: impl FnOnce(&AppSettings) -> Result<(), validation::ValidationError>,
+) -> Result<(), validation::ValidationError> {
+    validation::validate_patch(&patch)?;
+    update_settings_transaction_with_error(
+        settings,
+        |candidate| {
+            apply_patch(candidate, patch)?;
+            validation::validate_settings(candidate)
+        },
+        save,
+    )
 }
 
 fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), String> {
     if let Some(twitch) = patch.twitch {
         if let Some(channel_login) = twitch.channel_login {
-            settings.twitch.channel_login = channel_login.trim().to_string();
+            settings.twitch.channel_login = validation::TwitchLogin::parse(&channel_login, true)
+                .map_err(|error| error.to_string())?
+                .into_string();
         }
         if let Some(auto_connect) = twitch.auto_connect {
             settings.twitch.auto_connect = auto_connect;
@@ -746,6 +818,9 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
     }
 
     if let Some(speech) = patch.speech {
+        if let Some(mode) = speech.bouyomi_remote_mode {
+            settings.speech.bouyomi_remote_mode = mode;
+        }
         if let Some(adapter) = speech.adapter {
             settings.speech.adapter = adapter;
         }
@@ -897,8 +972,23 @@ mod tests {
         }
         for json_bytes in [None, Some(super::MAX_SETTINGS_JSON_BYTES)] {
             let path = settings_path_for_test("launcher-budget");
-            let mut settings = crate::launcher::bounds_tests::full_quota_settings(json_bytes);
+            let mut settings = crate::launcher::bounds_tests::full_quota_settings();
             SettingsStore::save_to_path(&path, &settings).unwrap();
+            let pad_json = |path: &std::path::Path| {
+                if let Some(json_bytes) = json_bytes {
+                    let mut padding = json_bytes - fs::metadata(path).unwrap().len() as usize;
+                    let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+                    while padding > 0 {
+                        let count = padding.min(4096);
+                        std::io::Write::write_all(&mut file, &vec![b' '; count]).unwrap();
+                        padding -= count;
+                    }
+                    file.sync_all().unwrap();
+                }
+            };
+            // A maximum-size valid wire document uses trailing JSON whitespace,
+            // not an oversized domain field that the validator would reject.
+            pad_json(&path);
             let baseline = crate::resource_limits::allocation::start();
             let start = std::time::Instant::now();
             update_settings_transaction(
@@ -912,6 +1002,7 @@ mod tests {
                 },
             )
             .unwrap();
+            pad_json(&path);
             let loaded = SettingsStore::load_from_path(&path).unwrap();
             assert_eq!(loaded.settings.launcher.items, settings.launcher.items);
             assert_eq!(loaded.settings.launcher.items.len(), 200);
@@ -961,7 +1052,87 @@ mod tests {
         assert_eq!(settings.twitch.channel_login, "");
         assert!(!saved.get());
         let huge = serde_json::json!({"patch": {"speech": {"blockedWords": ["x".repeat(super::MAX_SETTINGS_JSON_BYTES)]}}});
-        assert!(parse_settings_request(&huge).unwrap_err().contains("最大"));
+        assert!(parse_settings_request(&huge)
+            .unwrap_err()
+            .message
+            .contains("最大"));
+    }
+
+    #[test]
+    fn invalid_wire_and_domain_patch_never_save_publish_or_change_either_file() {
+        let path = settings_path_for_test("domain-validation");
+        let mut settings = AppSettings::default();
+        SettingsStore::save_to_path(&path, &settings).unwrap();
+        SettingsStore::save_to_path(&path, &settings).unwrap();
+        let previous = fs::read(&path).unwrap();
+        let previous_backup = fs::read(backup_path(&path)).unwrap();
+        let cases = [
+            serde_json::json!({"twitch":{"channelLogin":"ab"}}),
+            serde_json::json!({"speech":{"bouyomiHost":""}}),
+            serde_json::json!({"speech":{"bouyomiPort":0}}),
+            serde_json::json!({"speech":{"maxCommentLength":0}}),
+            serde_json::json!({"speech":{"bouyomiSpeed":301}}),
+            serde_json::json!({"speech":{"repeatSuppressionSeconds":31}}),
+            serde_json::json!({"speech":{"connectionSuccessSpeechText":"😀".repeat(121)}}),
+            serde_json::json!({"speech":{"blockedWords":["x".repeat(501)]}}),
+            serde_json::json!({"speech":{"blockedUsers":["invalid-login"]}}),
+            serde_json::json!({"speech":{"autoSpeek":true}}),
+            serde_json::json!({"twitch":{"channelLogn":"abc"}}),
+            serde_json::json!({"speeech":{}}),
+        ];
+        for patch in cases {
+            let saved = std::cell::Cell::new(false);
+            let result = super::parse_settings_request(&serde_json::json!({"patch":patch}))
+                .and_then(|patch| {
+                    super::apply_validated_settings_patch(&mut settings, patch, |_| {
+                        saved.set(true);
+                        Ok(())
+                    })
+                });
+            let error = result.unwrap_err();
+            assert!(!error.field.is_empty() && !error.code.is_empty());
+            assert!(!error.recovery.is_empty());
+            assert!(!saved.get());
+            assert_eq!(fs::read(&path).unwrap(), previous);
+            assert_eq!(fs::read(backup_path(&path)).unwrap(), previous_backup);
+            assert_eq!(
+                serde_json::to_value(&settings).unwrap(),
+                serde_json::to_value(AppSettings::default()).unwrap()
+            );
+        }
+        cleanup(&path);
+    }
+
+    #[tokio::test]
+    async fn manually_edited_settings_cannot_persist_or_forge_remote_consent() {
+        let path = settings_path_for_test("remote-consent-tampering");
+        SettingsStore::save_to_path(&path, &AppSettings::default()).unwrap();
+        for remote_mode in [false, true] {
+            let mut wire = serde_json::to_value(AppSettings::default()).unwrap();
+            wire["speech"]["bouyomiHost"] = serde_json::json!("10.0.0.1");
+            wire["speech"]["bouyomiRemoteMode"] = serde_json::json!(remote_mode);
+            // These attacker-controlled file values are not an approval token.
+            wire["speech"]["remoteConsent"] = serde_json::json!(true);
+            wire["speech"]["approvedEndpoint"] = serde_json::json!("10.0.0.1:50001");
+            fs::write(&path, serde_json::to_vec_pretty(&wire).unwrap()).unwrap();
+            let edited_bytes = fs::read(&path).unwrap();
+            let loaded = SettingsStore::load_from_path(&path).unwrap();
+            assert_eq!(loaded.settings.speech.bouyomi_host, "10.0.0.1");
+            assert_eq!(loaded.settings.speech.bouyomi_remote_mode, remote_mode);
+            assert!(loaded.recovery_notice.is_none());
+            // Fresh production runtimes model restarts. The literal address
+            // needs no DNS and is rejected before any real network operation.
+            for _ in 0..2 {
+                let runtime = crate::speech::runtime::SpeechRuntime::default();
+                let selected = runtime.select(&loaded.settings.speech).unwrap();
+                let failure = selected.lock().await.health_check().await.unwrap_err();
+                assert_eq!(failure.code, crate::speech::FailureCode::Configuration);
+                assert!(!failure.retryable);
+                assert!(failure.user_message.contains("外部へは送信していません"));
+            }
+            assert_eq!(fs::read(&path).unwrap(), edited_bytes);
+        }
+        cleanup(&path);
     }
 
     #[test]

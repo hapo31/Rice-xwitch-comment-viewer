@@ -90,31 +90,15 @@ pub(crate) fn full_quota_items() -> Vec<LauncherItem> {
     items
 }
 
-pub(crate) fn full_quota_settings(json_bytes: Option<usize>) -> AppSettings {
+pub(crate) fn full_quota_settings() -> AppSettings {
     let mut settings = AppSettings::default();
     settings.launcher.items = full_quota_items();
     settings.launcher.items[0].order = 200;
-    if let Some(json_bytes) = json_bytes {
-        settings.speech.blocked_words = vec![String::new()];
-        let base = crate::resource_limits::serialize_bounded(
-            &settings,
-            crate::resource_limits::MAX_SETTINGS_JSON_BYTES,
-            "設定JSON",
-        )
-        .unwrap()
-        .len();
-        settings.speech.blocked_words[0] = "x".repeat(json_bytes.checked_sub(base).unwrap());
-        assert_eq!(
-            crate::resource_limits::serialize_bounded(
-                &settings,
-                crate::resource_limits::MAX_SETTINGS_JSON_BYTES,
-                "設定JSON"
-            )
-            .unwrap()
-            .len(),
-            json_bytes
-        );
-    }
+    // Valid worst-case rule payload, never a multi-MiB single NG word.
+    settings.speech.blocked_words = (0..131)
+        .map(|index| format!("{index:03}{}", "x".repeat(497)))
+        .collect();
+    crate::settings::validation::validate_settings(&settings).unwrap();
     settings
 }
 

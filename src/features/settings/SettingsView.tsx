@@ -10,9 +10,16 @@ import {
 import type { AppSettings, AppSettingsPatch, BouyomiConnectionDiagnostics } from "../../types";
 import { focusIndicatorClass } from "../../presentation/focus";
 import { routeHeadingId } from "../../routeAccessibility";
-import { isValidBouyomiHost, isValidBouyomiVoice, isValidPort } from "../../validation";
+import {
+  isValidBouyomiHost,
+  isValidBouyomiVoice,
+  isValidPort,
+  isValidConfirmationText,
+} from "../../validation";
 import { defaultSpeechSettings, defaultTwitchSettings } from "./defaults";
 import { useUnsavedChanges } from "../../unsavedChanges";
+import { authorizeSpeechEndpoint } from "../../tauri/client";
+import { presentError } from "../../presentation/errors";
 
 const defaultConnectionSuccessMessage = "棒読みちゃんと接続しました";
 
@@ -39,6 +46,9 @@ export function SettingsView({
   };
   const [host, setHost] = useState(speechSettings.bouyomiHost);
   const [port, setPort] = useState(String(speechSettings.bouyomiPort));
+  const [remoteMode, setRemoteMode] = useState(speechSettings.bouyomiRemoteMode ?? false);
+  const [consentMessage, setConsentMessage] = useState("");
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [speed, setSpeed] = useState(speechSettings.bouyomiSpeed);
   const [tone, setTone] = useState(speechSettings.bouyomiTone);
   const [volume, setVolume] = useState(speechSettings.bouyomiVolume);
@@ -59,6 +69,8 @@ export function SettingsView({
   useEffect(() => {
     setHost(speechSettings.bouyomiHost);
     setPort(String(speechSettings.bouyomiPort));
+    setRemoteMode(speechSettings.bouyomiRemoteMode ?? false);
+    setConsentMessage("");
     setSpeed(speechSettings.bouyomiSpeed);
     setTone(speechSettings.bouyomiTone);
     setVolume(speechSettings.bouyomiVolume);
@@ -71,6 +83,7 @@ export function SettingsView({
   }, [
     speechSettings.bouyomiHost,
     speechSettings.bouyomiPort,
+    speechSettings.bouyomiRemoteMode,
     speechSettings.bouyomiSpeed,
     speechSettings.bouyomiTone,
     speechSettings.bouyomiVolume,
@@ -87,6 +100,7 @@ export function SettingsView({
   const isPortValid = isValidPort(port);
   const isVoiceValid = isValidBouyomiVoice(voice);
   const isHostValid = isValidBouyomiHost(host);
+  const isConfirmationValid = isValidConfirmationText(connectionSuccessSpeechText);
   const hostError =
     host.trim().length === 0
       ? "棒読みちゃんのホストを入力してください。"
@@ -97,12 +111,16 @@ export function SettingsView({
     !isHostValid ? hostError : undefined,
     !isPortValid ? portError : undefined,
     !isVoiceValid ? voiceError : undefined,
+    !isConfirmationValid
+      ? "接続時メッセージは制御文字を含まない120文字・480 UTF-8バイト以内にしてください。"
+      : undefined,
   ]
     .filter((message): message is string => Boolean(message))
     .join(" ");
   const isDirty =
     host.trim() !== speechSettings.bouyomiHost ||
     numericPort !== speechSettings.bouyomiPort ||
+    remoteMode !== (speechSettings.bouyomiRemoteMode ?? false) ||
     speed !== speechSettings.bouyomiSpeed ||
     tone !== speechSettings.bouyomiTone ||
     volume !== speechSettings.bouyomiVolume ||
@@ -114,13 +132,15 @@ export function SettingsView({
     connectionSuccessSpeechText !== speechSettings.connectionSuccessSpeechText;
 
   async function saveBouyomiSettings(): Promise<boolean> {
-    if (!isHostValid || !isPortValid || !isVoiceValid) {
+    if (!isHostValid || !isPortValid || !isVoiceValid || !isConfirmationValid) {
       return false;
     }
 
     const speech: NonNullable<AppSettingsPatch["speech"]> = {};
     if (host.trim() !== speechSettings.bouyomiHost) speech.bouyomiHost = host.trim();
     if (numericPort !== speechSettings.bouyomiPort) speech.bouyomiPort = numericPort;
+    if (remoteMode !== (speechSettings.bouyomiRemoteMode ?? false))
+      speech.bouyomiRemoteMode = remoteMode;
     if (speed !== speechSettings.bouyomiSpeed) speech.bouyomiSpeed = speed;
     if (tone !== speechSettings.bouyomiTone) speech.bouyomiTone = tone;
     if (volume !== speechSettings.bouyomiVolume) speech.bouyomiVolume = volume;
@@ -138,6 +158,8 @@ export function SettingsView({
   function discardBouyomiSettings() {
     setHost(speechSettings.bouyomiHost);
     setPort(String(speechSettings.bouyomiPort));
+    setRemoteMode(speechSettings.bouyomiRemoteMode ?? false);
+    setConsentMessage("");
     setSpeed(speechSettings.bouyomiSpeed);
     setTone(speechSettings.bouyomiTone);
     setVolume(speechSettings.bouyomiVolume);
@@ -173,6 +195,21 @@ export function SettingsView({
       setDiagnostics(await onSpeechDiagnostics());
     } finally {
       setIsDiagnosing(false);
+    }
+  }
+
+  async function authorizeEndpoint() {
+    setIsAuthorizing(true);
+    setConsentMessage("");
+    try {
+      await authorizeSpeechEndpoint();
+      setConsentMessage(
+        "この起動中だけ、確認した接続先を許可しました。接続確認・診断を実行してください。",
+      );
+    } catch (error) {
+      setConsentMessage(presentError(error, "settings").message);
+    } finally {
+      setIsAuthorizing(false);
     }
   }
 
@@ -239,6 +276,35 @@ export function SettingsView({
           </SettingsSection>
 
           <SettingsSection id="bouyomi-connection" title="棒読みちゃん接続">
+            <ToggleRow
+              label="外部接続モード（明示許可が必要）"
+              checked={remoteMode}
+              onChange={setRemoteMode}
+            />
+            <p className="py-2 text-xs text-zinc-400">
+              通常は127.0.0.0/8・::1だけに接続します。外部接続はprivate
+              LAN/VPN限定で、Twitchユーザー名・チャット・テスト文を相手認証なしの平文TCPで送信します。信頼する相手だけを許可し、暗号化トンネル/VPNを使用してください。public・link-local宛先は接続しません。モード選択だけでは許可されません。
+            </p>
+            {remoteMode && (
+              <>
+                <button
+                  type="button"
+                  disabled={isDirty || isAuthorizing || !speechSettings.bouyomiRemoteMode}
+                  onClick={() => void authorizeEndpoint()}
+                  className={`border border-zinc-700 px-3 py-1.5 text-xs text-zinc-100 disabled:text-zinc-400 ${focusIndicatorClass}`}
+                >
+                  保存済みの接続先をネイティブ確認で許可
+                </button>
+                <p className="py-2 text-xs text-zinc-400">
+                  先に接続設定を保存してください。再起動・接続先/DNS結果変更後は再許可が必要です。
+                </p>
+              </>
+            )}
+            {consentMessage && (
+              <p role="status" className="py-2 text-xs text-zinc-400">
+                {consentMessage}
+              </p>
+            )}
             <div className="grid grid-cols-[180px_minmax(0,1fr)] items-start border-b border-zinc-800 py-3">
               <label className="pt-2 text-sm text-zinc-400" htmlFor="bouyomi-host">
                 ホスト
@@ -372,15 +438,22 @@ export function SettingsView({
                 <input
                   id="connection-success-speech-text"
                   value={connectionSuccessSpeechText}
-                  maxLength={120}
+                  aria-invalid={!isConfirmationValid}
+                  aria-describedby={!isConfirmationValid ? "confirmation-text-error" : undefined}
                   disabled={!connectionSuccessSpeechEnabled}
                   placeholder={defaultConnectionSuccessMessage}
                   onChange={(event) => setConnectionSuccessSpeechText(event.target.value)}
                   className={`h-9 w-full border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 placeholder:text-zinc-400 disabled:cursor-not-allowed disabled:border-zinc-800 disabled:bg-zinc-950 disabled:text-zinc-400 ${focusIndicatorClass}`}
                 />
                 <div className="text-right text-xs text-zinc-400">
-                  {connectionSuccessSpeechText.length}/120
+                  {Array.from(connectionSuccessSpeechText).length}/120
                 </div>
+                {!isConfirmationValid && (
+                  <FieldError
+                    id="confirmation-text"
+                    message="制御文字を含まない120文字・480 UTF-8バイト以内にしてください。"
+                  />
+                )}
               </div>
             </div>
           </SettingsSection>
@@ -416,7 +489,7 @@ export function SettingsView({
       </div>
       <FloatingSaveButton
         visible={isDirty}
-        disabled={!isHostValid || !isPortValid || !isVoiceValid}
+        disabled={!isHostValid || !isPortValid || !isVoiceValid || !isConfirmationValid}
         disabledReason={saveDisabledReason}
         onClick={() => void saveBouyomiSettings()}
       />

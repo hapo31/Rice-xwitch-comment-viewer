@@ -61,6 +61,14 @@ Rust backend
 
 Launcherのアプリ登録・起動はWindows専用。`app_build_info.launcher`で`canRegisterApplications/canLaunchApplications/reason`を型付きで返す。UIは取得成功まで安全側に無効化し、非対応OSでは選択・DnD購読・単体/一斉起動を提供しない。backendも登録commandと設定patchによる新規登録/target変更を保存前に拒否し、起動をfilesystem操作前に拒否する。既存設定の項目は他OSでも表示・並び替え/表示名変更・削除でき、OS標準ランチャーまたはWindows版を案内する（Issue #79）。
 
+## 設定入力と読み上げ接続先の境界
+
+設定入力は`settings/validation.rs`でwireとdomainを分ける。`settings_update`はframework所有JSONを256KiB/nodes/depth・既知field・文字列/rule量でpreflightしてからDTOをcloneし、leaf patchを最新candidateへ適用、全domainとLauncher資源を検証・保存できた場合だけ公開する。`ValidationError { field, code, message, recovery }`で安全な日本語と修正対象を返す。`TwitchLogin`は設定保存と`twitch_connect`で共用し、空欄は自分のチャンネル、非空は英数字・_の3〜25文字、raw128 UTF-8 bytes以内/controlなしとする。hostはraw253 UTF-8 bytes/DNS label63、NGユーザーはlogin形式、NGワードは500 Unicode文字/2048 UTF-8 bytes、各200件/両list合計64KiB、接続成功文は120文字/480bytesまで。文字数/range違反をclamp/truncateで成功扱いにしない。旧fileのmigration/field fallbackへも共通validatorを使う責務は#64に残る。
+
+`SpeechRuntime`がprocess-localの`DestinationPolicy`をfactory/diagnosticsと共有する。各TCP接続はhostを2秒以内・最大16addressへ解決し、全addressを検証して検証済み`SocketAddr`集合へ直接接続する（connect時の再DNS解決なし）。通常は127/8・::1・IPv4-mapped loopbackだけを許可する。remote modeはopt-in要求であり許可ではない。private IPv4/IPv6 ULAだけが外部許可の対象で、public/link-local/multicast/未指定宛先は拒否する。明示`speech_authorize_endpoint`がhostname/IP/port・全解決address・ユーザー名/chat/test/controlの平文送信/TLSと相手認証の欠如/VPN注意をnative dialogへ表示する。callbackをawaitし設定lockは保持しない。許可後にDNSを再確認し、設定変更がないことを短いlock下で比較してからopaque approvalをメモリへinstallする。1つのpending prompt/30秒rate limit、拒否時は旧許可も取り消し、endpoint変更/再起動/解決address変更は再同意なしに送信しない。設定fileやrendererへconsent flagは持たせない。既に開始した送信の取消やbyte回収、相手identityの認証は保証しない。
+
+domain/endpointの境界値は同じJSON fixtureをRustとフォームで検証する。fake resolver/native consentでmixed DNS・rebinding・拒否・再起動/endpoint変更・全talk/query/control/diagnostics経路を検証する。実Windows WebViewは不正6入力のstructured rejection・disk/memory保持、rendererからremote flagを送ったprobe/diagnostics2経路の拒否を追加検証する。DNS/consent failureは自動再送しないConfigurationとする。既存Launcher 200件/4MiB iconsのfixtureはvalidな最大NG rule payloadへ変更し、8MiB wire read/backup budgetはJSON whitespace paddingで維持する（multi-MiB NG wordでdomain上限を回避しない）。native result channelもvalidatedな500文字以内のNG wordを使い、Twitch loginを検証除外にしない。
+
 ## Launcherの実行境界
 
 `launcher/model.rs`は永続DTO・編集DTO・quota/PNG検証・正規化・path identity/ID/orderのpureな境界とする。Tauri、filesystem確認、PowerShell、process起動をimportしない。`ports.rs`の小さなobject-safe traitを通じて、`service.rs`の登録/削除/単体・一斉起動へresolver、icon extractor、application launcher、repository、event sinkを注入する。
@@ -146,6 +154,7 @@ Commands:
 - `twitch_disconnect()`
 - `speech_set_adapter(adapter: SpeechAdapterKind)`
 - `speech_test(text: String)`
+- `speech_authorize_endpoint()`（保存済みremote接続先のnative consent。接続/読み上げは開始しない）
 - `speech_pause()`
 - `speech_resume()`
 - `speech_skip()`

@@ -75,7 +75,8 @@ pub struct BouyomiTalkConfig {
 
 - 読み上げごとに短いTCP接続を張る設計から始める。棒読みちゃん側の既存連携と相性がよい。
 - アプリ内の talk、テスト読み上げ、接続確認、無音プローブ、pause/resume/skip/clear は共有 async dispatcher を通す。短命TCP接続は維持するが、一つの送信が物理的に完了するまで次の接続を開始しない。キューワーカーは dispatcher を取得してから pending を in-flight へ予約し、同じ guard のまま talk packet を書き込む。control は queue の control-in-progress を先に記録し、同じ dispatcher guard の中で packet 送信、ローカル queue 反映、成功 status/log の通知を行う。これにより、control が先に開始された場合に予約済みの talk が control 成功後に送られること、pause/resume の wire 順とローカル適用・通知順が入れ替わることを防ぐ。制御送信の失敗時はローカル queue が未変更で、棒読みちゃん側は到達不明と明示する。失敗した control が最後の barrier なら、保留中の自動読み上げ worker を再開する。送信後のローカル反映に失敗した場合は、棒読みちゃん側は送信済みでローカル状態だけが未反映と明示する。
-- 接続先は host と port を構造化して保持し、接続時は `(host, port)` の `ToSocketAddrs` を使う。これにより IPv4・DNS名・IPv6を同じ経路で解決する。`SocketAddr` 単体ではDNS名を保持できないため使わない。
+- 接続先はhost/portを構造化して保持し、共通destination policyでIPv4・DNS・IPv6を2秒/最大16address以内へ解決する。全addressを検証してから`SocketAddr`集合へ直接接続し、connect内部でhostnameを再解決しない。通常は127/8・::1（IPv4-mapped loopbackも含む）だけへ接続する。private LAN/VPN宛先も明示remote mode＋native consentがなければ送信しない。
+- remote modeだけでは許可されない。Settingsでhost/port/modeを保存し、［保存済みの接続先をネイティブ確認で許可］を操作すると、宛先/DNS結果とTwitch user/chat/test/controlの平文送信・TLS/相手認証なしをnative UIで確認する。public/link-local/multicast/未指定宛先は未対応。信頼するprivate宛先を最小allowlistとしてこの起動中だけ保持し、暗号化トンネル/VPNを推奨する（トンネルの接続/暗号化をRiceが保証するわけではない）。同意は設定JSONに保存せず、再起動/endpoint変更/DNS集合変更後は手動で再確認する。自動読み上げ・diagnostics・health/test・全controlに例外はない。許可拒否/変更時は自動再送せず、既に開始済みの送信を取り消す保証はない。
 - host欄はIPv4、DNS名、または角括弧なしのIPv6アドレスを受け付ける。portをhost欄へ含めず、IPv6 zone identifierは初期実装では受け付けない。表示・diagnosticsではIPv6を `[::1]:50001` のように角括弧付きで表記する。
 - hostの妥当性検証とaddress構築はアダプタの一箇所に集約し、設定保存、queue、health、test、control、diagnosticsから共通して利用する。
 - 接続失敗は読み上げキューを破棄せず、UIに「未接続」と出す。

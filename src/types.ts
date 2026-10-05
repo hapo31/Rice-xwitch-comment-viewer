@@ -71,6 +71,8 @@ export interface AppSettings {
     adapter: "bouyomi";
     bouyomiHost: string;
     bouyomiPort: number;
+    /** Opt-in request only; native process-local consent is required for remote TCP. */
+    bouyomiRemoteMode?: boolean;
     bouyomiSpeed: number;
     bouyomiTone: number;
     bouyomiVolume: number;

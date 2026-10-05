@@ -11,6 +11,7 @@ export const defaultSpeechSettings: AppSettings["speech"] = {
   adapter: "bouyomi",
   bouyomiHost: "127.0.0.1",
   bouyomiPort: 50001,
+  bouyomiRemoteMode: false,
   bouyomiSpeed: -1,
   bouyomiTone: -1,
   bouyomiVolume: -1,

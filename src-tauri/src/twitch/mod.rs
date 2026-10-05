@@ -1480,16 +1480,26 @@ pub async fn twitch_connect(
     channel_login: Option<String>,
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle<tauri::Wry>,
-) -> Result<(), String> {
-    let configured_channel = {
+) -> Result<(), crate::settings::validation::ValidationError> {
+    let requested_channel = if let Some(channel) = channel_login {
+        channel
+    } else {
         let settings = state.settings.lock().map_err(|error| error.to_string())?;
-        settings.twitch.channel_login.trim().to_string()
+        settings.twitch.channel_login.clone()
     };
-    let channel_login = channel_login
-        .unwrap_or(configured_channel)
-        .trim()
-        .trim_start_matches('@')
-        .to_ascii_lowercase();
+    let channel_login =
+        crate::settings::validation::TwitchLogin::parse(&requested_channel, true)?.into_string();
+    connect_validated_channel(channel_login, state, app)
+        .await
+        .map_err(Into::into)
+}
+
+#[cfg(feature = "app")]
+async fn connect_validated_channel(
+    channel_login: String,
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle<tauri::Wry>,
+) -> Result<(), String> {
     let (access_token, client_id, user_id, own_login, scopes) = {
         let auth = state
             .twitch_auth
@@ -1517,7 +1527,9 @@ pub async fn twitch_connect(
     }
 
     let channel_login = if channel_login.is_empty() {
-        own_login
+        crate::settings::validation::TwitchLogin::parse(&own_login, false)
+            .map_err(|error| error.to_string())?
+            .into_string()
     } else {
         channel_login
     };

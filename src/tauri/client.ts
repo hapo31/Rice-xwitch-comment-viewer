@@ -47,6 +47,7 @@ const fallbackSettings: AppSettings = {
     adapter: "bouyomi",
     bouyomiHost: "127.0.0.1",
     bouyomiPort: 50001,
+    bouyomiRemoteMode: false,
     bouyomiSpeed: -1,
     bouyomiTone: -1,
     bouyomiVolume: -1,
@@ -69,6 +70,12 @@ const fallbackSettings: AppSettings = {
 };
 
 const isTauriRuntime = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+export async function authorizeSpeechEndpoint(): Promise<void> {
+  if (!isTauriRuntime)
+    throw new Error("外部接続の許可にはデスクトップ版のネイティブ確認が必要です。");
+  await invoke<void>("speech_authorize_endpoint");
+}
 
 function nullFreePayload<T>(payload: unknown, contract: string): T {
   rejectUnexpectedNulls(payload, contract);

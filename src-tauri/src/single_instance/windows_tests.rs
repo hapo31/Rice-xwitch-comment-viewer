@@ -73,7 +73,7 @@ fn native_instance_fixture() {
         settings.speech.blocked_words = vec!["preserve-native-owner".into()];
         let launcher_budget = std::env::var_os("RICE_LAUNCHER_NATIVE_BUDGET").is_some();
         if launcher_budget {
-            settings = crate::launcher::bounds_tests::full_quota_settings(Some(crate::resource_limits::MAX_SETTINGS_JSON_BYTES - 1024));
+            settings = crate::launcher::bounds_tests::full_quota_settings();
         }
         SettingsStore::save(app, &settings).expect("production owned save");
         if launcher_budget {
@@ -82,7 +82,7 @@ fn native_instance_fixture() {
             std::thread::spawn(move || {
                 let deadline = Instant::now() + Duration::from_secs(60);
                 loop {
-                    let record = handle.state::<AppState>().settings.lock().expect("result settings").twitch.channel_login.clone();
+                    let record = handle.state::<AppState>().settings.lock().expect("result settings").speech.blocked_words.first().cloned().unwrap_or_default();
                     if record.starts_with("RICE_LAUNCHER_RESULT ") {
                         println!("{record}");
                         std::io::stdout().flush().expect("flush measured result");
@@ -319,6 +319,8 @@ fn native_maximum_launcher_render_and_ipc_budget() {
     assert!(result.get("error").is_none(), "{result}");
     assert_eq!(result["count"], 200);
     assert_eq!(result["rejected"], 4);
+    assert_eq!(result["validationRejected"], 6);
+    assert_eq!(result["remoteRejected"], 2);
     assert_eq!(result["unchanged"], true);
     assert_eq!(result["styleChecks"], 16);
     assert!(

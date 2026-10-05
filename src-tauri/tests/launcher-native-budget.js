@@ -97,18 +97,40 @@
     await rejected("settings_update", { patch: { launcher: { items: [{ ...edit, iconDataUrl: "https://example.com/tracker.png" }] } } });
     await rejected("settings_update", { patch: { launcher: { items: [{ ...edit, id: "not-registered" }] } } });
     await rejected("launcher_add", { paths: ["x".repeat(4096) + ".exe"] });
+    let validationRejected = 0;
+    for (const [command, args, field] of [
+      ["settings_update", { patch: { twitch: { channelLogin: "@invalid" } } }, "twitch.channelLogin"],
+      ["twitch_connect", { channelLogin: "ab" }, "twitch.channelLogin"],
+      ["settings_update", { patch: { speech: { bouyomiHost: "" } } }, "speech.bouyomiHost"],
+      ["settings_update", { patch: { speech: { bouyomiPort: 0 } } }, "speech.bouyomiPort"],
+      ["settings_update", { patch: { speech: { blockedWords: ["x".repeat(501)] } } }, "speech.blockedWords"],
+      ["settings_update", { patch: { speech: { autoSpeek: true } } }, "speech"],
+    ]) {
+      let failure;
+      try { await invoke(command, args); } catch (error) { failure = error; }
+      if (!failure || failure.field !== field || typeof failure.code !== "string" || typeof failure.recovery !== "string") throw new Error(`structured validation missing: ${command}/${field}`);
+      validationRejected += 1;
+    }
     const secondGetStart = performance.now();
     const after = await invoke("settings_get");
     getMs = Math.max(getMs, performance.now() - secondGetStart);
     if (!equal(before, after)) throw new Error("invalid requests mutated settings");
     peak = Math.max(peak, performance.memory.usedJSHeapSize);
-    result = { count: 200, getMs, renderMs, incrementalJsHeap: Math.max(0, peak - baseline), baselineJsHeap: baseline, peakJsHeap: peak, rejected: 4, unchanged: true, styleChecks };
+    await invoke("settings_update", { patch: { speech: { bouyomiHost: "10.0.0.1", bouyomiRemoteMode: true } } });
+    let remoteFailure;
+    try { await invoke("speech_health_probe"); } catch (error) { remoteFailure = error; }
+    if (typeof remoteFailure !== "string" || !remoteFailure.includes("外部へは送信していません")) throw new Error("renderer flag bypassed native consent");
+    const diagnostics = await invoke("speech_connection_diagnostics");
+    if (!diagnostics.attempted[0].message.includes("外部へは送信していません")) throw new Error("diagnostics bypassed destination policy");
+    await invoke("settings_update", { patch: { speech: { bouyomiHost: before.speech.bouyomiHost, bouyomiRemoteMode: before.speech.bouyomiRemoteMode } } });
+    if (!equal(before, await invoke("settings_get"))) throw new Error("remote rejection fixture did not restore settings");
+    result = { count: 200, getMs, renderMs, incrementalJsHeap: Math.max(0, peak - baseline), baselineJsHeap: baseline, peakJsHeap: peak, rejected: 4, validationRejected, remoteRejected: 2, unchanged: true, styleChecks };
   } catch (error) {
-    result = { error: String(error).slice(0, 500) };
+    result = { error: String(error).slice(0, 160) };
   } finally {
     clearInterval(sampling);
   }
-  // The isolated fixture uses this existing settings field as a bounded result
-  // channel. It never connects to Twitch or touches a real account/settings.
-  await invoke("settings_update", { patch: { twitch: { channelLogin: `RICE_LAUNCHER_RESULT ${JSON.stringify(result)}` } } });
+  // This isolated result fits the validated NG-word domain (<=500 chars), not
+  // a fake Twitch login. No new production command/permission or TCP is used.
+  await invoke("settings_update", { patch: { speech: { blockedWords: [`RICE_LAUNCHER_RESULT ${JSON.stringify(result)}`] } } });
 })();

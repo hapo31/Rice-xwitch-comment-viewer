@@ -45,16 +45,22 @@ impl SpeechClock for SystemSpeechClock {
 #[derive(Clone)]
 pub struct SpeechRuntime {
     dispatcher: SpeechDispatcher,
+    destination_policy: Arc<super::destination::DestinationPolicy>,
     factory: Arc<dyn SpeechAdapterFactory>,
     pub(crate) clock: Arc<dyn SpeechClock>,
 }
 
 impl Default for SpeechRuntime {
     fn default() -> Self {
-        Self::new(
-            Arc::new(super::factory::ConfiguredAdapterFactory),
+        let policy = Arc::new(super::destination::DestinationPolicy::default());
+        let mut runtime = Self::new(
+            Arc::new(super::factory::ConfiguredAdapterFactory {
+                policy: policy.clone(),
+            }),
             Arc::new(SystemSpeechClock),
-        )
+        );
+        runtime.destination_policy = policy;
+        runtime
     }
 }
 
@@ -62,6 +68,7 @@ impl SpeechRuntime {
     pub fn new(factory: Arc<dyn SpeechAdapterFactory>, clock: Arc<dyn SpeechClock>) -> Self {
         Self {
             dispatcher: SpeechDispatcher::default(),
+            destination_policy: Arc::default(),
             factory,
             clock,
         }
@@ -93,6 +100,9 @@ impl SpeechRuntime {
 
     pub(crate) fn dispatcher(&self) -> SpeechDispatcher {
         self.dispatcher.clone()
+    }
+    pub(crate) fn destination_policy(&self) -> Arc<super::destination::DestinationPolicy> {
+        self.destination_policy.clone()
     }
 }
 

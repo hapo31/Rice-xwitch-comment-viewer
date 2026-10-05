@@ -9,6 +9,7 @@ use crate::speech::{SpeechFailure, SpeechFuture, SpeechPlaybackCompletion};
 pub(crate) use error::{classify_error, BouyomiError};
 use serde::Serialize;
 use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -32,6 +33,12 @@ pub struct BouyomiAddress {
 }
 
 impl BouyomiAddress {
+    pub(crate) fn host(&self) -> &str {
+        &self.host
+    }
+    pub(crate) fn port(&self) -> u16 {
+        self.port
+    }
     pub fn new(host: impl AsRef<str>, port: u16) -> Result<Self, String> {
         if port == 0 {
             return Err("棒読みちゃんのポート番号が無効です。".to_string());
@@ -53,13 +60,20 @@ impl BouyomiAddress {
 }
 
 pub fn validate_bouyomi_host(host: &str) -> Result<String, String> {
+    let raw_bytes = host.len();
+    let raw_controls = host.chars().any(char::is_control);
     let host = host.trim();
     let invalid = || {
         "棒読みちゃんのホストが無効です。IPv4、DNS名、または角括弧なしのIPv6アドレスを入力してください。"
             .to_string()
     };
 
-    if host.is_empty() || host.contains(char::is_whitespace) || host.contains(['[', ']']) {
+    if host.is_empty()
+        || raw_bytes > 253
+        || raw_controls
+        || host.contains(char::is_whitespace)
+        || host.contains(['[', ']'])
+    {
         return Err(invalid());
     }
 
@@ -75,6 +89,7 @@ pub fn validate_bouyomi_host(host: &str) -> Result<String, String> {
     if host.parse::<IpAddr>().is_ok()
         || host.split('.').all(|label| {
             !label.is_empty()
+                && label.len() <= 63
                 && !label.starts_with('-')
                 && !label.ends_with('-')
                 && label
@@ -94,6 +109,8 @@ pub struct BouyomiAdapter {
     pub defaults: BouyomiTalkConfig,
     pub timeout: Duration,
     dispatcher: BouyomiDispatcher,
+    destination_policy: Arc<super::destination::DestinationPolicy>,
+    remote_mode: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -162,7 +179,18 @@ impl BouyomiAdapter {
             defaults,
             timeout: Duration::from_secs(2),
             dispatcher,
+            destination_policy: Arc::default(),
+            remote_mode: false,
         })
+    }
+    pub(crate) fn with_destination_policy(
+        mut self,
+        policy: Arc<super::destination::DestinationPolicy>,
+        remote_mode: bool,
+    ) -> Self {
+        self.destination_policy = policy;
+        self.remote_mode = remote_mode;
+        self
     }
 
     pub async fn health_check(
@@ -312,13 +340,17 @@ impl BouyomiAdapter {
     }
 
     async fn connect_to_address(&self) -> anyhow::Result<TcpStream> {
-        Ok(timeout(
-            self.timeout,
-            TcpStream::connect((self.address.host.as_str(), self.address.port)),
+        let addresses = self
+            .destination_policy
+            .connection_addresses(&self.address, self.remote_mode)
+            .await
+            .map_err(BouyomiError::Destination)?;
+        Ok(
+            timeout(self.timeout, TcpStream::connect(addresses.as_slice()))
+                .await
+                .map_err(|_| BouyomiError::ConnectTimeout)?
+                .map_err(BouyomiError::ConnectIo)?,
         )
-        .await
-        .map_err(|_| BouyomiError::ConnectTimeout)?
-        .map_err(BouyomiError::ConnectIo)?)
     }
 
     #[cfg(test)]
@@ -505,7 +537,11 @@ fn adapter_from_settings(
         .settings
         .lock()
         .map_err(|error| SpeechFailure::unknown(error.to_string()))?;
-    super::factory::bouyomi_from_settings(&settings.speech, state.speech_runtime.dispatcher())
+    super::factory::bouyomi_from_settings(
+        &settings.speech,
+        state.speech_runtime.dispatcher(),
+        state.speech_runtime.destination_policy(),
+    )
 }
 
 #[cfg(test)]
