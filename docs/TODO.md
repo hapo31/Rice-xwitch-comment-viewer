@@ -324,7 +324,9 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 5: 配信運用向け仕上げ
 
-- [ ] Dependabot PR #179–#182、#184–#192 を一件ずつ専用 worktree でレビューし、互換性・依存監査・CI を検証してからマージする。React 19 の型・テスト移行を含め、各 worktree はマージ後に削除する。
+- [ ] Dependabot PR #179–#182、#184–#192 を一件ずつ専用 worktree でレビューし、互換性・依存監査・CI を検証してからマージする。Tauri dialog の JS/Rust 版一致と React 19 の型・テスト移行を含め、各 worktree はマージ後に削除する。
+
+2026-10-05追加進捗: #179–#182、#184–#189 は全PR checksとexact headの開発build成功後にマージし、各worktreeを削除した。#184/#186/#188では無関係なcssparser-macrosのsyn切替、#189では無関係なWASM runtime更新を除去した。#190のJS dialogは実装互換でもTauri CLIがRust2.7/JS2.8のminor不一致を拒否したため、Rust dialogも2.8.1へ揃え、必要なplugin helper/fsだけを更新する。通常frontend buildとDockerが共有する既存の版検査へ、pnpm/Cargo両lockのplugin対応・minor一致・installed一致を追加し、旧minor・欠落・重複・stale installの拒否と同minorのpatch差許容を回帰検証する。監査・renderer権限の検査条件は維持し、修正後のCI成功前にはマージしない。
 
 2026-10-05進捗: #179（download-artifact 8.0.1）は公式の Node 24・digest mismatch の既定拒否・展開仕様を確認し、既存の name/path/run-id 指定と互換であることを確認した。ポリシー91件、PRの全16 checks、exact headの開発build、検証済み配布物の取得・digest照合と両形式のWindows native診断が成功してマージした。追加診断のtitlebar操作は初回・再試行で失敗し、同じsourceの3回目が成功したため、UI入力の不安定性は調査境界として記録する。#180以降を順次確認する。監査の閾値・例外や配布の検証条件は変更しない。
 
