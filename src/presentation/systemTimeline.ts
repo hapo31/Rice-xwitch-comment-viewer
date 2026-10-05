@@ -1,18 +1,20 @@
 import type { SpeechStatus, TwitchStatusEvent } from "../types";
-
-export interface SystemTimelineEvent {
-  source: "twitch-auth" | "twitch-connection" | "speech";
-  transition: string;
-  message: string;
-}
+import type {
+  AuthTimelineStatus,
+  ChatTimelineStatus,
+  SystemTimelineEvent,
+} from "../models/systemTimeline";
 
 /** Suppresses repeated state until that source changes state. */
 export class SystemTimelineRouter {
   private previousTransitions = new Map<SystemTimelineEvent["source"], string>();
 
   shouldRecord(event: SystemTimelineEvent): boolean {
-    if (this.previousTransitions.get(event.source) === event.transition) return false;
-    this.previousTransitions.set(event.source, event.transition);
+    // Auth can provide new guidance without changing its connection status.
+    const key =
+      event.source === "twitch-auth" ? `${event.transition}:${event.message}` : event.transition;
+    if (this.previousTransitions.get(event.source) === key) return false;
+    this.previousTransitions.set(event.source, key);
     return true;
   }
 }
@@ -23,12 +25,22 @@ export function timelineEventFromTwitchStatus(
   const message = event.message?.trim();
   if (!message || /keepalive/i.test(message)) return undefined;
 
-  const source = event.domain === "auth" ? "twitch-auth" : "twitch-connection";
-  return {
-    source,
-    transition: source === "twitch-auth" ? `${event.status}:${message}` : event.status,
-    message,
-  };
+  if (event.domain === "auth") {
+    return isAuthStatus(event.status)
+      ? { source: "twitch-auth", transition: event.status, message }
+      : undefined;
+  }
+  return isChatStatus(event.status)
+    ? { source: "twitch-connection", transition: event.status, message }
+    : undefined;
+}
+
+function isAuthStatus(status: TwitchStatusEvent["status"]): status is AuthTimelineStatus {
+  return status !== "reconnecting";
+}
+
+function isChatStatus(status: TwitchStatusEvent["status"]): status is ChatTimelineStatus {
+  return status !== "validating";
 }
 
 export function speechRecoveryTimelineEvent(
