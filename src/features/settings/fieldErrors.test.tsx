@@ -8,9 +8,9 @@ import { SettingsView } from "./SettingsView";
 import { defaultSpeechSettings, defaultTwitchSettings } from "./defaults";
 
 const invalidSettings: AppSettings = {
-  twitch: defaultTwitchSettings,
+  twitch: defaultTwitchSettings(),
   speech: {
-    ...defaultSpeechSettings,
+    ...defaultSpeechSettings(),
     bouyomiHost: "",
     bouyomiPort: 0,
     bouyomiVoice: 30001,
@@ -62,7 +62,10 @@ describe("field validation errors", () => {
       <AuthView
         state={{
           ...initialAppState,
-          settings: { ...invalidSettings, twitch: { ...defaultTwitchSettings, channelLogin: "!" } },
+          settings: {
+            ...invalidSettings,
+            twitch: { ...defaultTwitchSettings(), channelLogin: "!" },
+          },
         }}
         onSettingsUpdate={async () => false}
         onTwitchStartAuth={() => undefined}

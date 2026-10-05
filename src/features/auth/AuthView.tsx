@@ -27,7 +27,7 @@ export function AuthView({
   onOpenExternalUrl: (url: string) => void;
 }) {
   const twitchSettings = {
-    ...defaultTwitchSettings,
+    ...defaultTwitchSettings(),
     ...state.settings?.twitch,
   };
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);

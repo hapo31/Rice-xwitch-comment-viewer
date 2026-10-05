@@ -25,7 +25,7 @@ describe("SidePanel speech recovery", () => {
                 confirmBeforeStopChat: true,
                 liveChatAnnouncements: true,
               },
-              speech: structuredClone(defaultSpeechSettings),
+              speech: defaultSpeechSettings(),
               launcher: { items: [] },
             },
           }}
