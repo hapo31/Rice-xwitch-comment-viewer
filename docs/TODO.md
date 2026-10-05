@@ -341,6 +341,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 2026-10-05進捗: #179（download-artifact 8.0.1）は公式の Node 24・digest mismatch の既定拒否・展開仕様を確認し、既存の name/path/run-id 指定と互換であることを確認した。ポリシー91件、PRの全16 checks、exact headの開発build、検証済み配布物の取得・digest照合と両形式のWindows native診断が成功してマージした。追加診断のtitlebar操作は初回・再試行で失敗し、同じsourceの3回目が成功したため、UI入力の不安定性は調査境界として記録する。#180以降を順次確認する。監査の閾値・例外や配布の検証条件は変更しない。
 
 - [x] Issue #48: Tauri bridge の `Option` を JSON field omission に統一し、Rust/TypeScript の camelCase・nullability 契約、Device Code 後の保存警告経路を共通 fixture と runtime validation で検証する。
+- [ ] Issue #201: 全 command 応答と event を runtime schema で検証し、Rust wire 型生成と schema 型一致・生成差分検査を導入する。既存 domain 変換と IPC 境界を保持する。
 
 - [x] `issue-fix-batch` スキルを用途別ルールへ分解し、`AGENTS.md` から必要時に参照する構成へ移行する。関連する PR／Issue の close 後に worktree と修正用ブランチを削除する。
 
