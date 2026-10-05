@@ -91,7 +91,9 @@
 
 ## 現在の進捗サマリ
 
-2026-10-06: Issue #195の実装を専用 Draft PR #236 に分離した。AppShell配下へ controller/actions provider を組み立て、Twitch認証の非同期遷移、speech/queue/Launcher command、終了保護を責務別 controller/provider へ移した。画面はdomain別の安定action Contextと必要な selector を参照し、旧AppStateの再構成を除去した。Queueのみを更新してSettings/Logs/LauncherのProfiler commitが増えない回帰を追加。実装・自動検証・文書はPR headで完了したが、IssueはPRレビューとmain反映待ちのため未完了。
+2026-10-06: Issue #195の実装を専用 Draft PR #236 に分離した。AppShell配下へ controller/actions provider を組み立て、Twitch認証の非同期遷移、speech/queue/Launcher command、終了保護を責務別 controller/provider へ移した。画面はdomain別の安定action Contextと必要な selector を参照し、旧AppStateの再構成を除去した。初期レビューで見つかったDevice Code pollingのproduction lifecycle未接続、認証結果遷移の分散、実画面render計測の不足を修正し、本番AppShell/provider/routes経由のtimer/render回帰へ更新した。PRは親レビュー待ちのためDraftを維持し、Issueはmain反映まで未完了。
+
+2026-10-06 レビュー対応: Device Code pollingをAppShellのprompt/status lifecycleへ接続し、初回interval、pending/slowDown後のinterval更新、手動操作時のcancel、期限切れ、unmount cleanupを本番AppShell経由のfake-timer回帰で確認した。認証結果・prompt・profile・statusと通知/error副作用は小さな純粋遷移モデルへまとめ、timerとgeneration/poll排他はcontrollerに残した。render回帰は実AppShell/provider/routes上のSettings/Logs/Launcher各bodyをProfiler計測し、queue revisionのみの連続更新を確認する。親レビュー再確認とmain反映待ちのためIssueは未完了。
 
 2026-10-05: Dependabot全13件（#179–#182、#184–#192）のレビューと互換性修正を完了した。Tauri dialogのJS/Rust版一致検査、React 19の型・ref初期値・TitleBar DOMテスト移行を実施した。マージと後片付けの条件・検証結果・既存Windows入力の不安定性はPhase 5のDependabot項目に記録する。
 

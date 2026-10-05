@@ -1,5 +1,15 @@
 import { presentError, reportPresentedError, type ErrorOperation } from "./presentation/errors";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  memo,
+  Profiler,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ProfilerOnRenderCallback,
+  type ReactNode,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import { ActivityBar } from "./components/ActivityBar";
 import { MainView } from "./components/MainView";
@@ -71,10 +81,10 @@ import type {
 
 const showStartupGuideForSession = claimStartupGuideForSession(window.sessionStorage);
 
-export function AppShell() {
+export function AppShell({ onRouteCommit }: { onRouteCommit?: ProfilerOnRenderCallback } = {}) {
   return (
     <ApplicationControllerProvider>
-      <AppShellLayout />
+      <AppShellLayout onRouteCommit={onRouteCommit} />
     </ApplicationControllerProvider>
   );
 }
@@ -185,6 +195,8 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
         operations: authOperations.current,
         dispatch,
         getAuthPrompt: () => stores.connection.getState().twitchAuthPrompt,
+        getAuthStatus: () => stores.connection.getState().twitchAuthStatus,
+        getAuthProfile: () => stores.connection.getState().twitchProfile,
         getChannelLogin: () =>
           settingsSnapshot.current?.twitch.channelLogin ??
           stores.settings.getState().settings?.twitch.channelLogin,
@@ -203,6 +215,14 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
         routeAutoConnectTimeline: routeSystemTimelineEvent,
       }),
     [dispatch, stores],
+  );
+
+  useEffect(
+    () =>
+      connection.twitchAuthStatus === "unauthenticated"
+        ? twitchController.schedulePoll(connection.twitchAuthPrompt)
+        : undefined,
+    [connection.twitchAuthPrompt, connection.twitchAuthStatus, twitchController],
   );
 
   const commandControllers = useMemo(
@@ -367,7 +387,11 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
   );
 }
 
-const AppShellLayout = memo(function AppShellLayout() {
+const AppShellLayout = memo(function AppShellLayout({
+  onRouteCommit,
+}: {
+  onRouteCommit?: ProfilerOnRenderCallback;
+}) {
   const displayScale = useDisplayScale();
   return (
     <div className={APP_SHELL_CLASS_NAME}>
@@ -378,7 +402,9 @@ const AppShellLayout = memo(function AppShellLayout() {
       />
       <ActivityBar />
       <DomainSidePanel />
-      <MainView showStartupGuide={showStartupGuideForSession} />
+      <Profiler id="app-route-body" onRender={onRouteCommit ?? (() => undefined)}>
+        <MainView showStartupGuide={showStartupGuideForSession} />
+      </Profiler>
       <DomainStatusBar />
       <DomainLiveStatusAnnouncer />
       <ResizeHandles />
