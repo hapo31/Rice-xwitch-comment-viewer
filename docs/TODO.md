@@ -1,5 +1,7 @@
 # 実装 TODO
 
+- [ ] Issue #209: Twitch接続taskの開始前にgeneration・connection handle・Connecting状態を確定し、lookupの即時成功/失敗や開始中の停止・接続交換・登録失敗で競合とorphan taskを発生させない。開始gateとキャンセル責務を明確にし、即時結果・stop/交換・登録失敗をdeterministicに検証する。
+
 - [x] Issue #195: AppShellの認証・接続・speech・Launcher・終了保護をcontroller/providerへ分離し、各画面がdomain selector/actionを直接利用する。巨大な旧AppStateの再構成とMainView経由のcallback転送をなくし、無関係な画面の再renderを計測回帰で保証する。認証の遷移は既存のgeneration/poll排他と手動優先を保ち、XState invoke/delayと小さなreducerを比較して判断する。
 
 - [x] Issue #44: Twitchのmodel/error、認証service/store/OAuth、EventSub transport/state/subscription/dedupe/正規化を責務別moduleへ分割する。Tauri commandを薄いadapterにし、型付き状態制御、command/event payload、generationによる競合制御を維持する。fake transport/storeと明示clockを使う既存・追加回帰を分割後の本番経路へ適用し、両OS/feature matrix/native CIで確認する。
