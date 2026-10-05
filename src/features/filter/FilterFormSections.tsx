@@ -5,7 +5,12 @@ import {
   SettingsSection,
 } from "../../components/SettingsFormControls";
 import { focusIndicatorClass } from "../../presentation/focus";
-import { blockedRulesError, parseBlockedUserList, parseBlockedWordList } from "../../validation";
+import {
+  blockedRulesError,
+  isValidRepeatSuppressionSeconds,
+  parseBlockedUserList,
+  parseBlockedWordList,
+} from "../../validation";
 import { useFormDraftContext } from "../settings/useFormDraft";
 import type { FilterDraft } from "../settings/formModels";
 
@@ -124,14 +129,12 @@ export function BlockedRulesSection() {
 
 export function validateFilterDraft(values: FilterDraft) {
   const maxLength = Number(values.maxLength);
-  const repeatSeconds = Number(values.repeatSeconds);
   const blockedUsers = parseBlockedUserList(values.blockedUsers);
   const blockedWords = parseBlockedWordList(values.blockedWords);
   const ruleError = blockedRulesError(blockedUsers.items, blockedWords.items);
   return {
     maxLengthValid: Number.isInteger(maxLength) && maxLength >= 1 && maxLength <= 500,
-    repeatSecondsValid:
-      Number.isInteger(repeatSeconds) && repeatSeconds >= 0 && repeatSeconds <= 30,
+    repeatSecondsValid: isValidRepeatSuppressionSeconds(values.repeatSeconds),
     rulesValid: blockedUsers.overflowCount === 0 && blockedWords.overflowCount === 0 && !ruleError,
     blockedUsers,
     blockedWords,

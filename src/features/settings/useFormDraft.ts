@@ -19,6 +19,7 @@ export type FormDraft<T extends FieldValues> = UseFormReturn<T, unknown, T> & {
 };
 
 export type DraftSnapshot<T extends FieldValues> = {
+  id: number;
   values: T;
   savedValues: T;
   fields: FieldPath<T>[];
@@ -44,35 +45,49 @@ export function useFormDraft<T extends FieldValues>(savedValues: T): FormDraft<T
   });
   const previousSaved = useRef(savedValues);
   const pendingFields = useRef(new Map<FieldPath<T>, number>());
-  const awaitingSaved = useRef(new Map<FieldPath<T>, T[keyof T]>());
+  const awaitingSaved = useRef(new Map<number, Map<FieldPath<T>, T[keyof T]>>());
+  const nextSnapshotId = useRef(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [, setSyncRevision] = useState(0);
   const { dirtyFields } = form.formState;
 
   useEffect(() => {
     const previous = previousSaved.current;
+    let completedSaves = 0;
     for (const name of Object.keys(savedValues) as FieldPath<T>[]) {
       const nextValue = savedValues[name as keyof T];
       const previousValue = previous[name as keyof T];
       if (sameValue(previousValue, nextValue)) continue;
 
-      if (pendingFields.current.has(name)) continue;
-      const awaitingBaseline = awaitingSaved.current.get(name);
-      if (awaitingBaseline !== undefined || awaitingSaved.current.has(name)) {
-        if (sameValue(awaitingBaseline, nextValue)) continue;
-        awaitingSaved.current.delete(name);
-        rebaseField(name, nextValue);
-        if (awaitingSaved.current.size === 0) {
-          setPendingCount((count) => Math.max(0, count - 1));
+      let acknowledgedSave = false;
+      for (const [snapshotId, fields] of awaitingSaved.current) {
+        const baseline = fields.get(name);
+        if (baseline === undefined && !fields.has(name)) continue;
+        if (sameValue(baseline, nextValue)) continue;
+        fields.delete(name);
+        acknowledgedSave = true;
+        if (fields.size === 0) {
+          awaitingSaved.current.delete(snapshotId);
+          completedSaves += 1;
         }
+      }
+
+      if (acknowledgedSave) {
+        // The draft may equal its old baseline after a post-submit edit, so
+        // preserve the value explicitly while rebasing to the acknowledged save.
+        rebaseField(name, nextValue, form.getValues(name));
         continue;
       }
+      if (pendingFields.current.has(name)) continue;
 
       const currentValue = form.getValues(name);
       const wasDirty = form.getFieldState(name).isDirty;
       rebaseField(name, nextValue, wasDirty ? currentValue : nextValue);
     }
     previousSaved.current = savedValues;
+    if (completedSaves > 0) {
+      setPendingCount((count) => Math.max(0, count - completedSaves));
+    }
     // `dirtyFields` is read to subscribe this synchronization boundary to RHF's field state.
     void dirtyFields;
   }, [dirtyFields, form, savedValues]);
@@ -87,11 +102,13 @@ export function useFormDraft<T extends FieldValues>(savedValues: T): FormDraft<T
   function beginSave(savedFields?: FieldPath<T>[]): DraftSnapshot<T> {
     const fields = savedFields ?? (Object.keys(savedValues) as FieldPath<T>[]);
     const savedSnapshot = { ...savedValues };
+    const id = nextSnapshotId.current;
+    nextSnapshotId.current += 1;
     for (const field of fields) {
       pendingFields.current.set(field, (pendingFields.current.get(field) ?? 0) + 1);
     }
     setPendingCount((count) => count + 1);
-    return { values: form.getValues(), savedValues: savedSnapshot, fields };
+    return { id, values: form.getValues(), savedValues: savedSnapshot, fields };
   }
 
   function finishSave(snapshot: DraftSnapshot<T>, succeeded: boolean) {
@@ -100,22 +117,23 @@ export function useFormDraft<T extends FieldValues>(savedValues: T): FormDraft<T
       if (count === 0) pendingFields.current.delete(field);
       else pendingFields.current.set(field, count);
     }
-    let isAwaiting = false;
+    const awaitingFields = new Map<FieldPath<T>, T[keyof T]>();
     for (const field of snapshot.fields) {
       const saved = previousSaved.current[field as keyof T];
       const baseline = snapshot.savedValues[field as keyof T];
       const current = form.getValues(field);
-      if (succeeded && sameValue(saved, baseline)) {
-        awaitingSaved.current.set(field, baseline);
-        isAwaiting = true;
+      const submitted = snapshot.values[field as keyof T];
+      if (succeeded && sameValue(saved, baseline) && !sameValue(submitted, baseline)) {
+        awaitingFields.set(field, baseline);
         continue;
-      }
-      if (succeeded && sameValue(saved, snapshot.values[field as keyof T])) {
-        awaitingSaved.current.delete(field);
       }
       rebaseField(field, saved, current);
     }
-    if (!isAwaiting) setPendingCount((count) => Math.max(0, count - 1));
+    if (awaitingFields.size > 0) {
+      awaitingSaved.current.set(snapshot.id, awaitingFields);
+    } else {
+      setPendingCount((count) => Math.max(0, count - 1));
+    }
   }
 
   function rebaseField(name: FieldPath<T>, defaultValue: T[keyof T], value = form.getValues(name)) {

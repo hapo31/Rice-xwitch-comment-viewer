@@ -213,6 +213,8 @@ Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既
 
 Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP、main window capability / custom command ACL を有効化し、Launcher icon を完全 decode・寸法検証済みの PNG data URL に限定した。
 
+Issue #194 の親レビュー追補で、連投抑制秒の空欄/空白を拒否し `0` を有効な値として扱う回帰、同一fieldを含む重複保存の完了追跡、診断とテスト読み上げ section の個別操作回帰を追加する。最終 head の CI・親レビュー・統合は PR #246 で保留中。
+
 通常 devcontainer には lock 済みの GitHub CLI feature を追加し、Codex の認証情報・履歴・セッションを `rice-codex-home` named volume に永続化した。
 
 ## Phase 0: プロジェクト作成
@@ -405,7 +407,8 @@ Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離
 - 2026-10-06 Issue #204: 実際に使用する logsReducer で warning/error を notifications、info/success を notificationHistory へ分離した。昇格時は元のIDを保ち履歴から対処待ちへ移し、correlationId と本文/5秒の重複排除、明示クリア、独立した保持上限を回帰する。旧 appReducer の整理は別Issue #203 の範囲とし、runtime の正本を直接検証した。
 
 - [x] Issue #28: Filter / Settings の未保存変更を Activity Bar 遷移・履歴戻る・ウィンドウ終了で共通確認し、保存・破棄・キャンセルをキーボード操作可能にする。native close listener は mount 中に一度だけ登録し、直後の終了要求も保護する。
-- [x] Issue #194: React Hook Form 7 を採用し、Settings / Filter の値・dirty・reset を責務別 FormProvider / Controller へ移行する。Rice 固有の saved-value 同期、保存対象 field ごとの pending、leaf patch、日本語 validation、空欄/数値、NG リスト正規化、native 接続許可を維持し、外部更新ごとの全フォーム reset を避ける。テストで外部同期、保存中の追加入力、失敗、破棄、診断、許可を確認する。
+- [x] Issue #194: React Hook Form 7 を採用し、Settings / Filter の値・dirty・reset を責務別 FormProvider / Controller へ移行する。Rice 固有の saved-value 同期、保存対象 field ごとの pending、leaf patch、日本語 validation、空欄/数値、NG リスト正規化、native 接続許可を維持し、外部更新ごとの全フォーム reset を避ける。テストで外部同期、保存中の追加入力、失敗、破棄、診断、許可、空欄と 0 の区別、重複する保存完了、診断・テスト読み上げ section の単独操作を確認する。
+- [ ] Issue #194 最終 head の CI、親レビュー、PR #246 の統合。
 - [x] Issue #193: Filter / Settings の保存済み値と世代付き編集patchを分離し、保存応答が開始後の追加入力・元値への編集を上書きしない。接続先が変わったときだけ endpoint 許可メッセージを消す。
 - [x] Issue #193: 親レビュー指摘を反映し、最終レビュー対象 commit `1f5df20411f48cbdfd96b31f4c21110004c9a175` を確認した。PR #235 で最終 CI と統合を管理する。
 - [x] Issue #38: Settings / Filter の設定群へ同一階層・同スタイルの見出しを追加し、見出し一覧のアクセシビリティテストを追加する。
@@ -549,6 +552,8 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [ ] 手動: Issue #27 として、Twitch 接続中・読み上げ待機中・未保存変更ありの X、Alt+F4、OS close-request で終了確認とキャンセル、承認後の接続停止・キュークリアを Windows 10/11 で確認する。
 
 ## 調査メモ
+
+- 2026-10-06 Issue #194 親レビュー追補: Filter の連投抑制秒は空文字列を `Number("") === 0` として扱うと無効化を意図せず保存できるため、共有 validator で空欄/空白を拒否し、数値 `0` は引き続き許可する。保存応答の追跡は transaction ごとの field baseline を保持し、同一更新に対する複数成功応答を保存値の到着で個別に解放する。診断とテスト読み上げ section は限定 action provider を使う単独 DOM 操作テストを追加する。
 
 - 2026-10-06 Issue #199: `SystemTimelineEvent` を presentation から `models/systemTimeline.ts` へ移し、domain orchestration と AppShell も同じ型を使う。source/transition は判別可能 union とし、認証の状態＋案内文による重複抑制は維持する。実購読＋snapshot replay＋router の回帰と `@ts-expect-error` の型契約回帰を追加した。frontend 325件、format/lint/typecheck/build が成功した。実Twitch/棒読みちゃんとの手動通信は未実施。
 
