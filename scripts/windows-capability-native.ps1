@@ -26,6 +26,8 @@ public static class RiceNativeProbe {
   [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] static extern bool GetCursorPos(out Point p);
   [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point point);
+  [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr window,uint flags);
   [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GuiThread info);
   [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out Rect r);
   [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref Point p);
@@ -77,6 +79,18 @@ public static class RiceNativeProbe {
   }
   public static void Click(int pid,int x,int y) {
     SetForegroundWindow(Window(pid)); Thread.Sleep(200); var p=Screen(pid,x,y); SetCursorPos(p.X,p.Y); Button(2); Button(4);
+  }
+  public static void Focus(int pid,int x,int y) {
+    var h=Window(pid);
+    // Windows can deny SetForegroundWindow after NSIS ran in another process.
+    // Fixture setup raises only the owned UI in the normal Z-order (no always-
+    // on-top/UAC/global policy change), then activates it with physical input.
+    if(!SetWindowPos(h,IntPtr.Zero,0,0,0,0,0x0013)) throw new Exception("Cannot expose owned UI for focus");
+    Thread.Sleep(200); var p=Screen(pid,x,y);
+    if(GetAncestor(WindowFromPoint(p),2)!=h) throw new Exception("Owned UI focus point is occluded");
+    SetCursorPos(p.X,p.Y); Button(2); Thread.Sleep(200); Button(4);
+    Thread.Sleep(750); // Separate the setup click from a titlebar double click.
+    if(GetForegroundWindow()!=h) throw new Exception("Physical activation did not focus the owned Rice UI");
   }
   public static void NativeClose(int pid) { if(!PostMessage(Window(pid),0x0010,IntPtr.Zero,IntPtr.Zero)) throw new Exception("Owned Rice WM_CLOSE failed"); }
   static Point Screen(int pid, int x, int y) {
@@ -193,6 +207,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             'state' { $value = [RiceNativeProbe]::State($RicePid) }
             'prepare' { [RiceNativeProbe]::Prepare($RicePid); $value = [RiceNativeProbe]::State($RicePid) }
             'restore' { [RiceNativeProbe]::Restore($RicePid); $value = [RiceNativeProbe]::State($RicePid) }
+            'focus' { [RiceNativeProbe]::Focus($RicePid, $request.x, $request.y); $value = [RiceNativeProbe]::State($RicePid) }
             'drag' { [RiceNativeProbe]::Drag($RicePid, $request.x, $request.y, $request.dx, $request.dy); $value = [RiceNativeProbe]::State($RicePid) }
             'click' { [RiceNativeProbe]::Click($RicePid, $request.x, $request.y); $value = $true }
             'close-native' { [RiceNativeProbe]::NativeClose($RicePid); $value = $true }

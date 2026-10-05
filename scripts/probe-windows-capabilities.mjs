@@ -178,6 +178,8 @@ async function run() {
     await evaluate(`(() => { window.__riceCapabilityProbe.mouseDowns=[]; document.addEventListener('mousedown',event=>window.__riceCapabilityProbe.mouseDowns.push({x:event.clientX,y:event.clientY,detail:event.detail,trusted:event.isTrusted,dragRegion:!!event.target.closest('[data-tauri-drag-region]')}),{capture:true}); return true; })()`);
     const geometry = await evaluate(`(() => { const region=document.querySelector('[data-tauri-drag-region]'); const r=region.getBoundingClientRect(); const x=r.left+r.width/2,y=r.top+r.height/2; return {width:innerWidth,height:innerHeight,scale:devicePixelRatio,x,y,hitDragRegion:!!document.elementFromPoint(x,y)?.closest('[data-tauri-drag-region]')}; })()`);
     assert.equal(geometry.hitDragRegion, true, "Physical drag point must hit the rendered titlebar region");
+    await native.call("focus", { x: Math.round(geometry.x * geometry.scale), y: Math.round(geometry.y * geometry.scale) });
+    await evaluate(`window.__riceCapabilityProbe.mouseDowns=[]; true`);
     let before = await native.call("state");
     let after = await native.call("drag", { x: Math.round(geometry.x * geometry.scale), y: Math.round(geometry.y * geometry.scale), dx: 50, dy: 25 });
     const moved = Math.abs(after.left - before.left) >= 25 && Math.abs(after.top - before.top) >= 10;
