@@ -31,11 +31,11 @@ export function ChatView({
   ];
   const scrollParentRef = useRef<HTMLElement | null>(null);
   const previousMessagesRef = useRef(messages);
-  const scrollAnchorRef = useRef<{ messageId: string; offset: number }>();
+  const scrollAnchorRef = useRef<{ messageId: string; offset: number } | undefined>(undefined);
   const isAtTopRef = useRef(true);
-  const liveAnnouncementController = useRef<ChatLiveAnnouncementController>();
+  const liveAnnouncementController = useRef<ChatLiveAnnouncementController | undefined>(undefined);
   const hasInitializedLiveAnnouncements = useRef(false);
-  const liveAnnouncementTimer = useRef<number>();
+  const liveAnnouncementTimer = useRef<number | undefined>(undefined);
   const [liveAnnouncement, setLiveAnnouncement] = useState("");
   const [unseenMessageCount, setUnseenMessageCount] = useState(0);
   const [selectedMessageId, setSelectedMessageId] = useState<string>();
