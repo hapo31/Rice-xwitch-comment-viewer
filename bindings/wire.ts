@@ -21,7 +21,7 @@ export type LauncherCapabilities = { canRegisterApplications: boolean, canLaunch
 export type LauncherItem = { id: string, kind: LauncherItemKind, target: string, displayName: string, iconDataUrl?: string, backgroundColor?: string, groupId?: string, order: number, };
 export type LauncherItemKind = "application" | "website";
 export type LauncherLaunchFailure = { itemId: string, displayName: string, message: string, };
-export type LauncherLaunchResult = { 
+export type LauncherLaunchResult = {
 /**
  * Verified target process creation only; not shell acceptance/app readiness.
  */
@@ -36,17 +36,17 @@ export type SpeechAdapterHealth = "unknown" | "connected" | "disconnected" | "er
 export type SpeechAdapterKind = "bouyomi";
 export type SpeechQueueItemEvent = { id: string, sourceMessageId?: string, userDisplayName: string, text: string, status: SpeechQueueItemStatus, outcome?: SpeechQueueOutcome, };
 export type SpeechQueueItemStatus = "queued" | "speaking" | "spoken" | "skipped" | "blocked" | "error";
-export type SpeechQueueOutcome = { "kind": "blocked", reasonCode: BlockedReason, message: string, 
+export type SpeechQueueOutcome = { "kind": "blocked", reasonCode: BlockedReason, message: string,
 /**
  * Failure category permits a new safe attempt, not an unused retry budget.
  * Terminal error history is never automatically resent.
  */
-retryable: boolean, recoveryAction: RecoveryAction, occurredAtMs: number, } | { "kind": "skipped", reasonCode: SkippedReason, message: string, 
+retryable: boolean, recoveryAction: RecoveryAction, occurredAtMs: number, } | { "kind": "skipped", reasonCode: SkippedReason, message: string,
 /**
  * Failure category permits a new safe attempt, not an unused retry budget.
  * Terminal error history is never automatically resent.
  */
-retryable: boolean, recoveryAction: RecoveryAction, occurredAtMs: number, } | { "kind": "error", reasonCode: FailureCode, message: string, 
+retryable: boolean, recoveryAction: RecoveryAction, occurredAtMs: number, } | { "kind": "error", reasonCode: FailureCode, message: string,
 /**
  * Failure category permits a new safe attempt, not an unused retry budget.
  * Terminal error history is never automatically resent.
@@ -54,7 +54,7 @@ retryable: boolean, recoveryAction: RecoveryAction, occurredAtMs: number, } | { 
 retryable: boolean, recoveryAction: RecoveryAction, occurredAtMs: number, };
 export type SpeechQueuePhase = "idle" | "speaking" | "paused" | "error";
 export type SpeechQueueUpdatedEvent = { revision: number, queuedCount: number, items: Array<SpeechQueueItemEvent>, phase: SpeechQueuePhase, warning?: string, occurredAtMs: number, };
-export type SpeechSettings = { adapter: SpeechAdapterKind, bouyomiHost: string, bouyomiPort: number, 
+export type SpeechSettings = { adapter: SpeechAdapterKind, bouyomiHost: string, bouyomiPort: number,
 /**
  * Opt-in request only. Native consent is never persisted in settings.
  */

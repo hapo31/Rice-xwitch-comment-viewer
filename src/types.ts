@@ -23,6 +23,14 @@ export const speechOutcomeReasonCodes = {
   error: schemas.failureCodeSchema.options,
 } as const;
 export const speechRecoveryActions = schemas.recoveryActionSchema.options;
+export const retryableSpeechReasons = schemas.retryableSpeechReasonSchema.options;
+export const diagnosableNonRetryableSpeechReasons =
+  schemas.diagnosableNonRetryableSpeechReasonSchema.options;
+export const twitchStatusesByDomain = {
+  auth: schemas.twitchAuthConnectionStatusSchema.options,
+  chat: schemas.twitchChatConnectionStatusSchema.options,
+} as const;
+export type TwitchAuthConnectionStatus = z.infer<typeof schemas.twitchAuthConnectionStatusSchema>;
 export type SpeechRecoveryAction = z.infer<typeof schemas.recoveryActionSchema>;
 export type SpeechQueueOutcome = z.infer<typeof schemas.speechQueueOutcomeSchema>;
 

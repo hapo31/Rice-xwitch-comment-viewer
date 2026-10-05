@@ -182,9 +182,37 @@ export const twitchStatusWireSchema = z.object({
   message: text.optional(),
   occurredAtMs: timestamp,
 });
-export const twitchStatusSchema = twitchStatusWireSchema.extend({
-  revision: unsignedInteger.optional(),
+export const twitchAuthConnectionStatusSchema = twitchConnectionStatusSchema.exclude([
+  "reconnecting",
+]);
+export const twitchChatConnectionStatusSchema = twitchConnectionStatusSchema.exclude([
+  "validating",
+]);
+const twitchStatusDetailsSchema = twitchStatusWireSchema
+  .pick({ revision: true, message: true, occurredAtMs: true })
+  .extend({ revision: unsignedInteger.optional() });
+const twitchAuthStatusDetailsSchema = twitchStatusDetailsSchema.extend({
+  domain: z.literal("auth"),
+  connectionGeneration: z.never().optional(),
+  activeConnection: z.never().optional(),
 });
+export const twitchStatusSchema = z.union([
+  twitchAuthStatusDetailsSchema.extend({
+    status: z.literal("authRequired"),
+    reason: twitchAuthRequiredReasonSchema.optional(),
+  }),
+  twitchAuthStatusDetailsSchema.extend({
+    status: twitchAuthConnectionStatusSchema.exclude(["authRequired"]),
+    reason: z.never().optional(),
+  }),
+  twitchStatusDetailsSchema.extend({
+    domain: z.literal("chat"),
+    status: twitchChatConnectionStatusSchema,
+    reason: z.never().optional(),
+    connectionGeneration: unsignedInteger.optional(),
+    activeConnection: twitchActiveConnectionSchema.optional(),
+  }),
+]);
 export const speechStatusSchema = z.enum(["idle", "speaking", "paused", "disconnected", "error"]);
 export const speechAdapterHealthSchema = z.enum(["unknown", "connected", "disconnected", "error"]);
 export const speechQueuePhaseSchema = z.enum(["idle", "speaking", "paused", "error"]);
@@ -246,23 +274,57 @@ export const speechQueueOutcomeWireSchema = z.discriminatedUnion("kind", [
   outcomeDetailsSchema.extend({ kind: z.literal("skipped"), reasonCode: skippedReasonSchema }),
   outcomeDetailsSchema.extend({ kind: z.literal("error"), reasonCode: failureCodeSchema }),
 ]);
-export const speechQueueOutcomeSchema = speechQueueOutcomeWireSchema.refine((outcome) => {
-  if (outcome.kind === "blocked")
-    return !outcome.retryable && outcome.recoveryAction === "reviewFilters";
-  if (outcome.kind === "skipped")
-    return (
-      !outcome.retryable &&
-      outcome.recoveryAction === (outcome.reasonCode === "overflow" ? "reviewQueue" : "none")
-    );
-  return (
-    ["diagnoseSpeech", "confirmDelivery"].includes(outcome.recoveryAction) &&
-    (!outcome.retryable ||
-      (outcome.recoveryAction === "diagnoseSpeech" &&
-        ["connectionRefused", "connectTimeout", "connectFailed", "connectionLost"].includes(
-          outcome.reasonCode,
-        )))
-  );
-});
+export const retryableSpeechReasonSchema = failureCodeSchema.extract([
+  "connectionRefused",
+  "connectTimeout",
+  "connectFailed",
+  "connectionLost",
+]);
+export const diagnosableNonRetryableSpeechReasonSchema = failureCodeSchema.exclude([
+  "writeTimeout",
+  "writeFailed",
+  "connectionLost",
+  "unknown",
+]);
+const outcomeDetails = outcomeDetailsSchema.pick({ message: true, occurredAtMs: true });
+export const speechQueueOutcomeSchema = z.union([
+  outcomeDetails.extend({
+    kind: z.literal("blocked"),
+    reasonCode: blockedReasonSchema,
+    retryable: z.literal(false),
+    recoveryAction: z.literal("reviewFilters"),
+  }),
+  outcomeDetails.extend({
+    kind: z.literal("skipped"),
+    reasonCode: z.literal("overflow"),
+    retryable: z.literal(false),
+    recoveryAction: z.literal("reviewQueue"),
+  }),
+  outcomeDetails.extend({
+    kind: z.literal("skipped"),
+    reasonCode: skippedReasonSchema.exclude(["overflow"]),
+    retryable: z.literal(false),
+    recoveryAction: z.literal("none"),
+  }),
+  outcomeDetails.extend({
+    kind: z.literal("error"),
+    reasonCode: failureCodeSchema,
+    retryable: z.literal(false),
+    recoveryAction: z.literal("confirmDelivery"),
+  }),
+  outcomeDetails.extend({
+    kind: z.literal("error"),
+    reasonCode: diagnosableNonRetryableSpeechReasonSchema,
+    retryable: z.literal(false),
+    recoveryAction: z.literal("diagnoseSpeech"),
+  }),
+  outcomeDetails.extend({
+    kind: z.literal("error"),
+    reasonCode: retryableSpeechReasonSchema,
+    retryable: z.literal(true),
+    recoveryAction: z.literal("diagnoseSpeech"),
+  }),
+]);
 export const queueItemWireSchema = z.object({
   id: text,
   sourceMessageId: text.optional(),
@@ -330,6 +392,15 @@ export const speechStateSnapshotSchema = speechStateSnapshotWireSchema.extend({
 /** Tauri's serialized unit result is JSON null; missing IPC payload is an error. */
 export const unitResultSchema = z.null();
 
+function issuePaths(issues: readonly z.core.$ZodIssue[]): string[] {
+  return issues.flatMap((issue) => {
+    if (issue.code === "invalid_union") return issue.errors.flatMap(issuePaths);
+    return issue.code === "unrecognized_keys"
+      ? issue.keys.map((key) => [...issue.path, key].join("."))
+      : [issue.path.join(".")];
+  });
+}
+
 export function parsePayload<S extends z.ZodType>(
   schema: S,
   value: unknown,
@@ -338,10 +409,10 @@ export function parsePayload<S extends z.ZodType>(
   const result = schema.safeParse(value);
   if (result.success) return result.data;
   // Never echo payload values: responses can contain authentication information.
-  const issue = result.error.issues[0];
-  const path = issue?.path.join(".") || "payload";
-  const keys = issue?.code === "unrecognized_keys" ? ` (${issue.keys.join(", ")})` : "";
+  const path =
+    [...new Set(issuePaths(result.error.issues))].filter(Boolean).slice(0, 8).join(", ") ||
+    "payload";
   throw new Error(
-    `Tauri bridge の ${contract} payload が不正です: ${path}${keys} の型・値を確認してください。`,
+    `Tauri bridge の ${contract} payload が不正です: ${path} の型・値を確認してください。`,
   );
 }

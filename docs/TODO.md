@@ -344,8 +344,16 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 - [x] Issue #48: Tauri bridge の `Option` を JSON field omission に統一し、Rust/TypeScript の camelCase・nullability 契約、Device Code 後の保存警告経路を共通 fixture と runtime validation で検証する。
 - [ ] Issue #201: 全 command 応答と event を runtime schema で検証し、Rust wire 型生成と schema 型一致・生成差分検査を導入する。既存 domain 変換と IPC 境界を保持する。
-  - 作業進捗: Zod 4 schema から frontend DTO を導出し、ts-rs 12 の Serde 型生成と全51 wire 型の双方向一致検査を導入。全32 command の正常/不正応答と unit null を検証し、frontend 371 tests・型検査・lint・format・build、Rust 型生成が成功。#200 契約との統合と最終レビューを継続する。
+  - 作業進捗: Zod 4 schema から frontend DTO を導出し、ts-rs 12 の Serde 型生成と全51 wire 型の双方向一致検査を導入。全32 command の正常/不正応答と unit null を検証し、frontend 376 tests・型検査・lint・format・build、Rust no-default 218 tests と型生成が成功。#200 の厳密な状態契約を維持して統合。独立レビューと最終 CI を継続する。
+  - 性能確認: 同一 Node 24 プロセス、1000 warmup 後の5回中央値で chat 1万件は旧 parser 5.74ms / schema 10.88ms、200件 queue 1000回は46.55ms / 39.67ms。production JS は554.37kB (gzip167.42kB)で、導入前の469.75kB (gzip142.31kB)から増加し Vite の500kB警告が出る。警告上限は変更しない。
   - 性能計測: Node 24 / 同一 fixture・1000回 warmup・5回の中央値。chat 10,000件は旧5.0ms→schema8.2ms、200項目 queue snapshot 1,000回は旧44.9ms→38.5ms。bundle は469.8kB→553.4kB（gzip142.3→167.2kB）。機能境界の厳密化を優先し、500kB chunk 警告の上限変更や未計測の高速化は行わない。
+
+Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態・付随情報を判別可能 union に揃えた。既存21 outcome fixtureと新しい型/runtime共通の正負 fixtureを検証し、frontend 327件とformat/lint/typecheck/buildが成功した。独立レビューを受け、再送不能かつ送達不明な理由には送達確認を必須にした。最終 CI 結果と統合状況は PR #240 に記録する。
+- [x] Issue #200: 読み上げ outcome の kind/reason と retry/recovery、Twitch の domain と状態・付随情報を判別可能 union にし、不正組合せを型検査と bridge parser の両方で拒否する。既存 Rust payload と共通 fixture の互換性、品質 gate で検証する。
+  - 最新 main（#193 / #196 / #198 / #202 と統合追補 #245）との統合検証: frontend 343 tests、format/lint/typecheck/build、diff check が成功。
+- 2026-10-06 Issue #200: Rust の auth service と app_events の本番送信は、Auth に接続世代/identityを持たせず、missingRequiredScope を AuthRequired にだけ付ける。Frontend の domain 別状態配列を型/parserで共用し、14種類の不正組合せを同じ値でコンパイル時とruntimeの両方から拒否した。既存21 outcome fixture、旧payloadのoptional省略、errorの安全な再送と送達確認の既存分岐は保持する。追加のschema libraryやRust wire変更は行わず、汎用parserの整理は別Issue #201に残す。
+- Issue #200 レビュー確認: Rust `SpeechQueueOutcome::error` は `accepted=true` なら全 FailureCode に confirmDelivery を返す。configuration/confirmDelivery もこの経路では正常な契約のため拒否しない。全理由の受付済み fixture を維持し、accepted=false でも送達不明になる再送不能 write/lost/unknown に diagnoseSpeech を指定する組合せは排除する。
+
 
 - [x] `issue-fix-batch` スキルを用途別ルールへ分解し、`AGENTS.md` から必要時に参照する構成へ移行する。関連する PR／Issue の close 後に worktree と修正用ブランチを削除する。
 

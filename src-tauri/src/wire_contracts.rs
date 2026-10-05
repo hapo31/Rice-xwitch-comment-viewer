@@ -58,6 +58,12 @@ fn generated_wire_contracts_are_current() {
         generated.push_str(&format!("  {name}: {name};\n"));
     }
     generated.push_str("};\n");
+    let generated = generated
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../bindings/wire.ts");
     if std::env::var_os("RICE_UPDATE_WIRE_TYPES").as_deref() == Some(std::ffi::OsStr::new("1")) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
