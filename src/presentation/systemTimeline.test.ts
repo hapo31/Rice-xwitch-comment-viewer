@@ -6,6 +6,7 @@ import {
   timelineEventFromTwitchStatus,
 } from "./systemTimeline";
 import { getChatMessagePresentation } from "./chat";
+import type { SystemTimelineEvent } from "../models/systemTimeline";
 
 describe("system timeline routing", () => {
   it("routes EventSub and auth transitions but excludes keepalives", () => {
@@ -26,7 +27,7 @@ describe("system timeline routing", () => {
       }),
     ).toMatchObject({
       source: "twitch-auth",
-      transition: "authRequired:Twitch 認証が無効です。再ログインしてください。",
+      transition: "authRequired",
     });
     expect(
       timelineEventFromTwitchStatus({
@@ -74,14 +75,27 @@ describe("system timeline routing", () => {
   it("deduplicates an unchanged transition and records recovery after a change", () => {
     const router = new SystemTimelineRouter();
     const reconnecting = {
-      source: "twitch-connection" as const,
+      source: "twitch-connection",
       transition: "reconnecting",
       message: "再接続中",
-    };
+    } satisfies SystemTimelineEvent;
     expect(router.shouldRecord(reconnecting)).toBe(true);
     expect(router.shouldRecord(reconnecting)).toBe(false);
     expect(router.shouldRecord({ ...reconnecting, transition: "connected" })).toBe(true);
     expect(router.shouldRecord(reconnecting)).toBe(true);
+  });
+
+  it("retains changed auth guidance without widening the transition type", () => {
+    const router = new SystemTimelineRouter();
+    const auth = {
+      source: "twitch-auth",
+      transition: "authRequired",
+      message: "認証してください。",
+    } satisfies SystemTimelineEvent;
+    expect(router.shouldRecord(auth)).toBe(true);
+    expect(router.shouldRecord(auth)).toBe(false);
+    expect(router.shouldRecord({ ...auth, message: "認証を取り消しました。" })).toBe(true);
+    expect(router.shouldRecord({ ...auth, message: "認証を取り消しました。" })).toBe(false);
   });
 
   it("models auto-connect and speech recovery as system events", () => {

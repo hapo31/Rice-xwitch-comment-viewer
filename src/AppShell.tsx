@@ -22,6 +22,7 @@ import { ResizeHandles, TitleBar } from "./components/TitleBar";
 import { useDisplayScale } from "./hooks/useDisplayScale";
 import { useStreamHotkeys } from "./hooks/useStreamHotkeys";
 import { APP_SHELL_CLASS_NAME } from "./layout/appShell";
+import type { SystemTimelineEvent } from "./models/systemTimeline";
 import {
   createLauncherController,
   createQueueController,
@@ -185,7 +186,7 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
     addSystemChatMessage(message);
   }
 
-  function routeSystemTimelineEvent(event: Parameters<SystemTimelineRouter["shouldRecord"]>[0]) {
+  function routeSystemTimelineEvent(event: SystemTimelineEvent) {
     if (systemTimelineRouter.current.shouldRecord(event)) addSystemChatMessage(event.message);
   }
 
@@ -264,8 +265,7 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
         reportNotification,
         replaySystemLog: addSystemChatMessage,
         onRestored: () => setEventsRestored(true),
-        routeSystemTimelineEvent: (event) =>
-          routeSystemTimelineEvent(event as Parameters<SystemTimelineRouter["shouldRecord"]>[0]),
+        routeSystemTimelineEvent,
         speechRecoveryMessage: speechRecoveryTimelineEvent,
         twitchTimelineEvent: timelineEventFromTwitchStatus,
       }),

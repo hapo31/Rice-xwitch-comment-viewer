@@ -1,8 +1,9 @@
 import { type AuthFlowEvent, type AuthFlowState, authFlowTransition } from "../authFlow";
 import { AuthOperationController } from "../authOperation";
 import { getDeviceAuthRemainingSeconds } from "../features/auth/deviceAuthExpiry";
+import type { SystemTimelineEvent } from "../models/systemTimeline";
 import { presentError } from "../presentation/errors";
-import { autoConnectTimelineEvent, type SystemTimelineEvent } from "../presentation/systemTimeline";
+import { autoConnectTimelineEvent } from "../presentation/systemTimeline";
 import type { AppAction } from "../stores/appState";
 import {
   appOpenExternalUrl,
