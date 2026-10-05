@@ -4,7 +4,7 @@ Set-StrictMode -Version Latest
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or -not $env:RUNNER_TEMP) { throw 'Native UI probes require a disposable GitHub-hosted Windows runner' }
 $fixture = [IO.Path]::GetFullPath($FixtureRoot)
 if (-not $fixture.StartsWith([IO.Path]::GetFullPath($env:RUNNER_TEMP) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Fixtures must be below RUNNER_TEMP' }
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing, UIAutomationClient, UIAutomationTypes
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 Add-Type -ReferencedAssemblies System.dll, System.Core.dll, System.Windows.Forms.dll, System.Drawing.dll -TypeDefinition @'
 using System;
 using System.Diagnostics;
@@ -118,7 +118,7 @@ public static class RiceNativeProbe {
   }
   public static IntPtr Dialog(int pid) {
     IntPtr found=IntPtr.Zero;
-    EnumWindows((h,arg)=> { uint owner; GetWindowThreadProcessId(h,out owner); var name=new StringBuilder(128); GetClassName(h,name,128); if(owner==pid && name.ToString()=="#32770") found=h; return true; },IntPtr.Zero);
+    EnumWindows((h,arg)=> { uint owner; GetWindowThreadProcessId(h,out owner); var name=new StringBuilder(128); GetClassName(h,name,128); if(owner==pid && name.ToString()=="#32770" && GetDlgItem(h,1148)!=IntPtr.Zero && GetDlgItem(h,1)!=IntPtr.Zero) found=h; return true; },IntPtr.Zero);
     return found;
   }
   public static void OpenDialog(int pid) {
@@ -184,21 +184,11 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                     Start-Sleep -Milliseconds 100
                 }
                 if ($dialog -eq [IntPtr]::Zero) { throw 'Owned native file-open dialog did not appear' }
-                $root = [Windows.Automation.AutomationElement]::FromHandle($dialog)
-                $idProperty = [Windows.Automation.AutomationElement]::AutomationIdProperty
-                $filenameHost = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.PropertyCondition]::new($idProperty, '1148'))
-                if ($null -eq $filenameHost) { throw 'Missing native filename control (1148)' }
-                $edit = $filenameHost.FindFirst([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Edit))
-                if ($null -eq $edit) { $edit = $filenameHost }
-                $pattern = $null
                 $fileText = ($files | ForEach-Object { '"' + $_ + '"' }) -join ' '
-                if ($edit.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { $pattern.SetValue($fileText) }
-                else { [RiceNativeProbe]::SetDialogFiles($RicePid, $fileText) }
-                $open = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.PropertyCondition]::new($idProperty, '1'))
-                if ($null -eq $open) { throw 'Missing owned file dialog Open button' }
-                $invokePattern = $null
-                if ($open.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$invokePattern)) { $invokePattern.Invoke() }
-                else { [RiceNativeProbe]::OpenDialog($RicePid) }
+                # Wait above for the actual compound native controls. UIA can
+                # expose only a temporary Pane while IFileDialog initializes.
+                [RiceNativeProbe]::SetDialogFiles($RicePid, $fileText)
+                [RiceNativeProbe]::OpenDialog($RicePid)
                 $value = [ordered]@{ selectedCount = $files.Count; ownerPid = $RicePid; nativeDialog = $true }
             }
             default { throw 'Unknown native UI action' }
