@@ -86,3 +86,9 @@ jobs:
         run: |
           & $env:RICE_NATIVE_TEST_BINARY single_instance::windows_tests::native_maximum_launcher_render_and_ipc_budget --exact --ignored --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify future settings survive startup, rejected production IPC and normal exit
+        env:
+          RICE_NATIVE_TEST_BINARY: ${{ steps.harness.outputs.binary }}
+        run: |
+          & $env:RICE_NATIVE_TEST_BINARY single_instance::windows_tests::native_future_settings_preserved_through_ipc_and_exit --exact --ignored --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

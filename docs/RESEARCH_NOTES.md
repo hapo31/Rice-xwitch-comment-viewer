@@ -1,5 +1,13 @@
 # 調査メモ
 
+## 2026-10-05 Issue #64: optional/versionedな設定と非対応データの保護
+
+- [owner方針](https://github.com/hapo31/Rice-xwitch-comment-viewer/issues/64#issuecomment-5154975526)に従い、すべての永続fieldをoptionalとして不正値だけ既定値へ戻し、通常の補正通知は追加しない。番号なし/null/0の既存v0→v1だけを実在するmigrationとして扱う。domain/IPC DTOは厳格なまま、保存時だけschemaVersionを付け、loadは#88の実際のvalidated patchと共通domain/Launcher構造検証を使う。supported migrationの元bytesは既存の1世代backupに残し、次の通常保存でrotationする。
+- 将来version/不正version型はno-auto-connectの既定値と復旧案内、未知field/重複wire keyは正常な既知fieldを読めるread-onlyとする。temporary/backupに触れる前にディスク上の現行fileを再検査し、起動後の外部変更でもSettings/Launcher/window保存のすべてから拒否する。設定の保存エラーと終了の可否は分け、位置保存の拒否を理由に終了できなくしない。構文破損primaryとfuture backupの組み合わせでもbackupをverbatimに復旧し、その後も保存を拒否する。
+- 8MiBのowned Value treeや無制限配列を新たに作らず、[RawValue](https://docs.rs/serde_json/latest/serde_json/value/struct.RawValue.html)の借用と[map Visitor](https://serde.rs/deserialize-map.html)を使う。Cargoのserde_json版は1.0.149のままraw_value featureだけ有効にする。rules/Launcherは上限件数、文字列はescape-awareなraw長を検査してからowned domainへ渡す。未知objectのkeyをStringに解釈できない場合もread-onlyにし、情報を落として自動再保存しない。PNG検証・8MiB・5秒・既存heap上限は緩めない。
+- fixture14例と7 Rustテストでoptional/null/型/範囲/正規化、無効Launcher/重複ID、rule・path合計、10万node配列、未知版・field/重複wire key、migration backup、save faultとfile交換時のmemory/primary/backup/listing非変更、future backup復旧を確認した。local Rust262/no-default211、strict clippy/fmt、frontend321と全gate、policy21/contextが成功。最大8MiB roundtripは4.56秒・追加Rust heap26,737,227bytes（25.5MiB）。
+- Windows libtestは本番builder/ACL/commandをそのまま使い、隔離app-dataをtest-only plugin setupで事前にseedする。実際の本番startupから将来版を読み、Settings更新と現在のtest binaryのLauncher登録を拒否し、[WebviewWindow URL](https://docs.rs/tauri/latest/tauri/webview/struct.WebviewWindow.html#method.url)の同一document fragmentでnative親へ結果を返す。実行ファイルは登録試験だけで起動せず、追加IPC/permissionを作らない。その後、本番app_exitをinvokeして正常終了と元primary/backup bytes・temporaryなしを検査する。実Windowsの成功はCI確認まで未完了であり、コード追加だけでは実動済みとしない。
+
 ## 2026-10-05 main CI: braces の除去
 
 - 最新 main 6d17a3a の 6 workflow は audit だけが失敗した（run37246805086）。blocking は [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) の braces <=3.0.3。GitHub advisory に修正版はなく、Tailwind 3.4.19 → chokidar/micromatch/fast-glob のビルド依存を除去する必要がある。無承認の例外や audit の閾値変更は行わない。

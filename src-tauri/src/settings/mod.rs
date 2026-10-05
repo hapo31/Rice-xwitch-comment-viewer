@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(feature = "app")]
 use tauri::Manager;
 
+mod schema;
 pub(crate) mod validation;
 mod writer;
 
@@ -159,7 +160,10 @@ fn default_bouyomi_voice() -> i16 {
 }
 
 fn default_bouyomi_host() -> String {
-    std::env::var("RICE_BOUYOMI_HOST").unwrap_or_else(|_| "127.0.0.1".to_string())
+    std::env::var("RICE_BOUYOMI_HOST")
+        .ok()
+        .and_then(|host| crate::speech::bouyomi::validate_bouyomi_host(&host).ok())
+        .unwrap_or_else(|| "127.0.0.1".to_string())
 }
 
 pub(crate) fn default_twitch_client_id() -> String {
@@ -285,16 +289,6 @@ fn validate_repeat_suppression_seconds(seconds: u16) -> Result<(), String> {
     }
 }
 
-fn deserialize_settings(text: &str) -> Result<AppSettings, String> {
-    check_bytes(text.len(), MAX_SETTINGS_JSON_BYTES, "設定JSON")
-        .map_err(|error| error.to_string())?;
-    let settings: AppSettings =
-        serde_json::from_str(text).map_err(|_| "設定JSONを読み取れません。".to_string())?;
-    validate_repeat_suppression_seconds(settings.speech.repeat_suppression_seconds)?;
-    crate::launcher::validate_launcher_structure(&settings.launcher.items)?;
-    Ok(settings)
-}
-
 /// Inspect the framework-owned JSON tree before cloning any application DTO.
 fn parse_settings_request(
     value: &serde_json::Value,
@@ -358,12 +352,21 @@ impl SettingsStore {
             });
         }
 
-        let loaded = read_settings_text(path)?.and_then(|text| deserialize_settings(&text));
+        let loaded = read_settings_text(path)?.and_then(|text| schema::decode(&text));
         match loaded {
-            Ok(settings) => Ok(LoadedSettings {
-                settings,
-                recovery_notice: None,
-            }),
+            Ok(decoded) => {
+                if decoded.needs_resave {
+                    Self::save_to_path(path, &decoded.settings)?;
+                }
+                Ok(LoadedSettings {
+                    settings: decoded.settings,
+                    // Ordinary optional/invalid-field fallback is silent by owner policy.
+                    // Only an unsupported version needs the safe recovery instruction.
+                    recovery_notice: decoded.unsupported_version.then(|| SettingsRecoveryNotice {
+                        message: schema::READ_ONLY_MESSAGE.into(),
+                    }),
+                })
+            }
             Err(reason) => Self::recover_from_invalid_primary(path, &reason),
         }
     }
@@ -387,8 +390,13 @@ impl SettingsStore {
         settings: &AppSettings,
         fault: SaveFault,
     ) -> anyhow::Result<()> {
+        validation::validate_settings(settings)?;
         validate_launcher_resources(&settings.launcher.items).map_err(anyhow::Error::msg)?;
-        let bytes = serialize_bounded(settings, MAX_SETTINGS_JSON_BYTES, "設定JSON")?;
+        let bytes = serialize_bounded(
+            &schema::PersistedSettings::new(settings),
+            MAX_SETTINGS_JSON_BYTES,
+            "設定JSON",
+        )?;
         let text = std::str::from_utf8(&bytes)?;
         Self::save_text_to_path(path, text, fault)
     }
@@ -398,13 +406,24 @@ impl SettingsStore {
         protect_storage(path)?;
         protect_existing_file(&backup_path(path))?;
 
+        // Check before creating temporary files or rotating backup. This same
+        // guard covers Settings, Launcher and best-effort window/exit saves,
+        // including a future document installed after this process loaded.
+        let previous = if path.exists() {
+            let previous = read_bounded(path, MAX_SETTINGS_JSON_BYTES)?;
+            let decoded = schema::decode(&previous).map_err(|error| {
+                anyhow::anyhow!("既存の設定をバックアップできませんでした: {error}")
+            })?;
+            if decoded.read_only {
+                return Err(schema::ReadOnlySettings.into());
+            }
+            Some(previous)
+        } else {
+            None
+        };
         let temporary_path = write_temp_file(path, text.as_bytes(), fault)?;
         let result = (|| {
-            if path.exists() {
-                let previous = read_bounded(path, MAX_SETTINGS_JSON_BYTES)?;
-                deserialize_settings(&previous).map_err(|error| {
-                    anyhow::anyhow!("既存の設定をバックアップできませんでした: {error}")
-                })?;
+            if let Some(previous) = previous {
                 atomic_write(&backup_path(path), previous.as_bytes(), SaveFault::None)?;
             }
             replace_file(&temporary_path, path, fault)?;
@@ -427,16 +446,25 @@ impl SettingsStore {
 
         if backup.exists() {
             let backup_reason = match read_settings_text(&backup)? {
-                Ok(backup_text) => match deserialize_settings(&backup_text) {
-                    Ok(settings) => {
+                Ok(backup_text) => match schema::decode(&backup_text) {
+                    Ok(decoded) => {
                         atomic_write(path, backup_text.as_bytes(), SaveFault::None)?;
+                        if decoded.needs_resave {
+                            Self::save_to_path(path, &decoded.settings)?;
+                        }
                         let message = format!(
                             "設定ファイルの内容が無効（{primary_reason}）だったため、バックアップから復旧しました。退避先: {}",
                             corrupted_primary.display()
                         );
                         return Ok(LoadedSettings {
-                            settings,
-                            recovery_notice: Some(SettingsRecoveryNotice { message }),
+                            settings: decoded.settings,
+                            recovery_notice: Some(SettingsRecoveryNotice {
+                                message: if decoded.read_only {
+                                    format!("{message} {}", schema::READ_ONLY_MESSAGE)
+                                } else {
+                                    message
+                                },
+                            }),
                         });
                     }
                     Err(reason) => reason,
@@ -762,7 +790,14 @@ pub fn settings_update(
         settings.speech.bouyomi_remote_mode,
     );
     apply_validated_settings_patch(&mut settings, patch, |candidate| {
-        SettingsStore::save(&app, candidate).map_err(|_| {
+        SettingsStore::save(&app, candidate).map_err(|error| {
+            if error.is::<schema::ReadOnlySettings>() {
+                return validation::ValidationError::new(
+                    "settings",
+                    "unsupportedSchema",
+                    schema::READ_ONLY_MESSAGE,
+                );
+            }
             validation::ValidationError::new(
                 "settings",
                 "persistenceFailed",
@@ -1180,7 +1215,7 @@ mod tests {
     fn oversized_primary_and_backup_are_quarantined_without_full_read() {
         for bad_backup in [false, true] {
             let path = settings_path_for_test("bounded-recovery");
-            let settings = settings_with_channel("valid-backup");
+            let settings = settings_with_channel("valid_backup");
             SettingsStore::save_to_path(&path, &settings).unwrap();
             SettingsStore::save_to_path(&path, &settings).unwrap();
             std::fs::File::options()
@@ -1200,7 +1235,7 @@ mod tests {
             let loaded = SettingsStore::load_from_path(&path).unwrap();
             assert_eq!(
                 loaded.settings.twitch.channel_login,
-                if bad_backup { "" } else { "valid-backup" }
+                if bad_backup { "" } else { "valid_backup" }
             );
             assert!(loaded.recovery_notice.unwrap().message.contains("最大"));
             let quarantined: Vec<_> = path
@@ -1433,7 +1468,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_repeat_suppression_recovers_from_a_valid_backup() {
+    fn invalid_repeat_suppression_defaults_only_that_field_without_a_notice() {
         let path = settings_path_for_test("recover-invalid-repeat");
         let mut invalid = AppSettings::default();
         invalid.speech.repeat_suppression_seconds = 31;
@@ -1452,10 +1487,11 @@ mod tests {
 
         let loaded = SettingsStore::load_from_path(&path).expect("recover from backup");
 
-        assert_eq!(loaded.settings.speech.repeat_suppression_seconds, 1);
-        let notice = loaded.recovery_notice.expect("recovery notice").message;
-        assert!(notice.contains("連投抑制秒は0から30の範囲"));
-        assert!(notice.contains("バックアップから復旧"));
+        assert_eq!(loaded.settings.speech.repeat_suppression_seconds, 2);
+        assert!(loaded.recovery_notice.is_none());
+        let original: AppSettings =
+            serde_json::from_str(&fs::read_to_string(backup_path(&path)).unwrap()).unwrap();
+        assert_eq!(original.speech.repeat_suppression_seconds, 31);
         cleanup(&path);
     }
 
@@ -1514,7 +1550,7 @@ mod tests {
     #[test]
     fn malformed_primary_recovers_from_backup_and_quarantines_the_data() {
         let path = settings_path_for_test("recover-backup");
-        let backup_settings = settings_with_channel("backup-channel");
+        let backup_settings = settings_with_channel("backup_channel");
         fs::write(&path, "{\"twitch\":").expect("write malformed primary");
         fs::write(
             backup_path(&path),
@@ -1524,7 +1560,7 @@ mod tests {
 
         let loaded = SettingsStore::load_from_path(&path).expect("recover settings");
 
-        assert_eq!(loaded.settings.twitch.channel_login, "backup-channel");
+        assert_eq!(loaded.settings.twitch.channel_login, "backup_channel");
         assert!(loaded
             .recovery_notice
             .expect("recovery notice")

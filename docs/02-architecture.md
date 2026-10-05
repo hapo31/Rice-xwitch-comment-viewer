@@ -55,7 +55,7 @@ Rust backend
 | `SpeechAdapter` | 読み上げ先を抽象化するtrait |
 | `BouyomiAdapter` | 棒読みちゃんTCPプロトコル実装 |
 | `VoiceroidAdapter` | Windows専用の実験的アダプタ。C# sidecarまたはUI Automationを隠蔽する |
-| `SettingsStore` | 一般設定JSONを原子的に保存し、JSON構文または検証対象の設定値が不正な場合はbackupまたは既定値へ復旧する。更新は候補を保存できた場合だけ共有メモリへ反映する。OAuthトークンは扱わない |
+| `SettingsStore` | optional/versionedな永続wireを移行・共通検証し、不正な項目だけ既定値へ戻す。JSON構文/容量の破損はbackupまたは既定値へ復旧する。未知の版・項目は読取り専用。原子的保存の成功後だけ候補を共有メモリへ反映する。OAuthトークンは扱わない |
 | `TwitchAuthStore` | Twitch OAuth状態をOS keyringへ保存/復元/削除する |
 | `LauncherService` | 登録アプリのパス検証、重複排除、単体/一斉起動を扱う |
 
@@ -63,7 +63,7 @@ Launcherのアプリ登録・起動はWindows専用。`app_build_info.launcher`�
 
 ## 設定入力と読み上げ接続先の境界
 
-設定入力は`settings/validation.rs`でwireとdomainを分ける。`settings_update`はframework所有JSONを256KiB/nodes/depth・既知field・文字列/rule量でpreflightしてからDTOをcloneし、leaf patchを最新candidateへ適用、全domainとLauncher資源を検証・保存できた場合だけ公開する。`ValidationError { field, code, message, recovery }`で安全な日本語と修正対象を返す。`TwitchLogin`は設定保存と`twitch_connect`で共用し、空欄は自分のチャンネル、非空は英数字・_の3〜25文字、raw128 UTF-8 bytes以内/controlなしとする。hostはraw253 UTF-8 bytes/DNS label63、NGユーザーはlogin形式、NGワードは500 Unicode文字/2048 UTF-8 bytes、各200件/両list合計64KiB、接続成功文は120文字/480bytesまで。文字数/range違反をclamp/truncateで成功扱いにしない。旧fileのmigration/field fallbackへも共通validatorを使う責務は#64に残る。
+設定入力は`settings/validation.rs`でwireとdomainを分ける。`settings_update`はframework所有JSONを256KiB/nodes/depth・既知field・文字列/rule量でpreflightしてからDTOをcloneし、leaf patchを最新candidateへ適用、全domainとLauncher資源を検証・保存できた場合だけ公開する。`ValidationError { field, code, message, recovery }`で安全な日本語と修正対象を返す。`TwitchLogin`は設定保存と`twitch_connect`で共用し、空欄は自分のチャンネル、非空は英数字・_の3〜25文字、raw128 UTF-8 bytes以内/controlなしとする。hostはraw253 UTF-8 bytes/DNS label63、NGユーザーはlogin形式、NGワードは500 Unicode文字/2048 UTF-8 bytes、各200件/両list合計64KiB、接続成功文は120文字/480bytesまで。文字数/range違反をclamp/truncateで成功扱いにしない。永続wireのmigration/field fallbackも同じpatch適用・domain validatorとLauncher構造validatorを使う（#64）。
 
 `SpeechRuntime`がprocess-localの`DestinationPolicy`をfactory/diagnosticsと共有する。各TCP接続はhostを2秒以内・最大16addressへ解決し、全addressを検証して検証済み`SocketAddr`集合へ直接接続する（connect時の再DNS解決なし）。通常は127/8・::1・IPv4-mapped loopbackだけを許可する。remote modeはopt-in要求であり許可ではない。private IPv4/IPv6 ULAだけが外部許可の対象で、public/link-local/multicast/未指定宛先は拒否する。明示`speech_authorize_endpoint`がhostname/IP/port・全解決address・ユーザー名/chat/test/controlの平文送信/TLSと相手認証の欠如/VPN注意をnative dialogへ表示する。callbackをawaitし設定lockは保持しない。許可後にDNSを再確認し、設定変更がないことを短いlock下で比較してからopaque approvalをメモリへinstallする。1つのpending prompt/30秒rate limit、拒否時は旧許可も取り消し、endpoint変更/再起動/解決address変更は再同意なしに送信しない。設定fileやrendererへconsent flagは持たせない。既に開始した送信の取消やbyte回収、相手identityの認証は保証しない。
 
@@ -212,6 +212,9 @@ backend は bounded な operational log ring と Twitch（auth/chat）/speech �
 ## 永続化
 
 - 一般設定: Tauriのapp data配下にJSON保存。同一ディレクトリの一時ファイルへ書き込み・`sync_all` した後、OSごとの atomic replace で `settings.json` を更新する。直前の正常版は `settings.json.bak` 1世代だけ保持する。
+- 永続wireは`settings/schema.rs`でdomain/IPC DTOと分離し、`schemaVersion: 1`を保存時だけ付ける。唯一の既存版である番号なし/null/0のv0からv1への明示段階を通し、正常な値を保持して再保存する。型違い・範囲外のleafはその項目だけ既定値へ戻す。各section/fieldはoptional、通常の補正通知はowner方針により不要。NG listの不正値/合計quota超過は該当listを空へ、必須identity/targetのないLauncherは項目を除外し、重複ID/target・一覧quota違反は一覧を空へ戻す。表示metadataは不正なleafだけ既定値へ戻す。純粋な保存path文字列検証は登録/起動時の実ファイル検証とは別で、load中にfilesystem/COMを呼ばない。
+- 未対応のversion（型違い/負数を含む）は自動接続しないdomain既定値で起動し、対応版で開くか、終了後に本体・backupをコピーして移動する復旧案内を出す。未知field/重複wire keyでは既知の正常な項目だけ読めるが読取り専用とする。いずれも元ファイル/backupを保持し、自動migrationしない。全Settings/Launcher/window保存はtemporary作成/backup更新より前に現在のディスク内容を再検査し、起動後に将来版へ交換された場合も拒否する。Settings IPCは`unsupportedSchema`を返し、終了時の位置保存失敗は終了を妨げない。構文破損primaryから未対応backupを復旧する場合も、そのbytesをそのまま戻して読取り専用を維持する。
+- file decoderは8MiB全体をowned `Value` treeに展開せず、Serde JSONの借用`RawValue`と上限付きVisitorで既知fieldを参照する。文字列はraw JSON escapeの上限を検査し、rules/Launcher配列は201件目で打ち切ってからdomainへ変換する。PNG decoderのbounded buffer・既存の時間/heap上限は維持する。API根拠は[Serde JSON RawValue](https://docs.rs/serde_json/latest/serde_json/value/struct.RawValue.html)、[Serde map Visitor](https://serde.rs/deserialize-map.html)を参照（lockのcrate版は変更しない）。
 - JSON読込/serializerは8MiBまで。上限超過の新設定はtemporary/backupを変更する前に拒否し、候補stateも公開しない。巨大な既存primary/backupはmetadataとbounded readで検出して元fileを退避し、既存の復旧方針を適用する。IO/permission失敗を破損と決めつけて上書きしない。
 - 多重起動: 正式方針は同一アプリの複数起動禁止。最初にsingle-instance pluginを登録し、2回目は既存main windowをshow/unminimize/focusして終了する。起動setup完了前の通知は保留して完了時に処理し、引数/cwdをcommandとして解釈しない。設定の読込・初期作成・破損復旧より前に、同じapp dataの固定`settings.writer.lock`を非blockingで排他lockし、process lifetimeのmanaged stateが保持する。全Settings/Launcher/window保存で同じ所有権と保存先を確認する。pluginの通知が失敗しても2つ目のwriterは設定に触れる前に失敗する。lock fileは削除/atomic replaceしない（inodeの分裂を防ぐ）；OSが正常終了/異常終了で所有権を解放する。手動lock削除による起動回避は非サポートであり、他ユーザー/同一ユーザーの悪意あるprocessの隔離機構ではない。
 - ウィンドウ位置: `settings.json` の `window.position` に物理ピクセル座標を保存する。終了要求時とアプリ内の終了操作で保存し、次回起動時は現在のいずれかのモニター作業領域にタイトルバー相当（64 x 32px）以上が残る位置だけを復元する。モニター構成の変更で画面外になる位置は復元せず、初期の中央配置を使う。

@@ -12,6 +12,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 const FIXTURE: &str = "single_instance::windows_tests::native_instance_fixture";
+const FUTURE_SETTINGS: &str = "{\"schemaVersion\":999,\"twitch\":{\"channelLogin\":\"future_channel\",\"autoConnect\":true},\"futureData\":{\"must\":\"preserve exactly\"}}\n";
+const FUTURE_BACKUP: &str =
+    "{\"schemaVersion\":1,\"twitch\":{\"channelLogin\":\"preserved_backup\"}}\n";
 
 struct NoCredentials;
 impl AuthCredentialStore for NoCredentials {
@@ -49,8 +52,43 @@ fn native_instance_fixture() {
         twitch_auth_store: TwitchAuthStore::with_backend(std::sync::Arc::new(NoCredentials)),
         ..AppState::default()
     };
-    let app = crate::app_builder_with_state(state)
+    let builder = crate::app_builder_with_state(state);
+    let builder = if std::env::var_os("RICE_SETTINGS_SCHEMA_NATIVE").is_some() {
+        // Plugin setup precedes the unchanged production application setup.
+        // Seed only this child's overridden app-data directory, before its
+        // real SettingsStore::load obtains ownership and reads the file.
+        builder.plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("settings-schema-fixture")
+                .setup(|app, _| {
+                    let directory = app.path().app_data_dir()?;
+                    std::fs::create_dir_all(&directory)?;
+                    std::fs::write(directory.join("settings.json"), FUTURE_SETTINGS)?;
+                    std::fs::write(directory.join("settings.json.bak"), FUTURE_BACKUP)?;
+                    Ok(())
+                })
+                .build(),
+        )
+    } else {
+        builder
+    };
+    let app = builder
         .on_page_load(|webview, payload| {
+            if std::env::var_os("RICE_SETTINGS_SCHEMA_NATIVE").is_some()
+                && matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
+            {
+                let target = serde_json::to_string(
+                    &std::env::current_exe()
+                        .expect("native binary")
+                        .to_string_lossy(),
+                )
+                .expect("target JSON");
+                webview
+                    .eval(&format!(
+                        "window.__RICE_SCHEMA_TARGET = {target}; {}",
+                        include_str!("../../tests/settings-schema-native.js")
+                    ))
+                    .expect("native schema script");
+            }
             if std::env::var_os("RICE_LAUNCHER_NATIVE_BUDGET").is_some()
                 && matches!(payload.event(), tauri::webview::PageLoadEvent::Finished)
             {
@@ -69,6 +107,35 @@ fn native_instance_fixture() {
         assert_eq!(std::env::var("RICE_NATIVE_TEST_ROLE").expect("role"), "owner");
         let window = app.get_webview_window("main").expect("production main window");
         let hwnd = window.hwnd().expect("native HWND").0 as usize;
+        if std::env::var_os("RICE_SETTINGS_SCHEMA_NATIVE").is_some() {
+            let settings = app.state::<AppState>().settings.lock().expect("future settings").clone();
+            assert!(!settings.twitch.auto_connect);
+            assert!(settings.twitch.channel_login.is_empty());
+            std::thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(60);
+                loop {
+                    let url = window.url().expect("native document URL");
+                    if let Some(fragment @ ("rice-schema-ok" | "rice-schema-failed")) = url.fragment() {
+                        println!("RICE_SCHEMA_RESULT {}", serde_json::json!({"verified":fragment == "rice-schema-ok"}));
+                        std::io::stdout().flush().expect("flush schema result");
+                        // Exercise the registered production exit command and
+                        // its best-effort window-position save, not a kill.
+                        window.eval("void window.__TAURI_INTERNALS__.invoke('app_exit')").expect("production exit IPC");
+                        return;
+                    }
+                    if Instant::now() > deadline {
+                        println!("RICE_SCHEMA_RESULT {{\"verified\":false}}");
+                        std::io::stdout().flush().expect("flush schema timeout");
+                        window.app_handle().exit(1);
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            });
+            println!("RICE_NATIVE_READY {}", serde_json::json!({"hwnd":hwnd,"settingsPath":app.path().app_data_dir().expect("app data").join("settings.json")}));
+            std::io::stdout().flush().expect("flush schema readiness");
+            return;
+        }
         let mut settings = app.state::<AppState>().settings.lock().expect("settings").clone();
         settings.speech.blocked_words = vec!["preserve-native-owner".into()];
         let launcher_budget = std::env::var_os("RICE_LAUNCHER_NATIVE_BUDGET").is_some();
@@ -238,6 +305,100 @@ fn native_two_process_restore_and_focus() {
     drop(contender);
     drop(owner);
     remove_fixture_directory(&root);
+}
+
+#[test]
+#[ignore = "requires a Windows desktop and WebView2; explicitly run by native CI"]
+fn native_future_settings_preserved_through_ipc_and_exit() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root =
+        std::env::temp_dir().join(format!("rice-native-schema-{}-{nonce}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let mut owner = NativeChild(
+        Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", FIXTURE, "--nocapture"])
+            .env(
+                "RICE_NATIVE_TEST_ID",
+                format!("dev.rice.tests.schema{}", std::process::id()),
+            )
+            .env("RICE_NATIVE_TEST_ROLE", "owner")
+            .env("RICE_NATIVE_TEST_ROOT", &root)
+            .env("RICE_SETTINGS_SCHEMA_NATIVE", "1")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap(),
+    );
+    let stdout = owner.0.stdout.take().unwrap();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let line = line.unwrap();
+            for prefix in ["RICE_NATIVE_READY ", "RICE_SCHEMA_RESULT "] {
+                if let Some((_, record)) = line.split_once(prefix) {
+                    tx.send((
+                        prefix,
+                        serde_json::from_str::<serde_json::Value>(record).unwrap(),
+                    ))
+                    .unwrap();
+                }
+            }
+        }
+    });
+    let mut ready = None;
+    let mut result = None;
+    for _ in 0..2 {
+        let (prefix, record) = rx
+            .recv_timeout(Duration::from_secs(75))
+            .expect("native schema requires desktop/WebView2");
+        if prefix == "RICE_NATIVE_READY " {
+            ready = Some(record);
+        } else {
+            result = Some(record);
+        }
+    }
+    let mut status = None;
+    wait_until(
+        || {
+            status = owner.0.try_wait().unwrap();
+            status.is_some()
+        },
+        "production app_exit closes normally despite read-only settings",
+    );
+    assert!(status.unwrap().success());
+    let ready = ready.expect("production startup");
+    let path = std::path::Path::new(ready["settingsPath"].as_str().unwrap());
+    assert!(
+        path.starts_with(&root),
+        "fixture remains inside isolated app-data"
+    );
+    assert_eq!(std::fs::read_to_string(path).unwrap(), FUTURE_SETTINGS);
+    assert_eq!(
+        std::fs::read_to_string(path.with_file_name("settings.json.bak")).unwrap(),
+        FUTURE_BACKUP
+    );
+    assert!(
+        std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .all(|entry| {
+                let name = entry.unwrap().file_name();
+                matches!(
+                    name.to_str(),
+                    Some("settings.json" | "settings.json.bak" | "settings.writer.lock")
+                )
+            }),
+        "no temporary or quarantine files"
+    );
+    println!("Native settings schema: {}", result.as_ref().unwrap());
+    drop(owner);
+    remove_fixture_directory(&root);
+    assert_eq!(
+        result.expect("production IPC verification")["verified"],
+        true
+    );
 }
 
 #[test]

@@ -1,5 +1,9 @@
 # 実装 TODO
 
+- [ ] Issue #64: versioned persistence wireをdomainから分離し、旧schemaを段階migrationする。全fieldはoptionalとして欠落・型/範囲/意味違反を既定値へ戻し、#88の共通validatorでload/saveの不変条件を揃える。未知future version/未知fieldを黙って捨てず、設定・Launcher・window保存と終了からの上書きを防ぐ。fixture、primary/backup保持、writer、両OS/native CIで検証する。
+
+2026-10-05 local検証: v0（番号なし/null/0）→v1、14 fixtureと7 schemaテスト、元bytesを保持するmigration backup、保存直前の将来版への交換、future backupの復旧を実装した。Rust all-features262件/no-default211件とfmt/strict clippy、frontend321件とformat/lint/typecheck/build/security/license、policy21件、Docker contextが成功。最大8MiB roundtripは4.56秒/追加Rust heap25.5MiBで既存予算内。Windows本番起動/Settings・Launcher IPC拒否/正常終了の追加テストと両OS CIが成功するまでは未完了とする。
+
 - [x] main CI の依存監査: Tailwind 3 のビルド依存から入る braces（GHSA-vfj7-8cjw-p6xm）を依存グラフから除去する。公式 Tailwind 4/Vite 構成へ移行し、既存配色・日本語フォント・寸法・キーボード focus を保持する。作業ブランチの監査・品質・Windows native CI の成功を確認してから main へ反映する。監査の閾値・例外・失敗条件は緩めない。
 
 2026-10-05: source af59b8c の作業ブランチで [audit](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928344)、[quality 全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928538)、[Windows native](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928782)、[両OS契約](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928450)、[settings permission](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928626)、[feature matrix](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928430)がすべて成功した。frontend 289 件（実Vite経路のCSS/runtime要件7件を含む）、Rust all-features244件、strict clippy/fmt、installed graph SBOM6件も成功した。実WebViewは既存色/日本語フォント/mono/156px tile/4rem icon/二層shadow/keyboard focus の16検査が成功し、200 tile描画704ms・設定IPC766ms・JS heap差分45.3MiB・不正4要求拒否/設定保持・2process復元/focusを確認した。braces/micromatch/chokidar/fast-glob の経路を除去し、npm High/Critical は0、Moderate8件と既存Rust例外2件は残る。新規releaseの実配布/通知/packaged smoke（#91/#102）は別に未完了で、CI成功を配布準備完了へ換算しない。以下の古いissue検証メモにある braces 配布停止は、各検証時点の履歴である。
