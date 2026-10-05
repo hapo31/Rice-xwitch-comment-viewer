@@ -4,6 +4,14 @@ name: Windows packaged capability diagnostics
 # while developing the UI probe. They NEVER satisfy the release publication
 # gate; final evidence still requires the normal candidate's same-run smoke.
 on:
+  workflow_call:
+    inputs:
+      candidate_run:
+        required: true
+        type: string
+      candidate_commit:
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       candidate_run:

@@ -25,6 +25,7 @@ public static class RiceNativeProbe {
   [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref Point p);
   [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int command);
+  [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int width,int height,uint flags);
   [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
   [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
   [DllImport("user32.dll")] static extern bool EnumWindows(Func<IntPtr,IntPtr,bool> callback, IntPtr arg);
@@ -44,6 +45,16 @@ public static class RiceNativeProbe {
     return new { left=r.Left, top=r.Top, width=r.Right-r.Left, height=r.Bottom-r.Top, minimized=IsIconic(h), maximized=IsZoomed(h) };
   }
   public static void Restore(int pid) { var h=Window(pid); ShowWindow(h,9); SetForegroundWindow(h); Thread.Sleep(250); }
+  public static void Prepare(int pid) {
+    // Set up a deterministic on-screen fixture, not proof of UI resizing. The
+    // actual titlebar/resize-handle tests separately measure physical input.
+    var area=System.Windows.Forms.Screen.PrimaryScreen.WorkingArea;
+    int width=Math.Min(1000,area.Width-100), height=Math.Min(680,area.Height-100);
+    if(width<920 || height<560) throw new Exception("Desktop too small for the production window minimum");
+    var h=Window(pid); ShowWindow(h,9);
+    if(!SetWindowPos(h,IntPtr.Zero,area.Left+20,area.Top+30,width,height,0x0044)) throw new Exception("Cannot prepare owned on-screen window");
+    SetForegroundWindow(h); Thread.Sleep(250);
+  }
   public static void Click(int pid,int x,int y) {
     SetForegroundWindow(Window(pid)); Thread.Sleep(200); var p=Screen(pid,x,y); SetCursorPos(p.X,p.Y); Button(2); Button(4);
   }
@@ -113,6 +124,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
     try {
         switch ($request.action) {
             'state' { $value = [RiceNativeProbe]::State($RicePid) }
+            'prepare' { [RiceNativeProbe]::Prepare($RicePid); $value = [RiceNativeProbe]::State($RicePid) }
             'restore' { [RiceNativeProbe]::Restore($RicePid); $value = [RiceNativeProbe]::State($RicePid) }
             'drag' { [RiceNativeProbe]::Drag($RicePid, $request.x, $request.y, $request.dx, $request.dy); $value = [RiceNativeProbe]::State($RicePid) }
             'click' { [RiceNativeProbe]::Click($RicePid, $request.x, $request.y); $value = $true }

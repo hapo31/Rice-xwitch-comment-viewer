@@ -146,6 +146,7 @@ async function run() {
     await invoke("settings_update", { patch: {} });
     await wait(() => evaluate(`window.__riceCapabilityProbe.events.some(x => x.event==='app://log' && x.payload.message==='設定を保存しました。')`), "real backend settings log event");
     proof.backendEvent = true;
+    await native.call("prepare");
     await click('button[aria-label="最大化"]');
     await wait(async () => (await native.call("state")).maximized && await invoke("plugin:window|is_maximized", { label: "main" }), "native maximize"); proof.maximize = true;
     await click('button[aria-label="元に戻す"]');
@@ -158,8 +159,9 @@ async function run() {
     let after = await native.call("drag", { x: Math.round(250 * geometry.scale), y: Math.round(16 * geometry.scale), dx: 50, dy: 25 });
     assert.ok(Math.abs(after.left - before.left) >= 25 && Math.abs(after.top - before.top) >= 10, "Titlebar native drag must move the real HWND"); proof.titlebarDrag = true;
     before = after;
-    after = await native.call("drag", { x: Math.round((geometry.width - 2) * geometry.scale), y: Math.round(geometry.height / 2 * geometry.scale), dx: -55, dy: 0 });
-    assert.ok(Math.abs(after.width - before.width) >= 25, "Resize handle must resize the real HWND");
+    await evaluate(`window.__riceCapabilityProbe.events=window.__riceCapabilityProbe.events.filter(x=>x.event!=='tauri://resize'); true`);
+    after = await native.call("drag", { x: Math.round((geometry.width - 2) * geometry.scale), y: Math.round(geometry.height / 2 * geometry.scale), dx: -20, dy: 0 });
+    assert.ok(Math.abs(after.width - before.width) >= 12, "Resize handle must resize the real HWND");
     await wait(() => evaluate(`window.__riceCapabilityProbe.events.some(x=>x.event==='tauri://resize')`), "real native resize event"); proof.resizeDrag = true;
     await evaluate(`location.hash='/launcher'; true`);
     await wait(() => evaluate(`!!document.querySelector('button[aria-label="アプリをランチャーに追加"]:not(:disabled)')`), "production Launcher ready");
