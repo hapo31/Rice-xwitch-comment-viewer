@@ -384,6 +384,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Windows 10 スタートメニュー風の Launcher 画面を追加する。
 - [x] Launcher でアプリの選択/DnD登録、削除、単体起動、一斉起動を実装する。
 - [x] Launcher の登録内容を永続化し、将来の色変更・グループ・並べ替え・Webリンクに拡張できるモデルにする。
+- [ ] Issue #196: Launcher追加処理が`added`/`duplicate`/`rejected`の操作結果を明示し、共有state更新とPromise解決の順序や並行追加に依存せず正しい通知を表示する。調査、結果モデル実装、store先行更新・新規/重複/混在/並行ケースの回帰、関連検証、設計とTODOの整合確認を行う。
 - [x] Issue #68: Launcher のアイコン抽出を timeout/kill/reap 付きの上限制御 worker へ移し、設定 lock 外で実行して競合する設定変更を merge する。抽出失敗は汎用アイコンと bounded Logs へフォールバックする。
 - [x] Issue #18: Launcher の削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応させる。
 - [x] Issue #24: チャット・ログ・状態更新時にも Launcher の DnD listener を再登録せず、mount 中の購読を維持し、最新 handler と遅延登録後の cleanup をテストする。
