@@ -1,6 +1,8 @@
 # 実装 TODO
 
-- [ ] main CI の依存監査: Tailwind 3 のビルド依存から入る braces（GHSA-vfj7-8cjw-p6xm）を依存グラフから除去する。公式 Tailwind 4/Vite 構成へ移行し、既存配色・日本語フォント・寸法・キーボード focus を保持する。作業ブランチの監査・品質・Windows native CI の成功を確認するまで main へ反映しない。監査の閾値・例外・失敗条件は緩めない。
+- [x] main CI の依存監査: Tailwind 3 のビルド依存から入る braces（GHSA-vfj7-8cjw-p6xm）を依存グラフから除去する。公式 Tailwind 4/Vite 構成へ移行し、既存配色・日本語フォント・寸法・キーボード focus を保持する。作業ブランチの監査・品質・Windows native CI の成功を確認してから main へ反映する。監査の閾値・例外・失敗条件は緩めない。
+
+2026-10-05: source af59b8c の作業ブランチで [audit](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928344)、[quality 全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928538)、[Windows native](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928782)、[両OS契約](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928450)、[settings permission](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928626)、[feature matrix](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928430)がすべて成功した。frontend 289 件（実Vite経路のCSS/runtime要件7件を含む）、Rust all-features244件、strict clippy/fmt、installed graph SBOM6件も成功した。実WebViewは既存色/日本語フォント/mono/156px tile/4rem icon/二層shadow/keyboard focus の16検査が成功し、200 tile描画704ms・設定IPC766ms・JS heap差分45.3MiB・不正4要求拒否/設定保持・2process復元/focusを確認した。braces/micromatch/chokidar/fast-glob の経路を除去し、npm High/Critical は0、Moderate8件と既存Rust例外2件は残る。新規releaseの実配布/通知/packaged smoke（#91/#102）は別に未完了で、CI成功を配布準備完了へ換算しない。以下の古いissue検証メモにある braces 配布停止は、各検証時点の履歴である。
 
 - [x] Issue #76: Windows shortcutを起動直前に構造化して検証し、壊れた/移動したtargetをfailureへ返す。起動依頼の受付と対象起動の確認を区別し、日本語の修復/再登録案内、arguments/working directory、権限要求と直接exe/部分成功の回帰をWindows integrationとUIで検証する。
 
