@@ -1,5 +1,15 @@
 # 調査メモ
 
+
+## 2026-10-05 TypeScript 7 と互換ツールチェーン
+
+- [TypeScript 7正式版の公式説明](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/)とnpm公開metadataを照合し、`typescript@7.0.2`を採用した。`tsc`は正式native compilerを起動する。`@typescript/native-preview`やTypeScript 6 API互換aliasは不要で、既存のBiome/Vite/Vitest経路にCompiler API直接依存はない。
+- 元の`moduleResolution: Node`でTS5108を再現し、[Bundler解決](https://www.typescriptlang.org/tsconfig/moduleResolution.html)へ移行した。`strict`とES2020は維持し、`rootDir: ./src`、`types: ["vite/client"]`、`noUncheckedSideEffectImports: true`を明示する。[Viteのclient型](https://vite.dev/guide/features#client-types)でCSS/import.metaを解決し、TS7の型検査やside-effect import検査を無効化しない。既存TS/TSXはこの構成で型エラーなし。
+- Vite 8.3.2、React plugin 6.1.2、Vitest 4.1.11、PostCSS 8.5.29、React Virtual 3.14.13、dialog 2.8.1、React Router 6.30.6へ更新し、React 18用`@types/react`18.3.31/`@types/react-dom`18.3.7を揃えた。Vite/Vitest用`@types/node`22.20.5とTesting Library共通peerの`@testing-library/dom`10.4.2を直接宣言する。Tauri Rust/API/CLI 2.12.1の整合性も維持する。
+- React 18、Router 6、既存Node 20.19.4開発コンテナ/Node 22.22.0 CIに対応する安定版を選んだ。Vitest 5とjest-dom 6.10以降はNode 20を対象外とし、jsdom 30はNode 22.22.2以上を要求するため採用しない。既存のjsdom 27.4.0、jest-dom 6.9.1、Biome/Tailwind/Testing Library/Tauriとアイコンの互換版は継続する。React 19やRouter 7への製品側のmajor移行はTS7移行の条件ではない。
+- lockfileはpnpm 8.11.0で生成し、TypeScript 7のLinux/Windowsを含むOS別optional binaryとintegrityを保持する。`--frozen-lockfile --ignore-scripts --strict-peer-dependencies`のinstallとNode 22.22.0での`tsc --version`（7.0.2）、型検査、format/lint/security、frontend322件、本番buildを確認した。npm auditはHigh/Critical 0件、React RouterのModerate 2件を報告する。監査の例外追加や失敗条件の緩和はしていない。
+- GitHub Actionsで同じsourceの品質・依存監査・Windows実動作を確認する。ローカルにはRust toolchain/Windows環境がないため、ローカルfrontend成功だけでnative動作検証済みとは扱わない。
+
 ## 2026-10-05 Issue #101: Rice自身のMIT正本と実配布物の最終照合
 
 - 権利者が既に配置したMIT正本のSHA-256 eeb4b00cfe4a9c135ab47b643c44f4c0b747318c0d52cee8580bf7c3d2ca0667を維持した。npm/Cargo/bundle metadata、README、inbound=outboundの貢献条件、外部GPL参考実装をコピーしない方針を照合し、現在のGitHub repository license APIもSPDX MIT/正本LICENSEを返す。欠落/改変/metadata不一致/installer・portable同梱漏れ/貢献条件欠落のpolicy7件が成功した。
