@@ -1,0 +1,6 @@
+# Preserve the canonical bytes checked against Linux-built release materials,
+# including Git for Windows checkouts with core.autocrlf=true.
+LICENSE text eol=lf
+pnpm-lock.yaml text eol=lf
+src-tauri/Cargo.lock text eol=lf
+src-tauri/Cargo.toml text eol=lf

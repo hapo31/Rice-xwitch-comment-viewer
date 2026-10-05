@@ -1,6 +1,44 @@
 export function isValidTwitchChannelLogin(value: string): boolean {
   const channel = value.trim();
-  return channel.length === 0 || /^[a-zA-Z0-9_]{3,25}$/.test(channel);
+  return (
+    utf8Bytes(value) <= 128 &&
+    !hasControl(value) &&
+    (channel.length === 0 || /^[a-zA-Z0-9_]{3,25}$/.test(channel))
+  );
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+function hasControl(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const point = character.codePointAt(0) ?? 0;
+    return point < 32 || (point >= 127 && point <= 159);
+  });
+}
+export function isValidBlockedWord(value: string): boolean {
+  return (
+    Boolean(value.trim()) &&
+    !hasControl(value) &&
+    Array.from(value).length <= 500 &&
+    utf8Bytes(value) <= 2048
+  );
+}
+export function isValidConfirmationText(value: string): boolean {
+  return !hasControl(value) && Array.from(value).length <= 120 && utf8Bytes(value) <= 480;
+}
+export function blockedRulesError(
+  users: readonly string[],
+  words: readonly string[],
+): string | undefined {
+  if (users.length > 200 || words.length > 200) return "NGルールは各200件以内にしてください。";
+  if (users.some((user) => !user.trim() || !isValidTwitchChannelLogin(user)))
+    return "NGユーザーは英数字・_の3〜25文字で入力してください。";
+  if (words.some((word) => !isValidBlockedWord(word)))
+    return "NGワードは制御文字を含まない1〜500文字・2048 UTF-8バイト以内にしてください。";
+  if ([...users, ...words].reduce((sum, value) => sum + utf8Bytes(value), 0) > 64 * 1024)
+    return "NGユーザーとNGワードの合計は64KiB UTF-8以内にしてください。";
+  return undefined;
 }
 
 export function isValidPort(value: string | number): boolean {
@@ -23,7 +61,7 @@ export function isValidRepeatSuppressionSeconds(value: string | number): boolean
 
 export function isValidBouyomiHost(value: string): boolean {
   const host = value.trim();
-  if (!host || /[\s\[\]]/.test(host)) {
+  if (!host || utf8Bytes(value) > 253 || hasControl(value) || /[\s\[\]]/.test(host)) {
     return false;
   }
 
@@ -56,7 +94,11 @@ export function isValidBouyomiHost(value: string): boolean {
     return sections.length === 2 ? labels.length < 8 : labels.length === 8;
   }
 
-  return host.split(".").every((label) => /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label));
+  return host
+    .split(".")
+    .every(
+      (label) => label.length <= 63 && /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label),
+    );
 }
 
 export function formatBouyomiAddress(host: string, port: number): string {

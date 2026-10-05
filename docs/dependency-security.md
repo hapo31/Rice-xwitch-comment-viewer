@@ -8,6 +8,8 @@ Cargoは脆弱性、unmaintained、unsound、yankedをすべてblockingとし、
 
 Dependabotはnpm/Cargo/GitHub Actions/Dockerを毎週確認し、更新PRのlockfileと通常テストをreviewする。Docker digest/toolchain更新は `build/release-inputs.json` とDockerfileの両方を揃える。botの変更を自動mergeしない。
 
+2026-10-05: braces の High finding（GHSA-vfj7-8cjw-p6xm）は、Tailwind 3 の build path を公式 Tailwind 4.3.3/Vite plugin へ移行して依存グラフから除去した。[source af59b8c の監査](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37250928344)は例外/閾値を変えずに成功し、npm High/Critical 0・Moderate8件、Rust の期限付き例外2件を報告した。全 advisory が解消した、配布物の第三者通知や Windows packaged smoke まで完了したという意味ではない。新規変更は作業ブランチで品質・監査・native Windows を確認してから main へ反映する。
+
 ## SBOMの対象と制約
 
 各新規Windows releaseに `Rice.sbom.cdx.json` を添付する。形式は [CycloneDX 1.5](https://cyclonedx.org/docs/1.5/json/)。generator `rice-sbom` のversionをmetadataへ記録する。exact source commit、2つのlockfile digest、installer/portable ZIP digestをbuild materialと照合し、ずれた場合はreleaseを止める。公開workflowは従来の全asset checksum検証を維持する。

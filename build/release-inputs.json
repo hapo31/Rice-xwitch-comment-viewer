@@ -7,6 +7,12 @@
   "debianSnapshot": "20260921T000000Z",
   "pnpmVersion": "8.11.0",
   "cargoXwinVersion": "0.22.0",
+  "nsisVersion": "3.11",
+  "nsisSourceUrl": "https://deb.debian.org/debian/pool/main/n/nsis/nsis_3.11.orig.tar.gz",
+  "nsisSourceSha256": "9643566e50357918f23c0c4afdac0be8b5305b031b3aeb69f86c17a0a7eb469d",
+  "nsisWindowsUrl": "https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip",
+  "nsisWindowsSha256": "c7d27f780ddb6cffb4730138cd1591e841f4b7edb155856901cdf5f214394fa1",
+  "nsisSourceDateEpoch": 1741475460,
   "windowsTarget": "x86_64-pc-windows-msvc",
   "remainingNondeterminism": [
     "MSVC SDK/CRT feeds selected by cargo-xwin: downloaded cache files are inventoried with SHA-256 in BUILD-MATERIALS.json.",

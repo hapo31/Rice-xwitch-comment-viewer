@@ -4,7 +4,9 @@ use super::{SpeechAdapter, SpeechFailure};
 use crate::settings::{SpeechAdapterKind, SpeechSettings};
 use std::sync::Arc;
 
-pub struct ConfiguredAdapterFactory;
+pub struct ConfiguredAdapterFactory {
+    pub(crate) policy: Arc<super::destination::DestinationPolicy>,
+}
 
 impl SpeechAdapterFactory for ConfiguredAdapterFactory {
     fn select(
@@ -13,9 +15,11 @@ impl SpeechAdapterFactory for ConfiguredAdapterFactory {
         dispatcher: SpeechDispatcher,
     ) -> Result<Arc<dyn SpeechAdapter>, SpeechFailure> {
         match settings.adapter {
-            SpeechAdapterKind::Bouyomi => {
-                Ok(Arc::new(bouyomi_from_settings(settings, dispatcher)?))
-            }
+            SpeechAdapterKind::Bouyomi => Ok(Arc::new(bouyomi_from_settings(
+                settings,
+                dispatcher,
+                self.policy.clone(),
+            )?)),
         }
     }
     fn connection_confirmation(&self, settings: &SpeechSettings) -> Option<String> {
@@ -34,7 +38,10 @@ impl SpeechAdapterFactory for ConfiguredAdapterFactory {
 pub(crate) fn bouyomi_from_settings(
     settings: &SpeechSettings,
     dispatcher: SpeechDispatcher,
+    policy: Arc<super::destination::DestinationPolicy>,
 ) -> Result<BouyomiAdapter, SpeechFailure> {
+    crate::settings::validation::validate_speech(settings)
+        .map_err(|error| classify_error(BouyomiError::Destination(error).into()))?;
     BouyomiAdapter::with_dispatcher(
         &settings.bouyomi_host,
         settings.bouyomi_port,
@@ -47,5 +54,6 @@ pub(crate) fn bouyomi_from_settings(
         },
         dispatcher,
     )
+    .map(|adapter| adapter.with_destination_policy(policy, settings.bouyomi_remote_mode))
     .map_err(|detail| classify_error(BouyomiError::Configuration(detail).into()))
 }

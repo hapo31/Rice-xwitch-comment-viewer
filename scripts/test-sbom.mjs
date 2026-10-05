@@ -38,6 +38,27 @@ test("wrong source, altered lockfile or artifact and missing build inventory fai
     const input = args(); mutate(input); assert.throws(() => createSbom(input));
   }
 });
+test("native compiler hash belongs to the NSIS tool, not a fictitious extra component", () => {
+  const input = args();
+  input.materials.inputs.nsisVersion = "3.11";
+  input.materials.tools.nsis = "v3.11";
+  input.materials.toolHashes = { nsis: hash("native compiler") };
+  const bom = createSbom(input);
+  const nsis = bom.components.find(component => component["bom-ref"] === "build-tool:nsis");
+  assert.equal(nsis.version, "v3.11");
+  assert.deepEqual(nsis.hashes, [{ alg: "SHA-256", content: hash("native compiler") }]);
+  assert.ok(!bom.components.some(component => component.name === "nsisCompilerSha256"));
+  for (const mutate of [
+    value => delete value.materials.toolHashes.nsis,
+    value => value.materials.toolHashes.nsis = "invalid",
+    value => value.materials.toolHashes.unknown = hash("unknown"),
+    value => value.materials.toolHashes.toString = hash("inherited name"),
+    value => value.materials.tools.nsis = "v3.08",
+  ]) {
+    const wrong = structuredClone(input); mutate(wrong);
+    assert.throws(() => createSbom(wrong));
+  }
+});
 test("unresolved dependencies cannot produce a misleading complete SBOM", () => {
   const metadata = structuredClone(cargo);
   metadata.resolve.nodes[0].deps.push(edge("absent"));
@@ -53,5 +74,6 @@ test("installed project graph produces referentially complete SBOM", { skip: !pr
   const bom = createSbom(input);
   assert.ok(bom.components.length > 400);
   assert.ok(bom.components.some((component) => component.purl?.startsWith("pkg:cargo/tauri@") && component.scope === "required"));
-  assert.ok(bom.components.some((component) => component.purl?.startsWith("pkg:npm/braces@") && component.scope === "excluded"));
+  assert.ok(bom.components.some((component) => component.purl?.startsWith("pkg:npm/tailwindcss@") && component.scope === "excluded"));
+  assert.ok(!bom.components.some((component) => component.purl?.startsWith("pkg:npm/braces@")));
 });

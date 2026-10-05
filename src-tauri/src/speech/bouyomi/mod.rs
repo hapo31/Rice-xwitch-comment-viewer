@@ -9,6 +9,7 @@ use crate::speech::{SpeechFailure, SpeechFuture, SpeechPlaybackCompletion};
 pub(crate) use error::{classify_error, BouyomiError};
 use serde::Serialize;
 use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -32,6 +33,12 @@ pub struct BouyomiAddress {
 }
 
 impl BouyomiAddress {
+    pub(crate) fn host(&self) -> &str {
+        &self.host
+    }
+    pub(crate) fn port(&self) -> u16 {
+        self.port
+    }
     pub fn new(host: impl AsRef<str>, port: u16) -> Result<Self, String> {
         if port == 0 {
             return Err("棒読みちゃんのポート番号が無効です。".to_string());
@@ -53,13 +60,20 @@ impl BouyomiAddress {
 }
 
 pub fn validate_bouyomi_host(host: &str) -> Result<String, String> {
+    let raw_bytes = host.len();
+    let raw_controls = host.chars().any(char::is_control);
     let host = host.trim();
     let invalid = || {
         "棒読みちゃんのホストが無効です。IPv4、DNS名、または角括弧なしのIPv6アドレスを入力してください。"
             .to_string()
     };
 
-    if host.is_empty() || host.contains(char::is_whitespace) || host.contains(['[', ']']) {
+    if host.is_empty()
+        || raw_bytes > 253
+        || raw_controls
+        || host.contains(char::is_whitespace)
+        || host.contains(['[', ']'])
+    {
         return Err(invalid());
     }
 
@@ -75,6 +89,7 @@ pub fn validate_bouyomi_host(host: &str) -> Result<String, String> {
     if host.parse::<IpAddr>().is_ok()
         || host.split('.').all(|label| {
             !label.is_empty()
+                && label.len() <= 63
                 && !label.starts_with('-')
                 && !label.ends_with('-')
                 && label
@@ -94,6 +109,8 @@ pub struct BouyomiAdapter {
     pub defaults: BouyomiTalkConfig,
     pub timeout: Duration,
     dispatcher: BouyomiDispatcher,
+    destination_policy: Arc<super::destination::DestinationPolicy>,
+    remote_mode: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -162,7 +179,18 @@ impl BouyomiAdapter {
             defaults,
             timeout: Duration::from_secs(2),
             dispatcher,
+            destination_policy: Arc::default(),
+            remote_mode: false,
         })
+    }
+    pub(crate) fn with_destination_policy(
+        mut self,
+        policy: Arc<super::destination::DestinationPolicy>,
+        remote_mode: bool,
+    ) -> Self {
+        self.destination_policy = policy;
+        self.remote_mode = remote_mode;
+        self
     }
 
     pub async fn health_check(
@@ -312,13 +340,17 @@ impl BouyomiAdapter {
     }
 
     async fn connect_to_address(&self) -> anyhow::Result<TcpStream> {
-        Ok(timeout(
-            self.timeout,
-            TcpStream::connect((self.address.host.as_str(), self.address.port)),
+        let addresses = self
+            .destination_policy
+            .connection_addresses(&self.address, self.remote_mode)
+            .await
+            .map_err(BouyomiError::Destination)?;
+        Ok(
+            timeout(self.timeout, TcpStream::connect(addresses.as_slice()))
+                .await
+                .map_err(|_| BouyomiError::ConnectTimeout)?
+                .map_err(BouyomiError::ConnectIo)?,
         )
-        .await
-        .map_err(|_| BouyomiError::ConnectTimeout)?
-        .map_err(BouyomiError::ConnectIo)?)
     }
 
     #[cfg(test)]
@@ -505,7 +537,11 @@ fn adapter_from_settings(
         .settings
         .lock()
         .map_err(|error| SpeechFailure::unknown(error.to_string()))?;
-    super::factory::bouyomi_from_settings(&settings.speech, state.speech_runtime.dispatcher())
+    super::factory::bouyomi_from_settings(
+        &settings.speech,
+        state.speech_runtime.dispatcher(),
+        state.speech_runtime.destination_policy(),
+    )
 }
 
 #[cfg(test)]
@@ -724,54 +760,58 @@ mod tests {
     async fn shared_dispatcher_keeps_control_behind_an_in_flight_talk(
         command: BouyomiControlCommand,
     ) {
+        use crate::speech::{runtime::SpeechRuntime, SpeechControl};
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
-        let dispatcher = BouyomiDispatcher::default();
-        let mut talk_adapter = BouyomiAdapter::with_dispatcher(
-            "127.0.0.1",
-            port,
-            BouyomiTalkConfig::default(),
-            dispatcher.clone(),
-        )
-        .unwrap();
-        talk_adapter.timeout = Duration::from_secs(5);
-        let mut control_adapter = BouyomiAdapter::with_dispatcher(
-            "127.0.0.1",
-            port,
-            BouyomiTalkConfig::default(),
-            dispatcher,
-        )
-        .unwrap();
-        control_adapter.timeout = Duration::from_secs(5);
-
-        // A payload larger than the socket send buffer lets the fake server hold
-        // the first write open. The dispatcher must prevent a barrier command
-        // from opening a second connection until that physical write has settled.
-        let talk =
-            tokio::spawn(async move { talk_adapter.speak(&"a".repeat(8 * 1024 * 1024)).await });
-        let (mut talk_stream, _) = listener.accept().await.unwrap();
-        let control = tokio::spawn(async move { control_adapter.control(command).await });
-
-        assert!(timeout(Duration::from_millis(75), listener.accept())
+        let runtime = SpeechRuntime::default();
+        let mut settings = crate::settings::AppSettings::default().speech;
+        settings.bouyomi_host = "127.0.0.1".into();
+        settings.bouyomi_port = port;
+        let talk = runtime.select(&settings).unwrap();
+        let control = runtime.select(&settings).unwrap();
+        // Hold the actual production SpeechSession permit through submission
+        // and the caller's local application step. No assumption about the OS
+        // socket send buffer, large writes or a wall-clock negative timeout.
+        let talk_session = talk.lock().await;
+        talk_session
+            .speak(SpeechRequest {
+                id: "ordered-talk".into(),
+                source_message_id: None,
+                text: "順序検証".into(),
+            })
             .await
-            .is_err());
-
-        let drain = tokio::spawn(async move {
-            let mut bytes = Vec::new();
-            talk_stream.read_to_end(&mut bytes).await.unwrap();
-            bytes
-        });
-        talk.await.unwrap().unwrap();
+            .unwrap();
+        let (mut talk_stream, _) = listener.accept().await.unwrap();
+        let mut talk_packet = Vec::new();
+        talk_stream.read_to_end(&mut talk_packet).await.unwrap();
+        assert_eq!(
+            talk_packet,
+            build_talk_packet(&BouyomiTalkConfig::default(), "順序検証")
+        );
+        let control_command = match command {
+            BouyomiControlCommand::Pause => SpeechControl::Pause,
+            BouyomiControlCommand::Skip => SpeechControl::Skip,
+            BouyomiControlCommand::Clear => SpeechControl::Clear,
+            BouyomiControlCommand::Resume => SpeechControl::Resume,
+        };
+        let pending_control = async {
+            let session = control.lock().await;
+            session.control(control_command).await
+        };
+        tokio::pin!(pending_control);
+        assert!(futures_util::poll!(pending_control.as_mut()).is_pending());
+        assert!(runtime.dispatcher().try_lock().is_err());
+        // Releasing the same real permit must wake the control path. Its exact
+        // packet is checked after the talk packet, not replaced by a fake gate.
+        drop(talk_session);
+        pending_control.await.unwrap();
         let (mut control_stream, _) = listener.accept().await.unwrap();
         let mut control_packet = [0_u8; 2];
         control_stream
             .read_exact(&mut control_packet)
             .await
             .unwrap();
-        control.await.unwrap().unwrap();
-
         assert_eq!(control_packet, command.packet());
-        assert_eq!(&drain.await.unwrap()[0..2], &1_i16.to_le_bytes());
     }
 
     #[tokio::test]

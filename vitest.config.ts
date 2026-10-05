@@ -12,7 +12,7 @@ export default defineConfig({
         test: {
           name: "unit",
           environment: "node",
-          include: ["src/**/*.test.{ts,tsx}"],
+          include: ["src/**/*.test.{ts,tsx}", "scripts/frontend-css.test.mjs"],
           exclude: ["src/**/*.dom.test.{ts,tsx}"],
         },
       },

@@ -6,6 +6,8 @@ mod settings;
 mod single_instance;
 mod speech;
 mod twitch;
+#[cfg(all(test, feature = "app"))]
+mod twitch_test_ports;
 
 #[cfg(feature = "app")]
 use app_events::{
@@ -29,6 +31,8 @@ use speech::commands::{
     speech_skip, speech_test,
 };
 #[cfg(feature = "app")]
+use speech::destination::speech_authorize_endpoint;
+#[cfg(feature = "app")]
 use speech::{
     emit_current_queue, speech_queue_dismiss, speech_queue_dismiss_history, speech_queue_reload,
     speech_queue_remove, speech_queue_retry,
@@ -39,7 +43,7 @@ use std::sync::Mutex;
 #[cfg(feature = "app")]
 use tauri::{Manager, PhysicalPosition, WindowEvent};
 #[cfg(feature = "app")]
-use twitch::{
+use twitch::commands::{
     twitch_connect, twitch_disconnect, twitch_get_stored_auth, twitch_poll_auth, twitch_start_auth,
     twitch_stop_chat, twitch_validate_auth,
 };
@@ -123,6 +127,7 @@ fn app_builder_with_state(state: AppState) -> tauri::Builder<tauri::Wry> {
             speech_health_check,
             speech_health_probe,
             speech_connection_diagnostics,
+            speech_authorize_endpoint,
             speech_test,
             speech_pause,
             speech_resume,

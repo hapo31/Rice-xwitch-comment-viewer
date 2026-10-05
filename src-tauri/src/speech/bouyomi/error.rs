@@ -3,6 +3,8 @@ use std::io::{Error, ErrorKind};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BouyomiError {
+    #[error("Bouyomi destination policy: {0}")]
+    Destination(crate::settings::validation::ValidationError),
     #[error("invalid Bouyomi configuration: {0}")]
     Configuration(String),
     #[error("Bouyomi connect timed out")]
@@ -24,6 +26,15 @@ pub(crate) enum BouyomiError {
 pub(crate) use crate::speech::{FailureCode, SpeechFailure};
 
 pub(crate) fn classify_error(error: anyhow::Error) -> SpeechFailure {
+    if let Some(BouyomiError::Destination(failure)) = error.downcast_ref::<BouyomiError>() {
+        return SpeechFailure {
+            code: FailureCode::Configuration,
+            status: SpeechStatus::Error,
+            retryable: false,
+            user_message: format!("{} {}", failure.message, failure.recovery),
+            detail: format!("{}: {}", failure.field, failure.code),
+        };
+    }
     if let Some(failure) = error.downcast_ref::<SpeechFailure>() {
         let mut classified = failure.clone();
         classified.detail = format!("{}; {}", classified.detail, error);
@@ -33,7 +44,9 @@ pub(crate) fn classify_error(error: anyhow::Error) -> SpeechFailure {
     use SpeechStatus::{Disconnected, Error as Failed};
 
     let (code, status, retryable) = match error.downcast_ref::<BouyomiError>() {
-        Some(BouyomiError::Configuration(_)) => (Code::Configuration, Failed, false),
+        Some(BouyomiError::Configuration(_) | BouyomiError::Destination(_)) => {
+            (Code::Configuration, Failed, false)
+        }
         Some(BouyomiError::ConnectTimeout) => (Code::ConnectTimeout, Disconnected, true),
         Some(BouyomiError::ConnectIo(source)) => match source.kind() {
             ErrorKind::ConnectionRefused => (Code::ConnectionRefused, Disconnected, true),

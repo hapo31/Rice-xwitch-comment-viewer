@@ -43,6 +43,7 @@ Twitch chat -> Tauri app -> Speech adapter -> bouyomichan or VOICEROID2
 | Twitch代替 | IRCはフォールバック | MultiCommentViewer系の既存チャットビューアは歴史的にWebSocket/IRC系実装が中心だが、新規実装では公式EventSubを優先する。 |
 | 認証 | OAuth Device Code Flow | Tauriデスクトップアプリにクライアントシークレットを埋め込まなくてよい。ユーザーはTwitchの認可画面で `user:read:chat` を許可する。 |
 | 読み上げMVP | 棒読みちゃんTCP | 既存の配信環境に近く、RustからTCPで実装しやすい。棒読みちゃん側の辞書、SAPI連携、VOICEROID2連携資産を活かせる。 |
+| 読み上げ接続先 | 通常loopback、外部はprivate LAN/VPNの宛先へ明示mode＋native consent | 平文TCPに相手認証はない。backendが毎回全DNS結果を検証し、同意したhostname/IP/port/address集合だけをこの起動中許可する。public・link-local・multicast・未指定宛先は許可しない。rendererのflagだけで許可できない。 |
 | VOICEROID2直接連携 | 実験的アダプタ | RemoteControl.VoiceroidやUI Automation実装例はあるが、Windows/.NET/製品バージョン依存が強い。MVPの安定性を優先して分離する。 |
 | ランチャー | アプリパスを一般設定に保存し、Rust command経由で起動 | 起動対象の検証をWebViewへ委ねず、将来の色・グループ・並べ替え・Webリンク追加に備えた項目モデルを使う。 |
 | 多重起動 | 禁止し、2回目は既存ウィンドウを復元して前面へ出す | 同じapp dataの設定を1 processだけが所有し、NG設定とLauncher等の無関係な変更がstale snapshotで失われることを防ぐ。 |
