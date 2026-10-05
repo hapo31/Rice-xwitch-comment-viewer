@@ -19,6 +19,7 @@ impl MessageDedupe {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn insert(&mut self, id: String) -> bool {
         self.insert_at(id, Instant::now())
     }

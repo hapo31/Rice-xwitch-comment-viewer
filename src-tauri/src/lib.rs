@@ -41,7 +41,7 @@ use std::sync::Mutex;
 #[cfg(feature = "app")]
 use tauri::{Manager, PhysicalPosition, WindowEvent};
 #[cfg(feature = "app")]
-use twitch::{
+use twitch::commands::{
     twitch_connect, twitch_disconnect, twitch_get_stored_auth, twitch_poll_auth, twitch_start_auth,
     twitch_stop_chat, twitch_validate_auth,
 };
