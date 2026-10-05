@@ -54,3 +54,35 @@ test("formatter normalizes whitespace and formatting is idempotent", () => {
   assert.notEqual(first.stdout, input);
   assert.equal(biome("format", first.stdout).stdout, first.stdout);
 });
+
+test("lint rejects explicit any in mocks and TypeScript enum/namespace declarations", () => {
+  for (const [input, rule] of [
+    ["let event: any;", "noExplicitAny"],
+    ["const settings = {} as any;", "noExplicitAny"],
+    ["type Listener = (event: any) => void;", "noExplicitAny"],
+    ["type Values = Array<any>;", "noExplicitAny"],
+    ["enum State { Idle, Running }", "noEnum"],
+    ["const enum State { Idle, Running }", "noConstEnum"],
+    ["namespace Model { export type State = string; }", "noNamespace"],
+    ["declare namespace Model { type State = string; }", "noNamespace"],
+  ]) {
+    const result = lintFixture(input);
+    assert.equal(result.status, 1, `${input}\n${result.stderr}`);
+    assert.ok((result.stderr + result.stdout).includes(rule), result.stderr);
+  }
+});
+
+test("lint permits typed mocks, named/alias imports and justified type-level any", () => {
+  for (const input of [
+    'import { type AppSettings as Settings } from "./types"; type Loaded = Settings[];',
+    'import { createDomainStores as createStores } from "./stores/domainStores"; const stores = createStores();',
+    "type Listener = (event: unknown) => void;",
+    "type Identity<T extends any> = T;",
+    // Biome accepts generic constraints natively. Conditional inference needs
+    // a local, explained exception rather than disabling the rule for a file.
+    "// biome-ignore lint/suspicious/noExplicitAny: type-only conditional inference must accept every parameter list\ntype Result<T> = T extends (...args: any[]) => infer R ? R : never;",
+  ]) {
+    const result = lintFixture(input);
+    assert.equal(result.status, 0, result.stderr);
+  }
+});
