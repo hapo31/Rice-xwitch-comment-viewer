@@ -109,7 +109,8 @@ function Probe-App([string]$Executable, [string]$Name) {
         $capabilityProof = Get-Content -LiteralPath $capabilityReport -Raw -Encoding utf8 | ConvertFrom-Json
         # Installed checks the real titlebar close button (app_exit). Portable
         # checks WM_CLOSE and the SDK's indirect destroy command as well.
-        if ($Name -eq 'portable' -and -not $process.CloseMainWindow()) { throw "$Name rejected normal window close" }
+        # The probe already requested close on the exact owned Rice UI HWND;
+        # Process.CloseMainWindow may choose the single-instance helper window.
         if (-not $process.WaitForExit(15000)) { throw "$Name did not exit normally after window close" }
         if ($process.ExitCode -ne 0) { throw "$Name normal exit failed: $($process.ExitCode)" }
         $script:reportData.probes += [ordered]@{ name = $Name; pid = $process.Id; survivedMs = [int]$watch.Elapsed.TotalMilliseconds; windowShown = $true; exitCode = $process.ExitCode; sha256 = (Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash.ToLowerInvariant(); capabilities = $capabilityProof }

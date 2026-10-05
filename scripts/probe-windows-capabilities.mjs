@@ -35,6 +35,7 @@ export function verifyCapabilityProbe(probe, pid, name) {
   assert.equal(probe.status, "success");
   for (const field of ["minimize", "maximize", "restore", "titlebarDrag", "resizeDrag", "backendEvent", "unlisten", "nativeFileDrop", "nativeMultipleFileDialog", "launcherCleanup"]) assert.equal(probe[field], true, `Missing packaged runtime proof: ${field}`);
   assert.equal(probe.titlebarCloseRequested, name === "installed");
+  assert.equal(probe.nativeCloseRequested, name === "portable");
   assert.equal(probe.selectedCount, 2);
   assert.equal(probe.droppedCount, 1);
   assert.deepEqual(probe.deniedCommands, deniedCommands);
@@ -206,10 +207,11 @@ async function run() {
     await invoke("settings_update", { patch: {} }); await delay(300);
     assert.equal(await evaluate(`window.__riceCapabilityProbe.events.length`), 0); proof.unlisten = true;
     proof.titlebarCloseRequested = name === "installed";
+    proof.nativeCloseRequested = name === "portable";
     if (proof.titlebarCloseRequested) {
       const closePoint = await evaluate(`({x:innerWidth-22,y:16,scale:devicePixelRatio})`);
       await native.call("click", { x: Math.round(closePoint.x * closePoint.scale), y: Math.round(closePoint.y * closePoint.scale) });
-    }
+    } else await native.call("close-native");
     proof.status = "success";
     verifyCapabilityProbe(proof, pid, name);
     writeFileSync(reportFile, JSON.stringify(proof, null, 2));

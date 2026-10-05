@@ -32,12 +32,20 @@ public static class RiceNativeProbe {
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder text, int max);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder text, int max);
+  [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h,uint message,IntPtr wparam,IntPtr lparam);
   public static IntPtr Window(int pid) {
     using (var process = Process.GetProcessById(pid)) {
       if (process.HasExited || !String.Equals(process.ProcessName,"rice",StringComparison.OrdinalIgnoreCase)) throw new Exception("Not the owned live Rice process");
-      var window = process.MainWindowHandle;
-      uint owner; GetWindowThreadProcessId(window, out owner);
-      if (window == IntPtr.Zero || owner != pid) throw new Exception("Missing owned Rice HWND");
+      // Process.MainWindowHandle switches to the 16px single-instance helper
+      // when the real window is minimized. Bind to the exact owned UI instead.
+      IntPtr window=IntPtr.Zero; int matches=0;
+      EnumWindows((h,arg)=> {
+        uint owner; GetWindowThreadProcessId(h,out owner);
+        var title=new StringBuilder(128); GetWindowText(h,title,128);
+        if(owner==pid && title.ToString()=="Rice") { window=h; matches++; }
+        return true;
+      },IntPtr.Zero);
+      if(matches!=1) throw new Exception("Missing or ambiguous owned Rice UI HWND");
       return window;
     }
   }
@@ -60,6 +68,7 @@ public static class RiceNativeProbe {
   public static void Click(int pid,int x,int y) {
     SetForegroundWindow(Window(pid)); Thread.Sleep(200); var p=Screen(pid,x,y); SetCursorPos(p.X,p.Y); Button(2); Button(4);
   }
+  public static void NativeClose(int pid) { if(!PostMessage(Window(pid),0x0010,IntPtr.Zero,IntPtr.Zero)) throw new Exception("Owned Rice WM_CLOSE failed"); }
   static Point Screen(int pid, int x, int y) {
     var p=new Point { X=x, Y=y }; if(!ClientToScreen(Window(pid),ref p)) throw new Exception("ClientToScreen failed"); return p;
   }
@@ -130,6 +139,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             'restore' { [RiceNativeProbe]::Restore($RicePid); $value = [RiceNativeProbe]::State($RicePid) }
             'drag' { [RiceNativeProbe]::Drag($RicePid, $request.x, $request.y, $request.dx, $request.dy); $value = [RiceNativeProbe]::State($RicePid) }
             'click' { [RiceNativeProbe]::Click($RicePid, $request.x, $request.y); $value = $true }
+            'close-native' { [RiceNativeProbe]::NativeClose($RicePid); $value = $true }
             'drop' { $files = Owned-Files $request.paths; $value = [RiceNativeProbe]::Drop($RicePid, $request.x, $request.y, [string[]]$files) }
             'dialog' {
                 $files = Owned-Files $request.paths

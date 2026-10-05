@@ -21,6 +21,6 @@ test("missing command, argument errors and feature absence are not accepted as A
   }
   assert.equal(isAclDenial("plugin:made-up|absent", "Command plugin:made-up|absent not allowed by ACL"), false);
 });
-function proof() { return { schemaVersion: 1, pid: 123, status: "success", deniedCommands: [...deniedCommands], minimize: true, maximize: true, restore: true, titlebarDrag: true, resizeDrag: true, backendEvent: true, unlisten: true, nativeFileDrop: true, nativeMultipleFileDialog: true, launcherCleanup: true, titlebarCloseRequested: true, selectedCount: 2, droppedCount: 1 }; }
+function proof() { return { schemaVersion: 1, pid: 123, status: "success", deniedCommands: [...deniedCommands], minimize: true, maximize: true, restore: true, titlebarDrag: true, resizeDrag: true, backendEvent: true, unlisten: true, nativeFileDrop: true, nativeMultipleFileDialog: true, launcherCleanup: true, titlebarCloseRequested: true, nativeCloseRequested: false, selectedCount: 2, droppedCount: 1 }; }
 test("accepts the complete installed runtime proof", () => { assert.equal(verifyCapabilityProbe(proof(), 123, "installed"), true); });
 for (const field of ["minimize", "maximize", "restore", "titlebarDrag", "resizeDrag", "backendEvent", "unlisten", "nativeFileDrop", "nativeMultipleFileDialog", "launcherCleanup", "titlebarCloseRequested"]) test(`rejects missing real UI proof: ${field}`, () => { const changed=proof(); delete changed[field]; assert.throws(() => verifyCapabilityProbe(changed,123,"installed")); });

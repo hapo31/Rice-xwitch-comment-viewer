@@ -12,7 +12,7 @@ function fixture() {
     { name: "silent-uninstall", exitCode: 0 },
   ] };
   for (const probe of report.probes.filter(x => ["portable", "installed"].includes(x.name))) {
-    probe.capabilities = { schemaVersion: 1, status: "success", pid: probe.pid, deniedCommands, minimize: true, maximize: true, restore: true, titlebarDrag: true, resizeDrag: true, backendEvent: true, unlisten: true, nativeFileDrop: true, nativeMultipleFileDialog: true, launcherCleanup: true, titlebarCloseRequested: probe.name === "installed", selectedCount: 2, droppedCount: 1 };
+    probe.capabilities = { schemaVersion: 1, status: "success", pid: probe.pid, deniedCommands, minimize: true, maximize: true, restore: true, titlebarDrag: true, resizeDrag: true, backendEvent: true, unlisten: true, nativeFileDrop: true, nativeMultipleFileDialog: true, launcherCleanup: true, titlebarCloseRequested: probe.name === "installed", nativeCloseRequested: probe.name === "portable", selectedCount: 2, droppedCount: 1 };
   }
   const job = (name, steps) => ({ name, status: "completed", conclusion: "success", steps: steps.map(name => ({ name, status: "completed", conclusion: "success" })) });
   const jobs = [job("Smoke exact Windows release artifacts", ["Install, launch and uninstall exact release candidates"]), job("Windows production tests / windows-focus", [
@@ -48,6 +48,7 @@ for (const [name, mutate] of [
   ["other process UI proof", f => f.report.probes[2].capabilities.pid = 999],
   ["missing denied command", f => f.report.probes[0].capabilities.deniedCommands = deniedCommands.slice(1)],
   ["titlebar close skipped", f => f.report.probes[2].capabilities.titlebarCloseRequested = false],
+  ["native close skipped", f => f.report.probes[0].capabilities.nativeCloseRequested = false],
   ["missing runtime jobs despite plausible receipt", f => f.jobs.length = 0],
   ["failed Windows test", f => f.jobs[1].conclusion = "failure"],
   ["skipped smoke step", f => f.jobs[0].steps[0].conclusion = "skipped"],
