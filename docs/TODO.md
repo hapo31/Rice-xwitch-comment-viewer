@@ -1,12 +1,14 @@
 # 実装 TODO
 
-- [ ] Issue #44: Twitchのmodel/error、認証service/store/OAuth、EventSub transport/state/subscription/dedupe/正規化を責務別moduleへ分割する。Tauri commandを薄いadapterにし、型付き状態制御、command/event payload、generationによる競合制御を維持する。fake transport/storeと明示clockを使う既存・追加回帰を分割後の本番経路へ適用し、両OS/feature matrix/native CIで確認する。
+- [x] Issue #44: Twitchのmodel/error、認証service/store/OAuth、EventSub transport/state/subscription/dedupe/正規化を責務別moduleへ分割する。Tauri commandを薄いadapterにし、型付き状態制御、command/event payload、generationによる競合制御を維持する。fake transport/storeと明示clockを使う既存・追加回帰を分割後の本番経路へ適用し、両OS/feature matrix/native CIで確認する。
 
 2026-10-05段階1: main2b83b6aから専用worktreeで公開chat model、型付きAPI/認証/購読エラーと表示、EventSub wire/正規化、bounded dedupeを4つのprivate moduleへ抽出した。公開型のroot再export、payload、generation、token保存と接続処理は維持する。既存inline回帰をtests.rsへ移動し、mod.rsは4550行から2723行になった。元productionと既存テストはvisibility/format以外のtoken・文字列が同一であることも照合した。文言非依存の分類、明示receive clock/metadata fallback、TTL/capacity等の5回帰を追加し、Rust1.90のall-targets/all-features267件、no-default216件（いずれも0fail/0ignore）、fmt/strict clippy、frontend build、security/workflow/license guardが成功した。同時compile中の最初の全体実行では既存5秒budgetが5.26秒で失敗したが、閾値や条件を変えず単独再実行で4.67秒、no-defaultでも4.50秒の成功を確認した。認証service/store/OAuth、EventSub transport/state/subscriptionと薄いcommand adapter、分割後の両OS/native CIはまだ必要であり、Issueは未完了、mainへは未反映。
 
 2026-10-05段階2: 認証state/service/store/OAuth、chat service、EventSub state machine、subscription、Tauri command/runtimeを独立moduleへ分割した。mod.rsは96行となり、productionの依存は各moduleの明示importで接続する。TwitchAuthService/ChatService/EventSubClientを本番commandから使用し、AuthRuntime/ChatRuntime/EventSubRuntime/SubscriptionRuntime、OAuth transport、credential backendと明示clockをfakeへ差し替えられる。Device Code各応答、同時start/pollと古い応答、refresh保存前後、解除失敗、入力検証、接続交換/停止/解除、購読の型付き失敗/1回refresh、receive/TTL clock、インフラ依存と7 command名の退行検出に17回帰を追加した。3つの認証操作のbodyは依存先への置換を除いて元のtoken/文字列と一致し、HTTP・保存競合kernelも維持する。local Rust1.90 all-targets/all-features284件/no-default216件（0fail/0ignore）、fmt/strict all-features clippy/no-default unused-import検査、frontend322件/format/lint/typecheck/build、権限/Windows proofのNode71件とsecurity/workflow/license policyが成功した。既存5秒performance budgetもall-features4.49秒、no-default4.39秒で成功し、閾値は変更していない。この段階ではmainは変更せず、分割後の両OS/nativeを含むGitHub CI成功を確認してから統合・完了扱いとする。実Twitchアカウントの認可/通信を新たに実施した記録ではない。
 
 2026-10-05 CI調整: source5e28e73では品質全9jobs・依存監査・両OS契約・設定権限・feature matrixが成功したが、Windows nativeのtest harnessが分割前のroot経由でcredential test portを利用していたため、test-only再exportのvisibility不足でcompileに失敗した。本番の権限や挙動を変えず、AuthCredentialStore/AuthLoadResultのcrate内公開をapp有効のtest buildに限定して復元した。twitch_test_ports.rsに同じsibling-moduleからbackendを注入する全OSの回帰を追加し、local285件/0fail/0ignore、fmt/strict clippyが成功した。mod.rsは98行、段階2の追加回帰は合計18件となる。最終sourceで通常6workflowを再検証する。
+
+2026-10-05最終検証: source77d5488b9672a0199bc0818855b8fd92680c641dの[品質全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37301154291)、[依存監査](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37301153814)、[両OS契約](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37301153718)、[Windows実動作](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37301154054)、[設定権限](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37301153737)、[機能構成](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37301153794)がすべて成功した。Windows通常286件・実keyring・Launcher41件に加え、通常runではignoreするheadful3件を別stepで明示実行して全件成功した。local285件/no-default216件とfrontend322件も成功している。確認中にmainへ入ったPR179/180のActions更新と別作業のTODO記録を保持し、Rust/frontend/command/eventの入力は検証済みsourceから変えずに統合する。更新されたworkflowのpolicyを再確認し、統合後のexact mainの通常6workflow成功を確認してからIssueを閉じる。Twitch実アカウントでの新たな認可/通信やRelease公開は実施していない。
 
 - [x] Issue #75: main rendererのcore/plugin権限を実際のfrontend利用へ限定し、不要なemit/emit-to/image/menu/trayを拒否する。SDKのonCloseRequestedが間接利用するdestroyは通常終了のため保持する。明示allowlistのsnapshotと拡張拒否回帰を追加し、実Windows配布版でtitlebar・resize・native DnD・複数file dialog・backend event購読を検証する。配布版の成功前には完了扱いにしない。
 
@@ -321,6 +323,10 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] TypeScript の store reducer テストを追加する。
 
 ## Phase 5: 配信運用向け仕上げ
+
+- [ ] Dependabot PR #179–#182、#184–#192 を一件ずつ専用 worktree でレビューし、互換性・依存監査・CI を検証してからマージする。React 19 の型・テスト移行を含め、各 worktree はマージ後に削除する。
+
+2026-10-05進捗: #179（download-artifact 8.0.1）は公式の Node 24・digest mismatch の既定拒否・展開仕様を確認し、既存の name/path/run-id 指定と互換であることを確認した。ポリシー91件、PRの全16 checks、exact headの開発build、検証済み配布物の取得・digest照合と両形式のWindows native診断が成功してマージした。追加診断のtitlebar操作は初回・再試行で失敗し、同じsourceの3回目が成功したため、UI入力の不安定性は調査境界として記録する。#180以降を順次確認する。監査の閾値・例外や配布の検証条件は変更しない。
 
 - [x] Issue #48: Tauri bridge の `Option` を JSON field omission に統一し、Rust/TypeScript の camelCase・nullability 契約、Device Code 後の保存警告経路を共通 fixture と runtime validation で検証する。
 
