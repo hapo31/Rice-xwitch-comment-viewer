@@ -71,9 +71,9 @@ export function FilterView({
     if (!stringArrayEqual(blockedWordRules.items, speechSettings.blockedWords))
       speech.blockedWords = blockedWordRules.items;
     if (urlHandling !== speechSettings.urlHandling) speech.urlHandling = urlHandling;
-    const submittedValues = form.values;
+    const snapshot = form.beginSave();
     const saved = await onSettingsUpdate({ speech });
-    if (saved) form.commit(submittedValues);
+    form.finishSave(snapshot, saved);
     return saved;
   }
 

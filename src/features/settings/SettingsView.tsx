@@ -1,5 +1,5 @@
 import { Network, PlugZap, Volume2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FieldError,
   FloatingSaveButton,
@@ -79,6 +79,10 @@ export function SettingsView({
   const [diagnostics, setDiagnostics] = useState<BouyomiConnectionDiagnostics>();
   const [isDiagnosing, setIsDiagnosing] = useState(false);
 
+  useEffect(() => {
+    setConsentMessage("");
+  }, [speechSettings.bouyomiHost, speechSettings.bouyomiPort, speechSettings.bouyomiRemoteMode]);
+
   const numericPort = Number(port);
   const numericVoice = Number(voice);
   const isPortValid = isValidPort(port);
@@ -136,9 +140,9 @@ export function SettingsView({
       speech.connectionSuccessSpeechEnabled = connectionSuccessSpeechEnabled;
     if (connectionSuccessSpeechText !== speechSettings.connectionSuccessSpeechText)
       speech.connectionSuccessSpeechText = connectionSuccessSpeechText;
-    const submittedValues = form.values;
+    const snapshot = form.beginSave();
     const saved = await onSettingsUpdate({ speech });
-    if (saved) form.commit(submittedValues);
+    form.finishSave(snapshot, saved);
     return saved;
   }
 
