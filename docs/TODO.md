@@ -89,7 +89,7 @@
 
 ## 現在の進捗サマリ
 
-2026-10-05 TypeScript 7移行: TypeScript 7.0.2、Vite 8.3.2、Vitest 4.1.11とReact 18用の型定義・関連依存を更新した。廃止されたNode10解決をBundlerへ移し、vite/client・rootDir・side-effect import検査を明示した。CIと同じNode 22.22.0/pnpm 8.11.0でfrozen/ignore-scripts/strict-peer install、型検査、format/lint/security、frontend全322件、本番buildが成功。npm auditはHigh/Critical 0件・Moderate 2件。GitHubのLinux品質・Windows実動作を含む最終CI確認中。詳細と採用版の理由はRESEARCH_NOTES.mdを参照。
+2026-10-05 TypeScript 7移行: TypeScript 7.0.2、Vite 8.3.2、Vitest 4.1.11とReact 18用の型定義・関連依存を更新した。廃止されたNode10解決をBundlerへ移し、vite/client・rootDir・side-effect import検査を明示した。CIと同じNode 22.22.0/pnpm 8.11.0でfrozen/ignore-scripts/strict-peer install、型検査、format/lint/security、frontend全322件、本番buildが成功。npm auditはHigh/Critical 0件・Moderate 2件。Node 20.19.4でも型検査・全322件・buildが成功し、補助policy49件も成功（Rust installed graphの1件は環境不足でskip）。実装sourceは0341101。GitHubへのpushが自動承認レビューで明示承認待ちとなったため、GitHub CIとWindows実動作は未実行。専用branch/worktreeを保持している。詳細と採用版の理由はRESEARCH_NOTES.mdを参照。
 
 - [x] Issue #69: adapter healthとqueue phaseをbackend/frontendで独立保持し、paused中も無音probeを継続する。復旧は失敗項目を自動再送せず、UIの接続/準備完了を両状態から導出する。
 
@@ -207,7 +207,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 0: プロジェクト作成
 
-- [ ] TypeScript 7 正式版へ移行し、関連依存・廃止設定・既定値変更に対応する。型検査、frontend 全テスト、build と CI 共通検査を通す。
+- [x] TypeScript 7 正式版へ移行し、関連依存・廃止設定・既定値変更に対応する。Node 20/22で型検査、frontend 全テスト、build とローカルで実行可能な関連CI共通検査を通す。
+- [ ] TypeScript 7 更新sourceをGitHubへpushし、Linux品質・依存監査・Windows nativeのCI成功を確認する。ローカル実装source0341101、pushの明示承認待ち。
 - [x] Tauri + TypeScript + Tailwind の雛形を作る。
 - [x] `src-tauri/src` に `twitch`, `speech`, `settings`, `app_events` の境界を作る。
 - [x] Activity Bar、Side Panel、Main View、Status Bar の基本レイアウトを作る。

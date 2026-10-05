@@ -8,7 +8,8 @@
 - Vite 8.3.2、React plugin 6.1.2、Vitest 4.1.11、PostCSS 8.5.29、React Virtual 3.14.13、dialog 2.8.1、React Router 6.30.6へ更新し、React 18用`@types/react`18.3.31/`@types/react-dom`18.3.7を揃えた。Vite/Vitest用`@types/node`22.20.5とTesting Library共通peerの`@testing-library/dom`10.4.2を直接宣言する。Tauri Rust/API/CLI 2.12.1の整合性も維持する。
 - React 18、Router 6、既存Node 20.19.4開発コンテナ/Node 22.22.0 CIに対応する安定版を選んだ。Vitest 5とjest-dom 6.10以降はNode 20を対象外とし、jsdom 30はNode 22.22.2以上を要求するため採用しない。既存のjsdom 27.4.0、jest-dom 6.9.1、Biome/Tailwind/Testing Library/Tauriとアイコンの互換版は継続する。React 19やRouter 7への製品側のmajor移行はTS7移行の条件ではない。
 - lockfileはpnpm 8.11.0で生成し、TypeScript 7のLinux/Windowsを含むOS別optional binaryとintegrityを保持する。`--frozen-lockfile --ignore-scripts --strict-peer-dependencies`のinstallとNode 22.22.0での`tsc --version`（7.0.2）、型検査、format/lint/security、frontend322件、本番buildを確認した。npm auditはHigh/Critical 0件、React RouterのModerate 2件を報告する。監査の例外追加や失敗条件の緩和はしていない。
-- GitHub Actionsで同じsourceの品質・依存監査・Windows実動作を確認する。ローカルにはRust toolchain/Windows環境がないため、ローカルfrontend成功だけでnative動作検証済みとは扱わない。
+- Node 20.19.4でも型検査・全322件・buildが成功した。品質・Tauri version/security・license・audit/SBOM policyは49件成功、Rust installed graphの1件はtoolchain不足でskip。補助検査の初回停止はsandboxのspawnSync EPERMで再現し、同じ検査をsandbox外で実行して成功した。ソースや検査条件の変更は不要だった。
+- 実装sourceは0341101。GitHubへのpushは、自動承認レビューが外部送信への明示承認を要求したため未実行。ユーザーの承認後、専用branchでGitHub Actionsの品質・依存監査・Windows実動作を確認する。ローカルにはRust toolchain/Windows環境がないため、ローカルfrontend成功だけでnative動作検証済みとは扱わない。
 
 ## 2026-10-05 Issue #101: Rice自身のMIT正本と実配布物の最終照合
 
