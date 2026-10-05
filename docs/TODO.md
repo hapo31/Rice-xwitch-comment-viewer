@@ -1,8 +1,10 @@
 # 実装 TODO
 
-- [ ] Issue #76: Windows shortcutを起動直前に構造化して検証し、壊れた/移動したtargetをfailureへ返す。起動依頼の受付と対象起動の確認を区別し、日本語の修復/再登録案内、arguments/working directory、権限要求と直接exe/部分成功の回帰をWindows integrationとUIで検証する。
+- [x] Issue #76: Windows shortcutを起動直前に構造化して検証し、壊れた/移動したtargetをfailureへ返す。起動依頼の受付と対象起動の確認を区別し、日本語の修復/再登録案内、arguments/working directory、権限要求と直接exe/部分成功の回帰をWindows integrationとUIで検証する。
 
 2026-10-05: UIの全failure表示/準備完了未確認、async serviceの4-worker/cancel-before-spawn、header/target/cwd/arguments検証を実装した。LinuxでRust all-features244件/no-default193件、strict clippy/fmt、frontend282件とbuild/security/license/quality policy3件/context検査が成功した。Windowsの39件は成功したが、WSH fixtureの日本語TargetPath代入に失敗し、Issueは未完了。実在/MZ/109 UTF-16 unitsを確認し、本番/fixtureをIShellLinkW Unicode APIへ切り替えた。既存lockのwindows 0.62.2を参照するだけで依存版は不変。実Windows再検証までは完了扱いにしない。
+
+2026-10-05最終検証: commit e5791e3の[本番feature Windows CI](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37246369941)でLauncher全41件（実Unicode COM link/args/cwd/移動/破損/RunAsUser/直接exe/部分成功を含む）、2process復元/focus、200 tile描画695ms/最大設定IPC715ms/JS heap差分43.2MiB/不正4要求拒否・設定保持・正常終了が成功した。[両OS契約](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37246369853)は各Launcher39件、8MiB設定roundtripはWindows3.13秒/Linux2.26秒で予算内。[品質全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37246370049)、feature matrix、Windows writer/permissionも成功した。先のWSH失敗はUnicode APIへ切り替えて解消した。対話的UAC/外部アプリready/実UNC停止/配布物は未検証の別境界とし、[既知npm Highの配布停止](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37246369811)を維持する。
 
 - [x] Issue #82: Launcherをpure model・service・repository・commands・Windows icon/launch adapterへ分離し、本番serviceへ小さなtraitを注入する。timeout・抽出/shortcut/spawn/保存失敗・同時更新を全OSのfake adapterで再現し、Windows実動境界を文書化する。
 
