@@ -40,8 +40,10 @@ function Probe-App([string]$Executable, [string]$Name) {
     $startInfo.UseShellExecute = $false
     $startInfo.WorkingDirectory = Split-Path -Parent $Executable
     $startInfo.Environment['WEBVIEW2_USER_DATA_FOLDER'] = Join-Path $scratch ("webview-" + $Name)
-    # Debugging is scoped to this disposable child, never the shipped binary,
-    # global environment or registry. Refuse non-loopback/foreign listeners.
+    # Elevated WebView2 hosts ignore environment/HKCU overrides. On this fresh
+    # hosted runner use temporary HKLM values scoped ONLY to Rice's AppID/exe,
+    # never '*', and remove only values proven absent and created below.
+    # The shipped binary, CSP/ACL and global environment remain unchanged.
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
     $listener.Start()
     $debugPort = $listener.LocalEndpoint.Port
@@ -50,9 +52,26 @@ function Probe-App([string]$Executable, [string]$Name) {
     $fixtures = Join-Path $scratch ("fixtures-" + $Name)
     $null = New-Item -ItemType Directory -Path $fixtures
     foreach ($file in @('capability-a.exe', 'capability-b.exe', 'capability-drop.exe')) { Copy-Item -LiteralPath $Executable -Destination (Join-Path $fixtures $file) }
-    $process = [Diagnostics.Process]::Start($startInfo)
-    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $process = $null
+    $ownedPolicies = @()
+    $createdPolicyKeys = @()
     try {
+        foreach ($setting in @(
+            @{ key = 'HKLM:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'; value = "--remote-debugging-port=$debugPort" },
+            @{ key = 'HKLM:\Software\Policies\Microsoft\Edge\WebView2\UserDataFolder'; value = $startInfo.Environment['WEBVIEW2_USER_DATA_FOLDER'] }
+        )) {
+            if (-not (Test-Path -LiteralPath $setting.key)) {
+                $null = New-Item -Path $setting.key -Force
+                $createdPolicyKeys += $setting.key
+            }
+            foreach ($appName in @('dev.rice.tts', 'rice.exe')) {
+                if ((Get-Item -LiteralPath $setting.key).GetValueNames() -contains $appName) { throw 'Pre-existing Rice WebView policy must not be overwritten' }
+                $null = New-ItemProperty -LiteralPath $setting.key -Name $appName -Value $setting.value -PropertyType String
+                $ownedPolicies += @{ key = $setting.key; name = $appName; value = $setting.value }
+            }
+        }
+        $process = [Diagnostics.Process]::Start($startInfo)
+        $watch = [Diagnostics.Stopwatch]::StartNew()
         # Both survival and a real visible main window are required. A failed
         # loader/panic is never accepted just because Process.Start succeeded.
         while ($watch.Elapsed.TotalSeconds -lt 30) {
@@ -62,7 +81,14 @@ function Probe-App([string]$Executable, [string]$Name) {
             Start-Sleep -Milliseconds 100
         }
         if ($process.MainWindowHandle -eq [IntPtr]::Zero) { throw "$Name did not show a native window" }
-        $connections = @(Get-NetTCPConnection -State Listen -LocalPort $debugPort -ErrorAction Stop)
+        $connections = @()
+        $debugWatch = [Diagnostics.Stopwatch]::StartNew()
+        while ($connections.Count -eq 0 -and $debugWatch.Elapsed.TotalSeconds -lt 30) {
+            $process.Refresh()
+            if ($process.HasExited) { throw "$Name exited before debugger initialization" }
+            $connections = @(Get-NetTCPConnection -State Listen -LocalPort $debugPort -ErrorAction SilentlyContinue)
+            if ($connections.Count -eq 0) { Start-Sleep -Milliseconds 100 }
+        }
         if ($connections.Count -eq 0) { throw 'Missing owned loopback WebView debugger' }
         foreach ($connection in $connections) {
             if ($connection.LocalAddress -notin @('127.0.0.1', '::1')) { throw 'WebView debugger must not listen on a public interface' }
@@ -85,8 +111,18 @@ function Probe-App([string]$Executable, [string]$Name) {
         if ($process.ExitCode -ne 0) { throw "$Name normal exit failed: $($process.ExitCode)" }
         $script:reportData.probes += [ordered]@{ name = $Name; pid = $process.Id; survivedMs = [int]$watch.Elapsed.TotalMilliseconds; windowShown = $true; exitCode = $process.ExitCode; sha256 = (Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash.ToLowerInvariant(); capabilities = $capabilityProof }
     } finally {
-        if (-not $process.HasExited) { $process.Kill($true); $process.WaitForExit() }
-        $process.Dispose()
+        if ($null -ne $process) {
+            if (-not $process.HasExited) { $process.Kill($true); $process.WaitForExit() }
+            $process.Dispose()
+        }
+        foreach ($policy in $ownedPolicies) {
+            if ((Get-Item -LiteralPath $policy.key).GetValue($policy.name) -ne $policy.value) { throw 'Owned temporary WebView policy changed unexpectedly' }
+            Remove-ItemProperty -LiteralPath $policy.key -Name $policy.name
+        }
+        foreach ($key in $createdPolicyKeys) {
+            $entry = Get-Item -LiteralPath $key
+            if ($entry.GetValueNames().Count -eq 0 -and $entry.GetSubKeyNames().Count -eq 0) { Remove-Item -LiteralPath $key }
+        }
     }
 }
 function Run-Nsis([string]$Executable, [string]$Arguments, [string]$Name) {
