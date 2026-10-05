@@ -170,11 +170,22 @@ async function run() {
     }
     proof.minimize = true;
     await native.call("restore");
+    await wait(async () => !(await native.call("state")).minimized && await evaluate(`document.visibilityState==='visible' && !!document.querySelector('button[aria-label="最大化"]')`), "restored visible production frontend");
     console.log(`${name}: backend event購読と実HWNDの最大化・復元・最小化を確認`);
-    const geometry = await evaluate(`({width:innerWidth,height:innerHeight,scale:devicePixelRatio})`);
+    // Read the actual rendered drag region (including UI zoom), rather than a
+    // fixed titlebar coordinate. Capture trusted mouse downs for failure-only
+    // diagnostics without dispatching events or changing the UI handler.
+    await evaluate(`(() => { window.__riceCapabilityProbe.mouseDowns=[]; document.addEventListener('mousedown',event=>window.__riceCapabilityProbe.mouseDowns.push({x:event.clientX,y:event.clientY,detail:event.detail,trusted:event.isTrusted,dragRegion:!!event.target.closest('[data-tauri-drag-region]')}),{capture:true}); return true; })()`);
+    const geometry = await evaluate(`(() => { const region=document.querySelector('[data-tauri-drag-region]'); const r=region.getBoundingClientRect(); const x=r.left+r.width/2,y=r.top+r.height/2; return {width:innerWidth,height:innerHeight,scale:devicePixelRatio,x,y,hitDragRegion:!!document.elementFromPoint(x,y)?.closest('[data-tauri-drag-region]')}; })()`);
+    assert.equal(geometry.hitDragRegion, true, "Physical drag point must hit the rendered titlebar region");
     let before = await native.call("state");
-    let after = await native.call("drag", { x: Math.round(250 * geometry.scale), y: Math.round(16 * geometry.scale), dx: 50, dy: 25 });
-    assert.ok(Math.abs(after.left - before.left) >= 25 && Math.abs(after.top - before.top) >= 10, "Titlebar native drag must move the real HWND"); proof.titlebarDrag = true;
+    let after = await native.call("drag", { x: Math.round(geometry.x * geometry.scale), y: Math.round(geometry.y * geometry.scale), dx: 50, dy: 25 });
+    const moved = Math.abs(after.left - before.left) >= 25 && Math.abs(after.top - before.top) >= 10;
+    if (!moved) {
+      proof.dragDiagnostic = { before, after, geometry, mouseDowns: await evaluate(`window.__riceCapabilityProbe.mouseDowns`) };
+      console.log(`${name}: titlebarドラッグの失敗診断 ${JSON.stringify(proof.dragDiagnostic)}`);
+    }
+    assert.ok(moved, "Titlebar native drag must move the real HWND"); proof.titlebarDrag = true;
     before = after;
     await evaluate(`window.__riceCapabilityProbe.events=window.__riceCapabilityProbe.events.filter(x=>x.event!=='tauri://resize'); true`);
     after = await native.call("drag", { x: Math.round((geometry.width - 2) * geometry.scale), y: Math.round(geometry.height / 2 * geometry.scale), dx: -20, dy: 0 });

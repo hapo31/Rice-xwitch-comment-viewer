@@ -22,6 +22,8 @@ public static class RiceNativeProbe {
   [StructLayout(LayoutKind.Sequential)] public struct Input { public uint type; public Union value; }
   [DllImport("user32.dll")] static extern uint SendInput(uint n, Input[] inputs, int size);
   [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] static extern bool GetCursorPos(out Point p);
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out Rect r);
   [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref Point p);
   [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
@@ -56,7 +58,8 @@ public static class RiceNativeProbe {
   public static object State(int pid) {
     var h=Window(pid); Rect r; if(!GetWindowRect(h,out r)) throw new Exception("GetWindowRect failed");
     var name=new StringBuilder(128); var title=new StringBuilder(128); GetClassName(h,name,128); GetWindowText(h,title,128);
-    return new { hwnd=h.ToInt64(), windowClass=name.ToString(), title=title.ToString(), left=r.Left, top=r.Top, width=r.Right-r.Left, height=r.Bottom-r.Top, minimized=IsIconic(h), maximized=IsZoomed(h) };
+    var foreground=GetForegroundWindow(); uint foregroundPid; GetWindowThreadProcessId(foreground,out foregroundPid); Point cursor; GetCursorPos(out cursor);
+    return new { hwnd=h.ToInt64(), windowClass=name.ToString(), title=title.ToString(), left=r.Left, top=r.Top, width=r.Right-r.Left, height=r.Bottom-r.Top, minimized=IsIconic(h), maximized=IsZoomed(h), foregroundHwnd=foreground.ToInt64(), foregroundPid=foregroundPid, cursorX=cursor.X, cursorY=cursor.Y };
   }
   public static void Restore(int pid) { var h=Window(pid); ShowWindow(h,9); SetForegroundWindow(h); Thread.Sleep(250); }
   public static void Prepare(int pid) {
@@ -87,7 +90,10 @@ public static class RiceNativeProbe {
     SetForegroundWindow(Window(pid)); Thread.Sleep(200);
     var from=Screen(pid,x,y); var to=new Point {X=from.X+dx,Y=from.Y+dy};
     SetCursorPos(from.X,from.Y); Button(2);
-    try { Thread.Sleep(250); Move(from,to); } finally { Button(4); }
+    // The physical mouse down reaches WebView/React before its asynchronous
+    // startDragging IPC enters the native move loop. Allow that round trip to
+    // settle before moving the pointer; never replace it with direct IPC.
+    try { Thread.Sleep(750); Move(from,to); } finally { Button(4); }
     Thread.Sleep(250);
   }
   public static string Drop(int pid,int x,int y,string[] files) {
