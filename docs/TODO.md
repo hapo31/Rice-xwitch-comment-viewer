@@ -103,6 +103,8 @@
 
 2026-10-05: Issue #101で権利者が既に配置したMIT正本を維持し、npm/Cargo/bundleとREADME、inbound=outboundの貢献条件を整合させた。NSIS license表示とinstalled resource、portable ZIP、直接Release assetへ同じLICENSEを同梱する。欠落/不一致/同梱漏れの7件のpolicy test、cargo check、Docker context/release guardsを確認した。Windows artifactの実行・同梱確認は配布smoke gateの検証と合わせて行う。
 
+2026-10-05最終検証: [source74ed02eの実配布候補](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37274393563)で、直接artifact/portable ZIP/NSIS resourceのLICENSEが正本SHA-256 eeb4b00cfe4a9c135ab47b643c44f4c0b747318c0d52cee8580bf7c3d2ca0667と一致した。独立したNSIS展開とfresh Windowsのsilent install後のoffline LICENSE比較が成功し、実起動/正常終了/uninstallも成功した。同runのexact manifest・検証記録・実jobsを再照合した。GitHub license認識はMIT、最新基点でlicense policy7件も成功。Rice自身の利用許諾を明示する本Issueの確認が完了した。第三者依存の通知#102は別に未完了であり、候補成功だけで公開準備完了とは扱わない。
+
 - [x] Issue #99: 設定本体・backup・temporary・退避fileをowner-onlyで保存し、読込前に所有者・type・permissionを検証する。umask 022/000、過剰permission補正、リンク/非regular/foreign owner拒否を自動検証する。Windowsはuser profile ACL継承を使用する。
 
 2026-10-05: Issue #99 で settings storage のUnix permission invariantを実装した。共有ancestorを変更せず、読込前にowner-onlyへ補正する。Windows CIでは実ユーザーAppDataに本番SettingsStoreで保存し、directory、本体、backup、temporaryの所有者と許可SIDを検査する。packaged実機で独自profile ACLが設定された場合の確認は継続する。
