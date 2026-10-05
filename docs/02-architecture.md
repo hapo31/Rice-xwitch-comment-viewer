@@ -241,6 +241,8 @@ backend は bounded な operational log ring と Twitch（auth/chat）/speech �
 
 ### フロントエンド通知
 
+system Chat の状態通知は中立モデル `models/systemTimeline.ts` の `SystemTimelineEvent` を生成・購読・routing の共通契約とする。source が認証なら認証状態、接続なら接続状態または自動接続の開始/失敗、speech なら読み上げ状態を transition とする。認証で reconnecting、接続で validating は型で排除する。購読の callback は message のみに狭めず、型 assertion で復元しない。`SystemTimelineRouter` が source ごとに直前の重複抑制キーを保持する。認証は transition と案内文、他は transition をキーとし、初回・状態変化・認証案内の変化を記録して連続重複を抑える。
+
 対処が必要な通知は `{ id, severity, source, message, occurredAtMs, correlationId? }` として保持する。`severity` は `info` / `success` / `warning` / `error`、`source` は command / event / log / system を区別する。logs store は対処待ちの warning / error を notifications、info / success を notificationHistory に各100件まで独立して保持する。Side Panel と Status Bar の Warnings は対処待ち通知を最新5件まで表示し、成功通知が対処待ち通知の保持枠を消費しない。warnings.cleared は対処待ち通知だけを消す。`correlationId` がある通知はその値で重複排除し、ID がない既存イベントは本文と 5 秒の受信時間で重複排除する。重複経路で severity が異なるときは、より重大な値を残す。情報履歴から warning / error に昇格した通知は同じIDを保って対処待ち領域へ移す。info / success は Logs と system Chat に残す。
 
 ## 永続化
