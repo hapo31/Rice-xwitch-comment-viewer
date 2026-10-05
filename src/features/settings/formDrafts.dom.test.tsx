@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { AppSettings } from "../../types";
 import { UnsavedChangesContext, type UnsavedChange } from "../../unsavedChanges";
@@ -24,6 +25,32 @@ function deferred<T>() {
     resolve = complete;
   });
   return { promise, resolve };
+}
+
+function SettingsSaveHarness({ saveResult }: { saveResult: Promise<void> }) {
+  const [settings, setSettings] = useState(makeSettings);
+  async function onSettingsUpdate(patch: { speech?: Partial<AppSettings["speech"]> }) {
+    await saveResult;
+    setSettings((current) => ({
+      ...current,
+      speech: { ...current.speech, ...patch.speech },
+    }));
+    return true;
+  }
+
+  return (
+    <SettingsView
+      settings={settings}
+      onSettingsUpdate={onSettingsUpdate}
+      onSpeechHealthCheck={() => undefined}
+      onSpeechDiagnostics={async () => ({
+        configuredAddr: "127.0.0.1:50001",
+        attempted: [],
+        recommendation: "",
+      })}
+      onSpeechTest={() => undefined}
+    />
+  );
 }
 
 describe("Filter and Settings form drafts", () => {
@@ -97,6 +124,8 @@ describe("Filter and Settings form drafts", () => {
     await user.click(screen.getByRole("button", { name: "設定を保存" }));
     expect(onSettingsUpdate).toHaveBeenCalledWith({ speech: { bouyomiPort: 50002 } });
 
+    await user.clear(screen.getByLabelText("ポート"));
+    await user.type(screen.getByLabelText("ポート"), "50001");
     const saved = {
       ...initial,
       speech: { ...initial.speech, bouyomiPort: 50002 },
@@ -114,9 +143,6 @@ describe("Filter and Settings form drafts", () => {
         onSpeechTest={() => undefined}
       />,
     );
-
-    await user.clear(screen.getByLabelText("ポート"));
-    await user.type(screen.getByLabelText("ポート"), "50001");
     save.resolve(true);
 
     await waitFor(() => expect(screen.getByLabelText("ポート")).toHaveValue("50001"));
@@ -161,6 +187,117 @@ describe("Filter and Settings form drafts", () => {
 
     expect(onSettingsUpdate).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText("ホスト")).toHaveValue("voice.example");
+    expect(screen.getByRole("button", { name: "設定を保存" })).toBeInTheDocument();
+  });
+
+  it("releases the pending marker when the settings update rejects", async () => {
+    const user = userEvent.setup();
+    const initial = makeSettings();
+    let registered: UnsavedChange | undefined;
+    const registry = {
+      register: (_id: string, change: UnsavedChange) => {
+        registered = change;
+      },
+      unregister: () => undefined,
+    };
+    const onSettingsUpdate = vi.fn(async () => {
+      throw new Error("save rejected");
+    });
+    const { rerender } = render(
+      <UnsavedChangesContext.Provider value={registry}>
+        <FilterView settings={initial} onSettingsUpdate={onSettingsUpdate} />
+      </UnsavedChangesContext.Provider>,
+    );
+
+    await user.type(screen.getByLabelText("NG ワード"), "retain me");
+    await expect(registered?.save()).rejects.toThrow("save rejected");
+
+    rerender(
+      <UnsavedChangesContext.Provider value={registry}>
+        <FilterView
+          settings={{
+            ...initial,
+            speech: { ...initial.speech, blockedWords: ["server value"] },
+          }}
+          onSettingsUpdate={onSettingsUpdate}
+        />
+      </UnsavedChangesContext.Provider>,
+    );
+    fireEvent.change(screen.getByLabelText("NG ワード"), {
+      target: { value: "server value" },
+    });
+    rerender(
+      <UnsavedChangesContext.Provider value={registry}>
+        <FilterView
+          settings={{
+            ...initial,
+            speech: { ...initial.speech, blockedWords: ["new server value"] },
+          }}
+          onSettingsUpdate={onSettingsUpdate}
+        />
+      </UnsavedChangesContext.Provider>,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText("NG ワード")).toHaveValue("new server value"));
+  });
+
+  it("keeps the Settings edit when the save harness updates props before resolving", async () => {
+    const user = userEvent.setup();
+    const save = deferred<void>();
+    render(<SettingsSaveHarness saveResult={save.promise} />);
+
+    await user.clear(screen.getByLabelText("ポート"));
+    await user.type(screen.getByLabelText("ポート"), "50002");
+    await user.click(screen.getByRole("button", { name: "設定を保存" }));
+    await user.clear(screen.getByLabelText("ポート"));
+    await user.type(screen.getByLabelText("ポート"), "50001");
+
+    await act(async () => save.resolve());
+
+    await waitFor(() => expect(screen.getByLabelText("ポート")).toHaveValue("50001"));
+    expect(screen.getByRole("button", { name: "設定を保存" })).toBeInTheDocument();
+  });
+
+  it("keeps an edit to another Settings field made while saving", async () => {
+    const user = userEvent.setup();
+    const initial = makeSettings();
+    const save = deferred<boolean>();
+    const onSettingsUpdate = vi.fn(() => save.promise);
+    const { rerender } = render(
+      <SettingsView
+        settings={initial}
+        onSettingsUpdate={onSettingsUpdate}
+        onSpeechHealthCheck={() => undefined}
+        onSpeechDiagnostics={async () => ({
+          configuredAddr: "127.0.0.1:50001",
+          attempted: [],
+          recommendation: "",
+        })}
+        onSpeechTest={() => undefined}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("ホスト"));
+    await user.type(screen.getByLabelText("ホスト"), "voice.example");
+    await user.click(screen.getByRole("button", { name: "設定を保存" }));
+    await user.clear(screen.getByLabelText("ポート"));
+    await user.type(screen.getByLabelText("ポート"), "50002");
+    rerender(
+      <SettingsView
+        settings={{ ...initial, speech: { ...initial.speech, bouyomiHost: "voice.example" } }}
+        onSettingsUpdate={onSettingsUpdate}
+        onSpeechHealthCheck={() => undefined}
+        onSpeechDiagnostics={async () => ({
+          configuredAddr: "voice.example:50001",
+          attempted: [],
+          recommendation: "",
+        })}
+        onSpeechTest={() => undefined}
+      />,
+    );
+    save.resolve(true);
+
+    await waitFor(() => expect(screen.getByLabelText("ポート")).toHaveValue("50002"));
     expect(screen.getByRole("button", { name: "設定を保存" })).toBeInTheDocument();
   });
 
@@ -245,12 +382,12 @@ describe("Filter and Settings form drafts", () => {
 
     await user.type(screen.getByLabelText("NG ワード"), "first");
     await user.click(screen.getByRole("button", { name: "設定を保存" }));
+    fireEvent.change(screen.getByLabelText("NG ワード"), { target: { value: "" } });
     const saved = {
       ...initial,
       speech: { ...initial.speech, blockedWords: ["first"] },
     };
     rerender(<FilterView settings={saved} onSettingsUpdate={onSettingsUpdate} />);
-    fireEvent.change(screen.getByLabelText("NG ワード"), { target: { value: "" } });
     save.resolve(true);
 
     await waitFor(() => expect(screen.getByLabelText("NG ワード")).toHaveValue(""));

@@ -125,25 +125,63 @@ export function SettingsView({
     }
 
     const speech: NonNullable<AppSettingsPatch["speech"]> = {};
-    if (host.trim() !== speechSettings.bouyomiHost) speech.bouyomiHost = host.trim();
-    if (numericPort !== speechSettings.bouyomiPort) speech.bouyomiPort = numericPort;
-    if (remoteMode !== (speechSettings.bouyomiRemoteMode ?? false))
+    const submittedKeys: (keyof typeof form.values)[] = [];
+    if (host.trim() !== speechSettings.bouyomiHost) {
+      speech.bouyomiHost = host.trim();
+      submittedKeys.push("host");
+    }
+    if (numericPort !== speechSettings.bouyomiPort) {
+      speech.bouyomiPort = numericPort;
+      submittedKeys.push("port");
+    }
+    if (remoteMode !== (speechSettings.bouyomiRemoteMode ?? false)) {
       speech.bouyomiRemoteMode = remoteMode;
-    if (speed !== speechSettings.bouyomiSpeed) speech.bouyomiSpeed = speed;
-    if (tone !== speechSettings.bouyomiTone) speech.bouyomiTone = tone;
-    if (volume !== speechSettings.bouyomiVolume) speech.bouyomiVolume = volume;
-    if (numericVoice !== speechSettings.bouyomiVoice) speech.bouyomiVoice = numericVoice;
-    if (autoSpeak !== speechSettings.autoSpeak) speech.autoSpeak = autoSpeak;
-    if (readUserName !== speechSettings.readUserName) speech.readUserName = readUserName;
-    if (readEmotes !== speechSettings.readEmotes) speech.readEmotes = readEmotes;
-    if (connectionSuccessSpeechEnabled !== speechSettings.connectionSuccessSpeechEnabled)
+      submittedKeys.push("remoteMode");
+    }
+    if (speed !== speechSettings.bouyomiSpeed) {
+      speech.bouyomiSpeed = speed;
+      submittedKeys.push("speed");
+    }
+    if (tone !== speechSettings.bouyomiTone) {
+      speech.bouyomiTone = tone;
+      submittedKeys.push("tone");
+    }
+    if (volume !== speechSettings.bouyomiVolume) {
+      speech.bouyomiVolume = volume;
+      submittedKeys.push("volume");
+    }
+    if (numericVoice !== speechSettings.bouyomiVoice) {
+      speech.bouyomiVoice = numericVoice;
+      submittedKeys.push("voice");
+    }
+    if (autoSpeak !== speechSettings.autoSpeak) {
+      speech.autoSpeak = autoSpeak;
+      submittedKeys.push("autoSpeak");
+    }
+    if (readUserName !== speechSettings.readUserName) {
+      speech.readUserName = readUserName;
+      submittedKeys.push("readUserName");
+    }
+    if (readEmotes !== speechSettings.readEmotes) {
+      speech.readEmotes = readEmotes;
+      submittedKeys.push("readEmotes");
+    }
+    if (connectionSuccessSpeechEnabled !== speechSettings.connectionSuccessSpeechEnabled) {
       speech.connectionSuccessSpeechEnabled = connectionSuccessSpeechEnabled;
-    if (connectionSuccessSpeechText !== speechSettings.connectionSuccessSpeechText)
+      submittedKeys.push("connectionSuccessSpeechEnabled");
+    }
+    if (connectionSuccessSpeechText !== speechSettings.connectionSuccessSpeechText) {
       speech.connectionSuccessSpeechText = connectionSuccessSpeechText;
-    const snapshot = form.beginSave();
-    const saved = await onSettingsUpdate({ speech });
-    form.finishSave(snapshot, saved);
-    return saved;
+      submittedKeys.push("connectionSuccessSpeechText");
+    }
+    const snapshot = form.beginSave(submittedKeys);
+    let succeeded = false;
+    try {
+      succeeded = await onSettingsUpdate({ speech });
+      return succeeded;
+    } finally {
+      form.finishSave(snapshot, succeeded);
+    }
   }
 
   function discardBouyomiSettings() {

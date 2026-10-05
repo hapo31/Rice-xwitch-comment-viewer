@@ -62,19 +62,35 @@ export function FilterView({
     }
 
     const speech: NonNullable<AppSettingsPatch["speech"]> = {};
-    if (numericMaxLength !== speechSettings.maxCommentLength)
+    const submittedKeys: (keyof typeof form.values)[] = [];
+    if (numericMaxLength !== speechSettings.maxCommentLength) {
       speech.maxCommentLength = numericMaxLength;
-    if (numericRepeatSeconds !== speechSettings.repeatSuppressionSeconds)
+      submittedKeys.push("maxLength");
+    }
+    if (numericRepeatSeconds !== speechSettings.repeatSuppressionSeconds) {
       speech.repeatSuppressionSeconds = numericRepeatSeconds;
-    if (!stringArrayEqual(blockedUserRules.items, speechSettings.blockedUsers))
+      submittedKeys.push("repeatSeconds");
+    }
+    if (!stringArrayEqual(blockedUserRules.items, speechSettings.blockedUsers)) {
       speech.blockedUsers = blockedUserRules.items;
-    if (!stringArrayEqual(blockedWordRules.items, speechSettings.blockedWords))
+      submittedKeys.push("blockedUsers");
+    }
+    if (!stringArrayEqual(blockedWordRules.items, speechSettings.blockedWords)) {
       speech.blockedWords = blockedWordRules.items;
-    if (urlHandling !== speechSettings.urlHandling) speech.urlHandling = urlHandling;
-    const snapshot = form.beginSave();
-    const saved = await onSettingsUpdate({ speech });
-    form.finishSave(snapshot, saved);
-    return saved;
+      submittedKeys.push("blockedWords");
+    }
+    if (urlHandling !== speechSettings.urlHandling) {
+      speech.urlHandling = urlHandling;
+      submittedKeys.push("urlHandling");
+    }
+    const snapshot = form.beginSave(submittedKeys);
+    let succeeded = false;
+    try {
+      succeeded = await onSettingsUpdate({ speech });
+      return succeeded;
+    } finally {
+      form.finishSave(snapshot, succeeded);
+    }
   }
 
   function discardFilter() {

@@ -506,5 +506,5 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## 調査メモ
 
-- Issue #193: Settings / Filter の useEffect は保存済み設定を全入力stateへ毎回複写し、項目と無関係な更新でも編集中の値を消していた。保存開始時点の編集世代snapshotで応答を照合し、開始後に元の保存値へ戻した入力も保存中はpatchとして保持する。失敗時は現在の下書きを維持する。保存済みhost/port/remoteModeの変更だけを接続許可メッセージの失効条件にする。最終 head のCIと親レビュー後のmergeは未完了。
+- Issue #193: Settings / Filter の useEffect は保存済み設定を全入力stateへ毎回複写し、項目と無関係な更新でも編集中の値を消していた。保存開始時点の編集世代snapshotで応答を照合し、開始後に元の保存値へ戻した入力も保存中はpatchとして保持する。親Harnessで設定更新と保存応答が同一batchに入る場合も回帰する。保存APIがrejectした場合はfinallyでpendingを解放し、失敗時の下書きと明示破棄を維持する。保存済みhost/port/remoteModeの変更だけを接続許可メッセージの失効条件にする。最終 head のCIと親レビュー後のmergeは未完了。
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。

@@ -4,12 +4,11 @@ import { useEffect, useRef, useState } from "react";
 export function useFormDraft<T extends Record<string, unknown>>(savedValues: T) {
   type Entry<K extends keyof T> = { value: T[K]; version: number };
   type Patch = { [K in keyof T]?: Entry<K> };
-  type Snapshot = Patch;
+  type Snapshot = { [K in keyof T]?: Entry<K> & { baseline: T[K] } };
   const [patch, setPatch] = useState<Patch>({});
   const nextVersion = useRef(0);
   const pending = useRef(new Map<keyof T, Set<number>>());
-  const latestSavedValues = useRef(savedValues);
-  latestSavedValues.current = savedValues;
+  const awaitingSaved = useRef(new Map<keyof T, { baseline: unknown }>());
   const values = Object.assign(
     {},
     savedValues,
@@ -22,13 +21,21 @@ export function useFormDraft<T extends Record<string, unknown>>(savedValues: T) 
     return (pending.current.get(key)?.size ?? 0) > 0;
   }
 
+  function isProtected(key: keyof T) {
+    return isPending(key) || awaitingSaved.current.has(key);
+  }
+
   useEffect(() => {
     setPatch((current) => {
       let changed = false;
       const next: Patch = {};
       for (const key of Object.keys(current) as (keyof T)[]) {
         const entry = current[key];
-        if (entry && Object.is(entry.value, savedValues[key]) && !isPending(key)) {
+        const awaiting = awaitingSaved.current.get(key);
+        if (awaiting && !Object.is(savedValues[key], awaiting.baseline)) {
+          awaitingSaved.current.delete(key);
+        }
+        if (entry && Object.is(entry.value, savedValues[key]) && !isProtected(key)) {
           changed = true;
         } else {
           next[key] = entry;
@@ -41,7 +48,7 @@ export function useFormDraft<T extends Record<string, unknown>>(savedValues: T) 
   function setValue<K extends keyof T>(key: K, value: T[K]) {
     const version = ++nextVersion.current;
     setPatch((current) => {
-      if (Object.is(value, savedValues[key]) && !isPending(key)) {
+      if (Object.is(value, savedValues[key]) && !isProtected(key)) {
         if (!(key in current)) return current;
         const next = { ...current };
         delete next[key];
@@ -52,8 +59,12 @@ export function useFormDraft<T extends Record<string, unknown>>(savedValues: T) 
     });
   }
 
-  function beginSave(): Snapshot {
-    const snapshot = patch;
+  function beginSave(keys: readonly (keyof T)[] = Object.keys(patch) as (keyof T)[]): Snapshot {
+    const snapshot: Snapshot = {};
+    for (const key of keys) {
+      const entry = patch[key];
+      if (entry) snapshot[key] = { ...entry, baseline: savedValues[key] };
+    }
     for (const key of Object.keys(snapshot) as (keyof T)[]) {
       const version = snapshot[key]?.version;
       if (version === undefined) continue;
@@ -79,8 +90,7 @@ export function useFormDraft<T extends Record<string, unknown>>(savedValues: T) 
       for (const key of Object.keys(current) as (keyof T)[]) {
         const entry = current[key];
         const wasSubmitted = entry?.version === snapshot[key]?.version;
-        const matchesSaved = entry && Object.is(entry.value, latestSavedValues.current[key]);
-        if ((succeeded && wasSubmitted) || (matchesSaved && !isPending(key))) {
+        if (succeeded && wasSubmitted) {
           changed = true;
         } else {
           next[key] = entry;
@@ -88,6 +98,17 @@ export function useFormDraft<T extends Record<string, unknown>>(savedValues: T) 
       }
       return changed ? next : current;
     });
+
+    if (succeeded) {
+      for (const key of Object.keys(snapshot) as (keyof T)[]) {
+        const submitted = snapshot[key];
+        if (submitted) {
+          awaitingSaved.current.set(key, {
+            baseline: submitted.baseline,
+          });
+        }
+      }
+    }
   }
 
   function discard() {
