@@ -292,6 +292,48 @@ async fn production_session_reuses_dedupe_after_normal_reconnect() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn handover_revocation_propagates_to_terminal_supervisor_without_retry() {
+    for reason in ["authorization_revoked", "user_removed"] {
+        let runtime = Runtime::default();
+        let reconnect = Message::Text(
+            serde_json::json!({
+                "metadata": { "message_type": "session_reconnect", "message_id": "reconnect" },
+                "payload": { "session": { "id": "old", "reconnect_url": "wss://handover" } }
+            })
+            .to_string(),
+        );
+        let revoked = Message::Text(
+            serde_json::json!({
+                "metadata": { "message_type": "revocation", "message_id": "revoked" },
+                "payload": { "subscription": { "type": "channel.chat.message", "status": reason } }
+            })
+            .to_string(),
+        );
+        runtime.sockets.lock().unwrap().extend([
+            Ok(FakeSocket::new([welcome("old"), reconnect])),
+            Ok(FakeSocket::new([revoked])),
+        ]);
+        let start = tokio::time::Instant::now();
+        run_eventsub_connection_with(&runtime, &params()).await;
+        assert_eq!(start.elapsed(), Duration::ZERO);
+        assert_eq!(runtime.urls.lock().unwrap().len(), 2);
+        assert_eq!(runtime.subscriptions.lock().unwrap().len(), 1);
+        let statuses = runtime.statuses.lock().unwrap();
+        assert!(matches!(
+            statuses.last(),
+            Some(TwitchStatus::Error | TwitchStatus::AuthRequired)
+        ));
+        assert!(runtime
+            .logs
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .contains(reason));
+    }
+}
+
+#[tokio::test(start_paused = true)]
 async fn production_connection_handle_aborts_pending_session() {
     let runtime = Arc::new(Runtime::default());
     runtime

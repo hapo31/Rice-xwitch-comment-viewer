@@ -6,7 +6,7 @@
 
 2026-10-06 レビュー修正: 送信した subscription token と失敗時に照合する EventSubAuthCredentials をrefresh関数の同じ返却値から記録し、待機中に認証が変わった古い401/403は credential clear/AuthRequired ではなく retryable として扱う。deferred subscription fake で送信後に認証をrotationしてから401が戻る順序を追加し、最新のメモリ/保存credential保持とterminal auth errorなしを検証する。logout は共有更新lockを待つ前にgeneration/revisionを無効化し、遅延 validate と logout の順序を回帰化した。test-onlyでしか使われない保存/clear helper wrapperを削除し、本番未使用のprivate itemを残さない。環境DNS制限でgit fetchは失敗したためGitHub REST compareを使用。現在の `main` (`98bfd81`) は `d966846` から45 commit進み、frontend、Auth controller、Settings、timeline、docsのみの変更で、Twitch Rust factory/serviceの追加差分はない。#205 の status presentation factory も frontend側の変更で認証serviceと競合しない。他Issue branchは取り込んでいない。Rust 1.90 app feature Twitch service tests 83件と `cargo clippy --all-targets --features app -- -D warnings` が成功した。
 
-2026-10-06 第2レビュー対応: 同一auth generation内のtoken rotationと別Login sessionを区別する。EventSub接続paramsに認証generation/client/user identityを固定し、古い接続の遅延401やrefresh完了が新しいログイン資格情報で再購読しないようにする。stale refresh応答もgeneration/client/userが一致する場合だけ最新rotationを採用し、別sessionならobsolete接続として静かに終了する。遅延401中の再ログイン、古いrefresh応答中の再ログイン、再接続開始時の旧paramsを実購読経路のdeferred fakeで検証する。最新 origin/main `6916a44` はローカルfetchにより取得した。#208 terminal EventSub変更は本Issueの購読資格情報境界と衝突しないか統合レビュー・回帰実行する。
+2026-10-06 第2レビュー対応: 同一auth generation内のtoken rotationと別Login sessionを区別する。EventSub接続paramsに認証generation/client/user identityを固定し、古い接続の遅延401やrefresh完了が新しいログイン資格情報で再購読しないようにする。stale refresh応答もgeneration/client/userが一致する場合だけ最新rotationを採用し、別sessionならobsolete接続として静かに終了する。遅延401中の再ログイン、古いrefresh応答中の再ログイン、再接続開始時の旧paramsを実購読経路のdeferred fakeで検証する。最新 origin/main `6916a44` を通常workspaceのfetch済みobjectから専用cloneのorigin/mainへfetchし、mergeした。#208 のterminal supervisor / AppEventState snapshot回帰と既存factory呼び出しも統合し、auth generation保護との競合がないことをレビューした。統合後のRust 1.90 app-feature Twitch tests 88件とstrict all-target clippyが成功した。
 
 2026-10-06 着手計画: auth_service.rs と subscription.rs の認証更新/失効経路、および auth_state.rs・auth_store.rs の generation と永続化境界を調査する。revision を含む共通 service に refresh/validate/rotation/clear/save の判定を集約し、validate 対 EventSub、refresh 対 refresh、scope 不足、遅延保存を deferred fake で検証する。Rust の Twitch 関連回帰、fmt、clippy を実行し、設計文書と実装の整合を確認する。
 
@@ -102,7 +102,7 @@
 
 ## 現在の進捗サマリ
 
-2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、subscription token identity/logout orderingも回帰化した。親レビューで見つかった別Login generationの誤流用を防ぐため、EventSubConnectionParamsにauth generation/client/user identityを保持する対応を追加中。latest `origin/main` `6916a44` を通常workspaceのfetch済みobjectから専用cloneへfetchし、#205 status presentation factoryや#208 terminal EventSub変更との統合差分を確認している。Rust fmt、diff check、no-default Twitch基礎20件、app-feature Twitch service tests 85件が成功した。最新main統合後のstrict all-target clippyとGitHub CI、親再レビュー後に最終完了状態を反映する。
+2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、subscription token identity/logout orderingと別Login generationの隔離を回帰化した。EventSubConnectionParamsは接続generationと認証generation/client/user identityを区別して保持し、旧接続をobsoleteとして再試行せず終了する。latest `origin/main` `6916a44` の#205 presentation factoryと#208 terminal EventSub snapshot変更を取り込んで統合した。Rust fmt、diff check、no-default Twitch基礎20件、app-feature Twitch tests 88件、strict app-feature all-target clippyが成功した。PR #243のCIと親再レビュー後に最終完了状態を反映する。
 
 Issue #199 は system timeline の中立モデルと型付き購読境界、source 別 transition 契約を実装した。初期 snapshot の認証/speech 通知、連続重複と復旧後の再通知、購読終了後の無視、不正 callback の型エラーを検証した。独立レビューで認証/接続の状態集合をさらに限定し、案内文を含む認証の重複抑制を維持した。最終 CI 結果と統合状況は PR #239 に記録する。
 
@@ -397,6 +397,8 @@ Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態
 - [x] Issue #22: Twitch の HTTP 接続・応答と EventSub WebSocket handshake に明示的な deadline を設定する。
 - [x] Issue #27: Twitch 接続中、読み上げ中、未保存変更がある終了要求を確認し、承認後に接続と待機キューを安全に停止する。
 - [x] Issue #29: Twitch API HTTP/OAuth/revocation エラーを型付きで保持し、再試行・認証要求・永続停止を分岐する。
+- [x] Issue #208: EventSub の恒久失敗を終端エラーから generation 付き Chat Error/AuthRequired と Logs/system Chat に一貫して反映してから task を終了し、HTTP 400 等で Connecting が残らず再試行しないことを fake で検証する。
+  - supervisor が API/revocation の終端 Chat 状態を一元更新し、handover 中の revocation も直ちに終端処理へ返す。HTTP 400/410/401/403、全 revocation 分岐、実 AppEventState snapshot、再試行回数と task 終了を本番 service の fake で確認した。Rust app feature Twitch 78 tests、実 AppShell の event/snapshot 復元2 tests、frontend build/lint/format と Rust fmt が成功。最終 CI・統合結果は PR #249 で追跡し、実 Twitch 通信は未実施。
 - [x] Issue #2: Chat 行へ読み上げ状態を表示し、キュー更新時に `sourceMessageId` で状態を同期する。
 - [x] Issue #1: Activity Bar から Logs view を開ける導線を追加し、リンク名・現在地表現を回帰テストする。
 - [x] `main` 向け PR で frontend/Rust の unit test と lint を並列実行する read-only GitHub Actions workflow を追加する。
