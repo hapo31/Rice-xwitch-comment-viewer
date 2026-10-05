@@ -14,8 +14,8 @@ vi.mock("../../tauri/client", async (importOriginal) => ({
 }));
 
 const makeSettings = (): AppSettings => ({
-  twitch: { ...defaultTwitchSettings },
-  speech: { ...defaultSpeechSettings, blockedUsers: [], blockedWords: [] },
+  twitch: { ...defaultTwitchSettings() },
+  speech: { ...defaultSpeechSettings(), blockedUsers: [], blockedWords: [] },
   launcher: { items: [] },
 });
 
