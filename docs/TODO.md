@@ -371,6 +371,7 @@ Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態
 - [x] Issue #22: Twitch の HTTP 接続・応答と EventSub WebSocket handshake に明示的な deadline を設定する。
 - [x] Issue #27: Twitch 接続中、読み上げ中、未保存変更がある終了要求を確認し、承認後に接続と待機キューを安全に停止する。
 - [x] Issue #29: Twitch API HTTP/OAuth/revocation エラーを型付きで保持し、再試行・認証要求・永続停止を分岐する。
+- [ ] Issue #208: EventSub の恒久失敗を終端エラーから generation 付き Chat Error/AuthRequired と Logs/system Chat に一貫して反映してから task を終了し、HTTP 400 等で Connecting が残らず再試行しないことを fake で検証する。
 - [x] Issue #2: Chat 行へ読み上げ状態を表示し、キュー更新時に `sourceMessageId` で状態を同期する。
 - [x] Issue #1: Activity Bar から Logs view を開ける導線を追加し、リンク名・現在地表現を回帰テストする。
 - [x] `main` 向け PR で frontend/Rust の unit test と lint を並列実行する read-only GitHub Actions workflow を追加する。
@@ -535,4 +536,3 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 - 2026-10-06 Issue #198: [Biome noExplicitAny](https://biomejs.dev/linter/rules/no-explicit-any/) の型引数制約の例外を維持する。条件型で任意の引数列から戻り値を推論する場合に限り、理由付きの行単位 `biome-ignore lint/suspicious/noExplicitAny` を使える。DTO、mock、値のキャストには使わず、ファイル単位の無効化はしない。`noEnum` は const enum を検出しないため `noConstEnum` も有効にした。既存 quality policy の正負 fixture で named/alias import と許容例外を含め検証し、別の AST 検査器や workflow は追加していない。
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
-
