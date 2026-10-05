@@ -19,13 +19,17 @@ import type {
   TwitchChatCheermote,
   TwitchChatEmote,
   TwitchChatMessageEvent,
-  TwitchConnectionStatus,
   TwitchMessageFragment,
-  TwitchStatusDomain,
   TwitchStatusEvent,
   TwitchUserProfile,
 } from "../types";
-import { speechOutcomeReasonCodes, speechRecoveryActions } from "../types";
+import {
+  speechOutcomeReasonCodes,
+  speechRecoveryActions,
+  retryableSpeechReasons,
+  diagnosableNonRetryableSpeechReasons,
+  twitchStatusesByDomain,
+} from "../types";
 
 type BridgeRecord = Record<string, unknown>;
 export type TwitchChatMessageWireEvent = Omit<TwitchChatMessageEvent, "receivedAt"> & {
@@ -114,15 +118,6 @@ export function rejectUnexpectedNulls(payload: unknown, contract: string): void 
 }
 
 const appLogLevels = ["info", "warning", "error"] as const;
-const twitchStatuses = [
-  "disconnected",
-  "connecting",
-  "connected",
-  "validating",
-  "reconnecting",
-  "authRequired",
-  "error",
-] as const;
 const twitchDomains = ["auth", "chat"] as const;
 const twitchReasons = ["missingRequiredScope"] as const;
 const speechStatuses = ["idle", "speaking", "paused", "disconnected", "error"] as const;
@@ -328,20 +323,30 @@ export function parseTwitchStatusEvent(value: unknown): TwitchStatusEvent {
   const revision = optionalField(payload, "revision", "TwitchStatusEvent", (revisionValue) =>
     numberField({ revision: revisionValue }, "revision", "TwitchStatusEvent"),
   );
-  return {
-    domain: enumField(payload, "domain", twitchDomains, "TwitchStatusEvent") as TwitchStatusDomain,
-    status: enumField(
-      payload,
-      "status",
-      twitchStatuses,
-      "TwitchStatusEvent",
-    ) as TwitchConnectionStatus,
+  const details = {
     occurredAtMs: numberField(payload, "occurredAtMs", "TwitchStatusEvent"),
     ...(revision === undefined ? {} : { revision }),
-    ...(reason === undefined ? {} : { reason }),
+    ...(message === undefined ? {} : { message }),
+  };
+  const domain = enumField(payload, "domain", twitchDomains, "TwitchStatusEvent");
+  if (domain === "auth") {
+    const status = enumField(payload, "status", twitchStatusesByDomain.auth, "TwitchStatusEvent");
+    if (connectionGeneration !== undefined || activeConnection !== undefined)
+      throw invalid("TwitchStatusEvent", "auth にチャット接続情報は指定できません。");
+    if (status === "authRequired")
+      return { ...details, domain, status, ...(reason === undefined ? {} : { reason }) };
+    if (reason !== undefined)
+      throw invalid("TwitchStatusEvent", "reason は authRequired にのみ指定できます。");
+    return { ...details, domain, status };
+  }
+  if (reason !== undefined)
+    throw invalid("TwitchStatusEvent", "reason は認証イベントにのみ指定できます。");
+  return {
+    ...details,
+    domain,
+    status: enumField(payload, "status", twitchStatusesByDomain.chat, "TwitchStatusEvent"),
     ...(connectionGeneration === undefined ? {} : { connectionGeneration }),
     ...(activeConnection === undefined ? {} : { activeConnection }),
-    ...(message === undefined ? {} : { message }),
   };
 }
 
@@ -387,7 +392,7 @@ export function parseSpeechQueueOutcome(value: unknown): SpeechQueueOutcome {
     throw invalid(contract, "retryable は boolean ではありません。");
   const retryable = payload.retryable;
   const recoveryAction = enumField(payload, "recoveryAction", speechRecoveryActions, contract);
-  const details = { message, occurredAtMs, retryable, recoveryAction };
+  const details = { message, occurredAtMs };
   if (kind === "blocked") {
     if (retryable || recoveryAction !== "reviewFilters")
       throw invalid(contract, "blocked の復旧契約が不正です。");
@@ -395,25 +400,46 @@ export function parseSpeechQueueOutcome(value: unknown): SpeechQueueOutcome {
       kind,
       reasonCode: enumField(payload, "reasonCode", speechOutcomeReasonCodes.blocked, contract),
       ...details,
+      retryable: false,
+      recoveryAction: "reviewFilters",
     };
   }
   if (kind === "skipped") {
     const reasonCode = enumField(payload, "reasonCode", speechOutcomeReasonCodes.skipped, contract);
     if (retryable || recoveryAction !== (reasonCode === "overflow" ? "reviewQueue" : "none"))
       throw invalid(contract, "skipped の復旧契約が不正です。");
-    return { kind, reasonCode, ...details };
+    return reasonCode === "overflow"
+      ? { kind, reasonCode, ...details, retryable: false, recoveryAction: "reviewQueue" }
+      : { kind, reasonCode, ...details, retryable: false, recoveryAction: "none" };
   }
   const reasonCode = enumField(payload, "reasonCode", speechOutcomeReasonCodes.error, contract);
-  if (
-    !["diagnoseSpeech", "confirmDelivery"].includes(recoveryAction) ||
-    (retryable &&
-      (recoveryAction === "confirmDelivery" ||
-        !["connectionRefused", "connectTimeout", "connectFailed", "connectionLost"].includes(
-          reasonCode,
-        )))
-  )
-    throw invalid(contract, "error の再送/復旧契約が不正です。");
-  return { kind, reasonCode, ...details };
+  if (recoveryAction !== "diagnoseSpeech" && recoveryAction !== "confirmDelivery")
+    throw invalid(contract, "error の復旧契約が不正です。");
+  if (retryable) {
+    if (recoveryAction !== "diagnoseSpeech")
+      throw invalid(contract, "error の再送契約が不正です。");
+    return {
+      kind,
+      ...details,
+      retryable: true,
+      recoveryAction,
+      reasonCode: enumField(payload, "reasonCode", retryableSpeechReasons, contract),
+    };
+  }
+  return recoveryAction === "diagnoseSpeech"
+    ? {
+        kind,
+        reasonCode: enumField(
+          payload,
+          "reasonCode",
+          diagnosableNonRetryableSpeechReasons,
+          contract,
+        ),
+        ...details,
+        retryable: false,
+        recoveryAction,
+      }
+    : { kind, reasonCode, ...details, retryable: false, recoveryAction };
 }
 
 function parseQueueItem(value: unknown): QueueItem {

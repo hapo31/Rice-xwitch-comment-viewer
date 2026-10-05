@@ -335,7 +335,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 ## Phase 5: 配信運用向け仕上げ
 
 - [x] Issue #199: system timeline の source/transition を中立の判別可能 union へ移し、生成・購読・routing の共通型で型 assertion を除去する。起動・認証・speech 復旧の初回通知／重複抑制と不正 callback の型エラーを検証し、既存品質 gate で検証する。
-  - 最新 main（#193 / #196 / #198 / #202 と追補 #245）との統合検証: frontend 341 tests、format/lint/typecheck/build、diff check が成功。
+  - 最新 main（#193 / #196 / #198 / #200 / #202 / #205 と追補 #245）との統合検証: frontend 348 tests、format/lint/typecheck/build、diff check が成功。
 
 - [x] Issue #198: テスト mock の明示的 any を実 DTO／関数型へ置換し、既存 Biome 品質ゲートで any・enum・namespace の禁止と型レベル用途の限定例外を検証する。既存 quality policy に正負 fixture を追加し、関連テスト・format・lint・型検査・build を確認した。
 
@@ -348,6 +348,13 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 2026-10-05進捗: #179（download-artifact 8.0.1）は公式の Node 24・digest mismatch の既定拒否・展開仕様を確認し、既存の name/path/run-id 指定と互換であることを確認した。ポリシー91件、PRの全16 checks、exact headの開発build、検証済み配布物の取得・digest照合と両形式のWindows native診断が成功してマージした。追加診断のtitlebar操作は初回・再試行で失敗し、同じsourceの3回目が成功したため、UI入力の不安定性は調査境界として記録する。#180以降を順次確認する。監査の閾値・例外や配布の検証条件は変更しない。
 
 - [x] Issue #48: Tauri bridge の `Option` を JSON field omission に統一し、Rust/TypeScript の camelCase・nullability 契約、Device Code 後の保存警告経路を共通 fixture と runtime validation で検証する。
+
+Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態・付随情報を判別可能 union に揃えた。既存21 outcome fixtureと新しい型/runtime共通の正負 fixtureを検証し、frontend 327件とformat/lint/typecheck/buildが成功した。独立レビューを受け、再送不能かつ送達不明な理由には送達確認を必須にした。最終 CI 結果と統合状況は PR #240 に記録する。
+- [x] Issue #200: 読み上げ outcome の kind/reason と retry/recovery、Twitch の domain と状態・付随情報を判別可能 union にし、不正組合せを型検査と bridge parser の両方で拒否する。既存 Rust payload と共通 fixture の互換性、品質 gate で検証する。
+  - 最新 main（#193 / #196 / #198 / #202 と統合追補 #245）との統合検証: frontend 343 tests、format/lint/typecheck/build、diff check が成功。
+- 2026-10-06 Issue #200: Rust の auth service と app_events の本番送信は、Auth に接続世代/identityを持たせず、missingRequiredScope を AuthRequired にだけ付ける。Frontend の domain 別状態配列を型/parserで共用し、14種類の不正組合せを同じ値でコンパイル時とruntimeの両方から拒否した。既存21 outcome fixture、旧payloadのoptional省略、errorの安全な再送と送達確認の既存分岐は保持する。追加のschema libraryやRust wire変更は行わず、汎用parserの整理は別Issue #201に残す。
+- Issue #200 レビュー確認: Rust `SpeechQueueOutcome::error` は `accepted=true` なら全 FailureCode に confirmDelivery を返す。configuration/confirmDelivery もこの経路では正常な契約のため拒否しない。全理由の受付済み fixture を維持し、accepted=false でも送達不明になる再送不能 write/lost/unknown に diagnoseSpeech を指定する組合せは排除する。
+
 
 - [x] `issue-fix-batch` スキルを用途別ルールへ分解し、`AGENTS.md` から必要時に参照する構成へ移行する。関連する PR／Issue の close 後に worktree と修正用ブランチを削除する。
 
@@ -463,6 +470,12 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] 起動時の仮チャットを設定状態に応じた system 操作案内へ置き換える。
 - [x] 配信中に判断しやすい日本語エラー文言を整理する（Issue #46: 操作別の原因・復旧案内と Logs の技術詳細）。
 - [x] Issue #45: 内部の Speech/Queue 状態値を日本語の表示文言へ集約し、状態アイコンの重複した支援技術向け読み上げをなくす。
+
+- [x] Issue #205: Twitch認証・接続ラベルをpresentationに集約し、短い視覚表示と詳しい読み上げの意図した差を明示する。状態の型網羅性と実AppShellの画面/支援技術の代表状態を検証した。frontend全326件、format/lint/typecheck/buildが成功。最終レビューとCI・統合状況はPR #244に記録する。
+  - 最新 main（#193 / #196 / #198 / #202 と統合追補 #245）との統合検証: frontend 340 tests、format/lint/typecheck/build、diff check が成功。
+
+Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベルは視覚表示2か所とライブ通知で長短差があった。共通の網羅したmappingと読み上げ用の明示的な差分へ統一し、暗黙の英語fallbackを設けない。
+
 - [x] キュー行の状態表示テストを追加する。
 - [x] 設定フォームのバリデーションテストを追加する。
 - [x] Issue #31: chat、queue、connection、settings、logs の state/action 境界を独立 store に分離し、Chat event で無関係な画面を再 render しない selector 購読と auth/event/settings orchestration のテストを追加する。
