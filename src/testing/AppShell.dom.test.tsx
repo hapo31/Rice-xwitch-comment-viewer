@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { createHashRouter, createMemoryRouter, RouterProvider } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import { AppShell } from "../AppShell";
 import { appRoutes } from "../routes";
@@ -29,6 +29,43 @@ function mountApp(path = "/chat", strict = false) {
   const view = render(strict ? <StrictMode>{content}</StrictMode> : content);
   return { stores, router, ...view };
 }
+
+it("native settings-schema completion survives HashRouter without an unknown-route redirect", async () => {
+  const originalUrl = window.location.href;
+  window.location.hash = "/chat";
+  const stores = createDomainStores();
+  const router = createHashRouter([
+    {
+      path: "*",
+      element: (
+        <DomainProvider stores={stores}>
+          <AppShell />
+        </DomainProvider>
+      ),
+    },
+  ]);
+  const view = render(<RouterProvider router={router} />);
+  try {
+    await ready(stores);
+    await act(async () => {
+      window.location.hash = "rice-schema-ok";
+    });
+    await waitFor(() => expect(window.location.hash).toBe("#/chat"));
+    for (const result of ["ok", "failed&stage=update"]) {
+      const search = `?riceSchemaResult=${result}`;
+      await act(async () => {
+        window.location.hash = `/chat${search}`;
+      });
+      await waitFor(() => expect(router.state.location.search).toBe(search));
+      expect(router.state.location.pathname).toBe("/chat");
+      expect(window.location.hash).toBe(`#/chat${search}`);
+    }
+  } finally {
+    view.unmount();
+    router.dispose();
+    window.history.replaceState(null, "", originalUrl);
+  }
+});
 
 it("late startup and explicit reload preserve all item reasons and expose keyboard-operated skip history", async () => {
   let revision = 10;

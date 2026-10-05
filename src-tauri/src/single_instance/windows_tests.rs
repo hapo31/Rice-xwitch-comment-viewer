@@ -127,10 +127,16 @@ fn native_instance_fixture() {
             assert!(settings.twitch.channel_login.is_empty());
             std::thread::spawn(move || {
                 let deadline = Instant::now() + Duration::from_secs(60);
+                let mut observed = String::new();
                 loop {
                     let url = window.url().expect("native document URL");
-                    if let Some(fragment @ ("rice-schema-ok" | "rice-schema-failed")) = url.fragment() {
-                        println!("RICE_SCHEMA_RESULT {}", serde_json::json!({"verified":fragment == "rice-schema-ok"}));
+                    if url.as_str() != observed {
+                        println!("RICE_SCHEMA_STAGE {url}");
+                        std::io::stdout().flush().expect("flush schema stage");
+                        observed = url.to_string();
+                    }
+                    if let Some(fragment) = url.fragment().filter(|fragment| *fragment == "/chat?riceSchemaResult=ok" || fragment.starts_with("/chat?riceSchemaResult=failed&stage=")) {
+                        println!("RICE_SCHEMA_RESULT {}", serde_json::json!({"verified":fragment == "/chat?riceSchemaResult=ok", "observedUrl":url.as_str()}));
                         std::io::stdout().flush().expect("flush schema result");
                         // Exercise the registered production exit command and
                         // its best-effort window-position save, not a kill.
@@ -138,7 +144,7 @@ fn native_instance_fixture() {
                         return;
                     }
                     if Instant::now() > deadline {
-                        println!("RICE_SCHEMA_RESULT {{\"verified\":false}}");
+                        println!("RICE_SCHEMA_RESULT {}", serde_json::json!({"verified":false,"observedUrl":url.as_str()}));
                         std::io::stdout().flush().expect("flush schema timeout");
                         window.app_handle().exit(1);
                         return;
