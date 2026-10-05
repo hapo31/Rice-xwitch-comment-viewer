@@ -28,6 +28,7 @@ describe("system timeline orchestration contract", () => {
     } as const;
     const speechFailure = {
       status: "disconnected",
+      adapterHealth: "disconnected",
       message: "棒読みちゃんを起動してください。",
       occurredAtMs: 1,
     } as const;

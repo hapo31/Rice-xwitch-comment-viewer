@@ -7,7 +7,6 @@ import {
   parseTwitchAuthValidationResult,
   parseTwitchChatMessageWireEvent,
   parseTwitchStatusEvent,
-  rejectUnexpectedNulls,
 } from "./bridge";
 
 describe("Tauri bridge Option contract", () => {
@@ -84,12 +83,5 @@ describe("Tauri bridge Option contract", () => {
         fragments: [{ type: "text", text: "hello", emote: null }],
       }),
     ).toThrow("emote");
-  });
-
-  it("uses the generic guard only to reject nested null values", () => {
-    expect(() =>
-      rejectUnexpectedNulls({ launcher: [{ iconDataUrl: null }] }, "launcher_add"),
-    ).toThrow("payload.launcher[0].iconDataUrl");
-    expect(() => rejectUnexpectedNulls("not an object", "app_build_info")).not.toThrow();
   });
 });

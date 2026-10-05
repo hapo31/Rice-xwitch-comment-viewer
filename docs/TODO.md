@@ -358,6 +358,9 @@ Issue #194 の親レビュー追補で、連投抑制秒の空欄/空白を拒�
 2026-10-05進捗: #179（download-artifact 8.0.1）は公式の Node 24・digest mismatch の既定拒否・展開仕様を確認し、既存の name/path/run-id 指定と互換であることを確認した。ポリシー91件、PRの全16 checks、exact headの開発build、検証済み配布物の取得・digest照合と両形式のWindows native診断が成功してマージした。追加診断のtitlebar操作は初回・再試行で失敗し、同じsourceの3回目が成功したため、UI入力の不安定性は調査境界として記録する。#180以降を順次確認する。監査の閾値・例外や配布の検証条件は変更しない。
 
 - [x] Issue #48: Tauri bridge の `Option` を JSON field omission に統一し、Rust/TypeScript の camelCase・nullability 契約、Device Code 後の保存警告経路を共通 fixture と runtime validation で検証する。
+- [x] Issue #201: 全 command 応答と event を runtime schema で検証し、Rust wire 型生成と schema 型一致・生成差分検査を導入する。既存 domain 変換と IPC 境界を保持する。
+  - 作業進捗: Zod 4 schema から frontend DTO を導出し、ts-rs 12 の Serde 型生成と全51 wire 型の双方向一致検査を導入。全32 command の正常/不正応答と unit null を検証し、frontend 414 tests・型検査・lint・format・build が最新 main（#194 / #208）統合後に成功。導入時の Rust no-default 218 tests と全機能 287 tests・型生成も成功。#200 の厳密な状態契約を維持し、#195 の解除テストも実際の unit null 応答に統一。独立レビュー済みで、#199 の snapshot テストにも必須 adapterHealth を補い、#197 の Chat 状態所有権も統合した。Windows checkout の CRLF は生成比較前に改行だけ正規化し、LF/CRLF 成功・型差分の失敗・復元後成功も確認した。最終 CI・統合結果は PR #247 に記録する。
+  - 性能確認: 同一 Node 24 プロセス、1000 warmup 後の5回中央値で chat 1万件は旧 parser 5.74ms / schema 10.88ms、200件 queue 1000回は46.55ms / 39.67ms。Settings 分割も統合した production JS は600.33kB (gzip182.65kB)で、schema 導入前の469.75kB (gzip142.31kB)から増加し Vite の500kB警告が出る。警告上限は変更しない。
 
 Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態・付随情報を判別可能 union に揃えた。既存21 outcome fixtureと新しい型/runtime共通の正負 fixtureを検証し、frontend 327件とformat/lint/typecheck/buildが成功した。独立レビューを受け、再送不能かつ送達不明な理由には送達確認を必須にした。最終 CI 結果と統合状況は PR #240 に記録する。
 - [x] Issue #200: 読み上げ outcome の kind/reason と retry/recovery、Twitch の domain と状態・付随情報を判別可能 union にし、不正組合せを型検査と bridge parser の両方で拒否する。既存 Rust payload と共通 fixture の互換性、品質 gate で検証する。

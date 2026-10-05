@@ -42,6 +42,8 @@ pub(super) struct StoredTwitchAuth {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct TwitchDeviceAuthStart {
     pub user_code: String,
     pub verification_uri: String,
@@ -52,10 +54,13 @@ pub struct TwitchDeviceAuthStart {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct TwitchUserProfile {
     pub user_id: String,
     pub login: String,
     #[serde(default, skip_serializing)]
+    #[cfg_attr(test, ts(skip))]
     pub client_id: String,
     pub scopes: Vec<String>,
     pub expires_in: u64,
@@ -67,6 +72,7 @@ pub struct TwitchUserProfile {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum TwitchAuthPollResult {
     Pending {
         message: String,
@@ -79,6 +85,7 @@ pub enum TwitchAuthPollResult {
     Authorized {
         profile: TwitchUserProfile,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         storage_warning: Option<String>,
     },
     Denied {
@@ -91,6 +98,8 @@ pub enum TwitchAuthPollResult {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct TwitchAuthValidationResult {
     pub profile: TwitchUserProfile,
     #[serde(skip_serializing_if = "Option::is_none")]
