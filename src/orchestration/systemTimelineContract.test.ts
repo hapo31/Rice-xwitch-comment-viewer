@@ -83,9 +83,9 @@ describe("system timeline orchestration contract", () => {
       routeSystemTimelineEvent(autoConnectTimelineEvent("started", "自動接続を開始します。"));
       routeSystemTimelineEvent(autoConnectTimelineEvent("started", "自動接続を開始します。"));
       expect(recorded.map((event) => event.transition)).toEqual([
-        "validating:保存済み認証を確認しています。",
+        "validating",
         "disconnected",
-        "connected:認証を復元しました。",
+        "connected",
         "idle",
         "disconnected",
         "auto-started",
@@ -110,12 +110,31 @@ describe("system timeline orchestration contract", () => {
       transition: "auto-started",
       message: "",
     };
-    // @ts-expect-error Authentication transitions include the status and guidance key.
-    const missingAuthKey: SystemTimelineEvent = {
+    // @ts-expect-error Authentication cannot enter the Chat reconnecting state.
+    const wrongAuth: SystemTimelineEvent = {
       source: "twitch-auth",
-      transition: "connected",
+      transition: "reconnecting",
       message: "",
     };
-    expect([invalidTwitch, invalidSpeech, wrongSource, missingAuthKey]).toHaveLength(4);
+    // @ts-expect-error Chat cannot enter the Auth validating state.
+    const wrongChat: SystemTimelineEvent = {
+      source: "twitch-connection",
+      transition: "validating",
+      message: "",
+    };
+    const unknownAuth: SystemTimelineEvent = {
+      source: "twitch-auth",
+      // @ts-expect-error Authentication transitions are known statuses, not arbitrary keys.
+      transition: "connected:anything",
+      message: "",
+    };
+    expect([
+      invalidTwitch,
+      invalidSpeech,
+      wrongSource,
+      wrongAuth,
+      wrongChat,
+      unknownAuth,
+    ]).toHaveLength(6);
   });
 });

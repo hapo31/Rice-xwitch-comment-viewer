@@ -1,15 +1,18 @@
 import type { SpeechStatus, TwitchStatusEvent } from "../types";
 
+export type AuthTimelineStatus = Exclude<TwitchStatusEvent["status"], "reconnecting">;
+export type ChatTimelineStatus = Exclude<TwitchStatusEvent["status"], "validating">;
+
 /** Operational Chat events retain the source-specific deduplication key. */
 export type SystemTimelineEvent =
   | {
       source: "twitch-auth";
-      transition: `${TwitchStatusEvent["status"]}:${string}`;
+      transition: AuthTimelineStatus;
       message: string;
     }
   | {
       source: "twitch-connection";
-      transition: TwitchStatusEvent["status"] | "auto-started" | "auto-failed";
+      transition: ChatTimelineStatus | "auto-started" | "auto-failed";
       message: string;
     }
   | {

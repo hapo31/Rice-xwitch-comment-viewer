@@ -89,7 +89,7 @@
 
 ## 現在の進捗サマリ
 
-Issue #199 は system timeline の中立モデルと型付き購読境界、source 別 transition 契約を実装した。初期 snapshot の認証/speech 通知、連続重複と復旧後の再通知、購読終了後の無視、不正 callback の型エラーを検証し、最終レビューと CI を待つ。
+Issue #199 は system timeline の中立モデルと型付き購読境界、source 別 transition 契約を実装した。初期 snapshot の認証/speech 通知、連続重複と復旧後の再通知、購読終了後の無視、不正 callback の型エラーを検証した。独立レビューで認証/接続の状態集合をさらに限定し、案内文を含む認証の重複抑制を維持した。最終 CI 結果と統合状況は PR #239 に記録する。
 
 2026-10-05: Dependabot全13件（#179–#182、#184–#192）のレビューと互換性修正を完了した。Tauri dialogのJS/Rust版一致検査、React 19の型・ref初期値・TitleBar DOMテスト移行を実施した。マージと後片付けの条件・検証結果・既存Windows入力の不安定性はPhase 5のDependabot項目に記録する。
 
@@ -328,7 +328,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 5: 配信運用向け仕上げ
 
-- [ ] Issue #199: system timeline の source/transition を中立の判別可能 union へ移し、生成・購読・routing の共通型で型 assertion を除去する。起動・認証・speech 復旧の初回通知／重複抑制と不正 callback の型エラーを検証し、既存品質 gate と CI を確認する。
+- [x] Issue #199: system timeline の source/transition を中立の判別可能 union へ移し、生成・購読・routing の共通型で型 assertion を除去する。起動・認証・speech 復旧の初回通知／重複抑制と不正 callback の型エラーを検証し、既存品質 gate で検証する。
 
 - [x] Dependabot PR #179–#182、#184–#192 の全13件を一件ずつ専用 worktree でレビューし、必要なCI互換性修正を実装する。各PRは全PR checksと当該headのWindows開発build成功を確認してからマージし、worktreeと作業用ローカルbranchを削除して次へ進む。
 
@@ -508,6 +508,6 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## 調査メモ
 
-- 2026-10-06 Issue #199: `SystemTimelineEvent` を presentation から `models/systemTimeline.ts` へ移し、domain orchestration と AppShell も同じ型を使う。source/transition は判別可能 union とし、認証の状態＋案内文による重複抑制は維持する。実購読＋snapshot replay＋router の回帰と `@ts-expect-error` の型契約回帰を追加した。frontend 324件、format/lint/typecheck/build が成功した。実Twitch/棒読みちゃんとの手動通信は未実施。
+- 2026-10-06 Issue #199: `SystemTimelineEvent` を presentation から `models/systemTimeline.ts` へ移し、domain orchestration と AppShell も同じ型を使う。source/transition は判別可能 union とし、認証の状態＋案内文による重複抑制は維持する。実購読＋snapshot replay＋router の回帰と `@ts-expect-error` の型契約回帰を追加した。frontend 325件、format/lint/typecheck/build が成功した。実Twitch/棒読みちゃんとの手動通信は未実施。
 
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
