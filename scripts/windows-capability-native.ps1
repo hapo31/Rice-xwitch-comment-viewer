@@ -37,6 +37,8 @@ public static class RiceNativeProbe {
   [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int width,int height,uint flags);
   [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
   [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr h);
   [DllImport("user32.dll")] static extern bool EnumWindows(EnumerateWindow callback, IntPtr arg);
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder text, int max);
@@ -65,7 +67,8 @@ public static class RiceNativeProbe {
     var h=Window(pid); Rect r; if(!GetWindowRect(h,out r)) throw new Exception("GetWindowRect failed");
     var name=new StringBuilder(128); var title=new StringBuilder(128); GetClassName(h,name,128); GetWindowText(h,title,128);
     var foreground=GetForegroundWindow(); uint foregroundPid; GetWindowThreadProcessId(foreground,out foregroundPid); Point cursor; GetCursorPos(out cursor);
-    return new { hwnd=h.ToInt64(), windowClass=name.ToString(), title=title.ToString(), left=r.Left, top=r.Top, width=r.Right-r.Left, height=r.Bottom-r.Top, minimized=IsIconic(h), maximized=IsZoomed(h), foregroundHwnd=foreground.ToInt64(), foregroundPid=foregroundPid, cursorX=cursor.X, cursorY=cursor.Y };
+    var foregroundClass=new StringBuilder(128); GetClassName(foreground,foregroundClass,128);
+    return new { hwnd=h.ToInt64(), windowClass=name.ToString(), title=title.ToString(), left=r.Left, top=r.Top, width=r.Right-r.Left, height=r.Bottom-r.Top, visible=IsWindowVisible(h), enabled=IsWindowEnabled(h), style=GetWindowLong(h,-16), extendedStyle=GetWindowLong(h,-20), minimized=IsIconic(h), maximized=IsZoomed(h), foregroundHwnd=foreground.ToInt64(), foregroundPid=foregroundPid, foregroundClass=foregroundClass.ToString(), cursorX=cursor.X, cursorY=cursor.Y };
   }
   public static void Restore(int pid) { var h=Window(pid); ShowWindow(h,9); SetForegroundWindow(h); Thread.Sleep(250); }
   public static void Prepare(int pid) {
@@ -92,7 +95,7 @@ public static class RiceNativeProbe {
       Thread.Sleep(200); var p=Screen(pid,x,y); var hit=GetAncestor(WindowFromPoint(p),2);
       if(hit!=h) {
         uint owner; GetWindowThreadProcessId(hit,out owner); var name=new StringBuilder(128); GetClassName(hit,name,128);
-        throw new Exception("Owned UI focus point is occluded by HWND "+hit.ToInt64()+", PID "+owner+", class "+name);
+        throw new Exception("Owned UI focus point ("+p.X+","+p.Y+") is occluded by HWND "+hit.ToInt64()+", PID "+owner+", class "+name+"; owned="+State(pid));
       }
       SetCursorPos(p.X,p.Y); Button(2); Thread.Sleep(200); Button(4);
     } finally {

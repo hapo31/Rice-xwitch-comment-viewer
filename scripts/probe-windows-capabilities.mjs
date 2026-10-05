@@ -179,7 +179,12 @@ async function run() {
     const geometry = await evaluate(`(() => { const region=document.querySelector('[data-tauri-drag-region]'); const r=region.getBoundingClientRect(); const x=r.left+r.width/2,y=r.top+r.height/2; const main=document.querySelector('main').getBoundingClientRect(); const focusX=main.left+main.width/2,focusY=main.top+main.height*0.75; const hit=document.elementFromPoint(focusX,focusY); return {width:innerWidth,height:innerHeight,scale:devicePixelRatio,x,y,focusX,focusY,focusPointSafe:!!hit?.closest('main')&&!hit.closest('button,a,input,select,textarea,[role="button"],[data-tauri-drag-region]'),hitDragRegion:!!document.elementFromPoint(x,y)?.closest('[data-tauri-drag-region]')}; })()`);
     assert.equal(geometry.hitDragRegion, true, "Physical drag point must hit the rendered titlebar region");
     assert.equal(geometry.focusPointSafe, true, "Fixture activation must not start a drag or operate a UI control");
-    await native.call("focus", { x: Math.round(geometry.focusX * geometry.scale), y: Math.round(geometry.focusY * geometry.scale) });
+    try { await native.call("focus", { x: Math.round(geometry.focusX * geometry.scale), y: Math.round(geometry.focusY * geometry.scale) }); }
+    catch (error) {
+      proof.focusDiagnostic = { geometry, state: await native.call("state"), error: String(error.message) };
+      console.log(`${name}: 前面化の失敗診断 ${JSON.stringify(proof.focusDiagnostic)}`);
+      throw error;
+    }
     await evaluate(`window.__riceCapabilityProbe.mouseDowns=[]; true`);
     let before = await native.call("state");
     let after = await native.call("drag", { x: Math.round(geometry.x * geometry.scale), y: Math.round(geometry.y * geometry.scale), dx: 50, dy: 25 });
