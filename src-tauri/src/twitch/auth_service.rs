@@ -1,15 +1,14 @@
 //! Device authorization, validation and generation-safe credential lifecycle.
 use super::auth_state::{
-    ensure_required_twitch_scopes, token_scopes, PendingDeviceAuth, TwitchAuthPollResult,
-    TwitchAuthState, TwitchAuthValidationResult, TwitchDeviceAuthStart, TwitchToken,
-    TwitchUserProfile,
+    ensure_required_twitch_scopes, token_scopes, EventSubAuthCredentials, PendingDeviceAuth,
+    TwitchAuthPollResult, TwitchAuthState, TwitchAuthValidationResult, TwitchDeviceAuthStart,
+    TwitchToken, TwitchUserProfile,
 };
 use super::auth_store::{AuthClearOutcome, AuthSaveOutcome, TwitchAuthStore};
 use super::error::{
-    is_definitive_auth_failure, retryable_auth_error_message, to_secure_store_user_message,
-    to_twitch_user_message,
+    retryable_auth_error_message, to_secure_store_user_message, to_twitch_user_message,
 };
-use super::oauth::{DeviceOAuthTransport, PollAuthError};
+use super::oauth::{refresh_and_validate, DeviceOAuthTransport, PollAuthError};
 use crate::app_events::{AppLogLevel, TwitchAuthRequiredReason, TwitchStatus, TwitchStatusDomain};
 
 /// Dependencies owned by the application adapter or a deterministic test runtime.
@@ -33,6 +32,116 @@ pub(super) trait AuthRuntime: DeviceOAuthTransport + Sync {
 pub(super) struct TwitchAuthService<'a, R> {
     runtime: &'a R,
 }
+
+#[derive(Debug)]
+pub(super) struct StaleCredentialResponse;
+impl std::fmt::Display for StaleCredentialResponse {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("古い Twitch 認証応答です")
+    }
+}
+impl std::error::Error for StaleCredentialResponse {}
+
+#[derive(Debug)]
+pub(super) struct MissingTwitchScope(pub(super) String);
+impl std::fmt::Display for MissingTwitchScope {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+impl std::error::Error for MissingTwitchScope {}
+
+/// Shared refresh/validate/rotate/save path used by Login validation and
+/// EventSub's 401 recovery. Credential identity is checked across the network
+/// request and again by the durable store before commit.
+pub(super) async fn refresh_credentials_if_current(
+    state: &impl AuthRuntime,
+    credentials: &EventSubAuthCredentials,
+) -> anyhow::Result<(TwitchUserProfile, Option<String>)> {
+    let (token, profile) = match refresh_and_validate(state, credentials).await {
+        Ok(result) => result,
+        Err(error) => {
+            if !credentials_are_current(
+                state,
+                credentials.generation,
+                credentials.credential_revision,
+                &credentials.access_token,
+                &credentials.refresh_token,
+            )? {
+                return Err(anyhow::Error::new(StaleCredentialResponse));
+            }
+            return Err(error);
+        }
+    };
+    if let Err(error) = ensure_required_twitch_scopes(&profile.scopes) {
+        if !credentials_are_current(
+            state,
+            credentials.generation,
+            credentials.credential_revision,
+            &credentials.access_token,
+            &credentials.refresh_token,
+        )? {
+            return Err(anyhow::Error::new(StaleCredentialResponse));
+        }
+        return Err(anyhow::Error::new(MissingTwitchScope(error.to_string())));
+    }
+
+    let (_, _, warning) = persist_credential_rotation(
+        state.auth().clone(),
+        state.store(),
+        credentials,
+        token,
+        profile.clone(),
+    )
+    .await?;
+    Ok((profile, warning))
+}
+
+pub(super) async fn persist_credential_rotation(
+    auth_state: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,
+    store: &TwitchAuthStore,
+    credentials: &EventSubAuthCredentials,
+    refreshed: super::auth_state::TokenResponse,
+    profile: TwitchUserProfile,
+) -> anyhow::Result<(String, bool, Option<String>)> {
+    let (access_token, snapshot, generation, credential_revision) = {
+        let mut auth = auth_state
+            .lock()
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        auth.eventsub_credentials()?;
+        if auth.generation != credentials.generation
+            || !auth.credentials_match(
+                credentials.credential_revision,
+                &credentials.access_token,
+                &credentials.refresh_token,
+            )
+        {
+            return Err(anyhow::Error::new(StaleCredentialResponse));
+        }
+        let access = auth.replace_token(refreshed, profile)?;
+        (
+            access,
+            auth.clone(),
+            auth.generation,
+            auth.credential_revision,
+        )
+    };
+    let warning = match store
+        .save_if_current(auth_state.clone(), generation, snapshot)
+        .await?
+    {
+        AuthSaveOutcome::Saved(warning) => warning,
+        AuthSaveOutcome::Stale => return Err(anyhow::Error::new(StaleCredentialResponse)),
+    };
+    let auth = auth_state
+        .lock()
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    if auth.generation != generation || auth.credential_revision != credential_revision {
+        return Err(anyhow::Error::new(StaleCredentialResponse));
+    }
+    Ok((access_token, true, warning))
+}
+
 impl<'a, R: AuthRuntime> TwitchAuthService<'a, R> {
     pub(super) fn new(runtime: &'a R) -> Self {
         Self { runtime }
@@ -47,7 +156,9 @@ impl<'a, R: AuthRuntime> TwitchAuthService<'a, R> {
 
         let generation = {
             let mut auth = state.auth().lock().map_err(|error| error.to_string())?;
-            auth.invalidate_operations()
+            let generation = auth.invalidate_operations();
+            auth.credential_revision = auth.credential_revision.wrapping_add(1);
+            generation
         };
 
         let response = state
@@ -150,6 +261,7 @@ impl<'a, R: AuthRuntime> TwitchAuthService<'a, R> {
                     }
                     auth.pending = None;
                     auth.profile = Some(profile.clone());
+                    auth.credential_revision = auth.credential_revision.wrapping_add(1);
                     auth.token = Some(TwitchToken {
                         access_token: token.access_token,
                         refresh_token: token.refresh_token,
@@ -268,7 +380,10 @@ impl<'a, R: AuthRuntime> TwitchAuthService<'a, R> {
     }
     pub(super) async fn validate(&self) -> Result<TwitchAuthValidationResult, String> {
         let state = self.runtime;
-        let (generation, access_token, refresh_token, client_id) = {
+        // Validation and EventSub refresh share this lock across the network
+        // request and commit, so a delayed response cannot race token rotation.
+        let _credential_update = state.store().lock_credential_update().await;
+        let (generation, credential_revision, access_token, refresh_token, client_id) = {
             let auth = state.auth().lock().map_err(|error| error.to_string())?;
             let token = auth
                 .token
@@ -283,6 +398,7 @@ impl<'a, R: AuthRuntime> TwitchAuthService<'a, R> {
                 .unwrap_or_default();
             (
                 auth.generation,
+                auth.credential_revision,
                 token.access_token.clone(),
                 token.refresh_token.clone(),
                 client_id,
@@ -294,83 +410,107 @@ impl<'a, R: AuthRuntime> TwitchAuthService<'a, R> {
                 let profile = TwitchUserProfile::from(validate);
                 if let Err(error) = ensure_required_twitch_scopes(&profile.scopes) {
                     let message = error.to_string();
-                    ensure_auth_generation_is_current(state, generation)?;
-                    clear_missing_scope_twitch_auth(state, &message).await?;
-                    return Err(message);
+                    if clear_credentials_if_current(
+                        state,
+                        generation,
+                        credential_revision,
+                        &access_token,
+                        &refresh_token,
+                        &message,
+                        true,
+                    )
+                    .await?
+                    {
+                        return Err(message);
+                    }
+                    return Err(stale_credential_message());
                 }
                 profile
             }
             Err(validate_error) => {
-                let token = match state.refresh(&client_id, &refresh_token).await {
-                    Ok(token) => token,
-                    Err(refresh_error) => {
-                        ensure_auth_generation_is_current(state, generation)?;
-                        if is_definitive_auth_failure(&refresh_error) {
-                            let message = to_twitch_user_message(anyhow::anyhow!(
-                                "{validate_error}; {refresh_error}"
-                            ));
-                            clear_invalid_twitch_auth(state, &message).await?;
-                            return Err(message);
-                        }
-                        return Err(retryable_auth_error_message(&refresh_error));
-                    }
+                let credentials = EventSubAuthCredentials {
+                    generation,
+                    credential_revision,
+                    client_id,
+                    access_token: access_token.clone(),
+                    refresh_token: refresh_token.clone(),
                 };
-                let profile = match state.validate(&token.access_token).await {
-                    Ok(validate) => {
-                        let profile = TwitchUserProfile::from(validate);
-                        if let Err(error) = ensure_required_twitch_scopes(&profile.scopes) {
-                            let message = error.to_string();
-                            ensure_auth_generation_is_current(state, generation)?;
-                            clear_missing_scope_twitch_auth(state, &message).await?;
-                            return Err(message);
-                        }
-                        profile
+                match refresh_credentials_if_current(state, &credentials).await {
+                    Ok((profile, storage_warning)) => {
+                        state.auth_status(
+                            TwitchStatusDomain::Auth,
+                            TwitchStatus::Connected,
+                            Some("Twitch 認証を更新しました。".to_string()),
+                        );
+                        state.auth_log(AppLogLevel::Info, "Twitch 認証を更新しました。");
+                        return Ok(TwitchAuthValidationResult {
+                            profile,
+                            storage_warning,
+                        });
+                    }
+                    Err(error) if error.is::<StaleCredentialResponse>() => {
+                        return Err(stale_credential_message());
                     }
                     Err(error) => {
-                        ensure_auth_generation_is_current(state, generation)?;
-                        if is_definitive_auth_failure(&error) {
-                            let message = to_twitch_user_message(error);
-                            clear_invalid_twitch_auth(state, &message).await?;
-                            return Err(message);
+                        let missing_scope = error
+                            .downcast_ref::<MissingTwitchScope>()
+                            .map(|error| error.0.clone());
+                        let definitive = missing_scope.is_none()
+                            && error
+                                .downcast_ref::<super::error::TwitchApiError>()
+                                .is_some_and(|api_error| api_error.auth_failure().is_some());
+                        if let Some(message) = missing_scope {
+                            if clear_credentials_if_current(
+                                state,
+                                generation,
+                                credential_revision,
+                                &access_token,
+                                &refresh_token,
+                                &message,
+                                true,
+                            )
+                            .await?
+                            {
+                                return Err(message);
+                            }
+                            return Err(stale_credential_message());
                         }
+                        if definitive {
+                            let message = to_twitch_user_message(error);
+                            if clear_credentials_if_current(
+                                state,
+                                generation,
+                                credential_revision,
+                                &access_token,
+                                &refresh_token,
+                                &message,
+                                false,
+                            )
+                            .await?
+                            {
+                                return Err(message);
+                            }
+                            return Err(stale_credential_message());
+                        }
+                        let error = if error
+                            .downcast_ref::<super::error::TwitchApiError>()
+                            .is_some()
+                        {
+                            error
+                        } else {
+                            anyhow::anyhow!("{validate_error}; {error}")
+                        };
                         return Err(retryable_auth_error_message(&error));
                     }
-                };
-                let auth_snapshot = {
-                    let mut auth = state.auth().lock().map_err(|error| error.to_string())?;
-                    if auth.generation != generation {
-                        return Err(
-                            "新しい Twitch 認証操作が開始されたため、古い確認結果を破棄しました。"
-                                .to_string(),
-                        );
-                    }
-                    auth.profile = Some(profile.clone());
-                    auth.token = Some(TwitchToken {
-                        access_token: token.access_token,
-                        refresh_token: token.refresh_token,
-                        scopes: token_scopes(token.scope, &profile),
-                        expires_in: token.expires_in,
-                    });
-                    auth.clone()
-                };
-                let storage_warning =
-                    save_auth_if_current(state, generation, auth_snapshot).await?;
-                ensure_auth_generation_is_current(state, generation)?;
-                state.auth_status(
-                    TwitchStatusDomain::Auth,
-                    TwitchStatus::Connected,
-                    Some("Twitch 認証を更新しました。".to_string()),
-                );
-                state.auth_log(AppLogLevel::Info, "Twitch 認証を更新しました。");
-                return Ok(TwitchAuthValidationResult {
-                    profile,
-                    storage_warning,
-                });
+                }
             }
         };
 
         let auth_snapshot = {
             let mut auth = state.auth().lock().map_err(|error| error.to_string())?;
+            if !auth.credentials_match(credential_revision, &access_token, &refresh_token) {
+                return Err(stale_credential_message());
+            }
             apply_validated_profile(&mut auth, generation, profile.clone())?;
             auth.clone()
         };
@@ -423,25 +563,35 @@ pub(super) async fn clear_twitch_auth_state_with_store(
     auth_state: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,
     store: &TwitchAuthStore,
 ) -> Result<(), String> {
+    let _credential_update = store.lock_credential_update().await;
     // Invalidate the in-memory generation before waiting for the store. This
     // prevents a concurrent save from being accepted after logout begins.
-    let (previous_auth, generation) = {
+    let (previous_auth, generation, credential_revision) = {
         let mut auth = auth_state.lock().map_err(|error| error.to_string())?;
         let previous_auth = auth.clone();
         let generation = auth.invalidate_operations();
+        auth.credential_revision = auth.credential_revision.wrapping_add(1);
         auth.token = None;
         auth.profile = None;
-        (previous_auth, generation)
+        (previous_auth, generation, auth.credential_revision)
     };
 
-    match store.clear_if_current(auth_state.clone(), generation).await {
+    match store
+        .clear_if_current(auth_state.clone(), generation, credential_revision)
+        .await
+    {
         Ok(AuthClearOutcome::Cleared) => Ok(()),
         Ok(AuthClearOutcome::Stale | AuthClearOutcome::StaleAfterClear) => {
             Err("新しい Twitch 認証操作が開始されたため、古い解除結果を破棄しました。".to_string())
         }
         Err(error) => {
             let mut auth = auth_state.lock().map_err(|error| error.to_string())?;
-            restore_auth_after_failed_clear_if_current(&mut auth, generation, previous_auth);
+            restore_auth_after_failed_clear_if_current(
+                &mut auth,
+                generation,
+                credential_revision,
+                previous_auth,
+            );
             Err(to_secure_store_user_message(error))
         }
     }
@@ -450,13 +600,15 @@ pub(super) async fn clear_twitch_auth_state_with_store(
 pub(super) fn restore_auth_after_failed_clear_if_current(
     auth: &mut TwitchAuthState,
     generation: u64,
+    credential_revision: u64,
     mut previous_auth: TwitchAuthState,
 ) {
-    if auth.generation == generation {
+    if auth.generation == generation && auth.credential_revision == credential_revision {
         // Restoring a credential after a failed delete must not roll back the
         // generation. Older poll/validate/save operations remain stale even
         // though the user can continue using the prior credential.
         previous_auth.generation = generation;
+        previous_auth.credential_revision = credential_revision;
         previous_auth.pending = None;
         *auth = previous_auth;
     }
@@ -510,21 +662,6 @@ pub(super) fn clear_pending_if_current(
     Ok(())
 }
 
-pub(super) async fn clear_invalid_twitch_auth(
-    state: &impl AuthRuntime,
-    error_message: &str,
-) -> Result<(), String> {
-    clear_twitch_auth_state(state).await?;
-    let message = format!("Twitch 認証が無効なため、認証状態を解除しました: {error_message}");
-    state.auth_status(
-        TwitchStatusDomain::Auth,
-        TwitchStatus::AuthRequired,
-        Some(message.clone()),
-    );
-    state.auth_log(AppLogLevel::Warning, message);
-    Ok(())
-}
-
 pub(super) async fn clear_missing_scope_twitch_auth(
     state: &impl AuthRuntime,
     error_message: &str,
@@ -554,4 +691,90 @@ pub(super) async fn save_auth_if_current(
             Err("新しい Twitch 認証操作が開始されたため、古い保存結果を破棄しました。".to_string())
         }
     }
+}
+
+pub(super) fn stale_credential_message() -> String {
+    "新しい Twitch 認証情報が反映されたため、古い応答を破棄しました。".to_string()
+}
+
+pub(super) fn credentials_are_current(
+    state: &impl AuthRuntime,
+    generation: u64,
+    credential_revision: u64,
+    access_token: &str,
+    refresh_token: &str,
+) -> Result<bool, String> {
+    let auth = state.auth().lock().map_err(|error| error.to_string())?;
+    Ok(auth.generation == generation
+        && auth.credentials_match(credential_revision, access_token, refresh_token))
+}
+
+/// Clear only the exact credential revision whose request failed. Both the
+/// in-memory invalidation and durable clear are guarded by generation/revision.
+pub(super) async fn clear_credentials_if_current(
+    state: &impl AuthRuntime,
+    expected_generation: u64,
+    expected_revision: u64,
+    expected_access_token: &str,
+    expected_refresh_token: &str,
+    error_message: &str,
+    missing_scope: bool,
+) -> Result<bool, String> {
+    let (previous_auth, generation, credential_revision) = {
+        let mut auth = state.auth().lock().map_err(|error| error.to_string())?;
+        if auth.generation != expected_generation
+            || !auth.credentials_match(
+                expected_revision,
+                expected_access_token,
+                expected_refresh_token,
+            )
+        {
+            return Ok(false);
+        }
+        let previous = auth.clone();
+        let generation = auth.invalidate_operations();
+        auth.credential_revision = auth.credential_revision.wrapping_add(1);
+        auth.token = None;
+        auth.profile = None;
+        (previous, generation, auth.credential_revision)
+    };
+
+    match state
+        .store()
+        .clear_if_current(state.auth().clone(), generation, credential_revision)
+        .await
+        .map_err(to_secure_store_user_message)
+    {
+        Ok(AuthClearOutcome::Cleared) => {}
+        Ok(AuthClearOutcome::Stale | AuthClearOutcome::StaleAfterClear) => return Ok(false),
+        Err(error) => {
+            let mut auth = state.auth().lock().map_err(|error| error.to_string())?;
+            restore_auth_after_failed_clear_if_current(
+                &mut auth,
+                generation,
+                credential_revision,
+                previous_auth,
+            );
+            return Err(error);
+        }
+    }
+
+    state.cancel_chat()?;
+    if missing_scope {
+        state.require_auth(
+            TwitchAuthRequiredReason::MissingRequiredScope,
+            error_message,
+        );
+    } else {
+        let message = format!("Twitch 認証が無効なため、認証状態を解除しました: {error_message}");
+        state.auth_status(
+            TwitchStatusDomain::Auth,
+            TwitchStatus::AuthRequired,
+            Some(message.clone()),
+        );
+        state.auth_log(AppLogLevel::Warning, message);
+        return Ok(true);
+    }
+    state.auth_log(AppLogLevel::Warning, error_message);
+    Ok(true)
 }

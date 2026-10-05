@@ -217,6 +217,7 @@ fn stored_auth_secret() -> String {
 fn twitch_auth_state() -> TwitchAuthState {
     TwitchAuthState {
         generation: 0,
+        credential_revision: 0,
         pending: None,
         token: Some(TwitchToken {
             access_token: "access-token".to_string(),
@@ -291,17 +292,22 @@ async fn logout_clears_a_delayed_save_that_started_before_logout() {
     backend.wait_until_save_started();
 
     // Logout invalidates the generation before waiting for credential I/O.
-    let logout_generation = {
+    let (logout_generation, logout_revision) = {
         let mut auth = auth_state.lock().unwrap();
         let generation = auth.invalidate_operations();
+        auth.credential_revision = auth.credential_revision.wrapping_add(1);
         auth.token = None;
         auth.profile = None;
-        generation
+        (generation, auth.credential_revision)
     };
     let clear = tokio::spawn({
         let store = store.clone();
         let auth_state = auth_state.clone();
-        async move { store.clear_if_current(auth_state, logout_generation).await }
+        async move {
+            store
+                .clear_if_current(auth_state, logout_generation, logout_revision)
+                .await
+        }
     });
 
     backend.release_save();
@@ -350,6 +356,110 @@ async fn stale_save_after_logout_is_never_committed() {
 }
 
 #[cfg(feature = "app")]
+#[tokio::test]
+async fn stale_save_after_same_generation_credential_rotation_is_rejected() {
+    let backend = Arc::new(DelayedCredentialStore::default());
+    let store = TwitchAuthStore::with_backend(backend.clone());
+    let auth_state = Arc::new(Mutex::new(twitch_auth_state()));
+    let (generation, stale_snapshot) = {
+        let mut auth = auth_state.lock().unwrap();
+        let snapshot = auth.clone();
+        let generation = auth.generation;
+        auth.replace_token(
+            TokenResponse {
+                access_token: "rotated-access".into(),
+                refresh_token: "rotated-refresh".into(),
+                scope: vec!["user:read:chat".into()],
+                expires_in: 7200,
+            },
+            auth.profile.clone().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(auth.generation, generation);
+        (generation, snapshot)
+    };
+
+    assert!(matches!(
+        store
+            .save_if_current(auth_state.clone(), generation, stale_snapshot)
+            .await
+            .unwrap(),
+        AuthSaveOutcome::Stale
+    ));
+    assert_eq!(backend.snapshot().save_calls, 0);
+    assert_eq!(
+        auth_state
+            .lock()
+            .unwrap()
+            .token
+            .as_ref()
+            .unwrap()
+            .access_token,
+        "rotated-access"
+    );
+}
+
+#[cfg(feature = "app")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn delayed_save_reports_stale_revision_then_persists_the_newer_credentials() {
+    let backend = Arc::new(DelayedCredentialStore::default());
+    let store = TwitchAuthStore::with_backend(backend.clone());
+    let auth_state = Arc::new(Mutex::new(twitch_auth_state()));
+    let generation = auth_state.lock().unwrap().generation;
+    let old_snapshot = auth_state.lock().unwrap().clone();
+    let old_save = tokio::spawn({
+        let store = store.clone();
+        let auth_state = auth_state.clone();
+        async move {
+            store
+                .save_if_current(auth_state, generation, old_snapshot)
+                .await
+        }
+    });
+    backend.wait_until_save_started();
+
+    let new_snapshot = {
+        let mut auth = auth_state.lock().unwrap();
+        auth.replace_token(
+            TokenResponse {
+                access_token: "newer-access-token".into(),
+                refresh_token: "newer-refresh-token".into(),
+                scope: vec!["user:read:chat".into()],
+                expires_in: 7200,
+            },
+            auth.profile.clone().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(auth.generation, generation);
+        auth.clone()
+    };
+    let new_save = tokio::spawn({
+        let store = store.clone();
+        let auth_state = auth_state.clone();
+        async move {
+            store
+                .save_if_current(auth_state, generation, new_snapshot)
+                .await
+        }
+    });
+
+    backend.release_save();
+    assert!(matches!(
+        old_save.await.unwrap().unwrap(),
+        AuthSaveOutcome::Stale
+    ));
+    assert!(matches!(
+        new_save.await.unwrap().unwrap(),
+        AuthSaveOutcome::Saved(None)
+    ));
+    let persisted =
+        serde_json::from_str::<StoredTwitchAuth>(backend.snapshot().secret.as_deref().unwrap())
+            .unwrap();
+    assert_eq!(persisted.access_token, "newer-access-token");
+    assert_eq!(persisted.refresh_token, "newer-refresh-token");
+}
+
+#[cfg(feature = "app")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn stale_clear_after_newer_auth_never_deletes_its_durable_credential() {
     let backend = Arc::new(DelayedCredentialStore::default());
@@ -371,17 +481,22 @@ async fn stale_clear_after_newer_auth_never_deletes_its_durable_credential() {
     });
     backend.wait_until_save_started();
 
-    let logout_generation = {
+    let (logout_generation, logout_revision) = {
         let mut auth = auth_state.lock().unwrap();
         let generation = auth.invalidate_operations();
+        auth.credential_revision = auth.credential_revision.wrapping_add(1);
         auth.token = None;
         auth.profile = None;
-        generation
+        (generation, auth.credential_revision)
     };
     let clear = tokio::spawn({
         let store = store.clone();
         let auth_state = auth_state.clone();
-        async move { store.clear_if_current(auth_state, logout_generation).await }
+        async move {
+            store
+                .clear_if_current(auth_state, logout_generation, logout_revision)
+                .await
+        }
     });
 
     let (newer_generation, newer_auth) = {
@@ -418,7 +533,7 @@ async fn stale_clear_after_newer_auth_never_deletes_its_durable_credential() {
     backend.release_save();
     assert!(matches!(
         old_save.await.unwrap().unwrap(),
-        AuthSaveOutcome::Saved(None)
+        AuthSaveOutcome::Stale
     ));
     assert!(matches!(
         clear.await.unwrap().unwrap(),
@@ -567,10 +682,17 @@ fn failed_logout_recovery_keeps_the_new_generation() {
     let stale_generation = auth.generation;
     let previous_auth = auth.clone();
     let logout_generation = auth.invalidate_operations();
+    let logout_revision = auth.credential_revision.wrapping_add(1);
+    auth.credential_revision = logout_revision;
     auth.token = None;
     auth.profile = None;
 
-    restore_auth_after_failed_clear_if_current(&mut auth, logout_generation, previous_auth);
+    restore_auth_after_failed_clear_if_current(
+        &mut auth,
+        logout_generation,
+        logout_revision,
+        previous_auth,
+    );
 
     assert_eq!(auth.generation, logout_generation);
     assert_ne!(auth.generation, stale_generation);
@@ -1263,7 +1385,7 @@ fn eventsub_refresh_rejects_a_new_token_without_chat_read_scope() {
 #[test]
 fn stale_eventsub_scope_failure_keeps_rotated_authentication() {
     let mut auth = twitch_auth_state();
-    let stale_refresh_token = auth.eventsub_credentials().unwrap().refresh_token;
+    let stale_credentials = auth.eventsub_credentials().unwrap();
 
     // Simulate a second EventSub re-subscription completing its refresh while
     // the first one is awaiting validation of a scope-deficient token.
@@ -1285,7 +1407,7 @@ fn stale_eventsub_scope_failure_keeps_rotated_authentication() {
     .unwrap();
 
     let access_token =
-        clear_auth_for_eventsub_missing_scope_if_current(&mut auth, &stale_refresh_token).unwrap();
+        clear_auth_for_eventsub_missing_scope_if_current(&mut auth, &stale_credentials).unwrap();
 
     assert_eq!(access_token.as_deref(), Some("newer-access-token"));
     let current = auth.eventsub_credentials().unwrap();

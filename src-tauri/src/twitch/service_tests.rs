@@ -87,8 +87,8 @@ impl AuthCredentialStore for MemoryStore {
 struct Transport {
     devices: Mutex<VecDeque<Reply<anyhow::Result<DeviceCodeResponse>>>>,
     polls: Mutex<VecDeque<Reply<Result<TokenResponse, PollAuthError>>>>,
-    validations: Mutex<VecDeque<anyhow::Result<ValidateResponse>>>,
-    refreshes: Mutex<VecDeque<anyhow::Result<TokenResponse>>>,
+    validations: Mutex<VecDeque<Reply<anyhow::Result<ValidateResponse>>>>,
+    refreshes: Mutex<VecDeque<Reply<anyhow::Result<TokenResponse>>>>,
     users: Mutex<VecDeque<Reply<anyhow::Result<HelixUser>>>>,
     sockets: Mutex<VecDeque<FakeSocket>>,
     subscriptions: Mutex<VecDeque<Result<(), SubscriptionRequestError>>>,
@@ -167,11 +167,11 @@ impl Runtime {
 impl OAuthTransport for Runtime {
     async fn refresh(&self, _: &str, _: &str) -> anyhow::Result<TokenResponse> {
         self.http.refresh_calls.fetch_add(1, Ordering::Relaxed);
-        take(&self.http.refreshes)
+        take(&self.http.refreshes).receive().await
     }
     async fn validate(&self, _: &str) -> anyhow::Result<ValidateResponse> {
         self.http.validation_calls.fetch_add(1, Ordering::Relaxed);
-        take(&self.http.validations)
+        take(&self.http.validations).receive().await
     }
 }
 impl DeviceOAuthTransport for Runtime {
@@ -432,7 +432,7 @@ async fn auth_service_drives_pending_slow_down_denied_expired_and_authorized() {
         .validations
         .lock()
         .unwrap()
-        .push_back(Ok(validate("new-reader")));
+        .push_back(Reply::ready(Ok(validate("new-reader"))));
     let result = service.poll().await.unwrap();
     assert!(matches!(
         result,
@@ -528,7 +528,7 @@ async fn auth_service_missing_scope_never_persists_an_authorized_token() {
         .validations
         .lock()
         .unwrap()
-        .push_back(Ok(response));
+        .push_back(Reply::ready(Ok(response)));
     assert!(service.poll().await.is_err());
     assert!(runtime.auth.lock().unwrap().token.is_none());
     assert!(runtime.backend.saved.lock().unwrap().is_none());
@@ -603,18 +603,16 @@ async fn auth_service_serializes_polls_and_rejects_old_authorized_response() {
 async fn auth_service_validate_refresh_saves_rotation_before_connected_event() {
     let runtime = Runtime::default();
     runtime.authorize();
-    runtime
-        .http
-        .validations
-        .lock()
-        .unwrap()
-        .extend([Err(api_error(401, None)), Ok(validate("rotated-reader"))]);
+    runtime.http.validations.lock().unwrap().extend([
+        Reply::ready(Err(api_error(401, None))),
+        Reply::ready(Ok(validate("rotated-reader"))),
+    ]);
     runtime
         .http
         .refreshes
         .lock()
         .unwrap()
-        .push_back(Ok(token()));
+        .push_back(Reply::ready(Ok(token())));
     let result = TwitchAuthService::new(&runtime).validate().await.unwrap();
     assert_eq!(result.profile.login, "rotated-reader");
     assert_eq!(
@@ -639,6 +637,100 @@ async fn auth_service_validate_refresh_saves_rotation_before_connected_event() {
 }
 
 #[tokio::test]
+async fn stale_invalid_grant_after_credential_revision_change_does_not_clear_new_auth() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    let gate = Gate::default();
+    runtime
+        .http
+        .validations
+        .lock()
+        .unwrap()
+        .push_back(Reply::delayed(Err(api_error(401, None)), &gate));
+    runtime
+        .http
+        .refreshes
+        .lock()
+        .unwrap()
+        .push_back(Reply::ready(Err(api_error(400, Some("invalid_grant")))));
+
+    let validation = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { TwitchAuthService::new(&runtime).validate().await }
+    });
+    gate.started.notified().await;
+    {
+        let mut auth = runtime.auth.lock().unwrap();
+        auth.replace_token(
+            TokenResponse {
+                access_token: "newer-access".into(),
+                refresh_token: "newer-refresh".into(),
+                scope: vec![CHAT_READ_SCOPE.into()],
+                expires_in: 7200,
+            },
+            profile("new-reader"),
+        )
+        .unwrap();
+    }
+    gate.release.notify_one();
+
+    assert!(validation.await.unwrap().unwrap_err().contains("古い応答"));
+    let auth = runtime.auth.lock().unwrap();
+    assert_eq!(auth.token.as_ref().unwrap().access_token, "newer-access");
+    assert_eq!(auth.token.as_ref().unwrap().refresh_token, "newer-refresh");
+    assert_eq!(runtime.backend.clears.load(Ordering::Relaxed), 0);
+    assert!(runtime.backend.saved.lock().unwrap().is_none());
+}
+
+#[tokio::test]
+async fn stale_validate_success_after_credential_revision_change_is_not_saved() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    let gate = Gate::default();
+    runtime
+        .http
+        .validations
+        .lock()
+        .unwrap()
+        .push_back(Reply::delayed(Ok(validate("old-reader")), &gate));
+
+    let validation = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { TwitchAuthService::new(&runtime).validate().await }
+    });
+    gate.started.notified().await;
+    {
+        let mut auth = runtime.auth.lock().unwrap();
+        auth.replace_token(
+            TokenResponse {
+                access_token: "newer-access".into(),
+                refresh_token: "newer-refresh".into(),
+                scope: vec![CHAT_READ_SCOPE.into()],
+                expires_in: 7200,
+            },
+            profile("new-reader"),
+        )
+        .unwrap();
+    }
+    gate.release.notify_one();
+
+    assert!(validation.await.unwrap().unwrap_err().contains("古い応答"));
+    let auth = runtime.auth.lock().unwrap();
+    assert_eq!(auth.token.as_ref().unwrap().access_token, "newer-access");
+    assert_eq!(auth.profile.as_ref().unwrap().login, "new-reader");
+    assert_eq!(
+        runtime
+            .backend
+            .saved
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|auth| auth.token.as_ref().unwrap().access_token.as_str()),
+        None
+    );
+}
+
+#[tokio::test]
 async fn auth_service_validate_transient_failure_keeps_auth_but_invalid_grant_clears_it() {
     for definitive in [false, true] {
         let runtime = Runtime::default();
@@ -648,17 +740,17 @@ async fn auth_service_validate_transient_failure_keeps_auth_but_invalid_grant_cl
             .validations
             .lock()
             .unwrap()
-            .push_back(Err(api_error(401, None)));
+            .push_back(Reply::ready(Err(api_error(401, None))));
         runtime
             .http
             .refreshes
             .lock()
             .unwrap()
-            .push_back(Err(if definitive {
+            .push_back(Reply::ready(Err(if definitive {
                 api_error(400, Some("invalid_grant"))
             } else {
                 api_error(503, None)
-            }));
+            })));
         assert!(TwitchAuthService::new(&runtime).validate().await.is_err());
         assert_eq!(runtime.auth.lock().unwrap().token.is_none(), definitive);
         assert_eq!(
@@ -681,7 +773,7 @@ async fn auth_service_validate_without_refresh_preserves_wire_profile() {
         .validations
         .lock()
         .unwrap()
-        .push_back(Ok(validate("valid-reader")));
+        .push_back(Reply::ready(Ok(validate("valid-reader"))));
     let result = TwitchAuthService::new(&runtime).validate().await.unwrap();
     let payload = serde_json::to_value(result).unwrap();
     assert_eq!(payload["profile"]["login"], "valid-reader");
@@ -860,13 +952,13 @@ async fn subscription_service_refreshes_once_and_persists_before_retry() {
         .refreshes
         .lock()
         .unwrap()
-        .push_back(Ok(token()));
+        .push_back(Reply::ready(Ok(token())));
     runtime
         .http
         .validations
         .lock()
         .unwrap()
-        .push_back(Ok(validate("reader")));
+        .push_back(Reply::ready(Ok(validate("reader"))));
     create_chat_message_subscription(&runtime, &params(), "session")
         .await
         .unwrap();
@@ -894,6 +986,106 @@ async fn subscription_service_refreshes_once_and_persists_before_retry() {
         *runtime.backend.order.lock().unwrap(),
         ["subscribe", "save", "subscribe"]
     );
+}
+
+#[tokio::test]
+async fn validate_rotation_serializes_an_eventsub_refresh_started_with_the_old_revision() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    let gate = Gate::default();
+    runtime.http.validations.lock().unwrap().extend([
+        Reply::delayed(Err(api_error(401, None)), &gate),
+        Reply::ready(Ok(validate("rotated-reader"))),
+    ]);
+    runtime
+        .http
+        .refreshes
+        .lock()
+        .unwrap()
+        .push_back(Reply::ready(Ok(token())));
+    runtime
+        .http
+        .subscriptions
+        .lock()
+        .unwrap()
+        .extend([Err(SubscriptionRequestError::Unauthorized), Ok(())]);
+
+    let validation = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { TwitchAuthService::new(&runtime).validate().await }
+    });
+    gate.started.notified().await;
+
+    let subscription = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { create_chat_message_subscription(&runtime, &params(), "session").await }
+    });
+    runtime.wait_for_subscription(1).await;
+    gate.release.notify_one();
+
+    validation.await.unwrap().unwrap();
+    subscription.await.unwrap().unwrap();
+
+    assert_eq!(runtime.http.refresh_calls.load(Ordering::Relaxed), 1);
+    let calls = runtime.http.subscription_calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].2, "old-access");
+    assert_eq!(calls[1].2, "new-access");
+    let auth = runtime.auth.lock().unwrap();
+    assert_eq!(auth.token.as_ref().unwrap().access_token, "new-access");
+    assert_eq!(auth.token.as_ref().unwrap().refresh_token, "new-refresh");
+}
+
+#[tokio::test]
+async fn concurrent_eventsub_refreshes_share_one_rotation_for_the_same_revision() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    let gate = Gate::default();
+    runtime
+        .http
+        .refreshes
+        .lock()
+        .unwrap()
+        .push_back(Reply::delayed(Ok(token()), &gate));
+    runtime
+        .http
+        .validations
+        .lock()
+        .unwrap()
+        .push_back(Reply::ready(Ok(validate("reader"))));
+    runtime.http.subscriptions.lock().unwrap().extend([
+        Err(SubscriptionRequestError::Unauthorized),
+        Err(SubscriptionRequestError::Unauthorized),
+        Ok(()),
+        Ok(()),
+    ]);
+
+    let first = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { create_chat_message_subscription(&runtime, &params(), "first").await }
+    });
+    for _ in 0..100 {
+        if runtime.http.refresh_calls.load(Ordering::Relaxed) == 1 {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    gate.started.notified().await;
+    let second = tokio::spawn({
+        let runtime = runtime.clone();
+        async move { create_chat_message_subscription(&runtime, &params(), "second").await }
+    });
+    runtime.wait_for_subscription(2).await;
+    gate.release.notify_one();
+
+    first.await.unwrap().unwrap();
+    second.await.unwrap().unwrap();
+    assert_eq!(runtime.http.refresh_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(runtime.http.validation_calls.load(Ordering::Relaxed), 1);
+    let calls = runtime.http.subscription_calls.lock().unwrap();
+    assert_eq!(calls.len(), 4);
+    assert_eq!(calls[2].2, "new-access");
+    assert_eq!(calls[3].2, "new-access");
 }
 
 #[tokio::test]

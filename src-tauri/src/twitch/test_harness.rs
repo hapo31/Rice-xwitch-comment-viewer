@@ -356,6 +356,7 @@ impl OAuthTransport for Http {
 fn auth() -> TwitchAuthState {
     TwitchAuthState {
         generation: 1,
+        credential_revision: 0,
         pending: None,
         token: Some(TwitchToken {
             access_token: "old-access".into(),

@@ -160,6 +160,7 @@ pub(crate) trait AuthCredentialStore: Send + Sync {
 pub(crate) struct TwitchAuthStore {
     backend: std::sync::Arc<dyn AuthCredentialStore>,
     io_lock: std::sync::Arc<std::sync::Mutex<()>>,
+    credential_update_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Default for TwitchAuthStore {
@@ -173,7 +174,12 @@ impl TwitchAuthStore {
         Self {
             backend,
             io_lock: std::sync::Arc::new(std::sync::Mutex::new(())),
+            credential_update_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
         }
+    }
+
+    pub(super) async fn lock_credential_update(&self) -> tokio::sync::OwnedMutexGuard<()> {
+        self.credential_update_lock.clone().lock_owned().await
     }
 
     pub(crate) async fn load(&self) -> anyhow::Result<AuthLoadResult> {
@@ -220,51 +226,70 @@ impl TwitchAuthStore {
                 .lock()
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
             current.generation == generation
+                && current.credential_revision == auth.credential_revision
         };
         if !is_current {
             return Ok(AuthSaveOutcome::Stale);
         }
-        self.backend.save(auth).map(AuthSaveOutcome::Saved)
+        let warning = self.backend.save(auth)?;
+        let is_current = {
+            let current = auth_state
+                .lock()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            current.generation == generation
+                && current.credential_revision == auth.credential_revision
+        };
+        if is_current {
+            Ok(AuthSaveOutcome::Saved(warning))
+        } else {
+            Ok(AuthSaveOutcome::Stale)
+        }
     }
 
     pub(super) async fn clear_if_current(
         &self,
         auth_state: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,
         generation: u64,
+        credential_revision: u64,
     ) -> anyhow::Result<AuthClearOutcome> {
         let store = self.clone();
-        tokio::task::spawn_blocking(move || store.clear_if_current_sync(&auth_state, generation))
-            .await
-            .map_err(anyhow::Error::from)?
+        tokio::task::spawn_blocking(move || {
+            store.clear_if_current_sync(&auth_state, generation, credential_revision)
+        })
+        .await
+        .map_err(anyhow::Error::from)?
     }
 
     pub(super) fn clear_if_current_sync(
         &self,
         auth_state: &std::sync::Mutex<TwitchAuthState>,
         generation: u64,
+        credential_revision: u64,
     ) -> anyhow::Result<AuthClearOutcome> {
         let _io_guard = self
             .io_lock
             .lock()
             .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        if auth_state
-            .lock()
-            .map_err(|error| anyhow::anyhow!(error.to_string()))?
-            .generation
-            != generation
-        {
+        let is_current = {
+            let current = auth_state
+                .lock()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            current.generation == generation && current.credential_revision == credential_revision
+        };
+        if !is_current {
             return Ok(AuthClearOutcome::Stale);
         }
         self.backend.clear()?;
         // The backend call can block after the pre-clear comparison. Keep the
         // I/O lock while checking once more so a newer auth/save waits to write
         // after this old clear, and callers never tear down its connection.
-        if auth_state
-            .lock()
-            .map_err(|error| anyhow::anyhow!(error.to_string()))?
-            .generation
-            != generation
-        {
+        let is_current = {
+            let current = auth_state
+                .lock()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            current.generation == generation && current.credential_revision == credential_revision
+        };
+        if !is_current {
             Ok(AuthClearOutcome::StaleAfterClear)
         } else {
             Ok(AuthClearOutcome::Cleared)
