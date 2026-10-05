@@ -43,6 +43,7 @@ pub(super) struct DecodedSettings {
 struct Fields<'a> {
     values: Vec<(&'static str, &'a RawValue)>,
     unknown: bool,
+    ambiguous_version: bool,
 }
 impl<'a> Fields<'a> {
     fn get(&self, name: &str) -> Option<&'a RawValue> {
@@ -62,6 +63,7 @@ impl<'de> Visitor<'de> for ObjectVisitor {
         let mut fields = Fields {
             values: Vec::with_capacity(self.0.len()),
             unknown: false,
+            ambiguous_version: false,
         };
         while let Some(key) = map.next_key::<String>()? {
             if let Some(&known) = self.0.iter().find(|&&known| known == key) {
@@ -69,6 +71,7 @@ impl<'de> Visitor<'de> for ObjectVisitor {
                 if fields.get(known).is_some() {
                     // Duplicate known fields are ambiguous; never silently rewrite them.
                     fields.unknown = true;
+                    fields.ambiguous_version |= known == "schemaVersion";
                 } else {
                     fields.values.push((known, value));
                 }
@@ -96,6 +99,7 @@ fn fields<'a>(
             // decode. Don't discard an uninterpretable object's fields.
             Fields {
                 unknown: raw.get().starts_with('{'),
+                ambiguous_version: raw.get().starts_with('{') && names.contains(&"schemaVersion"),
                 ..Fields::default()
             }
         }
@@ -338,7 +342,7 @@ pub(super) fn decode(text: &str) -> Result<DecodedSettings, String> {
         Some(raw) if raw.get() == "null" => Some(0),
         Some(raw) => serde_json::from_str::<u64>(raw.get()).ok(),
     };
-    if version.is_none_or(|version| version > CURRENT_VERSION) {
+    if root.ambiguous_version || version.is_none_or(|version| version > CURRENT_VERSION) {
         // Future semantics cannot be guessed; no automatic connection/settings mutation.
         return Ok(DecodedSettings {
             settings: AppSettings::default(),

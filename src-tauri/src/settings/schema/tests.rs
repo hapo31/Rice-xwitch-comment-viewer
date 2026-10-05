@@ -256,6 +256,35 @@ fn duplicate_wire_fields_and_invalid_discriminators_fail_closed_without_losing_d
         assert!(decode(input).unwrap().read_only, "{input}");
     }
     assert!(decode("{broken").is_err());
+    for input in [
+        r#"{"schemaVersion":1,"schemaVersion":999,"twitch":{"autoConnect":true,"channelLogin":"future_channel"}}"#,
+        r#"{"schemaVersion":999,"schemaVersion":1,"twitch":{"autoConnect":true,"channelLogin":"future_channel"}}"#,
+        r#"{"schemaVersion":1,"schemaVersion":1,"twitch":{"autoConnect":true}}"#,
+        r#"{"schemaVersion":999,"\ud800":"uninterpretable key","twitch":{"autoConnect":true}}"#,
+    ] {
+        let decoded = decode(input).unwrap();
+        assert!(decoded.read_only && decoded.unsupported_version, "{input}");
+        assert!(!decoded.settings.twitch.auto_connect);
+        assert!(decoded.settings.twitch.channel_login.is_empty());
+        let path = settings_path_for_test("ambiguous-schema-version");
+        SettingsStore::save_to_path(&path, &AppSettings::default()).unwrap();
+        SettingsStore::save_to_path(&path, &AppSettings::default()).unwrap();
+        let backup = fs::read(backup_path(&path)).unwrap();
+        fs::write(&path, input).unwrap();
+        let loaded = SettingsStore::load_from_path(&path).unwrap();
+        assert!(!loaded.settings.twitch.auto_connect);
+        assert!(loaded
+            .recovery_notice
+            .unwrap()
+            .message
+            .contains("元ファイル"));
+        assert!(SettingsStore::save_to_path(&path, &loaded.settings)
+            .unwrap_err()
+            .is::<ReadOnlySettings>());
+        assert_eq!(fs::read_to_string(&path).unwrap(), input);
+        assert_eq!(fs::read(backup_path(&path)).unwrap(), backup);
+        cleanup(&path);
+    }
     let deep_unknown = format!(
         "{{\"schemaVersion\":1,\"future\":{}0{}}}",
         "[".repeat(256),
