@@ -24,8 +24,8 @@ impl Fixture {
                 .as_nanos()
         ));
         fs::create_dir(&path).unwrap();
-        // WSH expects DOS/UNC paths, not the Win32 verbatim form. Use the same
-        // normalization as production target resolution before creating links.
+        // Keep the same DOS/UNC normalization as production resolution;
+        // Unicode paths are passed directly to IShellLinkW, never through WSH.
         Self(crate::launcher::platform::normalize_canonical_path(
             path.canonicalize().unwrap(),
         ))
@@ -63,35 +63,24 @@ impl LauncherEventSink for NoEvents {
 }
 
 fn make_link(path: &Path, target: &Path, arguments: &str, cwd: &Path) {
-    let mut command = Command::new("powershell.exe");
-    command
-        .args([
-            "-NoLogo",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            r#"
-$ErrorActionPreference = 'Stop'
-[Console]::Error.WriteLine('fixture-stage: PowerShell started')
-$link = (New-Object -ComObject WScript.Shell).CreateShortcut($env:RICE_TEST_LINK)
-[Console]::Error.WriteLine('fixture-stage: COM link created')
-[Console]::Error.WriteLine('fixture-target: ' + $env:RICE_TEST_TARGET + '; exists=' + [IO.File]::Exists($env:RICE_TEST_TARGET))
-$link.TargetPath = [string]$env:RICE_TEST_TARGET
-$link.Arguments = $env:RICE_TEST_ARGS
-$link.WorkingDirectory = $env:RICE_TEST_CWD
-$link.IconLocation = $env:RICE_TEST_TARGET + ',0'
-[Console]::Error.WriteLine('fixture-stage: properties assigned')
-$link.Save()
-[Console]::Error.WriteLine('fixture-stage: link saved')
-"#,
-        ])
-        .creation_flags(0x0800_0000)
-        .env("RICE_TEST_LINK", path)
-        .env("RICE_TEST_TARGET", target)
-        .env("RICE_TEST_ARGS", arguments)
-        .env("RICE_TEST_CWD", cwd)
-        .env_remove("PSModulePath");
-    capture_bounded(command, Duration::from_secs(5), 4096).unwrap();
+    use windows::core::{Interface, PCWSTR};
+    use windows::Win32::System::Com::IPersistFile;
+    let _apartment = shortcut::Apartment::init().unwrap();
+    let link = shortcut::new_link(&_apartment).unwrap();
+    let target = shortcut::wide_path(target);
+    let arguments = arguments.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
+    let cwd = shortcut::wide_path(cwd);
+    let path = shortcut::wide_path(path);
+    // SAFETY: fixture-owned paths/arguments remain alive and NUL-terminated.
+    // This is test-only creation; production only Load/Get, never Set/Save.
+    unsafe {
+        link.SetPath(PCWSTR(target.as_ptr())).unwrap();
+        link.SetArguments(PCWSTR(arguments.as_ptr())).unwrap();
+        link.SetWorkingDirectory(PCWSTR(cwd.as_ptr())).unwrap();
+        link.SetIconLocation(PCWSTR(target.as_ptr()), 0).unwrap();
+        let persist: IPersistFile = link.cast().unwrap();
+        persist.Save(PCWSTR(path.as_ptr()), true).unwrap();
+    }
 }
 
 fn item(id: &str, path: &Path, order: u32) -> LauncherItem {

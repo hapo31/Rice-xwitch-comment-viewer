@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 /// Capture only backend-generated commands. Both pipes are drained with limits,
 /// and a timeout kills/reaps our child before reporting confirmed termination.
-#[cfg(all(feature = "app", target_os = "windows"))]
+#[cfg(all(test, feature = "app", target_os = "windows"))]
 pub(in crate::launcher) fn capture_bounded(
     mut command: std::process::Command,
     timeout: Duration,

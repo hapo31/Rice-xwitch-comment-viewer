@@ -1,7 +1,8 @@
-//! Bounded shortcut wire format/policy; parsing tests do not need Windows/COM.
+//! Bounded shortcut metadata/header policy; tests do not need Windows/COM.
 use serde::Deserialize;
 
 pub(in crate::launcher) const MAX_SHORTCUT_FILE_BYTES: u64 = 1024 * 1024;
+#[cfg(test)]
 pub(in crate::launcher) const MAX_SHORTCUT_JSON_BYTES: usize = 96 * 1024;
 pub(in crate::launcher) const SHORTCUT_REPAIR: &str = "ショートカットのプロパティでリンク先・作業フォルダーを修正するか、正しいアプリを再登録してください。";
 
@@ -39,6 +40,7 @@ pub(in crate::launcher) struct ShortcutMetadata {
 }
 
 impl ShortcutMetadata {
+    #[cfg(test)]
     pub fn decode(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() > MAX_SHORTCUT_JSON_BYTES {
             return Err(format!(
@@ -51,7 +53,7 @@ impl ShortcutMetadata {
         Ok(result)
     }
 
-    fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         for field in [&self.target, &self.working_directory, &self.icon_source] {
             if field.len() > 4096 || field.chars().any(char::is_control) {
                 return Err(format!("ショートカットのパスは制御文字を含まない4096バイト以内にしてください。{SHORTCUT_REPAIR}"));
