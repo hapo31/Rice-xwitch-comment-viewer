@@ -193,14 +193,20 @@ while ($null -ne ($line = [Console]::ReadLine())) {
                 # expose only a temporary Pane while IFileDialog initializes.
                 [RiceNativeProbe]::SetDialogFiles($RicePid, $fileText)
                 # IFileDialog's native HWND can exist before its accessibility
-                # provider is ready. Bind to the owned Open button HWND and wait
-                # for its real InvokePattern; no fabricated return or BM_CLICK.
-                $openHandle = [RiceNativeProbe]::OpenButton($RicePid)
+                # provider is ready. The native split-button HWND need not be
+                # the virtual UIA button exposing InvokePattern. Search the
+                # owned dialog tree and require a unique owned Open button.
+                $null = [RiceNativeProbe]::OpenButton($RicePid)
+                $root = [Windows.Automation.AutomationElement]::FromHandle($dialog)
+                $openCondition = [Windows.Automation.AndCondition]::new(
+                    [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty, '1'),
+                    [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Button)
+                )
                 $invokePattern = $null
                 $openWatch = [Diagnostics.Stopwatch]::StartNew()
                 while ($openWatch.Elapsed.TotalSeconds -lt 10) {
-                    $open = [Windows.Automation.AutomationElement]::FromHandle($openHandle)
-                    if ($null -ne $open -and $open.Current.ProcessId -eq $RicePid -and $open.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$invokePattern)) { break }
+                    $buttons = $root.FindAll([Windows.Automation.TreeScope]::Descendants, $openCondition)
+                    if ($buttons.Count -eq 1 -and $buttons[0].Current.ProcessId -eq $RicePid -and $buttons[0].TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$invokePattern)) { break }
                     Start-Sleep -Milliseconds 100
                 }
                 if ($null -eq $invokePattern) { throw 'Owned native Open button did not expose InvokePattern' }
