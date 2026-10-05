@@ -283,6 +283,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 ## Phase 3: EventSub チャット受信
 
 - [x] Issue #83: 設定チャンネルと世代付きの実接続チャンネルを分離し、status/chat の遅延イベントで表示が巻き戻らないようにする。
+- [ ] Issue #207: 正規化済み ChatMessage に接続 generation を一度だけ付与し、同一モデルを UI と speech に渡す。停止・接続交換後の旧世代通知を配信/enqueue 境界で拒否し、本番runtime adapter と fake で同 channel の世代切替・別 channel・遅延旧世代通知を回帰検証する。dedupe と FIFO を維持する。
 
 - [x] `tokio-tungstenite` を導入する。
 - [x] `EventSubClient` 相当の接続ループを作り、`wss://eventsub.wss.twitch.tv/ws` へ接続する。
@@ -528,4 +529,3 @@ Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態
 
 - 2026-10-06 Issue #198: [Biome noExplicitAny](https://biomejs.dev/linter/rules/no-explicit-any/) の型引数制約の例外を維持する。条件型で任意の引数列から戻り値を推論する場合に限り、理由付きの行単位 `biome-ignore lint/suspicious/noExplicitAny` を使える。DTO、mock、値のキャストには使わず、ファイル単位の無効化はしない。`noEnum` は const enum を検出しないため `noConstEnum` も有効にした。既存 quality policy の正負 fixture で named/alias import と許容例外を含め検証し、別の AST 検査器や workflow は追加していない。
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
-
