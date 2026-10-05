@@ -12,8 +12,8 @@ dependencies:
     specifier: 2.12.1
     version: 2.12.1
   '@tauri-apps/plugin-dialog':
-    specifier: ^2.0.0
-    version: 2.7.2
+    specifier: ^2.8.1
+    version: 2.8.1
   lucide-react:
     specifier: ^0.468.0
     version: 0.468.0(react@18.3.1)
@@ -793,8 +793,8 @@ packages:
       '@tauri-apps/cli-win32-x64-msvc': 2.12.1
     dev: true
 
-  /@tauri-apps/plugin-dialog@2.7.2:
-    resolution: {integrity: sha512-pX0IGm1I3I6wc+zeKYcq1GSqogK6okCNX5fOdaNU5ab1AjGS6l1E5wFNjEb7meg7ZFSp0JUs+0jQGQNyOvLrsg==}
+  /@tauri-apps/plugin-dialog@2.8.1:
+    resolution: {integrity: sha512-/DtE3B62JgpYuWFL5ATXM6KOXUq7pca7cJWOgSqULhZsgyjLk0PWKek1dbRDvhNBW6flNsOfWphsKnb+738Dmw==}
     dependencies:
       '@tauri-apps/api': 2.12.1
     dev: false

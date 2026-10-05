@@ -22,7 +22,7 @@ serde_json = { version = "1.0", features = ["raw_value"] }
 png = "0.17"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tauri = { version = "2.12.1", features = [], optional = true }
-tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-dialog = { version = "2.8.1", optional = true }
 tauri-plugin-single-instance = { version = "=2.5.2", optional = true }
 thiserror = "2.0"
 tokio = { version = "1.41", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
