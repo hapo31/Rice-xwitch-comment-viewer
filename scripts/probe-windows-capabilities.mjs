@@ -75,7 +75,9 @@ async function connect(url) {
 function nativeHelper(pid, fixtureRoot) {
   // Windows PowerShell provides the .NET Framework STA/WinForms/Win32
   // APIs already installed on the runner. RemoteSigned is process-local only.
-  const child = spawn("powershell.exe", ["-NoProfile", "-STA", "-ExecutionPolicy", "RemoteSigned", "-File", fileURLToPath(new URL("windows-capability-native.ps1", import.meta.url)), "-RicePid", String(pid), "-FixtureRoot", fixtureRoot], { stdio: ["pipe", "pipe", "pipe"] });
+  // The control process must not create a foreground console that intercepts
+  // physical input intended for the packaged application's real window.
+  const child = spawn("powershell.exe", ["-NoProfile", "-STA", "-ExecutionPolicy", "RemoteSigned", "-File", fileURLToPath(new URL("windows-capability-native.ps1", import.meta.url)), "-RicePid", String(pid), "-FixtureRoot", fixtureRoot], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
   let next = 0, stderr = "";
   const pending = new Map();
   child.stderr.on("data", chunk => stderr = (stderr + chunk).slice(-8192));
