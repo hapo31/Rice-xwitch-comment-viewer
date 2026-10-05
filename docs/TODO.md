@@ -328,7 +328,6 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 5: 配信運用向け仕上げ
 
-- [ ] Issue #205: Twitch認証・接続ラベルをpresentationに集約し、短い視覚表示と詳しい読み上げの意図した差を明示する。状態の型網羅性と画面/支援技術の代表状態を検証する。
 
 - [x] Issue #198: テスト mock の明示的 any を実 DTO／関数型へ置換し、既存 Biome 品質ゲートで any・enum・namespace の禁止と型レベル用途の限定例外を検証する。既存 quality policy に正負 fixture を追加し、関連テスト・format・lint・型検査・build を確認した。
 
@@ -454,6 +453,11 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] 起動時の仮チャットを設定状態に応じた system 操作案内へ置き換える。
 - [x] 配信中に判断しやすい日本語エラー文言を整理する（Issue #46: 操作別の原因・復旧案内と Logs の技術詳細）。
 - [x] Issue #45: 内部の Speech/Queue 状態値を日本語の表示文言へ集約し、状態アイコンの重複した支援技術向け読み上げをなくす。
+
+- [x] Issue #205: Twitch認証・接続ラベルをpresentationに集約し、短い視覚表示と詳しい読み上げの意図した差を明示する。状態の型網羅性と実AppShellの画面/支援技術の代表状態を検証した。frontend全326件、format/lint/typecheck/buildが成功。最終レビューとCI・統合状況はPR #244に記録する。
+
+Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベルは視覚表示2か所とライブ通知で長短差があった。共通の網羅したmappingと読み上げ用の明示的な差分へ統一し、暗黙の英語fallbackを設けない。
+
 - [x] キュー行の状態表示テストを追加する。
 - [x] 設定フォームのバリデーションテストを追加する。
 - [x] Issue #31: chat、queue、connection、settings、logs の state/action 境界を独立 store に分離し、Chat event で無関係な画面を再 render しない selector 購読と auth/event/settings orchestration のテストを追加する。

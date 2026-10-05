@@ -189,3 +189,7 @@ Filter と Settings に未保存の変更があるときは、Activity Bar の�
 ## エラー表示
 
 command 失敗は共通の presentation 層で、操作対象に応じた短い日本語の原因・復旧手順へ変換する。backend が返す日本語の説明（送信結果が不確かな場合など）は保持する。不明な object、空文字、英語の例外も空欄や `[object Object]` として表示しない。元の message・code・stack 等は最大4000文字で Logs に分離し、起動時認証や自動接続の失敗は system Chat にも残す。
+
+## Twitch 状態表示の共通契約
+
+Twitch 接続状態のラベルは `presentation/twitch.ts` で状態の全候補を網羅し、Chat、Side Panel、Status Bar、ライブ通知で共用する。認証状態は同じ場所に短い視覚表示と読み上げ用の明示的な差分を持ち、「認証確認中」の読み上げを認証確認と有効性確認で区別する。未知の状態を英語の内部値で表示する fallback は設けず、状態追加時には型検査でラベル追加を要求する。
