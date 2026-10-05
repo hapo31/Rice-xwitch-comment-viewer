@@ -98,9 +98,14 @@ export function createSbom({ materials, manifest, npmTree, cargo, lockfiles, art
     const ref = `pkg:deb/debian/${encodeURIComponent(name)}@${encodeURIComponent(version)}`;
     add({ type: "library", "bom-ref": ref, name, version, purl: ref, scope: "excluded", properties: [property("role", "build-os-package")] }); rootEdges.add(ref);
   }
+  for (const name of Object.keys(materials.toolHashes ?? {})) {
+    if (!Object.hasOwn(materials.tools ?? {}, name) || !digest(materials.toolHashes[name])) throw new Error("Unknown tool or invalid compiler hash");
+  }
+  if (materials.inputs?.nsisVersion && (!digest(materials.toolHashes?.nsis) || materials.tools?.nsis !== `v${materials.inputs.nsisVersion}`)) throw new Error("Reviewed NSIS compiler version and digest are required");
   for (const [name, version] of Object.entries(materials.tools ?? {})) {
     const ref = `build-tool:${name}`;
-    add({ type: "application", "bom-ref": ref, name, version, scope: "excluded", properties: [property("role", "build-tool")] }); rootEdges.add(ref);
+    const sha256 = materials.toolHashes?.[name];
+    add({ type: "application", "bom-ref": ref, name, version, scope: "excluded", ...(sha256 ? { hashes: [{ alg: "SHA-256", content: sha256 }] } : {}), properties: [property("role", "build-tool")] }); rootEdges.add(ref);
   }
   for (const file of materials.windowsBuildMaterials) {
     if (!digest(file.sha256)) throw new Error("Windows material hash missing");
