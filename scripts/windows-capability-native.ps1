@@ -125,9 +125,11 @@ public static class RiceNativeProbe {
     var dialog=Dialog(pid); if(dialog==IntPtr.Zero) throw new Exception("Missing owned file dialog");
     var button=GetDlgItem(dialog,1); uint owner; GetWindowThreadProcessId(button,out owner);
     if(button==IntPtr.Zero || owner!=pid) throw new Exception("Missing owned native Open button");
-    // IFileDialog's split Open button may not expose UIA InvokePattern. BM_CLICK
-    // still operates the real native button; no dialog results are fabricated.
-    if(!PostMessage(button,0x00F5,IntPtr.Zero,IntPtr.Zero)) throw new Exception("Owned native Open button refused click");
+    // Physical input also commits the filename Edit's pending focus/selection
+    // state. BM_CLICK does not reliably do that for IFileDialog's split button.
+    Rect r; if(!GetWindowRect(button,out r) || r.Right<=r.Left || r.Bottom<=r.Top) throw new Exception("Invalid owned Open button bounds");
+    SetForegroundWindow(dialog); Thread.Sleep(200);
+    SetCursorPos(r.Left+(r.Right-r.Left)/3,r.Top+(r.Bottom-r.Top)/2); Button(2); Button(4);
   }
   public static void SetDialogFiles(int pid,string text) {
     var dialog=Dialog(pid); var host=GetDlgItem(dialog,1148);

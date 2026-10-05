@@ -73,7 +73,7 @@ async function connect(url) {
   };
 }
 function nativeHelper(pid, fixtureRoot) {
-  // Windows PowerShell provides the .NET Framework STA/WinForms/UI Automation
+  // Windows PowerShell provides the .NET Framework STA/WinForms/Win32
   // APIs already installed on the runner. RemoteSigned is process-local only.
   const child = spawn("powershell.exe", ["-NoProfile", "-STA", "-ExecutionPolicy", "RemoteSigned", "-File", fileURLToPath(new URL("windows-capability-native.ps1", import.meta.url)), "-RicePid", String(pid), "-FixtureRoot", fixtureRoot], { stdio: ["pipe", "pipe", "pipe"] });
   let next = 0, stderr = "";
