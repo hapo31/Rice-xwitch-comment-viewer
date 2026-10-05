@@ -234,6 +234,8 @@ Issue #85の各queue itemは任意の`outcome`を持つ。Rust/TS共通の`kind`
 
 backend は bounded な operational log ring と Twitch（auth/chat）/speech の最新 status を managed state に保持する。`app_events_snapshot` command は listener 登録後にこの状態を取得するため、起動時に先行 emit されたログ・status も late subscriber へ復元できる。各 status と speech queue event には単調増加 `revision` を付与し、`speech_queue_reload` は status と queue を同一ロック下で採取した `SpeechStateSnapshot` として返す（各componentは最後の更新revisionを保持する）。frontend は全 listener を登録してから snapshot を取得し、snapshot より新しい並行 event を古い値で上書きしない。
 
+Twitch の Chat 状態・接続世代・実接続 identity は backend の Chat event/snapshot を正本とする。認証確認・Device Code・解除の command 応答は Auth 状態だけを更新し、認証成功や一時的な通信失敗から Chat の切断を推測しない。チャット開始・停止・終了処理も command の完了から revision のない状態を書き込まず、backend の通知を受け取る。command 自体の失敗は既存の通知と Logs に表示する。将来 UI に要求中の表示を追加する場合も、要求状態として分けて実接続の revision/generation 判定を迂回しない。
+
 保存済み Twitch credential の deserialize は認証済みを意味しない。起動時は `Validating` を通知し、`/validate` 成功後だけ `Connected` へ遷移する。event emit の失敗は stderr だけでなく bounded diagnostic として snapshot へ記録する。
 
 ### フロントエンド通知
