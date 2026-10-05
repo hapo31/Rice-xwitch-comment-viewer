@@ -30,6 +30,10 @@ public static class RiceNativeProbe {
   [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr window,uint flags);
   [DllImport("user32.dll", EntryPoint="GetWindowLongW")] static extern int GetWindowLong(IntPtr window,int index);
   [DllImport("kernel32.dll")] static extern IntPtr GetConsoleWindow();
+  [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access,bool inherit,uint pid);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+  [DllImport("advapi32.dll", SetLastError=true)] static extern bool OpenProcessToken(IntPtr process,uint access,out IntPtr token);
+  [DllImport("advapi32.dll", SetLastError=true)] static extern bool GetTokenInformation(IntPtr token,int information,out int value,int size,out int returned);
   [DllImport("dwmapi.dll", EntryPoint="DwmGetWindowAttribute")] static extern int DwmCloak(IntPtr window,uint attribute,out int value,int size);
   [DllImport("dwmapi.dll", EntryPoint="DwmGetWindowAttribute")] static extern int DwmFrame(IntPtr window,uint attribute,out Rect value,int size);
   [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GuiThread info);
@@ -72,7 +76,15 @@ public static class RiceNativeProbe {
     var foreground=GetForegroundWindow(); uint foregroundPid; GetWindowThreadProcessId(foreground,out foregroundPid); Point cursor; GetCursorPos(out cursor);
     var foregroundClass=new StringBuilder(128); GetClassName(foreground,foregroundClass,128);
     int cloak; Rect physical; var cloakStatus=DwmCloak(h,14,out cloak,4); var frameStatus=DwmFrame(h,9,out physical,16);
-    return new { hwnd=h.ToInt64(), windowClass=name.ToString(), title=title.ToString(), left=r.Left, top=r.Top, width=r.Right-r.Left, height=r.Bottom-r.Top, visible=IsWindowVisible(h), enabled=IsWindowEnabled(h), style=GetWindowLong(h,-16), extendedStyle=GetWindowLong(h,-20), minimized=IsIconic(h), maximized=IsZoomed(h), foregroundHwnd=foreground.ToInt64(), foregroundPid=foregroundPid, foregroundClass=foregroundClass.ToString(), helperConsoleHwnd=GetConsoleWindow().ToInt64(), dwmCloak=cloakStatus==0?(int?)cloak:null, physicalBounds=frameStatus==0?new {left=physical.Left,top=physical.Top,width=physical.Right-physical.Left,height=physical.Bottom-physical.Top}:null, cursorX=cursor.X, cursorY=cursor.Y };
+    return new { hwnd=h.ToInt64(), windowClass=name.ToString(), title=title.ToString(), left=r.Left, top=r.Top, width=r.Right-r.Left, height=r.Bottom-r.Top, visible=IsWindowVisible(h), enabled=IsWindowEnabled(h), style=GetWindowLong(h,-16), extendedStyle=GetWindowLong(h,-20), minimized=IsIconic(h), maximized=IsZoomed(h), riceElevation=Elevation(pid), helperElevation=Elevation(Process.GetCurrentProcess().Id), foregroundHwnd=foreground.ToInt64(), foregroundPid=foregroundPid, foregroundClass=foregroundClass.ToString(), helperConsoleHwnd=GetConsoleWindow().ToInt64(), dwmCloak=cloakStatus==0?(int?)cloak:null, physicalBounds=frameStatus==0?new {left=physical.Left,top=physical.Top,width=physical.Right-physical.Left,height=physical.Bottom-physical.Top}:null, cursorX=cursor.X, cursorY=cursor.Y };
+  }
+  static string Elevation(int pid) {
+    var process=OpenProcess(0x1000,false,(uint)pid); if(process==IntPtr.Zero) return "process-query-error="+Marshal.GetLastWin32Error();
+    try {
+      IntPtr token; if(!OpenProcessToken(process,8,out token)) return "token-query-error="+Marshal.GetLastWin32Error();
+      try { int value,returned; return GetTokenInformation(token,20,out value,4,out returned)?"elevated="+value:"elevation-query-error="+Marshal.GetLastWin32Error(); }
+      finally { CloseHandle(token); }
+    } finally { CloseHandle(process); }
   }
   public static void Screenshot(string path) {
     // Only this disposable hosted runner's test desktop, never a developer's
@@ -114,7 +126,8 @@ public static class RiceNativeProbe {
       }
       if(hit!=h) {
         uint owner; GetWindowThreadProcessId(hit,out owner); var name=new StringBuilder(128); GetClassName(hit,name,128);
-        throw new Exception("Owned UI focus point ("+p.X+","+p.Y+") is occluded by HWND "+hit.ToInt64()+", PID "+owner+", class "+name+"; owned="+State(pid));
+        var raw=WindowFromPoint(p); uint rawOwner; GetWindowThreadProcessId(raw,out rawOwner); var rawName=new StringBuilder(128); GetClassName(raw,rawName,128);
+        throw new Exception("Owned UI focus point ("+p.X+","+p.Y+") is occluded by HWND "+hit.ToInt64()+", PID "+owner+", class "+name+"; raw HWND="+raw.ToInt64()+", PID="+rawOwner+", class="+rawName+"; owned="+State(pid));
       }
       SetCursorPos(p.X,p.Y); Button(2); Thread.Sleep(200); Button(4);
     } finally {
