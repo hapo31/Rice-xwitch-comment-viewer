@@ -393,6 +393,7 @@ Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態
 - [x] Issue #5: 変更のない Filter / Settings で非表示の保存ボタンをフォーカス順とアクセシビリティツリーから除外し、キーボード回帰テストを追加する。
 - [x] Issue #14: 通知を severity/source/correlation を持つ構造化モデルへ移し、成功通知を警告から分離し、同一障害の重複表示を抑止する。OAuth 認可待ち/待機延長の info 進捗も Logs と system Chat に記録する。
 
+- [ ] Issue #203: 旧 `appReducer` と `SettingsUpdateQueue` の重複実装を整理し、reducer/ID/通知重複判定と設定更新直列化の正本をそれぞれ domain store/orchestrator に統合する。既存回帰を本番経路へ移し、ID衝突と replay 重複を区別して検証する。
 Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離し、成功操作で警告を失わないようにした。frontend 326件、format/lint/typecheck/build を確認済み。独立レビュー・最終CI・統合状況は PR #242 に記録する。
 - [x] Issue #204: 対処待ち warning/error と info/success 履歴の保持上限を分離し、大量の成功通知で警告を失わないようにする。明示クリア・severity昇格・correlation重複排除・容量上限の logsReducer 回帰を追加した。
   - 最新 main（#193 / #196 / #198 / #202 と統合追補 #245）との統合検証: frontend 342 tests、format/lint/typecheck/build、diff check が成功。
