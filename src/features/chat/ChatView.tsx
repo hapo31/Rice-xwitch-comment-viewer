@@ -15,11 +15,23 @@ import { ChatBadges } from "./ChatBadges";
 import { CHAT_GRID_TEMPLATE } from "./chatLayout";
 import { getPrependedMessageCount } from "./scrollAnchor";
 
+type ChatViewState = Pick<
+  AppState,
+  | "chatMessages"
+  | "settings"
+  | "twitchAuthStatus"
+  | "twitchProfile"
+  | "twitchActiveConnection"
+  | "twitchConnectionStatus"
+  | "speechAdapterHealth"
+  | "speechQueuePhase"
+>;
+
 export function ChatView({
   state,
   showStartupGuide,
 }: {
-  state: AppState;
+  state: ChatViewState;
   showStartupGuide: boolean;
 }) {
   const startupReceivedAt = useRef(utcNow());
