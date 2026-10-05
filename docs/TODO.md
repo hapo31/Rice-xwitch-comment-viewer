@@ -89,7 +89,7 @@
 
 ## 現在の進捗サマリ
 
-2026-10-05 TypeScript 7移行: TypeScript 7.0.2、Vite 8.3.2と関連依存を更新し、Node10解決をBundlerへ移行した。vite/client・rootDir・side-effect import検査を明示する。main 934f318のReact 19.3.0・Vitest 5.0.3・dialog版guardと既存修正を保持して統合し、Node 22.22.0で型検査・frontend全322件・本番buildが成功した。Vitest 5の要件に合わせ、開発コンテナもCI/releaseと同じNode 22.22.0 image/digestへ揃える。ユーザー承認により専用branchをpush済みで、サブエージェント再レビュー・GitHub CIを確認中。詳細はRESEARCH_NOTES.mdを参照。
+2026-10-05 TypeScript 7移行: TypeScript 7.0.2、Vite 8.3.2と関連依存を更新し、Node10解決をBundlerへ移行した。vite/client・rootDir・side-effect import検査を明示する。main 934f318のReact 19.3.0・Vitest 5.0.3・dialog版guardと既存修正を保持して統合し、Node 22.22.0で型検査・frontend全322件・本番buildが成功した。Vitest 5の要件に合わせ、開発コンテナもCI/releaseと同じNode 22.22.0 image/digestへ揃える。source619974dで品質全9jobs・依存監査・両OS契約・Windows native・設定権限・機能構成・Tauri開発build・Node22開発コンテナ再build/検証の全8workflowが成功した。サブエージェント2名が最終構成をレビューし、dialog版不一致の解消と追加の互換性不具合なしを確認。古いNode20のテスト文書も修正した。[Draft PR #226](https://github.com/hapo31/Rice-xwitch-comment-viewer/pull/226)で提示し、mergeは未実施。詳細はRESEARCH_NOTES.mdを参照。
 2026-10-05: Dependabot全13件（#179–#182、#184–#192）のレビューと互換性修正を完了した。Tauri dialogのJS/Rust版一致検査、React 19の型・ref初期値・TitleBar DOMテスト移行を実施した。マージと後片付けの条件・検証結果・既存Windows入力の不安定性はPhase 5のDependabot項目に記録する。
 
 - [x] Issue #69: adapter healthとqueue phaseをbackend/frontendで独立保持し、paused中も無音probeを継続する。復旧は失敗項目を自動再送せず、UIの接続/準備完了を両状態から導出する。
@@ -209,7 +209,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 ## Phase 0: プロジェクト作成
 
 - [x] TypeScript 7 正式版へ移行し、関連依存・廃止設定・既定値変更に対応する。Node 22で型検査、frontend 全テスト、build とローカルで実行可能な関連CI共通検査を通す。
-- [ ] TypeScript 7 更新sourceをGitHubへpushし、Linux品質・依存監査・Windows nativeのCI成功を確認する。ユーザー承認によりpush済み。mainのReact 19/Vitest 5/Tauri dialog版guardを統合し、最終構成を再検証する。
+- [x] TypeScript 7 更新sourceをGitHubへpushし、Linux品質・依存監査・Windows nativeのCI成功を確認する。source619974dの全8workflowが成功し、Draft PR #226へ提示した。mainのReact 19/Vitest 5/Tauri dialog版guardも保持する。
 - [x] Tauri + TypeScript + Tailwind の雛形を作る。
 - [x] `src-tauri/src` に `twitch`, `speech`, `settings`, `app_events` の境界を作る。
 - [x] Activity Bar、Side Panel、Main View、Status Bar の基本レイアウトを作る。
