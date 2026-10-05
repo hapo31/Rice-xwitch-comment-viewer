@@ -2,7 +2,7 @@
 
 - [ ] Issue #206: Twitch の validate と EventSub refresh を共通の credential service/revision で管理する。成功・失敗・scope 不足・永続化結果を同一 credential revision と照合し、古い応答が新しい認証を上書き・解除しないようにする。同一 credential の refresh を必要に応じて共有し、deferred fake transport で各競合順序を回帰化する。
 
-2026-10-06 実装進捗: 共通 credential revision と credential-update lock を導入し、validate と EventSub の refresh・scope 判定・rotation・保存を共通 helper へ集約した。古い success/error/revocation/scope failure と遅延 save/clear は generation・revision・token identity が一致する場合だけ適用する。deferred fake で validate 対 EventSub refresh、refresh 対 refresh、revision 変更後の invalid_grant・遅延成功、同一 generation 内の古い保存、保存中の revision 変更を固定した。architecture と Twitch ingestion の設計メモも更新した。`cargo fmt --check` と `git diff --check` は成功。通常 Linux keyring provider では `libdbus-sys` が `dbus-1.pc` 不在でbuildできなかったため、ローカルでは一時的に secret-service provider を除いて `--no-default-features` のTwitch基礎20件が成功した。このfeature構成は `service_tests` を有効にしないため、deferred regressionの実行結果はDraft PRのCIで確認する。strict clippy とGitHub CIも未確認。
+2026-10-06 実装進捗: 共通 credential revision と credential-update lock を導入し、validate と EventSub の refresh・scope 判定・rotation・保存を共通 helper へ集約した。古い success/error/revocation/scope failure と遅延 save/clear は generation・revision・token identity が一致する場合だけ適用する。deferred fake で validate 対 EventSub refresh、refresh 対 refresh、revision 変更後の invalid_grant・遅延成功、同一 generation 内の古い保存、保存中の revision 変更を固定した。architecture と Twitch ingestion の設計メモも更新した。`cargo fmt --check`・`git diff --check` は成功し、公式 Debian DBus package を `/tmp` の sysroot に置いた環境で `cargo test --lib twitch:: --no-default-features` は20件成功した。no-default featureでは `service_tests` が有効にならないため、deferred regressionの実行結果はCIで確認する。no-default clippy は既存のno-app dead-code warningsを許容して完了したが、strict clippy とGitHub CIは未確認。
 
 2026-10-06 着手計画: auth_service.rs と subscription.rs の認証更新/失効経路、および auth_state.rs・auth_store.rs の generation と永続化境界を調査する。revision を含む共通 service に refresh/validate/rotation/clear/save の判定を集約し、validate 対 EventSub、refresh 対 refresh、scope 不足、遅延保存を deferred fake で検証する。Rust の Twitch 関連回帰、fmt、clippy を実行し、設計文書と実装の整合を確認する。
 
@@ -95,7 +95,7 @@
 
 ## 現在の進捗サマリ
 
-2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、deferred fake の競合回帰と設計メモを追加した。local fmt と diff check、および `--no-default-features` のTwitch基礎20件は成功した。Linux DBus依存のためservice regressionとstrict clippyは未実行。PR #243 のCIと独立レビューを確認後に最終完了状態を反映する。
+2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、deferred fake の競合回帰と設計メモを追加した。local fmt/diff check と `--no-default-features` のTwitch基礎20件、dead-codeを許容したno-default clippyは成功した。service regressionとstrict clippyは未確認。PR #243 のCIと独立レビューを確認後に最終完了状態を反映する。
 
 Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既存 Biome gate に any・enum・const enum・namespace の検査を追加した。frontend 322件と品質 policy 5件、format/lint/typecheck/build が成功し、独立レビューを完了した。最終コミットの CI 結果と統合状況は PR #238 に記録する。
 
