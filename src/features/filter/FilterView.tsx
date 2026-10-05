@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   FloatingSaveButton,
   NumberRuleRow,
@@ -17,6 +17,7 @@ import {
 } from "../../validation";
 import { defaultSpeechSettings } from "../settings/defaults";
 import { useUnsavedChanges } from "../../unsavedChanges";
+import { useFormDraft } from "../settings/useFormDraft";
 
 export function FilterView({
   settings,
@@ -29,27 +30,14 @@ export function FilterView({
     ...defaultSpeechSettings,
     ...settings?.speech,
   };
-  const [blockedUsers, setBlockedUsers] = useState(formatRuleList(speechSettings.blockedUsers));
-  const [blockedWords, setBlockedWords] = useState(formatRuleList(speechSettings.blockedWords));
-  const [urlHandling, setUrlHandling] = useState(speechSettings.urlHandling);
-  const [maxLength, setMaxLength] = useState(String(speechSettings.maxCommentLength));
-  const [repeatSeconds, setRepeatSeconds] = useState(
-    String(speechSettings.repeatSuppressionSeconds),
-  );
-
-  useEffect(() => {
-    setBlockedUsers(formatRuleList(speechSettings.blockedUsers));
-    setBlockedWords(formatRuleList(speechSettings.blockedWords));
-    setUrlHandling(speechSettings.urlHandling);
-    setMaxLength(String(speechSettings.maxCommentLength));
-    setRepeatSeconds(String(speechSettings.repeatSuppressionSeconds));
-  }, [
-    speechSettings.blockedUsers,
-    speechSettings.blockedWords,
-    speechSettings.urlHandling,
-    speechSettings.maxCommentLength,
-    speechSettings.repeatSuppressionSeconds,
-  ]);
+  const form = useFormDraft({
+    blockedUsers: formatRuleList(speechSettings.blockedUsers),
+    blockedWords: formatRuleList(speechSettings.blockedWords),
+    urlHandling: speechSettings.urlHandling,
+    maxLength: String(speechSettings.maxCommentLength),
+    repeatSeconds: String(speechSettings.repeatSuppressionSeconds),
+  });
+  const { blockedUsers, blockedWords, urlHandling, maxLength, repeatSeconds } = form.values;
 
   const numericMaxLength = Number(maxLength);
   const numericRepeatSeconds = Number(repeatSeconds);
@@ -83,15 +71,14 @@ export function FilterView({
     if (!stringArrayEqual(blockedWordRules.items, speechSettings.blockedWords))
       speech.blockedWords = blockedWordRules.items;
     if (urlHandling !== speechSettings.urlHandling) speech.urlHandling = urlHandling;
-    return onSettingsUpdate({ speech });
+    const submittedValues = form.values;
+    const saved = await onSettingsUpdate({ speech });
+    if (saved) form.commit(submittedValues);
+    return saved;
   }
 
   function discardFilter() {
-    setBlockedUsers(formatRuleList(speechSettings.blockedUsers));
-    setBlockedWords(formatRuleList(speechSettings.blockedWords));
-    setUrlHandling(speechSettings.urlHandling);
-    setMaxLength(String(speechSettings.maxCommentLength));
-    setRepeatSeconds(String(speechSettings.repeatSuppressionSeconds));
+    form.discard();
   }
 
   useUnsavedChanges("filter", { isDirty, save: saveFilter, discard: discardFilter });
@@ -124,7 +111,10 @@ export function FilterView({
                 id="rule-url-handling"
                 value={urlHandling}
                 onChange={(event) =>
-                  setUrlHandling(event.target.value as AppSettings["speech"]["urlHandling"])
+                  form.setValue(
+                    "urlHandling",
+                    event.target.value as AppSettings["speech"]["urlHandling"],
+                  )
                 }
                 className={`h-9 w-52 border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-100 ${focusIndicatorClass}`}
               >
@@ -137,7 +127,7 @@ export function FilterView({
               id="rule-max-length"
               label="最大文字数"
               value={maxLength}
-              onChange={setMaxLength}
+              onChange={(value) => form.setValue("maxLength", value)}
               valid={isMaxLengthValid}
               error="1 から 500 の範囲で入力してください。"
             />
@@ -145,7 +135,7 @@ export function FilterView({
               id="rule-repeat-seconds"
               label="連投抑制秒（0は無効、1〜30秒は指定間隔）"
               value={repeatSeconds}
-              onChange={setRepeatSeconds}
+              onChange={(value) => form.setValue("repeatSeconds", value)}
               valid={isRepeatSecondsValid}
               error="0（無効）または 1 から 30 の範囲で入力してください。"
             />
@@ -165,7 +155,7 @@ export function FilterView({
               id="rule-blocked-users"
               label="NG ユーザー"
               value={blockedUsers}
-              onChange={setBlockedUsers}
+              onChange={(value) => form.setValue("blockedUsers", value)}
               itemCount={blockedUserRules.items.length}
               overflowCount={blockedUserRules.overflowCount}
             />
@@ -173,7 +163,7 @@ export function FilterView({
               id="rule-blocked-words"
               label="NG ワード"
               value={blockedWords}
-              onChange={setBlockedWords}
+              onChange={(value) => form.setValue("blockedWords", value)}
               itemCount={blockedWordRules.items.length}
               overflowCount={blockedWordRules.overflowCount}
             />

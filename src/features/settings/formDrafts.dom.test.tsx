@@ -1,0 +1,185 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import type { AppSettings } from "../../types";
+import { FilterView } from "../filter/FilterView";
+import { SettingsView } from "./SettingsView";
+import { defaultSpeechSettings, defaultTwitchSettings } from "./defaults";
+
+const makeSettings = (): AppSettings => ({
+  twitch: { ...defaultTwitchSettings },
+  speech: { ...defaultSpeechSettings, blockedUsers: [], blockedWords: [] },
+  launcher: { items: [] },
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
+describe("Filter and Settings form drafts", () => {
+  it("keeps Filter input through same-value reloads and unrelated setting updates", async () => {
+    const user = userEvent.setup();
+    const initial = makeSettings();
+    const onSettingsUpdate = vi.fn(async () => true);
+    const { rerender } = render(
+      <FilterView settings={initial} onSettingsUpdate={onSettingsUpdate} />,
+    );
+    const words = screen.getByLabelText("NG ワード");
+    await user.type(words, "draft word");
+
+    rerender(
+      <FilterView
+        settings={{
+          ...initial,
+          speech: { ...initial.speech, blockedWords: [...initial.speech.blockedWords] },
+        }}
+        onSettingsUpdate={onSettingsUpdate}
+      />,
+    );
+    expect(screen.getByLabelText("NG ワード")).toHaveValue("draft word");
+
+    rerender(
+      <FilterView
+        settings={{
+          ...initial,
+          speech: { ...initial.speech, bouyomiHost: "voice.example" },
+        }}
+        onSettingsUpdate={onSettingsUpdate}
+      />,
+    );
+    expect(screen.getByLabelText("NG ワード")).toHaveValue("draft word");
+  });
+
+  it("keeps Settings edits made while a prior save is pending", async () => {
+    const user = userEvent.setup();
+    const initial = makeSettings();
+    const save = deferred<boolean>();
+    const onSettingsUpdate = vi.fn(() => save.promise);
+    const { rerender } = render(
+      <SettingsView
+        settings={initial}
+        onSettingsUpdate={onSettingsUpdate}
+        onSpeechHealthCheck={() => undefined}
+        onSpeechDiagnostics={async () => ({
+          configuredAddr: "127.0.0.1:50001",
+          attempted: [],
+          recommendation: "",
+        })}
+        onSpeechTest={() => undefined}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("ホスト"));
+    await user.type(screen.getByLabelText("ホスト"), "voice.example");
+    rerender(
+      <SettingsView
+        settings={{ ...initial, speech: { ...initial.speech, bouyomiVolume: 42 } }}
+        onSettingsUpdate={onSettingsUpdate}
+        onSpeechHealthCheck={() => undefined}
+        onSpeechDiagnostics={async () => ({
+          configuredAddr: "127.0.0.1:50001",
+          attempted: [],
+          recommendation: "",
+        })}
+        onSpeechTest={() => undefined}
+      />,
+    );
+    expect(screen.getByLabelText("ホスト")).toHaveValue("voice.example");
+    await user.click(screen.getByRole("button", { name: "設定を保存" }));
+    expect(onSettingsUpdate).toHaveBeenCalledWith({ speech: { bouyomiHost: "voice.example" } });
+
+    const saved = {
+      ...initial,
+      speech: { ...initial.speech, bouyomiHost: "voice.example" },
+    };
+    rerender(
+      <SettingsView
+        settings={saved}
+        onSettingsUpdate={onSettingsUpdate}
+        onSpeechHealthCheck={() => undefined}
+        onSpeechDiagnostics={async () => ({
+          configuredAddr: "voice.example:50001",
+          attempted: [],
+          recommendation: "",
+        })}
+        onSpeechTest={() => undefined}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("ポート"));
+    await user.type(screen.getByLabelText("ポート"), "50002");
+    save.resolve(true);
+
+    await waitFor(() => expect(screen.getByLabelText("ポート")).toHaveValue("50002"));
+    expect(screen.getByLabelText("ホスト")).toHaveValue("voice.example");
+    expect(screen.getByRole("button", { name: "設定を保存" })).toBeInTheDocument();
+  });
+
+  it("keeps a failed Filter save draft available", async () => {
+    const user = userEvent.setup();
+    const initial = makeSettings();
+    const onSettingsUpdate = vi.fn(async () => false);
+    render(<FilterView settings={initial} onSettingsUpdate={onSettingsUpdate} />);
+
+    await user.type(screen.getByLabelText("NG ワード"), "retain me");
+    await user.click(screen.getByRole("button", { name: "設定を保存" }));
+
+    expect(onSettingsUpdate).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("NG ワード")).toHaveValue("retain me");
+    expect(screen.getByRole("button", { name: "設定を保存" })).toBeInTheDocument();
+  });
+
+  it("keeps a failed Settings save draft available", async () => {
+    const user = userEvent.setup();
+    const initial = makeSettings();
+    const onSettingsUpdate = vi.fn(async () => false);
+    render(
+      <SettingsView
+        settings={initial}
+        onSettingsUpdate={onSettingsUpdate}
+        onSpeechHealthCheck={() => undefined}
+        onSpeechDiagnostics={async () => ({
+          configuredAddr: "127.0.0.1:50001",
+          attempted: [],
+          recommendation: "",
+        })}
+        onSpeechTest={() => undefined}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("ホスト"));
+    await user.type(screen.getByLabelText("ホスト"), "voice.example");
+    await user.click(screen.getByRole("button", { name: "設定を保存" }));
+
+    expect(onSettingsUpdate).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("ホスト")).toHaveValue("voice.example");
+    expect(screen.getByRole("button", { name: "設定を保存" })).toBeInTheDocument();
+  });
+
+  it("commits only the submitted Filter draft when more input arrives during save", async () => {
+    const user = userEvent.setup();
+    const initial = makeSettings();
+    const save = deferred<boolean>();
+    const onSettingsUpdate = vi.fn(() => save.promise);
+    const { rerender } = render(
+      <FilterView settings={initial} onSettingsUpdate={onSettingsUpdate} />,
+    );
+
+    await user.type(screen.getByLabelText("NG ワード"), "first");
+    await user.click(screen.getByRole("button", { name: "設定を保存" }));
+    const saved = {
+      ...initial,
+      speech: { ...initial.speech, blockedWords: ["first"] },
+    };
+    rerender(<FilterView settings={saved} onSettingsUpdate={onSettingsUpdate} />);
+    fireEvent.change(screen.getByLabelText("NG ワード"), { target: { value: "second" } });
+    save.resolve(true);
+
+    await waitFor(() => expect(screen.getByLabelText("NG ワード")).toHaveValue("second"));
+    expect(screen.getByRole("button", { name: "設定を保存" })).toBeInTheDocument();
+  });
+});
