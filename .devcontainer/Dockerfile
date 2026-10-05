@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Keep this digest and .devcontainer/bootstrap-lock.json in the same review.
-FROM node:20.19.4-bookworm-slim@sha256:6db5e436948af8f0244488a1f658c2c8e55a3ae51ca2e1686ed042be8f25f70a AS codex-bootstrap
+FROM node:22.22.0-bookworm-slim@sha256:dd9d21971ec4395903fa6143c2b9267d048ae01ca6d3ea96f16cb30df6187d94 AS codex-bootstrap
 
 COPY .devcontainer/bootstrap-lock.json /tmp/bootstrap-lock.json
 

@@ -6,8 +6,8 @@
       "digest": "sha256:73d85a96694a2cadca1ba3fcb5721f2312a64f1d571dd86f6c77e10a708931dc"
     },
     "nodeBootstrap": {
-      "reference": "docker.io/library/node:20.19.4-bookworm-slim",
-      "digest": "sha256:6db5e436948af8f0244488a1f658c2c8e55a3ae51ca2e1686ed042be8f25f70a"
+      "reference": "docker.io/library/node:22.22.0-bookworm-slim",
+      "digest": "sha256:dd9d21971ec4395903fa6143c2b9267d048ae01ca6d3ea96f16cb30df6187d94"
     },
     "rustBootstrap": {
       "reference": "docker.io/library/rust:1.90.0-bookworm",

@@ -89,7 +89,8 @@
 
 ## 現在の進捗サマリ
 
-2026-10-05 TypeScript 7移行: TypeScript 7.0.2、Vite 8.3.2、Vitest 4.1.11とReact 18用の型定義・関連依存を更新した。廃止されたNode10解決をBundlerへ移し、vite/client・rootDir・side-effect import検査を明示した。CIと同じNode 22.22.0/pnpm 8.11.0でfrozen/ignore-scripts/strict-peer install、型検査、format/lint/security、frontend全322件、本番buildが成功。npm auditはHigh/Critical 0件・Moderate 2件。Node 20.19.4でも型検査・全322件・buildが成功し、補助policy49件も成功（Rust installed graphの1件は環境不足でskip）。実装sourceは0341101。GitHubへのpushが自動承認レビューで明示承認待ちとなったため、GitHub CIとWindows実動作は未実行。専用branch/worktreeを保持している。詳細と採用版の理由はRESEARCH_NOTES.mdを参照。
+2026-10-05 TypeScript 7移行: TypeScript 7.0.2、Vite 8.3.2と関連依存を更新し、Node10解決をBundlerへ移行した。vite/client・rootDir・side-effect import検査を明示する。main 934f318のReact 19.3.0・Vitest 5.0.3・dialog版guardと既存修正を保持して統合し、Node 22.22.0で型検査・frontend全322件・本番buildが成功した。Vitest 5の要件に合わせ、開発コンテナもCI/releaseと同じNode 22.22.0 image/digestへ揃える。ユーザー承認により専用branchをpush済みで、サブエージェント再レビュー・GitHub CIを確認中。詳細はRESEARCH_NOTES.mdを参照。
+2026-10-05: Dependabot全13件（#179–#182、#184–#192）のレビューと互換性修正を完了した。Tauri dialogのJS/Rust版一致検査、React 19の型・ref初期値・TitleBar DOMテスト移行を実施した。マージと後片付けの条件・検証結果・既存Windows入力の不安定性はPhase 5のDependabot項目に記録する。
 
 - [x] Issue #69: adapter healthとqueue phaseをbackend/frontendで独立保持し、paused中も無音probeを継続する。復旧は失敗項目を自動再送せず、UIの接続/準備完了を両状態から導出する。
 
@@ -207,8 +208,8 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 0: プロジェクト作成
 
-- [x] TypeScript 7 正式版へ移行し、関連依存・廃止設定・既定値変更に対応する。Node 20/22で型検査、frontend 全テスト、build とローカルで実行可能な関連CI共通検査を通す。
-- [ ] TypeScript 7 更新sourceをGitHubへpushし、Linux品質・依存監査・Windows nativeのCI成功を確認する。ローカル実装source0341101、pushの明示承認待ち。
+- [x] TypeScript 7 正式版へ移行し、関連依存・廃止設定・既定値変更に対応する。Node 22で型検査、frontend 全テスト、build とローカルで実行可能な関連CI共通検査を通す。
+- [ ] TypeScript 7 更新sourceをGitHubへpushし、Linux品質・依存監査・Windows nativeのCI成功を確認する。ユーザー承認によりpush済み。mainのReact 19/Vitest 5/Tauri dialog版guardを統合し、最終構成を再検証する。
 - [x] Tauri + TypeScript + Tailwind の雛形を作る。
 - [x] `src-tauri/src` に `twitch`, `speech`, `settings`, `app_events` の境界を作る。
 - [x] Activity Bar、Side Panel、Main View、Status Bar の基本レイアウトを作る。
@@ -328,7 +329,11 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 5: 配信運用向け仕上げ
 
-- [ ] Dependabot PR #179–#182、#184–#192 を一件ずつ専用 worktree でレビューし、互換性・依存監査・CI を検証してからマージする。React 19 の型・テスト移行を含め、各 worktree はマージ後に削除する。
+- [x] Dependabot PR #179–#182、#184–#192 の全13件を一件ずつ専用 worktree でレビューし、必要なCI互換性修正を実装する。各PRは全PR checksと当該headのWindows開発build成功を確認してからマージし、worktreeと作業用ローカルbranchを削除して次へ進む。
+
+2026-10-05最終PR進捗: #190はRust dialog 2.8.1との版一致とplugin回帰検査12件を追加し、全16 checksと開発build成功後にマージした。#192も使用中アイコンがv1のbrand icon削除に該当しないことを[公式移行ガイド](https://lucide.dev/guide/react/migration)で確認し、frontend322件・全16 checks・開発build成功後にマージした。両worktreeは削除済み。最後の[#191](https://github.com/hapo31/Rice-xwitch-comment-viewer/pull/191)では[React 19移行ガイド](https://react.dev/blog/2024/04/25/react-19-upgrade-guide)に合わせてReact DOM型も19.3.0へ揃え、5か所のuseRefへundefined初期値を明示した。TitleBarテストはHTML属性順の比較から、既存jsdom projectでgroup/radioの名前・値・全選択状態と現在倍率の検証へ移した。StrictModeの購読cleanupを含むfrontend322件、typecheck/build/format/lint、Tauri版・renderer権限検査は成功した。Dependabotの自動rebaseも取り込み、無関係なWASM更新を入れずに検証済みtreeを保持した。文書を含む最終headの全PR checksとWindows開発build成功をマージ条件とし、マージ済み・保存先から到達可能・cleanを確認してからworktreeを削除する。新たなRelease公開や新依存構成での配布物smokeは今回の対象に含めない。
+
+2026-10-05追加進捗: #179–#182、#184–#189 は全PR checksとexact headの開発build成功後にマージし、各worktreeを削除した。#184/#186/#188では無関係なcssparser-macrosのsyn切替、#189では無関係なWASM runtime更新を除去した。#190のJS dialogは実装互換でもTauri CLIがRust2.7/JS2.8のminor不一致を拒否したため、Rust dialogも2.8.1へ揃え、必要なplugin helper/fsだけを更新する。通常frontend buildとDockerが共有する既存の版検査へ、pnpm/Cargo両lockのplugin対応・minor一致・installed一致を追加し、旧minor・欠落・重複・stale installの拒否と同minorのpatch差許容を回帰検証する。監査・renderer権限の検査条件は維持し、修正後のCI成功前にはマージしない。
 
 2026-10-05進捗: #179（download-artifact 8.0.1）は公式の Node 24・digest mismatch の既定拒否・展開仕様を確認し、既存の name/path/run-id 指定と互換であることを確認した。ポリシー91件、PRの全16 checks、exact headの開発build、検証済み配布物の取得・digest照合と両形式のWindows native診断が成功してマージした。追加診断のtitlebar操作は初回・再試行で失敗し、同じsourceの3回目が成功したため、UI入力の不安定性は調査境界として記録する。#180以降を順次確認する。監査の閾値・例外や配布の検証条件は変更しない。
 

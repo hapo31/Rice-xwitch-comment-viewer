@@ -38,7 +38,7 @@ export function DomainProvider({
   children: ReactNode;
   stores?: DomainStores;
 }) {
-  const storesRef = useRef<DomainStores>();
+  const storesRef = useRef<DomainStores | undefined>(undefined);
   if (!storesRef.current) storesRef.current = stores ?? createDomainStores();
   return (
     <DomainStoresContext.Provider value={storesRef.current}>
