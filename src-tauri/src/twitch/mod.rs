@@ -1,4 +1,8 @@
 //! Stable Twitch facade. Production modules import explicit dependencies.
+#[cfg(test)]
+pub(crate) use auth_state::{
+    TwitchAuthPollResult, TwitchAuthValidationResult, TwitchDeviceAuthStart,
+};
 #[cfg(feature = "app")]
 mod auth_service;
 mod auth_state;

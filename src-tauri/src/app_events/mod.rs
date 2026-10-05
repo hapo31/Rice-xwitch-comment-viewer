@@ -19,6 +19,8 @@ const EMIT_ERROR_LIMIT: usize = 100;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct AppLogEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -29,6 +31,7 @@ pub struct AppLogEvent {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum AppLogLevel {
     Info,
     Warning,
@@ -37,6 +40,8 @@ pub enum AppLogLevel {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct TwitchStatusEvent {
     pub revision: u64,
     pub domain: TwitchStatusDomain,
@@ -54,6 +59,8 @@ pub struct TwitchStatusEvent {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct TwitchActiveConnection {
     pub generation: u64,
     pub broadcaster_user_id: String,
@@ -62,6 +69,7 @@ pub struct TwitchActiveConnection {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum TwitchStatus {
     Disconnected,
     Connecting,
@@ -77,6 +85,7 @@ pub enum TwitchStatus {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum TwitchStatusDomain {
     Auth,
     Chat,
@@ -84,12 +93,15 @@ pub enum TwitchStatusDomain {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum TwitchAuthRequiredReason {
     MissingRequiredScope,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct SpeechStatusEvent {
     pub revision: u64,
     pub status: SpeechStatus,
@@ -101,6 +113,7 @@ pub struct SpeechStatusEvent {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum SpeechStatus {
     Idle,
     Speaking,
@@ -111,6 +124,7 @@ pub enum SpeechStatus {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum SpeechAdapterHealth {
     Unknown,
     Connected,
@@ -120,6 +134,8 @@ pub enum SpeechAdapterHealth {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct SpeechQueueUpdatedEvent {
     pub revision: u64,
     pub queued_count: usize,
@@ -132,6 +148,8 @@ pub struct SpeechQueueUpdatedEvent {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct SpeechQueueItemEvent {
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -145,6 +163,7 @@ pub struct SpeechQueueItemEvent {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum SpeechQueueItemStatus {
     Queued,
     Speaking,
@@ -156,6 +175,7 @@ pub enum SpeechQueueItemStatus {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum SpeechQueuePhase {
     Idle,
     Speaking,
@@ -165,6 +185,8 @@ pub enum SpeechQueuePhase {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct AppEventEmitError {
     pub id: String,
     pub event: String,
@@ -174,6 +196,8 @@ pub struct AppEventEmitError {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct AppEventsSnapshot {
     pub revision: u64,
     pub logs: Vec<AppLogEvent>,
@@ -185,6 +209,8 @@ pub struct AppEventsSnapshot {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct SpeechStateSnapshot {
     pub revision: u64,
     pub status: SpeechStatusEvent,

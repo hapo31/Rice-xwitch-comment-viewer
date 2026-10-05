@@ -1,4 +1,6 @@
 //! Stable public model facade; implementations are deliberately layer-local.
+#[cfg(test)]
+pub(crate) use model::{LauncherAddResult, LauncherLaunchResult};
 #[cfg(feature = "app")]
 pub(crate) mod commands;
 #[cfg(feature = "app")]
