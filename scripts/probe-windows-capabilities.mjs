@@ -158,7 +158,16 @@ async function run() {
     await click('button[aria-label="元に戻す"]');
     await wait(async () => !(await native.call("state")).maximized && await evaluate(`!!document.querySelector('button[aria-label="最大化"]')`), "native restore and resize subscription"); proof.restore = true;
     await click('button[aria-label="最小化"]');
-    await wait(async () => (await native.call("state")).minimized, "native minimize"); proof.minimize = true;
+    try { await wait(async () => (await native.call("state")).minimized, "native minimize"); }
+    catch (error) {
+      proof.nativeState = await native.call("state");
+      proof.minimizeInvoke = await evaluate(`window.__TAURI_INTERNALS__.invoke('plugin:window|minimize',{label:'main'}).then(()=> 'accepted',error=>String(error))`);
+      await delay(500);
+      proof.afterMinimizeInvoke = await native.call("state");
+      console.log(`${name}: 最小化の失敗診断 ${JSON.stringify({before:proof.nativeState,invoke:proof.minimizeInvoke,after:proof.afterMinimizeInvoke})}`);
+      throw error;
+    }
+    proof.minimize = true;
     await native.call("restore");
     console.log(`${name}: backend event購読と実HWNDの最大化・復元・最小化を確認`);
     const geometry = await evaluate(`({width:innerWidth,height:innerHeight,scale:devicePixelRatio})`);

@@ -31,6 +31,7 @@ public static class RiceNativeProbe {
   [DllImport("user32.dll")] static extern bool EnumWindows(Func<IntPtr,IntPtr,bool> callback, IntPtr arg);
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder text, int max);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder text, int max);
   public static IntPtr Window(int pid) {
     using (var process = Process.GetProcessById(pid)) {
       if (process.HasExited || !String.Equals(process.ProcessName,"rice",StringComparison.OrdinalIgnoreCase)) throw new Exception("Not the owned live Rice process");
@@ -42,7 +43,8 @@ public static class RiceNativeProbe {
   }
   public static object State(int pid) {
     var h=Window(pid); Rect r; if(!GetWindowRect(h,out r)) throw new Exception("GetWindowRect failed");
-    return new { left=r.Left, top=r.Top, width=r.Right-r.Left, height=r.Bottom-r.Top, minimized=IsIconic(h), maximized=IsZoomed(h) };
+    var name=new StringBuilder(128), title=new StringBuilder(128); GetClassName(h,name,128); GetWindowText(h,title,128);
+    return new { hwnd=h.ToInt64(), windowClass=name.ToString(), title=title.ToString(), left=r.Left, top=r.Top, width=r.Right-r.Left, height=r.Bottom-r.Top, minimized=IsIconic(h), maximized=IsZoomed(h) };
   }
   public static void Restore(int pid) { var h=Window(pid); ShowWindow(h,9); SetForegroundWindow(h); Thread.Sleep(250); }
   public static void Prepare(int pid) {
