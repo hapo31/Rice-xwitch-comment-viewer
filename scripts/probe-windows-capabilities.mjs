@@ -124,7 +124,12 @@ async function run() {
     for (let n = 0; n < 100; n++) { if (await predicate()) return; await delay(100); }
     throw new Error(`Packaged UI did not satisfy: ${label}`);
   };
-  const click = selector => evaluate(`(() => { const button=document.querySelector(${JSON.stringify(selector)}); if(!button || button.disabled) throw Error('Missing enabled real UI button'); button.click(); return true; })()`);
+  const click = async selector => {
+    // OS state can change before React commits its new aria-label. Wait for the
+    // actual enabled production control, without substituting an IPC call.
+    await wait(() => evaluate(`!!document.querySelector(${JSON.stringify(selector + ":not(:disabled)")})`), `real UI control: ${selector}`);
+    return evaluate(`(() => { const button=document.querySelector(${JSON.stringify(selector)}); if(!button || button.disabled) throw Error('Missing enabled real UI button'); button.click(); return true; })()`);
+  };
   const proof = { schemaVersion: 1, pid, status: "running", deniedCommands: [] };
   try {
     await wait(() => evaluate(`!!window.__TAURI_INTERNALS__?.invoke && !!document.querySelector('button[aria-label="最大化"]')`), "production frontend ready");
@@ -143,6 +148,7 @@ async function run() {
       assert.ok(isAclDenial(command, error), `Not an ACL denial for ${command}: ${error}`);
       proof.deniedCommands.push(command);
     }
+    console.log(`${name}: 不要な11コマンドの実ACL拒否を確認`);
     await invoke("settings_update", { patch: {} });
     await wait(() => evaluate(`window.__riceCapabilityProbe.events.some(x => x.event==='app://log' && x.payload.message==='設定を保存しました。')`), "real backend settings log event");
     proof.backendEvent = true;
@@ -154,6 +160,7 @@ async function run() {
     await click('button[aria-label="最小化"]');
     await wait(async () => (await native.call("state")).minimized, "native minimize"); proof.minimize = true;
     await native.call("restore");
+    console.log(`${name}: backend event購読と実HWNDの最大化・復元・最小化を確認`);
     const geometry = await evaluate(`({width:innerWidth,height:innerHeight,scale:devicePixelRatio})`);
     let before = await native.call("state");
     let after = await native.call("drag", { x: Math.round(250 * geometry.scale), y: Math.round(16 * geometry.scale), dx: 50, dy: 25 });
@@ -163,6 +170,7 @@ async function run() {
     after = await native.call("drag", { x: Math.round((geometry.width - 2) * geometry.scale), y: Math.round(geometry.height / 2 * geometry.scale), dx: -20, dy: 0 });
     assert.ok(Math.abs(after.width - before.width) >= 12, "Resize handle must resize the real HWND");
     await wait(() => evaluate(`window.__riceCapabilityProbe.events.some(x=>x.event==='tauri://resize')`), "real native resize event"); proof.resizeDrag = true;
+    console.log(`${name}: 本番titlebar/resize handleのnative移動・resizeを確認`);
     await evaluate(`location.hash='/launcher'; true`);
     await wait(() => evaluate(`!!document.querySelector('button[aria-label="アプリをランチャーに追加"]:not(:disabled)')`), "production Launcher ready");
     await click('button[aria-label="アプリをランチャーに追加"]');
@@ -172,11 +180,13 @@ async function run() {
     const selectedItems = (await invoke("settings_get")).launcher.items;
     for (const file of files.slice(0, 2)) assert.ok(selectedItems.some(x => x.target.toLowerCase() === file.toLowerCase()));
     proof.nativeMultipleFileDialog = true; proof.selectedCount = 2;
+    console.log(`${name}: native file dialogで2件の選択・登録を確認`);
     const dropGeometry = await evaluate(`({x:innerWidth/2,y:innerHeight/2,scale:devicePixelRatio})`);
     assert.equal(await native.call("drop", { x: Math.round(dropGeometry.x * dropGeometry.scale), y: Math.round(dropGeometry.y * dropGeometry.scale), paths: [files[2]] }), "Copy");
     await wait(async () => (await invoke("settings_get")).launcher.items.length === 3, "real OLE file-drop registered by production listener");
     await wait(() => evaluate(`window.__riceCapabilityProbe.events.some(x=>x.event==='tauri://drag-drop' && x.payload.paths.some(p=>p.toLowerCase()===${JSON.stringify(files[2].toLowerCase())}))`), "real file-drop event with exact fixture path");
     proof.nativeFileDrop = true; proof.droppedCount = 1;
+    console.log(`${name}: 実OLE FileDropで1件の登録とnative eventを確認`);
     for (const item of (await invoke("settings_get")).launcher.items) await invoke("launcher_remove", { itemId: item.id });
     assert.equal((await invoke("settings_get")).launcher.items.length, 0); proof.launcherCleanup = true;
     await evaluate(`(async () => { for(const {event,id,handler} of window.__riceCapabilityProbe.listeners) {
@@ -195,6 +205,11 @@ async function run() {
     verifyCapabilityProbe(proof, pid, name);
     writeFileSync(reportFile, JSON.stringify(proof, null, 2));
     console.log(`Packaged ${name} capability and native UI probes passed (${deniedCommands.length} ACL denials)`);
+  } catch (error) {
+    proof.status = "failure";
+    proof.error = String(error.message).slice(0, 2048);
+    writeFileSync(reportFile, JSON.stringify(proof, null, 2));
+    throw error;
   } finally { native.stop(); cdp.close(); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

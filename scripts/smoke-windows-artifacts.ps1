@@ -102,7 +102,10 @@ function Probe-App([string]$Executable, [string]$Name) {
         }
         $capabilityReport = Join-Path $scratch ("capabilities-" + $Name + '.json')
         & node (Join-Path $PSScriptRoot 'probe-windows-capabilities.mjs') $debugPort $process.Id $fixtures $capabilityReport $Name
-        if ($LASTEXITCODE -ne 0) { throw "$Name packaged capability/native UI probe failed" }
+        if ($LASTEXITCODE -ne 0) {
+            if (Test-Path -LiteralPath $capabilityReport -PathType Leaf) { $script:reportData['failedCapabilityProbe'] = Get-Content -LiteralPath $capabilityReport -Raw -Encoding utf8 | ConvertFrom-Json }
+            throw "$Name packaged capability/native UI probe failed"
+        }
         $capabilityProof = Get-Content -LiteralPath $capabilityReport -Raw -Encoding utf8 | ConvertFrom-Json
         # Installed checks the real titlebar close button (app_exit). Portable
         # checks WM_CLOSE and the SDK's indirect destroy command as well.
