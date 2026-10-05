@@ -97,6 +97,21 @@ public static class RiceNativeProbe {
     }
   }
   public static void Restore(int pid) { var h=Window(pid); ShowWindow(h,9); SetForegroundWindow(h); Thread.Sleep(250); }
+  public static void Activate(int pid) {
+    // Exercise the production single-instance activation route used by a
+    // normal second launch. Never start a different executable or accept a
+    // replacement owner/window as proof of the original packaged process.
+    var h=Window(pid); string executable;
+    using(var owner=Process.GetProcessById(pid)) executable=owner.MainModule.FileName;
+    using(var contender=Process.Start(new ProcessStartInfo(executable) {UseShellExecute=false,WorkingDirectory=System.IO.Path.GetDirectoryName(executable)})) {
+      try {
+        if(!contender.WaitForExit(10000) || contender.ExitCode!=0) throw new Exception("Owned second launch did not exit normally");
+      } finally { if(!contender.HasExited) { contender.Kill(); contender.WaitForExit(); } }
+    }
+    var watch=Stopwatch.StartNew();
+    while(watch.ElapsedMilliseconds<5000) { if(GetForegroundWindow()==h && !IsIconic(h)) return; Thread.Sleep(100); }
+    throw new Exception("Production second launch did not activate the original owned window: "+State(pid));
+  }
   public static void Prepare(int pid) {
     // Set up a deterministic on-screen fixture, not proof of UI resizing. The
     // actual titlebar/resize-handle tests separately measure physical input.
@@ -255,6 +270,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             'state' { $value = [RiceNativeProbe]::State($RicePid) }
             'prepare' { [RiceNativeProbe]::Prepare($RicePid); $value = [RiceNativeProbe]::State($RicePid) }
             'restore' { [RiceNativeProbe]::Restore($RicePid); $value = [RiceNativeProbe]::State($RicePid) }
+            'activate' { [RiceNativeProbe]::Activate($RicePid); $value = [RiceNativeProbe]::State($RicePid) }
             'focus' { [RiceNativeProbe]::Focus($RicePid, $request.x, $request.y); $value = [RiceNativeProbe]::State($RicePid) }
             'screenshot' { $value = Join-Path $fixture 'native-focus-failure.png'; [RiceNativeProbe]::Screenshot($value) }
             'drag' { [RiceNativeProbe]::Drag($RicePid, $request.x, $request.y, $request.dx, $request.dy); $value = [RiceNativeProbe]::State($RicePid) }

@@ -173,6 +173,7 @@ async function run() {
     proof.minimize = true;
     await native.call("restore");
     await wait(async () => !(await native.call("state")).minimized && await evaluate(`document.visibilityState==='visible' && !!document.querySelector('button[aria-label="最大化"]')`), "restored visible production frontend");
+    await native.call("activate");
     console.log(`${name}: backend event購読と実HWNDの最大化・復元・最小化を確認`);
     // Read the actual rendered drag region (including UI zoom), rather than a
     // fixed titlebar coordinate. Capture trusted mouse downs for failure-only
