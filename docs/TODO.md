@@ -89,6 +89,8 @@
 
 ## 現在の進捗サマリ
 
+2026-10-05: Dependabot全13件（#179–#182、#184–#192）のレビューと互換性修正を完了した。Tauri dialogのJS/Rust版一致検査、React 19の型・ref初期値・TitleBar DOMテスト移行を実施した。マージと後片付けの条件・検証結果・既存Windows入力の不安定性はPhase 5のDependabot項目に記録する。
+
 - [x] Issue #69: adapter healthとqueue phaseをbackend/frontendで独立保持し、paused中も無音probeを継続する。復旧は失敗項目を自動再送せず、UIの接続/準備完了を両状態から導出する。
 
 2026-10-05: Issue #69でqueue活動から接続状態を推測する処理を除去し、明示的なhealth結果だけがadapterHealthを更新するようにした。無音probeはconnected/paused中も5秒周期で継続し、重複probeと終了後の遅延通知を防ぐ。復旧してもpaused/失敗項目の手動再試行待ちは維持し、失敗履歴があるだけで後続pendingを停止しない。Status Bar/Side Panel/live announcementは両状態を分離表示し、起動ガイドはhealth・phase・自動読み上げONから準備完了を判定する。終了保護とhotkeyもqueue phaseを使う。共通fixture5順序、paused中の切断/復旧DOM、probeのfake clockを含むfrontend238件、Rust all-features178件/no-default130件、fmt/clippy/format/lint/typecheck/build/securityとquality policy3件が成功。
@@ -324,9 +326,9 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 
 ## Phase 5: 配信運用向け仕上げ
 
-- [ ] Dependabot PR #179–#182、#184–#192 を一件ずつ専用 worktree でレビューし、互換性・依存監査・CI を検証してからマージする。Tauri dialog の JS/Rust 版一致と React 19 の型・テスト移行を含め、各 worktree はマージ後に削除する。
+- [x] Dependabot PR #179–#182、#184–#192 の全13件を一件ずつ専用 worktree でレビューし、必要なCI互換性修正を実装する。各PRは全PR checksと当該headのWindows開発build成功を確認してからマージし、worktreeと作業用ローカルbranchを削除して次へ進む。
 
-2026-10-05最終PR進捗: #190はRust dialog 2.8.1との版一致とplugin回帰検査12件を追加し、全16 checksと開発build成功後にマージした。#192も使用中アイコンがv1のbrand icon削除に該当しないことを[公式移行ガイド](https://lucide.dev/guide/react/migration)で確認し、frontend322件・全16 checks・開発build成功後にマージした。両worktreeは削除済み。最後の#191では[React 19移行ガイド](https://react.dev/blog/2024/04/25/react-19-upgrade-guide)に合わせてReact DOM型も19.3.0へ揃え、5か所のuseRefへundefined初期値を明示した。TitleBarテストはHTML属性順の比較から、既存jsdom projectでgroup/radioの名前・値・全選択状態と現在倍率の検証へ移した。StrictModeの購読cleanupを含むfrontend322件、typecheck/build/format/lint、Tauri版・renderer権限検査は成功した。最終headの全PR checksとWindows開発buildが成功してからマージ・worktree削除する。
+2026-10-05最終PR進捗: #190はRust dialog 2.8.1との版一致とplugin回帰検査12件を追加し、全16 checksと開発build成功後にマージした。#192も使用中アイコンがv1のbrand icon削除に該当しないことを[公式移行ガイド](https://lucide.dev/guide/react/migration)で確認し、frontend322件・全16 checks・開発build成功後にマージした。両worktreeは削除済み。最後の[#191](https://github.com/hapo31/Rice-xwitch-comment-viewer/pull/191)では[React 19移行ガイド](https://react.dev/blog/2024/04/25/react-19-upgrade-guide)に合わせてReact DOM型も19.3.0へ揃え、5か所のuseRefへundefined初期値を明示した。TitleBarテストはHTML属性順の比較から、既存jsdom projectでgroup/radioの名前・値・全選択状態と現在倍率の検証へ移した。StrictModeの購読cleanupを含むfrontend322件、typecheck/build/format/lint、Tauri版・renderer権限検査は成功した。Dependabotの自動rebaseも取り込み、無関係なWASM更新を入れずに検証済みtreeを保持した。文書を含む最終headの全PR checksとWindows開発build成功をマージ条件とし、マージ済み・保存先から到達可能・cleanを確認してからworktreeを削除する。新たなRelease公開や新依存構成での配布物smokeは今回の対象に含めない。
 
 2026-10-05追加進捗: #179–#182、#184–#189 は全PR checksとexact headの開発build成功後にマージし、各worktreeを削除した。#184/#186/#188では無関係なcssparser-macrosのsyn切替、#189では無関係なWASM runtime更新を除去した。#190のJS dialogは実装互換でもTauri CLIがRust2.7/JS2.8のminor不一致を拒否したため、Rust dialogも2.8.1へ揃え、必要なplugin helper/fsだけを更新する。通常frontend buildとDockerが共有する既存の版検査へ、pnpm/Cargo両lockのplugin対応・minor一致・installed一致を追加し、旧minor・欠落・重複・stale installの拒否と同minorのpatch差許容を回帰検証する。監査・renderer権限の検査条件は維持し、修正後のCI成功前にはマージしない。
 
