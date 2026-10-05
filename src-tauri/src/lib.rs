@@ -6,6 +6,8 @@ mod settings;
 mod single_instance;
 mod speech;
 mod twitch;
+#[cfg(all(test, feature = "app"))]
+mod twitch_test_ports;
 
 #[cfg(feature = "app")]
 use app_events::{
