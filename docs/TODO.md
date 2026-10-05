@@ -371,6 +371,7 @@ Phase 5 では Issue #73 として production CSP と明示的な Vite dev CSP�
 - [x] Issue #5: 変更のない Filter / Settings で非表示の保存ボタンをフォーカス順とアクセシビリティツリーから除外し、キーボード回帰テストを追加する。
 - [x] Issue #14: 通知を severity/source/correlation を持つ構造化モデルへ移し、成功通知を警告から分離し、同一障害の重複表示を抑止する。OAuth 認可待ち/待機延長の info 進捗も Logs と system Chat に記録する。
 - [x] Issue #28: Filter / Settings の未保存変更を Activity Bar 遷移・履歴戻る・ウィンドウ終了で共通確認し、保存・破棄・キャンセルをキーボード操作可能にする。native close listener は mount 中に一度だけ登録し、直後の終了要求も保護する。
+- [ ] Issue #193: Filter / Settings の保存済み値と編集下書きを分離し、設定の再読込や保存応答で未保存入力を上書きしない。保存待ちの追加入力・保存失敗・同値再読込・無関係項目更新を実DOMで回帰確認する。
 - [x] Issue #38: Settings / Filter の設定群へ同一階層・同スタイルの見出しを追加し、見出し一覧のアクセシビリティテストを追加する。
 - [x] Issue #6: NG ユーザー/NG ワードと速度/音程/音量のフォームコントロールへラベルを関連付け、既定値を含む現在値を支援技術へ公開する。
 - [x] Issue #7: 入力エラーを対象フィールドと関連付け、棒読みちゃんホスト空欄と保存不能理由を明示する。
