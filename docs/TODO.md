@@ -371,7 +371,8 @@ Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態
 - [x] Issue #22: Twitch の HTTP 接続・応答と EventSub WebSocket handshake に明示的な deadline を設定する。
 - [x] Issue #27: Twitch 接続中、読み上げ中、未保存変更がある終了要求を確認し、承認後に接続と待機キューを安全に停止する。
 - [x] Issue #29: Twitch API HTTP/OAuth/revocation エラーを型付きで保持し、再試行・認証要求・永続停止を分岐する。
-- [ ] Issue #208: EventSub の恒久失敗を終端エラーから generation 付き Chat Error/AuthRequired と Logs/system Chat に一貫して反映してから task を終了し、HTTP 400 等で Connecting が残らず再試行しないことを fake で検証する。
+- [x] Issue #208: EventSub の恒久失敗を終端エラーから generation 付き Chat Error/AuthRequired と Logs/system Chat に一貫して反映してから task を終了し、HTTP 400 等で Connecting が残らず再試行しないことを fake で検証する。
+  - supervisor が API/revocation の終端 Chat 状態を一元更新し、handover 中の revocation も直ちに終端処理へ返す。HTTP 400/410/401/403、全 revocation 分岐、実 AppEventState snapshot、再試行回数と task 終了を本番 service の fake で確認した。Rust app feature Twitch 78 tests、実 AppShell の event/snapshot 復元2 tests、frontend build/lint/format と Rust fmt が成功。最終 CI・統合結果は PR #249 で追跡し、実 Twitch 通信は未実施。
 - [x] Issue #2: Chat 行へ読み上げ状態を表示し、キュー更新時に `sourceMessageId` で状態を同期する。
 - [x] Issue #1: Activity Bar から Logs view を開ける導線を追加し、リンク名・現在地表現を回帰テストする。
 - [x] `main` 向け PR で frontend/Rust の unit test と lint を並列実行する read-only GitHub Actions workflow を追加する。
