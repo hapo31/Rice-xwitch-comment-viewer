@@ -91,6 +91,10 @@
 
 ## 現在の進捗サマリ
 
+- [x] Issue #212: 認証復元結果に scope 不足・保存先障害・破損・移行の型付き reason を保持し、composition root の日本語部分一致を除去する。文言に依存しない状態通知と secret 非公開・旧 store 移行・失敗時保持を検証する。
+
+2026-10-06 Issue #212: AuthLoadResult に型付き reason と表示文を持つ notice を導入し、composition root の日本語部分一致を除去した。scope 不足は型付き error を復元まで保持し、破損 JSON は入力値を含まない固定文へ変換する。secure/legacy の分類・移行と失敗時保持、文言に依存しない起動時遷移の回帰を追加した。app feature で新規回帰4件と Twitch 回帰84件が成功し、実装 head f52025c の default/no-default・strict clippy・wire 型生成を含む CI も成功した。差分レビュー済み。文書追補後の最終 CI と統合結果は PR #256 に記録する。
+
 Issue #199 は system timeline の中立モデルと型付き購読境界、source 別 transition 契約を実装した。初期 snapshot の認証/speech 通知、連続重複と復旧後の再通知、購読終了後の無視、不正 callback の型エラーを検証した。独立レビューで認証/接続の状態集合をさらに限定し、案内文を含む認証の重複抑制を維持した。最終 CI 結果と統合状況は PR #239 に記録する。
 
 2026-10-06 Issue #203: appReducer/appStore.test の旧状態処理を除去し、AppState は読み取り用合成モデルとして appState.ts へ分離した。ログ ID／通知重複処理は logsStore を正本にし、明示 backend event ID の replay は抑制、IDなし同内容ログと表示IDの衝突は suffix で保持する。domain event bridge は store が受理したログにのみ通知等の副作用を行う。SettingsUpdateQueue と専用テストを削除し、失敗前から待機している後続保存の継続と idle 待機を createSettingsMutationOrchestrator で検証する。親レビューで旧 reducer の observable regression 4件を DomainStores/dispatchDomainAction の本番経路へ移し、最新 reviewed main 6bdb52c も統合した。frontend 366件、typecheck/build、変更ファイル Biome check と diff check が成功。親レビューと本番経路15 tests の再検証、実装 head 5185791 の全16 CI が成功した。その後 reviewed main 493c57f（Settings 分割・EventSub 終端状態・wire schema）を統合し、frontend 405件、format/lint/typecheck/build と diff check が成功した。最終 head の CI と統合結果は PR #251 に記録する。
