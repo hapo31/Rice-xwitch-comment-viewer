@@ -126,3 +126,38 @@ describe("production log identity", () => {
     ]);
   });
 });
+
+it("retains distinct explicit IDs and carries correlated status context across source deduplication", () => {
+  const first = {
+    id: "one",
+    source: "command" as const,
+    severity: "error" as const,
+    message: "same",
+    occurredAtMs: 1,
+  };
+  let state = logsReducer(initialLogsState, { type: "notification.added", notification: first });
+  state = logsReducer(state, { type: "notification.added", notification: { ...first, id: "two" } });
+  expect(state.notifications).toHaveLength(2);
+  state = logsReducer(state, {
+    type: "notification.added",
+    notification: {
+      ...first,
+      id: "event",
+      correlationId: "incident",
+      source: "event",
+      announcementDomains: ["chat"],
+    },
+  });
+  state = logsReducer(state, {
+    type: "notification.added",
+    notification: {
+      ...first,
+      id: "log",
+      correlationId: "incident",
+      source: "log",
+      announcementDomains: ["auth"],
+    },
+  });
+  expect(state.notifications).toHaveLength(3);
+  expect(state.notifications[0].announcementDomains).toEqual(["chat", "auth"]);
+});
