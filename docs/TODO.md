@@ -217,6 +217,8 @@ Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既
 
 2026-10-06 Issue #229 reviewed main統合: #228の共通TOML parser (`scripts/config-parsers.mjs`) をCargo.lock読み込みにも適用し、lock entryとregistry checksumをfail-closedに検証する。Cargo parser fixtureを正規TOMLにし、malformed TOML・checksum不正・registry crateのSHA-256保持を回帰化した。reviewed `origin/main` `27e8599` の#228 parser/CI/設計更新を統合した。SBOM/PURL/schema、artifact verifier、parser、release workflow policyとlicense testsは通過。実installed npm/Cargo graphでも10件全て成功した。
 
+2026-10-06 Issue #229 親レビュー: schema validator導入でWindows artifact smokeとtrusted publisherにもnpm依存が必要になったため、各検証前へfrozen/ignore-scripts installを追加した。publisherはsourceではなくtrustedのmanifest/lockだけを使い、依存install欠落・実行順・不正directory・script実行・skipをworkflow policy回帰で拒否する。Node22の関連71件（installed graph含む）と、独立checkoutで依存不足を再現→frozen install後の両verifier import成功を確認した。
+
 2026-10-06 Issue #229 完了: CycloneDX JavaScript Library 10.3.0と `packageurl-js` 2.0.1で正式model/serializerとPURL構築/parseを行う。inventory・provenance・standard model・schema validationは別moduleで、release verifierもofficial CycloneDX 1.5 validatorを使う。exact commit/lockfile/artifact、scope・dependency edge・hash・Rice propertiesとstable sortを維持し、Cargo registry lock hashをshared TOML parser経由で読む。Node 22.22.0のfrozen install、SBOM/artifact/parser/policy/license関連test、installed graph schema integration、license/workflow checksと`git diff --check`が成功した。追加dev dependenciesとJSON-validation peer dependenciesをexact pinし、Node >=20.18.0の要件が固定release Node 22.22.0を満たすことを文書化した。PR #273 の最終CIと親レビューを待つ。
 
 2026-10-05: Issue #96でPR/main/weekly/releaseの共通advisory gate、期限/owner/根拠を必須とする例外validator、Dependabot、artifact digestとexact commitへ結び付けたCycloneDX 1.5 SBOMを追加した。policy/SBOMのunit10件と実installed graphのintegration1件を確認。RustSec DB ef6173cbc5c50ec8166f9a5b28f07834144373ee（1290 advisory）でRust警告7件、npm High1件をblockingとして検出した。gateが正常に失敗することを確認しており、clean auditではない。新規releaseの実配布は未実施。
@@ -720,4 +722,6 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #231: tempfileの乱数名生成とRAII cleanupを採用し、Windows write-throughを含む既存atomic_replaceと同期・権限検査を保持した。write/backup/replace失敗時のprimary/backup/メモリと残留temp、unwind後cleanupを回帰化。Rust settings47件、strict all-target/all-feature Clippy、frontend build、fmt/diff検査が成功。最終CIはPR #275で管理する。実機での電源断検証は未実施。
 
-2026-10-06 Issue #229 親レビュー: schema validator導入でWindows artifact smokeとtrusted publisherにもnpm依存が必要になったため、各検証前へfrozen/ignore-scripts installを追加した。publisherはsourceではなくtrustedのmanifest/lockだけを使い、依存install欠落・実行順・不正directory・script実行・skipをworkflow policy回帰で拒否する。
+- [x] Issue #232: Twitch transportがreqwest Clientを共有し、timeout/TLSと要求ごとの認証header、pool再利用・期限・credential切替・失敗分類を検証する。service/fake transportと認証更新順序を維持する。
+
+2026-10-06 Issue #232: TwitchHttpをapp setupで一度構築し、runtime cloneを通じ全OAuth・Helix・EventSub HTTP要求にpoolを共有する。ローカルHTTP fixtureで7要求/cloneのTCP接続1本、全6操作の期限、token/client切替、poll・認証・購読失敗分類を追加。実装head 2f67990の全16 CI（Rust all-feature/no-default・strict Clippy・Windows・frontend）とfrontend build/fmt/diff検査成功。ローカルの重複再buildはCI成功後に停止した。実Twitchログインは未実施。
