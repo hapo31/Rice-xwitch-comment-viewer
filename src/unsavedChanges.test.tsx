@@ -17,9 +17,9 @@ describe("未保存変更の確認ダイアログ", () => {
       />,
     );
 
-    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain("<dialog");
     expect(markup).toContain('aria-modal="true"');
-    expect(markup).toContain('type="button" autofocus=""');
+    expect(markup).toContain('type="button"');
     expect(markup).toContain("保存して続ける");
     expect(markup).toContain("破棄して続ける");
     expect(markup).toContain("キャンセル");
@@ -56,7 +56,7 @@ describe("未保存変更の確認ダイアログ", () => {
       <ActiveOperationsExitDialog onConfirm={() => undefined} onCancel={() => undefined} />,
     );
 
-    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain("<dialog");
     expect(markup).toContain("待機中の読み上げをクリアします");
     expect(markup).toContain("停止して終了");
     expect(markup).toContain("キャンセル");

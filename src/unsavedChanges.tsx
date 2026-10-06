@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useRef, type MutableRefObject } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
 
 export interface UnsavedChange {
   isDirty: boolean;
@@ -54,31 +62,82 @@ export function useUnsavedChanges(id: string, change: UnsavedChange) {
   }, [change.isDirty, id, registry]);
 }
 
+/** Uses the browser's modal dialog behavior for focus containment and background inertness. */
+function ModalDialog({
+  children,
+  onCancel,
+  cancelDisabled = false,
+  labelledBy,
+  describedBy,
+}: {
+  children: ReactNode;
+  onCancel: () => void;
+  cancelDisabled?: boolean;
+  labelledBy: string;
+  describedBy: string;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialog.showModal();
+    dialog.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+    return () => {
+      if (dialog.open) dialog.close();
+      window.setTimeout(() => {
+        if (
+          (!previousFocus || previousFocus === document.body || !previousFocus.isConnected) &&
+          document.activeElement === document.body
+        )
+          document.querySelector<HTMLElement>("[data-modal-focus-fallback]")?.focus();
+      }, 0);
+    };
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      tabIndex={-1}
+      aria-modal="true"
+      aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
+      onCancel={(event) => {
+        // A modal confirmation must never be dismissed by a browser default path.
+        event.preventDefault();
+        if (!cancelDisabled) onCancel();
+      }}
+      className="fixed inset-0 m-0 flex h-full w-full max-h-none max-w-none items-center justify-center border-0 bg-transparent p-4 text-zinc-100 backdrop:bg-zinc-950/70"
+    >
+      {children}
+    </dialog>
+  );
+}
+
 export function UnsavedChangesDialog({
   onSave,
   onDiscard,
   onCancel,
   saveDisabled = false,
   hasUnsavedChanges = true,
+  isSaving = false,
 }: {
   onSave: () => void;
   onDiscard: () => void;
   onCancel: () => void;
   saveDisabled?: boolean;
   hasUnsavedChanges?: boolean;
+  isSaving?: boolean;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/70 p-4"
-      role="presentation"
+    <ModalDialog
+      onCancel={onCancel}
+      labelledBy="unsaved-changes-title"
+      describedBy="unsaved-changes-description"
     >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="unsaved-changes-title"
-        aria-describedby="unsaved-changes-description"
-        className="w-full max-w-md border border-zinc-700 bg-zinc-900 p-5 shadow-xl"
-      >
+      <section className="w-full max-w-md border border-zinc-700 bg-zinc-900 p-5 shadow-xl">
         <h2 id="unsaved-changes-title" className="text-base font-semibold text-zinc-100">
           {hasUnsavedChanges ? "未保存の変更があります" : "移動または終了しますか？"}
         </h2>
@@ -91,7 +150,6 @@ export function UnsavedChangesDialog({
           <button
             type="button"
             onClick={onCancel}
-            autoFocus
             className="border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:border-sky-400"
           >
             キャンセル
@@ -111,11 +169,11 @@ export function UnsavedChangesDialog({
             disabled={saveDisabled}
             className="border border-sky-500 bg-sky-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
           >
-            {hasUnsavedChanges ? "保存して続ける" : "続ける"}
+            {isSaving ? "保存しています…" : hasUnsavedChanges ? "保存して続ける" : "続ける"}
           </button>
         </div>
       </section>
-    </div>
+    </ModalDialog>
   );
 }
 
@@ -129,17 +187,13 @@ export function ActiveOperationsExitDialog({
   isClosing?: boolean;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/70 p-4"
-      role="presentation"
+    <ModalDialog
+      onCancel={onCancel}
+      cancelDisabled={isClosing}
+      labelledBy="active-operations-exit-title"
+      describedBy="active-operations-exit-description"
     >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="active-operations-exit-title"
-        aria-describedby="active-operations-exit-description"
-        className="w-full max-w-md border border-zinc-700 bg-zinc-900 p-5 shadow-xl"
-      >
+      <section className="w-full max-w-md border border-zinc-700 bg-zinc-900 p-5 shadow-xl">
         <h2 id="active-operations-exit-title" className="text-base font-semibold text-zinc-100">
           配信支援を停止して終了しますか？
         </h2>
@@ -152,7 +206,6 @@ export function ActiveOperationsExitDialog({
             type="button"
             onClick={onCancel}
             disabled={isClosing}
-            autoFocus
             className="border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:border-sky-400 disabled:cursor-not-allowed disabled:text-zinc-500"
           >
             キャンセル
@@ -167,6 +220,6 @@ export function ActiveOperationsExitDialog({
           </button>
         </div>
       </section>
-    </div>
+    </ModalDialog>
   );
 }
