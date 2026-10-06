@@ -105,6 +105,8 @@
 
 ## 現在の進捗サマリ
 
+Issue #223: React公式selector helperで派生object/arrayのsnapshot契約と任意の比較関数を保証した。既存5 domainとProvider隔離を維持し、frontend全462件成功。最終CIはPR #268に記録する。
+
 Issue #220: 再生中itemのadapter所有権を保持し、設定変更後も制御と完了確認を同じ宛先へ送る。後続itemから新しい設定を使う。
 
 Issue #219: 認証解除の要求を認証状態から分離し、失敗後に再試行できる調停を追加した。PR #264で最終検証を確認する。
@@ -651,4 +653,6 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 ## Issue #223: 派生selectorのsnapshot契約
 
-- [ ] React公式selector helperとJotai移行を比較し、派生object/arrayの安定性・比較関数・Provider隔離・通知と描画回数をDOMで検証する。既存generation/revision/queue同期を維持する。
+- [x] React公式selector helperとJotai移行を比較し、派生object/arrayの安定性・比較関数・Provider隔離・通知と描画回数をDOMで検証する。既存generation/revision/queue同期を維持する。
+
+2026-10-06 Issue #223: immutableなstore snapshotとselectorをReact公式helperへ別々に渡し、Object.is既定と任意比較関数を全domain hookで使えるようにした。通常/StrictModeの派生object・array、selector変更、store変更と購読解除、同一storeの無関係更新、Provider隔離と1eventあたりの通知/描画をDOM6件で回帰化した。frontend全462件（78 files）、build/typecheck、format、lint、diff検査成功。production JS gzip増加0.28 kB。Jotaiへの全domain移行と比べ、既存reducer・generation/revision・replayを保持する小さな境界変更を選んだ。最終headのCI・マージはPR #268で確認する。Windows実アプリの手動描画確認は未実施。
