@@ -16,6 +16,7 @@ import {
   twitchValidateAuth,
 } from "../tauri/client";
 import type {
+  AppNotification,
   AuthStatus,
   NotificationSeverity,
   NotificationSource,
@@ -40,8 +41,14 @@ export interface TwitchControllerDependencies {
     severity: NotificationSeverity,
     source: NotificationSource,
     message: string,
+    correlationId?: string,
+    announcementDomains?: AppNotification["announcementDomains"],
   ) => void;
-  reportError: (error: unknown, operation?: "auth" | "chat" | "externalUrl") => unknown;
+  reportError: (
+    error: unknown,
+    operation?: "auth" | "chat" | "externalUrl",
+    announcementDomains?: AppNotification["announcementDomains"],
+  ) => unknown;
   reportTechnicalError: (message: string) => void;
   routeAutoConnectTimeline: (event: SystemTimelineEvent) => void;
 }
@@ -65,15 +72,17 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
       ) {
         deps.reportInfo(effect.message, event.type === "poll.waiting" ? "event" : "command");
       } else if (effect.type === "warning") {
-        deps.reportNotification(effect.severity, "event", effect.message);
+        deps.reportNotification(effect.severity, "event", effect.message, undefined, ["auth"]);
       } else if (effect.type === "notification") {
         deps.reportNotification(
           effect.severity,
           event.type === "restore.failed" ? "command" : "event",
           effect.message,
+          undefined,
+          ["auth"],
         );
       } else if (effect.type === "failure") {
-        deps.reportError(effect.error, "auth");
+        deps.reportError(effect.error, "auth", ["auth"]);
       }
     }
     return transition.state;

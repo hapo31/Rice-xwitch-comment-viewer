@@ -49,17 +49,31 @@ export function logsReducer(state: LogsState, action: LogsAction): LogsState {
         id: action.notification.id ?? notificationId(action.notification),
       };
       const existing = [...state.notifications, ...state.notificationHistory].find((entry) =>
-        isDuplicateNotification(entry, notification),
+        isDuplicateNotification(entry, notification, action.notification.id !== undefined),
       );
-      const target = notificationBucket(notification);
+      let target = notificationBucket(notification);
       if (existing) {
+        const announcementDomains = [
+          ...new Set([
+            ...(existing.announcementDomains ?? []),
+            ...(notification.announcementDomains ?? []),
+          ]),
+        ];
+        const escalated =
+          notificationSeverityRank(notification.severity) >
+          notificationSeverityRank(existing.severity);
         if (
-          notificationSeverityRank(notification.severity) <=
-          notificationSeverityRank(existing.severity)
+          !escalated &&
+          announcementDomains.length === (existing.announcementDomains?.length ?? 0)
         )
           return state;
         const source = notificationBucket(existing);
-        const promoted = { ...existing, severity: notification.severity };
+        const promoted = {
+          ...existing,
+          severity: escalated ? notification.severity : existing.severity,
+          ...(announcementDomains.length ? { announcementDomains } : {}),
+        };
+        target = notificationBucket(promoted);
         if (source === target) {
           return {
             ...state,
@@ -97,9 +111,14 @@ export function warningNotifications(notifications: AppNotification[]): AppNotif
 function notificationId(notification: Omit<AppNotification, "id">): string {
   return `${notification.occurredAtMs}-${notification.severity}-${notification.source}-${notification.correlationId ?? notification.message}`;
 }
-function isDuplicateNotification(existing: AppNotification, incoming: AppNotification): boolean {
+function isDuplicateNotification(
+  existing: AppNotification,
+  incoming: AppNotification,
+  explicitId: boolean,
+): boolean {
   if (existing.correlationId && incoming.correlationId)
     return existing.correlationId === incoming.correlationId;
+  if (explicitId) return existing.id === incoming.id;
   return (
     existing.message === incoming.message &&
     Math.abs(existing.occurredAtMs - incoming.occurredAtMs) <= 5_000

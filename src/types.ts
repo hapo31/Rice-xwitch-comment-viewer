@@ -128,6 +128,8 @@ export type AppLogEvent = z.infer<typeof schemas.appLogEventSchema>;
 export type NotificationSeverity = "info" | "success" | "warning" | "error";
 export type NotificationSource = "command" | "event" | "log" | "system";
 
+export type NotificationStatusDomain = "auth" | "chat" | "speech" | "queue";
+
 export interface AppNotification {
   id: string;
   severity: NotificationSeverity;
@@ -135,6 +137,8 @@ export interface AppNotification {
   message: string;
   occurredAtMs: number;
   correlationId?: string;
+  /** Status summaries describing the same occurrence as this actionable notice. */
+  announcementDomains?: NotificationStatusDomain[];
 }
 
 export type TwitchConnectionStatus = z.infer<typeof schemas.twitchConnectionStatusSchema>;
