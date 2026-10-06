@@ -2,7 +2,9 @@
 use super::auth_service::{clear_twitch_auth_state_with_store, AuthRuntime, TwitchAuthService};
 use super::auth_state::*;
 use super::auth_store::{AuthCredentialStore, AuthLoadResult, TwitchAuthStore};
-use super::chat_service::{ChatRuntime, TwitchChatService, TwitchConnectionHandle};
+use super::chat_service::{
+    ChatCancellation, ChatRuntime, TwitchChatService, TwitchConnectionHandle, TwitchConnectionOwner,
+};
 use super::dedupe::MessageDedupe;
 use super::error::{EventSubTerminalError, SubscriptionRequestError, TwitchApiError};
 use super::eventsub::{process_eventsub_frame, run_eventsub_connection_with, EventSubRuntime};
@@ -17,7 +19,7 @@ use crate::app_events::{
 };
 use chrono::{DateTime, Utc};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
@@ -27,6 +29,15 @@ use tokio_tungstenite::tungstenite::Message;
 struct Gate {
     started: Arc<Notify>,
     release: Arc<Notify>,
+}
+async fn wait_for_abort(handle: &tokio::task::AbortHandle) {
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while !handle.is_finished() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("connection task was not aborted");
 }
 struct Reply<T> {
     value: T,
@@ -96,6 +107,7 @@ struct Transport {
     sockets: Mutex<VecDeque<FakeSocket>>,
     subscriptions: Mutex<VecDeque<Reply<Result<(), SubscriptionRequestError>>>>,
     subscription_calls: Mutex<Vec<SubscriptionCall>>,
+    subscription_started: Notify,
     lookup_calls: Mutex<Vec<String>>,
     validation_calls: AtomicUsize,
     refresh_calls: AtomicUsize,
@@ -114,12 +126,18 @@ struct Runtime {
     store: TwitchAuthStore,
     backend: Arc<MemoryStore>,
     http: Arc<Transport>,
-    connection: Arc<Mutex<Option<TwitchConnectionHandle>>>,
-    next_generation: Arc<AtomicU64>,
+    connection: Arc<Mutex<TwitchConnectionOwner>>,
+    fail_connection_registration: Arc<AtomicBool>,
+    rejected_task: Arc<Mutex<Option<tokio::task::AbortHandle>>>,
+    registration_gate: Arc<Mutex<Option<Gate>>>,
+    lookup_started: Arc<Notify>,
+    wait_for_lookup_before_return: Arc<AtomicBool>,
     cancels: Arc<AtomicUsize>,
     statuses: Arc<Mutex<Vec<TwitchStatus>>>,
+    status_changed: Arc<Notify>,
     auth_required: Arc<AtomicUsize>,
     chats: Arc<Mutex<Vec<ChatMessage>>>,
+    chat_received: Arc<Notify>,
     logs: Arc<Mutex<Vec<String>>>,
     events: Arc<AppEventState>,
     preferred: Arc<Mutex<String>>,
@@ -136,11 +154,17 @@ impl Default for Runtime {
             backend,
             http: Arc::default(),
             connection: Arc::default(),
-            next_generation: Arc::new(AtomicU64::new(1)),
+            fail_connection_registration: Arc::default(),
+            rejected_task: Arc::default(),
+            registration_gate: Arc::default(),
+            lookup_started: Arc::default(),
+            wait_for_lookup_before_return: Arc::default(),
             cancels: Arc::default(),
             statuses: Arc::default(),
+            status_changed: Arc::default(),
             auth_required: Arc::default(),
             chats: Arc::default(),
+            chat_received: Arc::default(),
             logs: Arc::default(),
             events: Arc::default(),
             preferred: Arc::new(Mutex::new("preferred_streamer".into())),
@@ -168,13 +192,20 @@ impl Runtime {
             .push_back(Reply::ready(Ok(device(code))));
     }
     async fn wait_for_subscription(&self, count: usize) {
-        for _ in 0..100 {
+        loop {
             if self.http.subscription_calls.lock().unwrap().len() >= count {
                 return;
             }
-            tokio::task::yield_now().await;
+            self.http.subscription_started.notified().await;
         }
-        panic!("subscription did not start");
+    }
+    async fn wait_for_chat(&self, count: usize) {
+        loop {
+            if self.chats.lock().unwrap().len() >= count {
+                return;
+            }
+            self.chat_received.notified().await;
+        }
     }
 }
 impl OAuthTransport for Runtime {
@@ -208,14 +239,9 @@ impl AuthRuntime for Runtime {
     fn now(&self) -> SystemTime {
         *self.clock.lock().unwrap()
     }
-    fn cancel_chat(&self) -> Result<bool, String> {
+    fn cancel_chat(&self) -> Result<ChatCancellation, String> {
         self.cancels.fetch_add(1, Ordering::Relaxed);
-        if let Some(handle) = self.connection.lock().unwrap().take() {
-            handle.abort();
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        Ok(self.connection.lock().unwrap().cancel())
     }
     fn auth_status(
         &self,
@@ -237,6 +263,7 @@ impl AuthRuntime for Runtime {
             self.backend.order.lock().unwrap().push("connected");
         }
         self.statuses.lock().unwrap().push(status);
+        self.status_changed.notify_one();
     }
     fn auth_log(&self, level: AppLogLevel, message: impl Into<String>) {
         let message = message.into();
@@ -260,24 +287,37 @@ impl ChatRuntime for Runtime {
     fn preferred_channel(&self) -> Result<String, String> {
         Ok(self.preferred.lock().unwrap().clone())
     }
-    fn next_generation(&self) -> u64 {
-        self.next_generation.fetch_add(1, Ordering::Relaxed)
+    fn reserve_connection(&self) -> Result<u64, String> {
+        Ok(self.connection.lock().unwrap().reserve())
     }
-    fn replace_connection(&self, handle: TwitchConnectionHandle) -> Result<(), String> {
-        if let Some(previous) = self.connection.lock().unwrap().replace(handle) {
-            previous.abort();
+    fn register_connection(&self, handle: TwitchConnectionHandle) -> Result<(), String> {
+        if self
+            .fail_connection_registration
+            .swap(false, Ordering::Relaxed)
+        {
+            *self.rejected_task.lock().unwrap() = Some(handle.task.abort_handle());
+            return Err("fake connection registration failure".into());
         }
-        Ok(())
+        self.connection.lock().unwrap().register(handle)
     }
     fn connection_is_current(&self, generation: u64) -> bool {
-        self.connection
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|handle| handle.generation == generation)
+        self.connection.lock().unwrap().is_current(generation)
+    }
+    async fn before_connection_registration(&self, _generation: u64) {
+        let gate = self.registration_gate.lock().unwrap().take();
+        if let Some(gate) = gate {
+            gate.started.notify_one();
+            gate.release.notified().await;
+        }
+    }
+    async fn after_connection_start(&self, _generation: u64) {
+        if self.wait_for_lookup_before_return.load(Ordering::Relaxed) {
+            self.lookup_started.notified().await;
+        }
     }
     async fn lookup_user(&self, _: &str, _: &str, login: &str) -> anyhow::Result<HelixUser> {
         self.http.lookup_calls.lock().unwrap().push(login.into());
+        self.lookup_started.notify_one();
         take(&self.http.users).receive().await
     }
 }
@@ -301,6 +341,7 @@ impl SubscriptionRuntime for Runtime {
                 client_id: client_id.into(),
                 user_id: params.user_id.clone(),
             });
+        self.http.subscription_started.notify_one();
         let reply = self.http.subscriptions.lock().unwrap().pop_front();
         match reply {
             Some(reply) => reply.receive().await,
@@ -335,6 +376,7 @@ impl EventSubRuntime for Runtime {
             occurred_at_ms: 1,
         });
         self.statuses.lock().unwrap().push(status);
+        self.status_changed.notify_one();
     }
     fn connected(&self, _: &EventSubConnectionParams, _: String) {
         self.statuses.lock().unwrap().push(TwitchStatus::Connected);
@@ -344,6 +386,7 @@ impl EventSubRuntime for Runtime {
     }
     fn chat(&self, message: ChatMessage) {
         self.chats.lock().unwrap().push(message);
+        self.chat_received.notify_one();
     }
     fn received_at(&self) -> DateTime<Utc> {
         self.now().into()
@@ -894,8 +937,12 @@ async fn chat_service_failed_logout_restores_credentials_without_aborting_connec
     runtime.backend.fail_clear.store(true, Ordering::Relaxed);
     let task = tokio::spawn(std::future::pending::<()>());
     let abort = task.abort_handle();
+    let connection_generation = runtime.connection.lock().unwrap().reserve();
     runtime
-        .replace_connection(TwitchConnectionHandle::new(5, task))
+        .connection
+        .lock()
+        .unwrap()
+        .register(TwitchConnectionHandle::new(connection_generation, task))
         .unwrap();
     let generation = runtime.auth.lock().unwrap().generation;
     assert!(TwitchChatService::new(runtime.clone())
@@ -906,7 +953,7 @@ async fn chat_service_failed_logout_restores_credentials_without_aborting_connec
     assert!(auth.token.is_some());
     assert_ne!(auth.generation, generation);
     drop(auth);
-    assert!(runtime.connection_is_current(5));
+    assert!(runtime.connection_is_current(connection_generation));
     assert!(!abort.is_finished());
     assert_eq!(runtime.cancels.load(Ordering::Relaxed), 0);
     runtime.cancel_chat().unwrap();
@@ -923,16 +970,19 @@ async fn chat_service_rejects_invalid_channel_before_any_transport_or_generation
         .is_err());
     *runtime.preferred.lock().unwrap() = "bad channel!".into();
     assert!(service.connect(None).await.is_err());
-    assert_eq!(runtime.next_generation.load(Ordering::Relaxed), 1);
+    assert_eq!(runtime.connection.lock().unwrap().generation(), 0);
     assert!(runtime.http.lookup_calls.lock().unwrap().is_empty());
-    assert!(runtime.connection.lock().unwrap().is_none());
+    assert_eq!(runtime.connection.lock().unwrap().active_generation(), None);
     assert!(runtime.auth.lock().unwrap().token.is_some());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn chat_service_connects_preferred_channel_and_stop_preserves_authentication() {
     let runtime = Runtime::default();
     runtime.authorize();
+    runtime
+        .wait_for_lookup_before_return
+        .store(true, Ordering::Relaxed);
     runtime
         .http
         .users
@@ -951,12 +1001,11 @@ async fn chat_service_connects_preferred_channel_and_stop_preserves_authenticati
     let service = TwitchChatService::new(runtime.clone());
     service.connect(None).await.unwrap();
     runtime.wait_for_subscription(1).await;
-    for _ in 0..10 {
-        if !runtime.chats.lock().unwrap().is_empty() {
-            break;
-        }
-        tokio::task::yield_now().await;
-    }
+    assert!(matches!(
+        runtime.statuses.lock().unwrap().first(),
+        Some(TwitchStatus::Connecting)
+    ));
+    runtime.wait_for_chat(1).await;
     assert_eq!(
         *runtime.http.lookup_calls.lock().unwrap(),
         ["preferred_streamer"]
@@ -979,16 +1028,190 @@ async fn chat_service_connects_preferred_channel_and_stop_preserves_authenticati
         .connection
         .lock()
         .unwrap()
-        .as_ref()
-        .unwrap()
-        .task
-        .abort_handle();
+        .active_abort_handle()
+        .unwrap();
     service.stop().unwrap();
-    tokio::task::yield_now().await;
+    wait_for_abort(&abort).await;
     assert!(abort.is_finished());
     assert!(runtime.auth.lock().unwrap().token.is_some());
     assert_eq!(runtime.backend.clears.load(Ordering::Relaxed), 0);
-    assert_eq!(runtime.next_generation.load(Ordering::Relaxed), 3);
+    assert_eq!(runtime.connection.lock().unwrap().generation(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chat_service_immediate_lookup_failure_follows_connecting_status() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    runtime
+        .wait_for_lookup_before_return
+        .store(true, Ordering::Relaxed);
+    runtime
+        .http
+        .users
+        .lock()
+        .unwrap()
+        .push_back(Reply::ready(Err(api_error(503, None))));
+
+    TwitchChatService::new(runtime.clone())
+        .connect(Some("instant_failure".into()))
+        .await
+        .unwrap();
+    loop {
+        if runtime
+            .statuses
+            .lock()
+            .unwrap()
+            .last()
+            .is_some_and(|status| matches!(status, TwitchStatus::Error))
+        {
+            break;
+        }
+        runtime.status_changed.notified().await;
+    }
+
+    let statuses = runtime.statuses.lock().unwrap();
+    assert_eq!(statuses.len(), 2);
+    assert!(matches!(statuses[0], TwitchStatus::Connecting));
+    assert!(matches!(statuses[1], TwitchStatus::Error));
+    assert!(runtime.connection_is_current(1));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chat_service_stop_invalidates_a_connection_paused_before_registration() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    let registration = Gate::default();
+    *runtime.registration_gate.lock().unwrap() = Some(registration.clone());
+
+    let connect_runtime = runtime.clone();
+    let connecting = tokio::spawn(async move {
+        TwitchChatService::new(connect_runtime)
+            .connect(Some("stale".into()))
+            .await
+    });
+    registration.started.notified().await;
+
+    TwitchChatService::new(runtime.clone()).stop().unwrap();
+    registration.release.notify_one();
+    assert!(connecting.await.unwrap().is_err());
+
+    assert_eq!(runtime.connection.lock().unwrap().generation(), 2);
+    assert_eq!(runtime.connection.lock().unwrap().active_generation(), None);
+    assert!(runtime.http.lookup_calls.lock().unwrap().is_empty());
+    assert!(matches!(
+        runtime.statuses.lock().unwrap().as_slice(),
+        [TwitchStatus::Disconnected]
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chat_service_new_connection_supersedes_a_paused_registration() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    let registration = Gate::default();
+    let lookup = Gate::default();
+    *runtime.registration_gate.lock().unwrap() = Some(registration.clone());
+    runtime.http.users.lock().unwrap().push_back(Reply::delayed(
+        Ok(HelixUser {
+            id: "new-broadcaster".into(),
+            login: "new".into(),
+        }),
+        &lookup,
+    ));
+
+    let stale_runtime = runtime.clone();
+    let stale = tokio::spawn(async move {
+        TwitchChatService::new(stale_runtime)
+            .connect(Some("stale".into()))
+            .await
+    });
+    registration.started.notified().await;
+
+    TwitchChatService::new(runtime.clone())
+        .connect(Some("new".into()))
+        .await
+        .unwrap();
+    lookup.started.notified().await;
+    let active_abort = runtime
+        .connection
+        .lock()
+        .unwrap()
+        .active_abort_handle()
+        .unwrap();
+
+    registration.release.notify_one();
+    assert!(stale.await.unwrap().is_err());
+    assert_eq!(runtime.connection.lock().unwrap().generation(), 2);
+    assert!(runtime.connection_is_current(2));
+    assert!(!active_abort.is_finished());
+    assert_eq!(*runtime.http.lookup_calls.lock().unwrap(), ["new"]);
+    assert!(matches!(
+        runtime.statuses.lock().unwrap().as_slice(),
+        [TwitchStatus::Connecting]
+    ));
+
+    TwitchChatService::new(runtime.clone()).stop().unwrap();
+    wait_for_abort(&active_abort).await;
+}
+
+#[tokio::test]
+async fn chat_service_registration_failure_cancels_task_before_lookup() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    runtime
+        .http
+        .users
+        .lock()
+        .unwrap()
+        .push_back(Reply::ready(Ok(HelixUser {
+            id: "unused".into(),
+            login: "unused".into(),
+        })));
+    runtime
+        .fail_connection_registration
+        .store(true, Ordering::Relaxed);
+
+    assert!(TwitchChatService::new(runtime.clone())
+        .connect(Some("registration_failure".into()))
+        .await
+        .is_err());
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+
+    assert_eq!(runtime.connection.lock().unwrap().active_generation(), None);
+    assert!(runtime.statuses.lock().unwrap().is_empty());
+    assert!(runtime.http.lookup_calls.lock().unwrap().is_empty());
+    let rejected = runtime.rejected_task.lock().unwrap().clone().unwrap();
+    wait_for_abort(&rejected).await;
+}
+
+#[tokio::test]
+async fn chat_service_stop_aborts_connection_waiting_for_lookup() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    let gate = Gate::default();
+    runtime.http.users.lock().unwrap().push_back(Reply::delayed(
+        Ok(HelixUser {
+            id: "broadcaster-id".into(),
+            login: "streamer".into(),
+        }),
+        &gate,
+    ));
+
+    let service = TwitchChatService::new(runtime.clone());
+    service.connect(Some("streamer".into())).await.unwrap();
+    gate.started.notified().await;
+    let abort = runtime
+        .connection
+        .lock()
+        .unwrap()
+        .active_abort_handle()
+        .unwrap();
+    service.stop().unwrap();
+    wait_for_abort(&abort).await;
+    assert!(runtime.http.subscription_calls.lock().unwrap().is_empty());
+    assert!(runtime.auth.lock().unwrap().token.is_some());
 }
 
 #[tokio::test]
@@ -1022,13 +1245,15 @@ async fn chat_service_replacement_aborts_pending_old_lookup_and_logout_clears_cu
         .connection
         .lock()
         .unwrap()
-        .as_ref()
-        .unwrap()
-        .task
-        .abort_handle();
+        .active_abort_handle()
+        .unwrap();
     service.connect(Some("new".into())).await.unwrap();
     runtime.wait_for_subscription(1).await;
-    assert!(old.is_finished());
+    assert!(matches!(
+        runtime.statuses.lock().unwrap().first(),
+        Some(TwitchStatus::Connecting)
+    ));
+    wait_for_abort(&old).await;
     assert!(runtime.connection_is_current(2));
     assert_eq!(
         runtime.http.subscription_calls.lock().unwrap()[0].broadcaster_user_id,
@@ -1036,7 +1261,7 @@ async fn chat_service_replacement_aborts_pending_old_lookup_and_logout_clears_cu
     );
     service.disconnect().await.unwrap();
     assert!(runtime.auth.lock().unwrap().token.is_none());
-    assert!(runtime.connection.lock().unwrap().is_none());
+    assert_eq!(runtime.connection.lock().unwrap().active_generation(), None);
     assert_eq!(runtime.backend.clears.load(Ordering::Relaxed), 1);
 }
 

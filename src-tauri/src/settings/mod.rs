@@ -4,12 +4,13 @@ use crate::launcher::{
     apply_launcher_edits, validate_launcher_resources, LauncherSettings, LauncherSettingsPatch,
 };
 use crate::resource_limits::{
-    check_bytes, read_bounded, serialize_bounded, SizeLimitExceeded, MAX_SETTINGS_JSON_BYTES,
+    check_bytes, read_bounded, serialize_bounded, BoundedReadError, SizeLimitExceeded,
+    MAX_SETTINGS_JSON_BYTES,
 };
 use crate::speech::SpeechQueueState;
 use crate::twitch::TwitchAuthState;
 #[cfg(feature = "app")]
-use crate::twitch::{TwitchAuthStore, TwitchConnectionHandle};
+use crate::twitch::{TwitchAuthStore, TwitchConnectionOwner};
 use crate::SharedSettings;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -201,7 +202,7 @@ pub struct AppState {
     /// Shared selection, ordering and clock for every speech operation.
     pub speech_runtime: crate::speech::runtime::SpeechRuntime,
     #[cfg(feature = "app")]
-    pub twitch_connection: SharedSettings<Option<TwitchConnectionHandle>>,
+    pub twitch_connection: SharedSettings<TwitchConnectionOwner>,
     #[cfg(feature = "app")]
     pub twitch_auth_store: TwitchAuthStore,
 }
@@ -337,14 +338,23 @@ fn parse_settings_request(
     })
 }
 
-fn read_settings_text(path: &Path) -> anyhow::Result<Result<String, String>> {
+#[derive(Debug, thiserror::Error)]
+enum SettingsContentError {
+    #[error("設定ファイルが正しいUTF-8ではありません。")]
+    Encoding(#[source] std::string::FromUtf8Error),
+    #[error(transparent)]
+    TooLarge(SizeLimitExceeded),
+    #[error("{0}")]
+    Document(String),
+}
+
+fn read_settings_text(path: &Path) -> anyhow::Result<Result<String, SettingsContentError>> {
     match read_bounded(path, MAX_SETTINGS_JSON_BYTES) {
         Ok(text) => Ok(Ok(text)),
-        Err(error) if error.downcast_ref::<SizeLimitExceeded>().is_some() => {
-            Ok(Err(error.to_string()))
-        }
+        Err(BoundedReadError::TooLarge(error)) => Ok(Err(SettingsContentError::TooLarge(error))),
+        Err(BoundedReadError::Encoding(error)) => Ok(Err(SettingsContentError::Encoding(error))),
         // IO/permission failures are not evidence of corrupt content. Fail closed.
-        Err(error) => Err(error),
+        Err(BoundedReadError::Io(error)) => Err(error.into()),
     }
 }
 
@@ -368,7 +378,8 @@ impl SettingsStore {
             });
         }
 
-        let loaded = read_settings_text(path)?.and_then(|text| schema::decode(&text));
+        let loaded = read_settings_text(path)?
+            .and_then(|text| schema::decode(&text).map_err(SettingsContentError::Document));
         match loaded {
             Ok(decoded) => {
                 if decoded.needs_resave {
@@ -383,7 +394,7 @@ impl SettingsStore {
                     }),
                 })
             }
-            Err(reason) => Self::recover_from_invalid_primary(path, &reason),
+            Err(reason) => Self::recover_from_invalid_primary(path, &reason.to_string()),
         }
     }
 
@@ -483,7 +494,7 @@ impl SettingsStore {
                             }),
                         });
                     }
-                    Err(reason) => reason,
+                    Err(reason) => SettingsContentError::Document(reason),
                 },
                 Err(reason) => reason,
             };
@@ -1713,6 +1724,128 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(backup_path(&path)).expect("read backup"))
                 .expect("backup must be complete JSON");
         assert_eq!(backup.twitch.channel_login, "previous");
+        cleanup(&path);
+    }
+
+    #[test]
+    fn invalid_utf8_primary_recovers_backup_and_preserves_original_bytes() {
+        let path = settings_path_for_test("utf8-backup");
+        let invalid = b"{\"private\":\"\xff\xfe\"}";
+        fs::write(&path, invalid).unwrap();
+        let backup = serde_json::to_vec(&super::schema::PersistedSettings::new(
+            &settings_with_channel("recovered"),
+        ))
+        .unwrap();
+        fs::write(backup_path(&path), &backup).unwrap();
+        assert!(matches!(
+            super::read_settings_text(&path).unwrap(),
+            Err(super::SettingsContentError::Encoding(_))
+        ));
+        let loaded = SettingsStore::load_from_path(&path).unwrap();
+        assert_eq!(loaded.settings.twitch.channel_login, "recovered");
+        let notice = loaded.recovery_notice.unwrap().message;
+        assert!(notice.contains("UTF-8") && notice.contains("バックアップから復旧"));
+        assert!(!notice.contains("private"));
+        assert_eq!(fs::read(&path).unwrap(), backup);
+        assert_eq!(quarantined_bytes(&path), vec![invalid.to_vec()]);
+        cleanup(&path);
+    }
+
+    fn quarantined_bytes(path: &std::path::Path) -> Vec<Vec<u8>> {
+        let mut bytes: Vec<_> = fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"))
+            .map(|entry| fs::read(entry.path()).unwrap())
+            .collect();
+        bytes.sort();
+        bytes
+    }
+
+    #[test]
+    fn invalid_utf8_backup_and_broken_primary_recover_defaults_and_preserve_both() {
+        for primary in [b"{\"twitch\":".as_slice(), b"\xff\x80".as_slice()] {
+            let path = settings_path_for_test("utf8-defaults");
+            let backup = b"\xfe\xff";
+            fs::write(&path, primary).unwrap();
+            fs::write(backup_path(&path), backup).unwrap();
+            let loaded = SettingsStore::load_from_path(&path).unwrap();
+            assert_eq!(loaded.settings.twitch.channel_login, "");
+            let notice = loaded.recovery_notice.unwrap().message;
+            assert!(notice.contains("UTF-8") && notice.contains("既定値"));
+            let mut originals = vec![primary.to_vec(), backup.to_vec()];
+            originals.sort();
+            assert_eq!(quarantined_bytes(&path), originals);
+            super::schema::decode(&fs::read_to_string(&path).unwrap()).unwrap();
+            cleanup(&path);
+        }
+    }
+
+    #[test]
+    fn invalid_utf8_recovery_keeps_a_future_backup_read_only() {
+        let path = settings_path_for_test("utf8-future-backup");
+        let future = br#"{"schemaVersion":999,"futureField":"keep exactly"}"#;
+        fs::write(&path, b"\xff").unwrap();
+        fs::write(backup_path(&path), future).unwrap();
+        let loaded = SettingsStore::load_from_path(&path).unwrap();
+        assert!(loaded
+            .recovery_notice
+            .unwrap()
+            .message
+            .contains(super::schema::READ_ONLY_MESSAGE));
+        assert!(SettingsStore::save_to_path(&path, &loaded.settings)
+            .unwrap_err()
+            .downcast_ref::<super::schema::ReadOnlySettings>()
+            .is_some());
+        assert_eq!(fs::read(&path).unwrap(), future);
+        assert_eq!(fs::read(backup_path(&path)).unwrap(), future);
+        assert_eq!(quarantined_bytes(&path), vec![vec![0xff]]);
+        cleanup(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permission_denied_is_an_io_error_and_does_not_quarantine_or_overwrite() {
+        use std::os::unix::fs::PermissionsExt;
+        // Root bypasses these filesystem permissions. CI and the local test
+        // container run this test as an unprivileged user.
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let path = settings_path_for_test("read-permission");
+        let original = b"{\"schemaVersion\":1}";
+        fs::write(&path, original).unwrap();
+        fs::write(backup_path(&path), b"backup").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o0)).unwrap();
+        let error = super::read_settings_text(&path).unwrap_err();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+        assert_eq!(fs::read(&path).unwrap(), original);
+        assert_eq!(fs::read(backup_path(&path)).unwrap(), b"backup");
+        assert!(quarantined_bytes(&path).is_empty());
+
+        // The full loader tightens its own directory permissions. Deny access
+        // at an ancestor to exercise a real IO failure before content recovery.
+        let parent = path.parent().unwrap();
+        let nested = parent.join("nested");
+        fs::create_dir(&nested).unwrap();
+        let nested_path = nested.join("settings.json");
+        fs::write(&nested_path, original).unwrap();
+        fs::write(backup_path(&nested_path), b"backup").unwrap();
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o0)).unwrap();
+        let result = SettingsStore::load_from_path(&nested_path);
+        fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).unwrap();
+        let error = result.expect_err("unreadable ancestor must stop the loader");
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+        assert_eq!(fs::read(&nested_path).unwrap(), original);
+        assert_eq!(fs::read(backup_path(&nested_path)).unwrap(), b"backup");
+        assert!(quarantined_bytes(&nested_path).is_empty());
         cleanup(&path);
     }
 

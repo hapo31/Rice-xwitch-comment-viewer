@@ -8,7 +8,7 @@ import {
 import { createLogsStore, type LogsAction, type LogsState } from "./logsStore";
 import { createQueueStore, type QueueAction, type QueueState } from "./queueStore";
 import { createSettingsStore, type SettingsAction, type SettingsState } from "./settingsStore";
-import type { ExternalStore } from "./store";
+import type { ExternalStore, SelectionEquality } from "./store";
 import { useStoreSelector } from "./store";
 
 export interface DomainStores {
@@ -53,22 +53,33 @@ export function useDomainStores(): DomainStores {
   return stores;
 }
 
-export function useChatSelector<Selected>(selector: (state: ChatState) => Selected): Selected {
-  return useStoreSelector(useDomainStores().chat, selector);
+export function useChatSelector<Selected>(
+  selector: (state: ChatState) => Selected,
+  isEqual?: SelectionEquality<Selected>,
+): Selected {
+  return useStoreSelector(useDomainStores().chat, selector, isEqual);
 }
-export function useQueueSelector<Selected>(selector: (state: QueueState) => Selected): Selected {
-  return useStoreSelector(useDomainStores().queue, selector);
+export function useQueueSelector<Selected>(
+  selector: (state: QueueState) => Selected,
+  isEqual?: SelectionEquality<Selected>,
+): Selected {
+  return useStoreSelector(useDomainStores().queue, selector, isEqual);
 }
 export function useConnectionSelector<Selected>(
   selector: (state: ConnectionState) => Selected,
+  isEqual?: SelectionEquality<Selected>,
 ): Selected {
-  return useStoreSelector(useDomainStores().connection, selector);
+  return useStoreSelector(useDomainStores().connection, selector, isEqual);
 }
 export function useSettingsSelector<Selected>(
   selector: (state: SettingsState) => Selected,
+  isEqual?: SelectionEquality<Selected>,
 ): Selected {
-  return useStoreSelector(useDomainStores().settings, selector);
+  return useStoreSelector(useDomainStores().settings, selector, isEqual);
 }
-export function useLogsSelector<Selected>(selector: (state: LogsState) => Selected): Selected {
-  return useStoreSelector(useDomainStores().logs, selector);
+export function useLogsSelector<Selected>(
+  selector: (state: LogsState) => Selected,
+  isEqual?: SelectionEquality<Selected>,
+): Selected {
+  return useStoreSelector(useDomainStores().logs, selector, isEqual);
 }

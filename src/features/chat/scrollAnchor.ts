@@ -41,8 +41,9 @@ export function getVisibleChatAnchor(
 export function getRestoredScrollOffset(
   anchor: ChatScrollAnchor,
   messages: ChatScrollItem[],
-  getOffsetForIndex: (index: number) => number,
+  getOffsetForIndex: (index: number) => number | undefined,
 ): number | undefined {
   const index = messages.findIndex((message) => message.id === anchor.messageId);
-  return index >= 0 ? getOffsetForIndex(index) + anchor.offset : undefined;
+  const start = index >= 0 ? getOffsetForIndex(index) : undefined;
+  return start === undefined ? undefined : start + anchor.offset;
 }
