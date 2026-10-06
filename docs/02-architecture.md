@@ -22,7 +22,7 @@ src-tauri/
 
 ### Frontend domain store 境界
 
-`DomainProvider` は chat、queue、connection、settings、logs を独立した `useSyncExternalStore` source として保持する。各画面は `use*Selector` で必要な slice だけを購読し、Chat event は Chat store の subscriber だけを通知する。Launcher は settings の launcher selector、警告は logs store の notifications slice を使う。`AppShell` は配置と controller provider の組み立てを担当し、`ApplicationControllerProvider` が起動時の設定・認証復元と Tauri event 購読を起動する。認証遷移と副作用は `twitchController`、speech/queue/Launcher のcommand処理は用途別 controller、終了確認は `ExitProtectionProvider` に置く。設定更新は既存の直列化 orchestrator に集約する。
+`DomainProvider` は chat、queue、connection、settings、logs を独立した `useSyncExternalStore` source として保持する。各画面は `use*Selector` で必要な slice だけを購読し、Chat event は Chat store の subscriber だけを通知する。Launcher は settings の launcher selector、警告は logs store の notifications slice を使う。`AppShell` は配置と controller provider の組み立てを担当し、`ApplicationControllerProvider` が起動時の設定・認証復元と Tauri event 購読を起動する。接続 identity の復元前に届いた generation 付き chat は最大200件だけ一時保留し、snapshot 適用後に generation・broadcaster ID・login を照合してから受信順に反映する。snapshot 失敗または購読 cleanup 時は保留を破棄する。認証遷移と副作用は `twitchController`、speech/queue/Launcher のcommand処理は用途別 controller、終了確認は `ExitProtectionProvider` に置く。設定更新は既存の直列化 orchestrator に集約する。
 
 domain store が状態の唯一のsourceであり、React Context はdomain単位の安定した操作APIと unsaved/exit の操作だけを渡す。画面は表示に必要なstore selectorとaction contextを直接参照し、`MainView` はroute title・focus通知だけを担当する。controller providerは画面状態を集約した旧 `AppState` を再構成しない。Jotai等の状態管理依存は追加しない。
 

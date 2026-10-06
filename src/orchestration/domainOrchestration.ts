@@ -138,6 +138,37 @@ export interface DomainEventSubscriptionOptions {
   twitchTimelineEvent?: (event: TwitchStatusEvent) => SystemTimelineEvent | undefined;
 }
 
+const MAX_BUFFERED_CHAT_MESSAGES = 200;
+const MAX_RECENT_CHAT_MESSAGE_IDS = 400;
+
+function chatMessageMatchesConnection(
+  event: TwitchChatMessageEvent,
+  connection: ReturnType<DomainStores["connection"]["getState"]>,
+): boolean {
+  if (event.connectionGeneration === undefined) return true;
+  const activeConnection = connection.twitchActiveConnection;
+  return (
+    !!activeConnection &&
+    event.connectionGeneration === activeConnection.generation &&
+    event.connectionGeneration === connection.twitchConnectionGeneration &&
+    event.channelId === activeConnection.broadcasterUserId &&
+    event.channelLogin.toLowerCase() === activeConnection.broadcasterLogin.toLowerCase()
+  );
+}
+
+function isUnresolvedChatMessage(
+  event: TwitchChatMessageEvent,
+  connection: ReturnType<DomainStores["connection"]["getState"]>,
+): boolean {
+  if (event.connectionGeneration === undefined) return false;
+  if (event.connectionGeneration < connection.twitchConnectionGeneration) return false;
+  const activeConnection = connection.twitchActiveConnection;
+  if (!activeConnection) return true;
+  if (event.connectionGeneration < activeConnection.generation) return false;
+  if (event.connectionGeneration > activeConnection.generation) return true;
+  return false;
+}
+
 /** Register all backend event listeners as one cleanup-safe domain boundary. */
 export function subscribeDomainEvents({
   stores,
@@ -150,6 +181,38 @@ export function subscribeDomainEvents({
   replaySystemLog,
 }: DomainEventSubscriptionOptions): () => void {
   let disposed = false;
+  let restorationPending = true;
+  const bufferedChatMessages: TwitchChatMessageEvent[] = [];
+  const recentChatMessageIds = new Set<string>();
+  const recentChatMessageIdOrder: string[] = [];
+  for (const message of stores.chat.getState().messages) {
+    if (message.kind === "user" && !recentChatMessageIds.has(message.id)) {
+      recentChatMessageIds.add(message.id);
+      recentChatMessageIdOrder.push(message.id);
+    }
+  }
+  const rememberChatMessageId = (id: string): boolean => {
+    if (recentChatMessageIds.has(id)) return false;
+    recentChatMessageIds.add(id);
+    recentChatMessageIdOrder.push(id);
+    while (recentChatMessageIdOrder.length > MAX_RECENT_CHAT_MESSAGE_IDS) {
+      const oldest = recentChatMessageIdOrder.shift();
+      if (oldest !== undefined) recentChatMessageIds.delete(oldest);
+    }
+    return true;
+  };
+  const addChatMessage = (event: TwitchChatMessageEvent) => {
+    const message: ChatMessage = { ...event, kind: "user", status: "received" };
+    dispatchDomainAction(stores, { type: "chat.message", message });
+  };
+  const restoreBufferedChatMessages = () => {
+    if (disposed) return;
+    const connection = stores.connection.getState();
+    const pending = bufferedChatMessages.splice(0);
+    for (const event of pending) {
+      if (chatMessageMatchesConnection(event, connection)) addChatMessage(event);
+    }
+  };
   const log = (event: AppLogEvent, replay = false) => {
     if (disposed) return;
     const previousLogs = stores.logs.getState().logs;
@@ -177,6 +240,7 @@ export function subscribeDomainEvents({
         connectionGeneration: event.connectionGeneration,
         activeConnection: event.activeConnection,
       });
+      if (!restorationPending) restoreBufferedChatMessages();
     } else if (event.domain === "auth") {
       const statuses: Record<TwitchStatusEvent["status"], AuthStatus> = {
         disconnected: "unauthenticated",
@@ -230,18 +294,20 @@ export function subscribeDomainEvents({
           if (disposed) return;
           const connection = stores.connection.getState();
           if (event.connectionGeneration !== undefined) {
-            if (
-              event.connectionGeneration < connection.twitchConnectionGeneration ||
-              !connection.twitchActiveConnection ||
-              event.connectionGeneration !== connection.twitchActiveConnection.generation ||
-              event.channelId !== connection.twitchActiveConnection.broadcasterUserId ||
-              event.channelLogin.toLowerCase() !==
-                connection.twitchActiveConnection.broadcasterLogin.toLowerCase()
-            )
+            if (chatMessageMatchesConnection(event, connection)) {
+              if (rememberChatMessageId(event.id)) addChatMessage(event);
               return;
+            }
+            if (restorationPending && isUnresolvedChatMessage(event, connection)) {
+              if (!rememberChatMessageId(event.id)) return;
+              if (bufferedChatMessages.length === MAX_BUFFERED_CHAT_MESSAGES)
+                bufferedChatMessages.shift();
+              bufferedChatMessages.push(event);
+              return;
+            }
+            return;
           }
-          const message: ChatMessage = { ...event, kind: "user", status: "received" };
-          dispatchDomainAction(stores, { type: "chat.message", message });
+          if (rememberChatMessageId(event.id)) addChatMessage(event);
         }),
       () => bridge.subscribeSpeechStatusEvents(speech),
       () => bridge.subscribeSpeechQueueUpdatedEvents(queue),
@@ -280,21 +346,28 @@ export function subscribeDomainEvents({
             speech(state.status);
             queue(state.queue);
           }
+          restorationPending = false;
+          restoreBufferedChatMessages();
           onRestored?.();
         })
         .catch(() => {
-          if (!disposed)
+          if (!disposed) {
+            restorationPending = false;
+            bufferedChatMessages.length = 0;
             reportNotification(
               "error",
               "event",
               "アプリ状態を復元できませんでした。画面を再読み込みしてください。",
               "app-event-snapshot",
             );
+          }
         });
     },
   );
   return () => {
     disposed = true;
+    restorationPending = false;
+    bufferedChatMessages.length = 0;
     cleanup();
   };
 }
