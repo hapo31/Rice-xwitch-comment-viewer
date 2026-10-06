@@ -48,6 +48,7 @@ function makeController(state = initialAppState) {
     dispatch: (action: AppAction) => dispatchDomainAction(stores, action),
     getAuthPrompt: () => stores.connection.getState().twitchAuthPrompt,
     getAuthStatus: () => stores.connection.getState().twitchAuthStatus,
+    getAuthRevision: () => stores.connection.getState().authRevision,
     getAuthProfile: () => stores.connection.getState().twitchProfile,
     getChannelLogin: () => undefined,
     getConfirmBeforeStopChat: () => false,
@@ -75,6 +76,32 @@ function makeController(state = initialAppState) {
 afterEach(() => vi.useRealTimers());
 
 describe("Twitch controller auth-operation lifecycle", () => {
+  it.each(["resolve", "reject"] as const)(
+    "keeps a later manual login after old disconnect %s",
+    async (completion) => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      const oldDisconnect = deferred<null>();
+      tauriMock.setCommand("twitch_disconnect", () => oldDisconnect.promise);
+      tauriMock.setCommand("twitch_start_auth", { ...prompt, userCode: "NEW-CODE" });
+      const harness = makeController({
+        ...initialAppState,
+        twitchAuthStatus: "authenticated",
+        twitchProfile: profile,
+      });
+      const disconnecting = harness.controller.disconnect();
+      expect(harness.getState().twitchDisconnectRequest).toBeDefined();
+      await harness.controller.startAuth();
+      expect(harness.getState().twitchDisconnectRequest).toBeUndefined();
+      const before = harness.getState();
+      if (completion === "resolve") oldDisconnect.resolve(null);
+      else oldDisconnect.reject(new Error("old keyring failure"));
+      await disconnecting;
+      expect(harness.getState()).toEqual(before);
+      expect(harness.getState().twitchAuthPrompt?.userCode).toBe("NEW-CODE");
+      expect(harness.reportError).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(["start", "validate"] as const)(
     "does not let a due expiry timer preempt deferred manual %s",
     async (operation) => {

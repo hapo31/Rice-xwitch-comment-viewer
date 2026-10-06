@@ -116,6 +116,7 @@ export function DomainAuthView() {
     () => ({
       settings,
       twitchAuthStatus: connection.twitchAuthStatus,
+      twitchDisconnectRequest: connection.twitchDisconnectRequest,
       twitchActiveConnection: connection.twitchActiveConnection,
       twitchAuthPrompt: connection.twitchAuthPrompt,
       twitchProfile: connection.twitchProfile,
@@ -123,6 +124,7 @@ export function DomainAuthView() {
     [
       settings,
       connection.twitchAuthStatus,
+      connection.twitchDisconnectRequest,
       connection.twitchActiveConnection,
       connection.twitchAuthPrompt,
       connection.twitchProfile,

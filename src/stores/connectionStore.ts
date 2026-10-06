@@ -19,11 +19,14 @@ export interface ConnectionState {
   twitchActiveConnection?: TwitchActiveConnection;
   twitchConnectionGeneration: number;
   authRevision: number;
+  twitchDisconnectRequest?: number;
   chatRevision: number;
   speechRevision: number;
 }
 
 export type ConnectionAction =
+  | { type: "auth.disconnect.started"; generation: number }
+  | { type: "auth.disconnect.finished"; generation: number }
   | { type: "auth.status.changed"; status: AuthStatus; revision?: number }
   | {
       type: "chat.status.changed";
@@ -57,12 +60,21 @@ export function connectionReducer(
   action: ConnectionAction,
 ): ConnectionState {
   switch (action.type) {
+    case "auth.disconnect.started":
+      return { ...state, twitchDisconnectRequest: action.generation };
+    case "auth.disconnect.finished":
+      return state.twitchDisconnectRequest === action.generation
+        ? { ...state, twitchDisconnectRequest: undefined }
+        : state;
     case "auth.status.changed":
       if (action.revision !== undefined && action.revision <= state.authRevision) return state;
       return {
         ...state,
         twitchAuthStatus: action.status,
         authRevision: action.revision ?? state.authRevision,
+        ...(action.revision !== undefined && action.status === "unauthenticated"
+          ? { twitchProfile: undefined, twitchAuthPrompt: undefined }
+          : {}),
       };
     case "chat.status.changed":
       if (action.revision !== undefined && action.revision <= state.chatRevision) return state;
