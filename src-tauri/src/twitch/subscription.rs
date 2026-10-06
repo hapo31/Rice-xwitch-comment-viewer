@@ -10,10 +10,9 @@ use super::error::{
     subscription_error_user_message, EventSubTerminalError, SubscriptionRequestError,
     TwitchApiError,
 };
-use super::oauth::{parse_json_response, twitch_http_client};
-use super::{
-    CHANNEL_CHAT_MESSAGE_TYPE, CHANNEL_CHAT_MESSAGE_VERSION, TWITCH_EVENTSUB_SUBSCRIPTIONS_URL,
-};
+use super::http::TwitchHttp;
+use super::oauth::parse_json_response;
+use super::{CHANNEL_CHAT_MESSAGE_TYPE, CHANNEL_CHAT_MESSAGE_VERSION};
 use crate::app_events::AppLogLevel;
 
 pub(super) trait SubscriptionRuntime: AuthRuntime {
@@ -357,52 +356,55 @@ pub(super) fn clear_auth_for_eventsub_missing_scope_if_current(
     Ok(None)
 }
 
-pub(super) async fn send_chat_message_subscription(
-    params: &EventSubConnectionParams,
-    session_id: &str,
-    client_id: &str,
-    access_token: &str,
-) -> Result<(), SubscriptionRequestError> {
-    let body = serde_json::json!({
-        "type": CHANNEL_CHAT_MESSAGE_TYPE,
-        "version": CHANNEL_CHAT_MESSAGE_VERSION,
-        "condition": {
-            "broadcaster_user_id": params.broadcaster_user_id,
-            "user_id": params.user_id,
-        },
-        "transport": {
-            "method": "websocket",
-            "session_id": session_id,
-        },
-    });
-    let response = twitch_http_client()
-        .map_err(SubscriptionRequestError::Retryable)?
-        .post(TWITCH_EVENTSUB_SUBSCRIPTIONS_URL)
-        .header("Client-Id", client_id)
-        .bearer_auth(access_token)
-        .json(&body)
-        .send()
-        .await
-        .map_err(TwitchApiError::from);
+impl TwitchHttp {
+    pub(super) async fn send_chat_message_subscription(
+        &self,
+        params: &EventSubConnectionParams,
+        session_id: &str,
+        client_id: &str,
+        access_token: &str,
+    ) -> Result<(), SubscriptionRequestError> {
+        let body = serde_json::json!({
+            "type": CHANNEL_CHAT_MESSAGE_TYPE,
+            "version": CHANNEL_CHAT_MESSAGE_VERSION,
+            "condition": {
+                "broadcaster_user_id": params.broadcaster_user_id,
+                "user_id": params.user_id,
+            },
+            "transport": {
+                "method": "websocket",
+                "session_id": session_id,
+            },
+        });
+        let response = self
+            .client
+            .post(&self.endpoints.subscriptions)
+            .header("Client-Id", client_id)
+            .bearer_auth(access_token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(TwitchApiError::from);
 
-    let response = match response {
-        Ok(response) => response,
-        Err(error) if error.is_transient() => {
-            return Err(SubscriptionRequestError::Retryable(anyhow::Error::new(
-                error,
-            )));
-        }
-        Err(error) => return Err(SubscriptionRequestError::Permanent(error)),
-    };
+        let response = match response {
+            Ok(response) => response,
+            Err(error) if error.is_transient() => {
+                return Err(SubscriptionRequestError::Retryable(anyhow::Error::new(
+                    error,
+                )));
+            }
+            Err(error) => return Err(SubscriptionRequestError::Permanent(error)),
+        };
 
-    match parse_json_response::<serde_json::Value>(response).await {
-        Ok(_) => Ok(()),
-        Err(TwitchApiError::Http { status: 401, .. }) => {
-            Err(SubscriptionRequestError::Unauthorized)
+        match parse_json_response::<serde_json::Value>(response).await {
+            Ok(_) => Ok(()),
+            Err(TwitchApiError::Http { status: 401, .. }) => {
+                Err(SubscriptionRequestError::Unauthorized)
+            }
+            Err(error) if error.is_transient() => Err(SubscriptionRequestError::Retryable(
+                anyhow::Error::new(error),
+            )),
+            Err(error) => Err(SubscriptionRequestError::Permanent(error)),
         }
-        Err(error) if error.is_transient() => Err(SubscriptionRequestError::Retryable(
-            anyhow::Error::new(error),
-        )),
-        Err(error) => Err(SubscriptionRequestError::Permanent(error)),
     }
 }
