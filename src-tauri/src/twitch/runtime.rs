@@ -5,6 +5,7 @@ use super::auth_state::{
     TwitchAuthState, ValidateResponse,
 };
 use super::auth_store::TwitchAuthStore;
+use super::chat_delivery::dispatch_chat_message;
 use super::chat_service::{ChatRuntime, TwitchConnectionHandle};
 use super::error::SubscriptionRequestError;
 use super::eventsub::{EventSubRuntime, EventSubSocket};
@@ -192,10 +193,29 @@ impl EventSubRuntime for TauriTwitchRuntime {
     fn log(&self, level: AppLogLevel, message: impl Into<String>) {
         emit_app_log(&self.app, level, message);
     }
-    fn chat(&self, message: ChatMessage, connection_generation: u64) {
-        emit_twitch_chat_message(&self.app, message.clone(), connection_generation);
-        if let Err(error) = enqueue_chat_message_for_speech(self.app.clone(), message) {
-            emit_app_log(&self.app, AppLogLevel::Error, error);
-        }
+    fn chat(&self, message: ChatMessage) {
+        let state = self.app.state::<AppState>();
+        let current = match state.twitch_connection.lock() {
+            Ok(current) => current,
+            Err(error) => {
+                emit_app_log(&self.app, AppLogLevel::Error, error.to_string());
+                return;
+            }
+        };
+        let active_generation = current.as_ref().map(|connection| connection.generation);
+        // Keep stop/replacement behind this shared delivery boundary so UI and
+        // speech observe the same accepted model before its generation expires.
+        dispatch_chat_message(
+            &message,
+            active_generation,
+            |message| emit_twitch_chat_message(&self.app, message.clone()),
+            |message| {
+                if let Err(error) =
+                    enqueue_chat_message_for_speech(self.app.clone(), message.clone())
+                {
+                    emit_app_log(&self.app, AppLogLevel::Error, error);
+                }
+            },
+        );
     }
 }

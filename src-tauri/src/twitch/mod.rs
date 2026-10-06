@@ -8,6 +8,8 @@ mod auth_service;
 mod auth_state;
 #[cfg(feature = "app")]
 mod auth_store;
+#[cfg(any(feature = "app", test))]
+mod chat_delivery;
 #[cfg(feature = "app")]
 mod chat_service;
 #[cfg(feature = "app")]

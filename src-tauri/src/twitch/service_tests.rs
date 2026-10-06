@@ -340,8 +340,7 @@ impl EventSubRuntime for Runtime {
     fn log(&self, level: AppLogLevel, message: impl Into<String>) {
         self.auth_log(level, message);
     }
-    fn chat(&self, mut message: ChatMessage, generation: u64) {
-        message.connection_generation = Some(generation);
+    fn chat(&self, message: ChatMessage) {
         self.chats.lock().unwrap().push(message);
     }
     fn received_at(&self) -> DateTime<Utc> {
