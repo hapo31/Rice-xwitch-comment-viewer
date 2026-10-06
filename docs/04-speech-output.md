@@ -91,7 +91,8 @@ pub struct BouyomiTalkConfig {
 
 Speech の実装は責務ごとに分ける。`speech/mod.rs` は共通trait・公開型・module/export と既存 adapter 群の組立を担い、queue model/遷移は `queue.rs`、整形と URL 判定は `formatter.rs`、queue Tauri commands は `queue_commands.rs`、event payload/snapshot 変換は `events.rs` に置く。各回帰テストは `tests.rs` にまとめ、公開 command と worker が同じ queue/formatter 経路を使うことを確認する。
 
-URL 候補の範囲抽出には `linkify` の `LinkFinder`（`LinkKind::Url`、scheme 任意）を使えるが、その結果は有効 URL と保証されないため、候補をそのまま受理しない。アプリ側で http/https/www の許可、ASCII 識別子・メール境界、日本語隣接、host/port の厳格な URL parser 検証、末尾記号処理を維持する。linkify が候補を返さない場合に既存 parser で互換確認する経路を残し、候補が他にもある場合に落ちる角括弧付き IPv6 authority も同 parser で補う。依存の一般的な候補抽出と、製品固有の受理・置換規則を分離する。
+[linkify 0.11 の LinkFinder](https://docs.rs/linkify/0.11.0/linkify/struct.LinkFinder.html) を既存fixtureと比較した。URLのみ・scheme任意・IRI無効の設定では `https://example.com(note)` と角括弧IPv6の候補が得られず、識別子へ連結したschemeや不正portの候補はアプリ側の追加検証が必要だった。候補がゼロの場合だけ独自処理へ戻す方式は、同じ本文に通常URLを混ぜると括弧隣接URLを置換しなくなることも本番formatterテストで再現した。互換fallbackにも同じ走査・authority検証・境界処理が必要でコードが増えるため、今回は依存を追加せず、既存の一つの走査をformatter内だけに残す。対象はhttp/https/www、ASCII境界、句読点・括弧、厳格authority検証に限定し、fixtureと複数形式混在の回帰を共通経路へ適用する。
+
 - 正規化（制御文字・空白・emote 除外など）の後に本文が空なら、ユーザー名読み上げの ON/OFF にかかわらず理由 `読み上げる本文がありません。` で `Blocked` とする。空の talk packet やユーザー名だけの読み上げは送信しない。
 - 棒読みちゃんタグを許可するかは設定で切り替える。初期値は安全側で「チャット由来タグを無効化/エスケープ」する。
 

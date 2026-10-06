@@ -411,6 +411,11 @@ fn formatter_applies_url_rules_to_embedded_urls() {
     let cases = [
         ("standalone", "https://example.com/path", "URL省略"),
         (
+            "mixed ASCII prose",
+            "https://one.example https://example.com(note)",
+            "URL省略 URL省略(note)",
+        ),
+        (
             "uppercase HTTP and punycode",
             "HTTP://XN--R8JZ45G.XN--ZCKZAH/path",
             "URL省略",

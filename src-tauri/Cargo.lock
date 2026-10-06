@@ -2035,15 +2035,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linkify"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92f9ae2f3d31697697311f016320fe984127e636b45cf5eb5c175b7eb103dadb"
-dependencies = [
- "memchr",
-]
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3135,7 +3126,6 @@ dependencies = [
  "futures-util",
  "keyring",
  "libc",
- "linkify",
  "png 0.17.16",
  "reqwest 0.12.28",
  "serde",

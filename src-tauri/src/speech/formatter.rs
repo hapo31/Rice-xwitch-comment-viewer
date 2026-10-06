@@ -1,7 +1,6 @@
 use super::outcome::BlockedReason;
 use crate::settings::UrlHandling;
 use crate::twitch::{ChatMessage, MessageFragment};
-use linkify::{LinkFinder, LinkKind};
 use std::ops::Range;
 
 pub(super) const DEFAULT_MAX_COMMENT_LENGTH: usize = 120;
@@ -171,70 +170,20 @@ pub(super) fn contains_url(text: &str) -> bool {
     !find_url_ranges(text).is_empty()
 }
 
-/// Uses linkify to locate candidate URL spans, then applies Rice's narrower
-/// accepted formats and URL parser validation before returning any byte range.
-/// The compatibility parser scans the full input when linkify produced no
-/// accepted candidate and checks bracketed IPv6 even when other candidates exist.
+// LinkFinder 0.11 misses supported ASCII-prose and IPv6 spans. Its ranges
+// also need the authority/boundary validation below. Keep one scanner so URL
+// handling does not change depending on other links in the same comment.
 pub(super) fn find_url_ranges(text: &str) -> Vec<Range<usize>> {
     let mut ranges = Vec::new();
-    let mut finder = LinkFinder::new();
-    finder
-        .kinds(&[LinkKind::Url])
-        .url_must_have_scheme(false)
-        .url_can_be_iri(false);
-
-    for link in finder.links(text) {
-        let mut index = link.start();
-        while index < link.end() {
-            if let Some(range) = url_range_at(text, index) {
-                if range.end <= link.end() {
-                    index = range.end;
-                    ranges.push(range);
-                    continue;
-                }
-            }
-            index += text[index..]
-                .chars()
-                .next()
-                .expect("index is within UTF-8 text")
-                .len_utf8();
-        }
-    }
-
-    // linkify intentionally keeps its URL grammar broad and currently skips
-    // some supported forms, such as bracketed IPv6 authorities and URLs
-    // followed immediately by ASCII prose delimiters. If it produced no
-    // accepted candidate, preserve those cases with the compatibility parser.
-    if ranges.is_empty() {
-        let mut index = 0;
-        while index < text.len() {
-            if let Some(range) = url_range_at(text, index) {
-                index = range.end;
-                ranges.push(range);
-                continue;
-            }
-            index += text[index..]
-                .chars()
-                .next()
-                .expect("index is within UTF-8 text")
-                .len_utf8();
-        }
-        return ranges;
-    }
-
-    // Bracketed IPv6 is the only known supported form that can be missed when
-    // another candidate caused the fallback scan above to be skipped.
     let mut index = 0;
+
     while index < text.len() {
-        if is_bracketed_ip_literal_start(text, index) {
-            if let Some(range) = url_range_at(text, index) {
-                if !ranges.iter().any(|existing| existing == &range) {
-                    ranges.push(range.clone());
-                }
-                index = range.end;
-                continue;
-            }
+        if let Some(range) = url_range_at(text, index) {
+            index = range.end;
+            ranges.push(range);
+            continue;
         }
+
         index += text[index..]
             .chars()
             .next()
@@ -242,17 +191,7 @@ pub(super) fn find_url_ranges(text: &str) -> Vec<Range<usize>> {
             .len_utf8();
     }
 
-    ranges.sort_by_key(|range| range.start);
     ranges
-}
-
-fn is_bracketed_ip_literal_start(text: &str, start: usize) -> bool {
-    if !is_url_start_boundary(text, start) {
-        return false;
-    }
-    let remaining = &text.as_bytes()[start..];
-    starts_with_ascii_case_insensitive(remaining, b"https://[")
-        || starts_with_ascii_case_insensitive(remaining, b"http://[")
 }
 
 fn url_range_at(text: &str, start: usize) -> Option<Range<usize>> {
