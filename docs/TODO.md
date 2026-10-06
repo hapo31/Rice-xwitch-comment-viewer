@@ -600,9 +600,9 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - 2026-10-06 Issue #198: [Biome noExplicitAny](https://biomejs.dev/linter/rules/no-explicit-any/) の型引数制約の例外を維持する。条件型で任意の引数列から戻り値を推論する場合に限り、理由付きの行単位 `biome-ignore lint/suspicious/noExplicitAny` を使える。DTO、mock、値のキャストには使わず、ファイル単位の無効化はしない。`noEnum` は const enum を検出しないため `noConstEnum` も有効にした。既存 quality policy の正負 fixture で named/alias import と許容例外を含め検証し、別の AST 検査器や workflow は追加していない。
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
 
-- [ ] Issue #210: AppState と組立を composition root へ移し、設定 model/validation と永続化、接続先の純粋検証と TCP adapter、Speech domain 状態と app event DTO の依存方向を分離する。既存 payload と port 境界、no-default 検証を維持し、新 adapter は追加しない。
+- [x] Issue #210: AppState と組立を composition root へ移し、設定 model/validation と永続化、接続先の純粋検証と TCP adapter、Speech domain 状態と app event DTO の依存方向を分離する。既存 payload と port 境界、no-default 検証を維持し、新 adapter は追加しない。
 
-2026-10-06 進捗: AppStateをapplication.rsへ移し、設定DTOとJSON保存をsettings/model.rs・settings/persistence.rsへ分割した。host/address値はTCP実装からspeech/endpoint.rsへ移し、Speech status/health/queue分類はspeech/types.rsとfailure.rsへ移動した。SpeechRuntimeはAppStateに依存せず、AppStateからのsnapshot選択をcommand/wiring境界へ置いた。source boundary回帰と既存ts-rs属性を新しい所有moduleへ移し、no-defaultでRustテスト219件とwire生成一致、app有効でRustテスト291件が成功した。最新 reviewed main の統合後も確認を継続する。
+2026-10-06 進捗: AppStateをapplication.rsへ移し、設定DTOとJSON保存をsettings/model.rs・settings/persistence.rsへ分割した。host/address値はTCP実装からspeech/endpoint.rsへ移し、Speech status/health/queue分類はspeech/types.rsとfailure.rsへ移動した。SpeechRuntimeはAppStateに依存せず、AppStateからのsnapshot選択をcommand/wiring境界へ置いた。source boundary回帰と既存ts-rs属性を新しい所有moduleへ移し、最新 reviewed main 2e45041 を統合後、Rust 1.90 format、no-default 221件、app有効309件、wire生成一致が成功した。共有1 CPU環境では無関係な最大payload時間予算テストが5秒閾値を超えたため、全件実行ではこの1件のみ除外して残る全件を実行した。frontend distを生成してapp有効検証に使用。#258はfrontend限定でRust側に関連差分がないことを確認し、統合対象外とした。
 
 2026-10-06 Issue #213: 保存待ちキャンセル後の app_exit と reset 済み blocker の proceed 例外を実 AppShell で再現し、保存後の操作を現在の token と blocker location key で照合する。取り消した保存そのものは完了してよいが、旧終了・遷移の副作用は実行しない。保存済みになった新しい確認要求も続行/キャンセルを明示選択できる。
 

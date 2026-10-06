@@ -3,10 +3,9 @@ use crate::app_events::{emit_app_log, AppLogLevel};
 #[cfg(feature = "app")]
 use crate::application::AppState;
 use crate::launcher::{apply_launcher_edits, validate_launcher_resources};
+#[cfg(test)]
 pub(super) use crate::resource_limits::MAX_SETTINGS_JSON_BYTES;
 use std::collections::HashSet;
-#[cfg(feature = "app")]
-use tauri::Manager;
 
 mod model;
 mod persistence;
