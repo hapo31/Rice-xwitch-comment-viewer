@@ -8,6 +8,8 @@ use crate::SharedSettings;
 #[derive(Default)]
 pub struct AppState {
     pub settings: SharedSettings<AppSettings>,
+    /// Serializes disk transactions while keeping the published settings mutex short-lived.
+    pub settings_transaction: SharedSettings<()>,
     /// Shared launcher adapters and bounded worker pool, used by every command.
     pub launcher_runtime: crate::launcher::LauncherRuntime,
     pub settings_recovery_notice: SharedSettings<Option<SettingsRecoveryNotice>>,

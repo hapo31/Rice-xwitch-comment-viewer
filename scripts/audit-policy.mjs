@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readToml } from "./config-parsers.mjs";
 
 export function validateExceptions(document, today = new Date().toISOString().slice(0, 10)) {
   if (document.schemaVersion !== 1 || !Array.isArray(document.exceptions)) throw new Error("Unknown advisory exception schema");
@@ -43,7 +44,10 @@ export function readExceptions(root) {
   const exceptions = validateExceptions(document);
   const config = resolve(root, ".cargo/audit.toml");
   if (existsSync(config)) {
-    const ignored = [...readFileSync(config, "utf8").matchAll(/"(RUSTSEC-\d{4}-\d{4})"/g)].map((match) => match[1]);
+    const parsed = readToml(config);
+    if (Object.keys(parsed).some((key) => key !== "advisories") || !parsed.advisories || Object.keys(parsed.advisories).some((key) => key !== "ignore")) throw new Error("Unknown cargo-audit TOML policy shape");
+    const ignored = parsed.advisories.ignore ?? [];
+    if (!Array.isArray(ignored) || ignored.some((id) => typeof id !== "string" || !/^RUSTSEC-\d{4}-\d{4}$/.test(id))) throw new Error("Invalid cargo-audit ignore list");
     for (const id of ignored) if (!exceptions.has(`cargo:${id}`)) throw new Error(`Unreviewed cargo-audit ignore: ${id}`);
     const expected = [...exceptions.values()].filter((entry) => entry.scope === "cargo").map((entry) => entry.id);
     if (new Set(ignored).size !== ignored.length || ignored.length !== expected.length || expected.some((id) => !ignored.includes(id))) throw new Error("cargo-audit ignore list and reviewed exceptions differ");

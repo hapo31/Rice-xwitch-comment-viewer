@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateAudit, validateExceptions } from "./audit-policy.mjs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { evaluateAudit, readExceptions, validateExceptions } from "./audit-policy.mjs";
 
 const policy = { schemaVersion: 1, npmBlockingSeverities: ["high", "critical"], cargoBlockVulnerabilities: true, cargoBlockWarnings: true };
 const cargo = { database: { "advisory-count": 100 }, vulnerabilities: { list: [] }, warnings: {} };
@@ -31,4 +35,18 @@ test("outages, invalid schema and empty database fail closed", () => {
   for (const report of [{}, { ...cargo, database: { "advisory-count": 0 } }]) assert.throws(() => evaluateAudit(report, npm, policy, new Map()));
   assert.throws(() => evaluateAudit(cargo, { error: "registry outage" }, policy, new Map()));
   assert.throws(() => evaluateAudit(cargo, { ...npm, metadata: { vulnerabilities: { high: 1 } } }, policy, new Map()));
+});
+
+test("TOML comments and single quotes preserve only the reviewed Cargo ignores", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "rice-audit-policy-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, ".cargo"), { recursive: true });
+  mkdirSync(join(root, "security"), { recursive: true });
+  writeFileSync(join(root, "security/advisory-exceptions.json"), readFileSync(new URL("../security/advisory-exceptions.json", import.meta.url)));
+  writeFileSync(join(root, ".cargo/audit.toml"), "# RUSTSEC-2026-9999 is not an ignored advisory\n[advisories]\nignore = ['RUSTSEC-2024-0370', 'RUSTSEC-2024-0429']\n");
+  assert.equal(readExceptions(root).size, 2);
+  writeFileSync(join(root, ".cargo/audit.toml"), "[advisories]\nignore = ['RUSTSEC-2024-0370', 'RUSTSEC-2024-0429', 'RUSTSEC-2026-9999']\n");
+  assert.throws(() => readExceptions(root), /Unreviewed cargo-audit ignore/);
+  writeFileSync(join(root, ".cargo/audit.toml"), "[advisories]\nignore = ['RUSTSEC-2024-0370', 'RUSTSEC-2024-0429']\nallow = true\n");
+  assert.throws(() => readExceptions(root), /Unknown cargo-audit TOML policy shape/);
 });

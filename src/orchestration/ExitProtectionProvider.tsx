@@ -202,6 +202,7 @@ export function ExitProtectionProvider({
           <UnsavedChangesDialog
             hasUnsavedChanges={Boolean(activeUnsavedChange)}
             saveDisabled={isSavingContinuation}
+            isSaving={isSavingContinuation}
             onCancel={() => {
               cancelSaveContinuation();
               if (blocker.state === "blocked") blocker.reset();
