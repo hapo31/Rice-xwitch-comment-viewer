@@ -39,11 +39,11 @@ use speech::{
     emit_current_queue, speech_queue_dismiss, speech_queue_dismiss_history, speech_queue_reload,
     speech_queue_remove, speech_queue_retry,
 };
-#[cfg(feature = "app")]
-use std::process::Command;
 use std::sync::Mutex;
 #[cfg(feature = "app")]
 use tauri::{Manager, PhysicalPosition, WindowEvent};
+#[cfg(feature = "app")]
+use tauri_plugin_opener::OpenerExt;
 #[cfg(feature = "app")]
 use twitch::commands::{
     twitch_connect, twitch_disconnect, twitch_get_stored_auth, twitch_poll_auth, twitch_start_auth,
@@ -59,11 +59,24 @@ fn app_exit(app: tauri::AppHandle) {
 
 #[cfg(feature = "app")]
 #[tauri::command]
-fn app_open_external_url(url: String) -> Result<(), String> {
-    let url = validate_external_url(&url)?;
-    open_external_url(url.as_str()).map_err(|error| {
-        format!("ブラウザを開けませんでした。URLをコピーして手動で開いてください: {error}")
+fn app_open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    open_validated_external_url(&url, |url| {
+        app.opener().open_url(url.to_string(), None::<String>)
     })
+}
+
+#[cfg(feature = "app")]
+fn open_validated_external_url<E: std::fmt::Display>(
+    raw_url: &str,
+    open: impl FnOnce(&reqwest::Url) -> Result<(), E>,
+) -> Result<(), String> {
+    let url = validate_external_url(raw_url)?;
+    open(&url).map_err(external_url_open_error)
+}
+
+#[cfg(feature = "app")]
+fn external_url_open_error(error: impl std::fmt::Display) -> String {
+    format!("ブラウザを開けませんでした。URLをコピーして手動で開いてください: {error}")
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -112,6 +125,7 @@ fn app_builder_with_state(state: AppState) -> tauri::Builder<tauri::Wry> {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             single_instance::request_activation(app);
         }))
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(single_instance::PendingActivation::default())
         .manage(state)
@@ -349,74 +363,14 @@ fn validate_external_url(raw_url: &str) -> Result<reqwest::Url, String> {
     }
 }
 
-#[cfg(feature = "app")]
-fn open_external_url(url: &str) -> anyhow::Result<()> {
-    #[cfg(target_os = "windows")]
-    {
-        return run_open_command("rundll32", &["url.dll,FileProtocolHandler", url]);
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        return run_open_command("open", &[url]);
-    }
-
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let commands: &[(&str, &[&str])] = if is_wsl() {
-            &[
-                ("wslview", &[url]),
-                ("xdg-open", &[url]),
-                ("gio", &["open", url]),
-            ]
-        } else {
-            &[
-                ("xdg-open", &[url]),
-                ("gio", &["open", url]),
-                ("wslview", &[url]),
-            ]
-        };
-
-        let mut errors = Vec::new();
-        for (program, args) in commands {
-            match run_open_command(program, args) {
-                Ok(()) => return Ok(()),
-                Err(error) => errors.push(format!("{program}: {error}")),
-            }
-        }
-
-        Err(anyhow::anyhow!(errors.join("; ")))
-    }
-}
-
-#[cfg(feature = "app")]
-fn run_open_command(program: &str, args: &[&str]) -> anyhow::Result<()> {
-    let output = Command::new(program).args(args).output()?;
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if stderr.is_empty() {
-        Err(anyhow::anyhow!("終了コード {}", output.status))
-    } else {
-        Err(anyhow::anyhow!(stderr))
-    }
-}
-
-#[cfg(all(feature = "app", unix, not(target_os = "macos")))]
-fn is_wsl() -> bool {
-    std::env::var_os("WSL_DISTRO_NAME").is_some()
-        || std::fs::read_to_string("/proc/version")
-            .map(|version| version.to_ascii_lowercase().contains("microsoft"))
-            .unwrap_or(false)
-}
-
 pub(crate) type SharedSettings<T> = Mutex<T>;
 
 #[cfg(all(test, feature = "app"))]
 mod tests {
-    use super::{app_build_info_value, title_bar_is_visible, validate_external_url};
+    use super::{
+        app_build_info_value, external_url_open_error, open_validated_external_url,
+        title_bar_is_visible, validate_external_url,
+    };
     use crate::settings::WindowPosition;
 
     #[test]
@@ -441,6 +395,29 @@ mod tests {
         assert!(validate_external_url("https://example.com/activate").is_err());
         assert!(validate_external_url("http://www.twitch.tv/activate").is_err());
         assert!(validate_external_url("https://www.twitch.tv/settings").is_err());
+    }
+
+    #[test]
+    fn external_browser_failure_keeps_japanese_recovery_guidance() {
+        let message = external_url_open_error("system opener failed");
+
+        assert!(
+            message.starts_with("ブラウザを開けませんでした。URLをコピーして手動で開いてください:")
+        );
+        assert!(message.contains("system opener failed"));
+    }
+
+    #[test]
+    fn rejects_untrusted_url_before_calling_the_opener() {
+        let mut opener_called = false;
+
+        let result = open_validated_external_url("https://example.com/activate", |_| {
+            opener_called = true;
+            Ok::<(), std::convert::Infallible>(())
+        });
+
+        assert_eq!(result, Err("許可されていない外部URLです。".to_string()));
+        assert!(!opener_called);
     }
 
     #[test]

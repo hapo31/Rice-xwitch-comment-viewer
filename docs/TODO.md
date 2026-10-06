@@ -285,6 +285,8 @@ Issue #194 の親レビュー追補で、連投抑制秒の空欄/空白を拒�
 
 通常 devcontainer には lock 済みの GitHub CLI feature を追加し、Codex の認証情報・履歴・セッションを `rice-codex-home` named volume に永続化した。
 
+Phase 5 進捗サマリ追記（2026-10-06）: Issue #233 で Twitch activation URL のOS別プロセス起動を Tauri Opener の Rust API へ委譲した。実デスクトップの起動確認は環境依存で残る。
+
 ## Phase 0: プロジェクト作成
 
 - [x] Issue #202: Settings 既定値を UI feature 非依存の共通 model factory に集約し、preview の leaf patch を現在値へ累積適用する。可変値の非共有、異 section/同 section field の連続保存、再読込を回帰検証する。
@@ -708,5 +710,14 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] React公式selector helperとJotai移行を比較し、派生object/arrayの安定性・比較関数・Provider隔離・通知と描画回数をDOMで検証する。既存generation/revision/queue同期を維持する。
 
 2026-10-06 Issue #223: immutableなstore snapshotとselectorをReact公式helperへ別々に渡し、Object.is既定と任意比較関数を全domain hookで使えるようにした。通常/StrictModeの派生object・array、selector変更、store変更と購読解除、同一storeの無関係更新、Provider隔離と1eventあたりの通知/描画をDOM6件で回帰化した。frontend全462件（78 files）、build/typecheck、format、lint、diff検査成功。production JS gzip増加0.28 kB。Jotaiへの全domain移行と比べ、既存reducer・generation/revision・replayを保持する小さな境界変更を選んだ。最終headのCI・マージはPR #268で確認する。Windows実アプリの手動描画確認は未実施。
+
+## Issue #233: Twitch URL の外部ブラウザ起動
+
+- [x] 現行 allowlist・Tauri/Rust互換性・公式 Opener API と Windows/macOS/Linux/WSL の起動経路を調査する。
+- [x] 既存 Rust command 内だけで Opener Rust API を呼び、renderer 権限・URL allowlist・日本語復旧案内を保つ。
+- [x] 受理/拒否URLと起動失敗案内を回帰化し、Cargo lock と security policy を確認する。
+- [ ] Windows/macOS/Linux/WSL の実デスクトップ既定ブラウザ起動を手動確認する（現在の環境は Linux container で desktop session がない）。
+
+2026-10-06 Issue #233: `app_open_external_url` は Twitch activation URL を検証した後、登録済み Tauri Opener の Rust `OpenerExt::open_url` に渡す。rundll32/open/xdg-open/gio/wslview の独自選択、WSL 判定、stderr 処理を削除した。公式 `tauri-plugin-opener` 2.7.0 は Tauri 2.12.1 / release Rust 1.90.0 と互換で、WSL は PowerShell を先に試し xdg-open/gio 等へ戻る。renderer capability は変更せず、既存の command ACL guard が Opener URL/path 権限の追加も許さない。allowlist・拒否時に opener が呼ばれないこと・日本語の起動失敗案内を Rust test で確認した。Rust 1.90 app 332件、no-default 237件、strict all-target/all-feature Clippy、frontend build、Tauri renderer/license/version policy、format/diff check が成功。実 Windows/macOS/Linux/WSL desktop の手動確認と最終 CI は未実施。
 
 2026-10-06 Issue #231: tempfileの乱数名生成とRAII cleanupを採用し、Windows write-throughを含む既存atomic_replaceと同期・権限検査を保持した。write/backup/replace失敗時のprimary/backup/メモリと残留temp、unwind後cleanupを回帰化。Rust settings47件、strict all-target/all-feature Clippy、frontend build、fmt/diff検査が成功。最終CIはPR #275で管理する。実機での電源断検証は未実施。
