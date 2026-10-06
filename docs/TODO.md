@@ -109,6 +109,8 @@
 
 Issue #217: snapshot復元中のコメントを上限200件で保留し、接続世代・チャンネルを照合して受信順に反映する。live statusが先着する順序も回帰化した。
 
+Issue #221: 不正UTF-8の設定を内容破損として退避・復旧し、真のIO障害と区別した。将来版backupの保持と復旧noticeを継続する。
+
 Issue #209では、接続taskをspawnしてからhandle登録・Connecting通知を行っていたため、即時lookup失敗のErrorをConnectingが後から上書きし、登録失敗時にtaskがdetachする競合を解消した。oneshot開始gateで登録・Connecting通知後にlookupを開始し、TwitchConnectionHandleのDropが所有taskをabortする。追補では予約・登録・cancelを同じmutex保護のTwitchConnectionOwnerへ集約し、古い予約の登録拒否を登録直前 barrier でstop／新接続の両順序から検証する。即時 lookup 成功／失敗はmulti-thread runtime上でconnect return前のlookup開始を同期し、Connectingとterminal statusの順を確認する。reviewed main `c868999` までを統合し、追加差分はfrontendと文書の変更でRustのTwitch接続ownerに重ならないことを確認した。Rust 1.90 all-features Twitch tests 100件、strict all-target clippy、fmt check、diff checkが成功した。親レビューで登録前stop/新接続・開始gate・Drop取消を確認した。reviewed main 928f1f6のspeech session制御を統合し、最終CIはPR #252で確認する。
 
 Issue #220: 再生中itemのadapter所有権を保持し、設定変更後も制御と完了確認を同じ宛先へ送る。後続itemから新しい設定を使う。
@@ -647,6 +649,12 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] source-map-js の影響版を修正版へ統一し、既存監査・frozen install・frontend gates を通す。監査例外は追加しない。
 
 2026-10-06 Issue #261: @tailwindcss/node 4.3.3 の許容範囲 ^1.2.1 内で source-map-js を1.2.2へ統一し、未使用の1.2.1 entryを除去した。他の依存とpackage.jsonは変更しない。frozen offline install、frontend全429件、production build成功。pnpm auditはhigh/critical 0件で対象GHSAが消え、既存moderate 5件のみ。全CIの結果は PR #262 に記録する。
+
+## Issue #221: 不正UTF-8設定からの復旧
+
+- [x] IO障害とencoding/サイズ/JSON/schema破損を区別し、元bytesの退避・backup/既定値復旧・notice・将来schema保護をfileテストで確認する。
+
+2026-10-06 Issue #221: bounded readをIO/encoding/sizeの型付きエラーとし、JSON/schema破損と併せて復旧対象を明示した。不正UTF-8 primary＋正常backup、構文/encoding双方破損、元bytes退避、将来版backupのread-only、非特権ユーザーでのfile/ancestor権限拒否を回帰化。no-default全225件・strict Clippy・frontend build・format/diff検査成功。復旧noticeは既存のLogs/system Chat経路を使う。Windows実ファイルでの手動復旧確認は未実施。最終CIはPR #266に記録する。
 
 ## Issue #220: 再生中 session と制御先の一致
 
