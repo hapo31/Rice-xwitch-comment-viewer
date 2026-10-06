@@ -126,6 +126,7 @@ export interface DomainEventSubscriptionOptions {
     source: "event" | "log",
     message: string,
     correlationId?: string,
+    announcementDomains?: AppNotification["announcementDomains"],
   ) => void;
   routeSystemTimelineEvent?: (event: SystemTimelineEvent) => void;
   speechRecoveryMessage?: (
@@ -191,7 +192,7 @@ export function subscribeDomainEvents({
       });
     }
     if (event.message && (event.status === "authRequired" || event.status === "error"))
-      reportNotification("error", "event", event.message);
+      reportNotification("error", "event", event.message, undefined, [event.domain]);
     const timeline = twitchTimelineEvent?.(event);
     if (timeline) routeSystemTimelineEvent?.(timeline);
   };
@@ -204,7 +205,7 @@ export function subscribeDomainEvents({
       return;
     dispatchDomainAction(stores, { type: "speech.status", ...event });
     if (event.message && (event.status === "disconnected" || event.status === "error")) {
-      reportNotification("error", "event", event.message);
+      reportNotification("error", "event", event.message, undefined, ["speech"]);
       const timeline = speechRecoveryMessage?.(event.message, event.status);
       if (timeline) routeSystemTimelineEvent?.(timeline);
     }
@@ -216,7 +217,7 @@ export function subscribeDomainEvents({
     )
       return;
     dispatchDomainAction(stores, { type: "queue.changed", ...event });
-    if (event.warning) reportNotification("warning", "event", event.warning);
+    if (event.warning) reportNotification("warning", "event", event.warning, undefined, ["queue"]);
   };
   const cleanup = subscribeWithCleanup(
     [

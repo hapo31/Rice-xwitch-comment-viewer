@@ -68,7 +68,12 @@ import {
 } from "./tauri/client";
 import { subscribeWithCleanup } from "./tauri/subscriptions";
 import { utcNow } from "./time";
-import type { AppSettingsPatch, NotificationSeverity, NotificationSource } from "./types";
+import type {
+  AppNotification,
+  AppSettingsPatch,
+  NotificationSeverity,
+  NotificationSource,
+} from "./types";
 
 const showStartupGuideForSession = claimStartupGuideForSession(window.sessionStorage);
 
@@ -162,16 +167,35 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
     source: NotificationSource,
     message: string,
     correlationId?: string,
+    announcementDomains?: AppNotification["announcementDomains"],
   ) {
     dispatch({
       type: "notification.added",
-      notification: { severity, source, message, occurredAtMs: Date.now(), correlationId },
+      notification: {
+        severity,
+        source,
+        message,
+        occurredAtMs: Date.now(),
+        correlationId,
+        announcementDomains,
+      },
     });
   }
 
-  function reportError(error: unknown, operation: ErrorOperation = "general") {
+  function reportError(
+    error: unknown,
+    operation: ErrorOperation = "general",
+    announcementDomains?: AppNotification["announcementDomains"],
+  ) {
     return reportPresentedError(error, operation, {
-      notify: (message) => reportNotification("error", "command", message),
+      notify: (message) =>
+        reportNotification(
+          "error",
+          "command",
+          message,
+          `command:${crypto.randomUUID()}`,
+          announcementDomains,
+        ),
       log: (message) =>
         dispatch({ type: "log.added", log: { level: "error", message, occurredAtMs: Date.now() } }),
     });

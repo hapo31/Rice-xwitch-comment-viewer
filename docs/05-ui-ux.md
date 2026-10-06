@@ -194,3 +194,12 @@ command 失敗は共通の presentation 層で、操作対象に応じた短い�
 ## Twitch 状態表示の共通契約
 
 Twitch 接続状態のラベルは `presentation/twitch.ts` で状態の全候補を網羅し、Chat、Side Panel、Status Bar、ライブ通知で共用する。認証状態は同じ場所に短い視覚表示と読み上げ用の明示的な差分を持ち、「認証確認中」の読み上げを認証確認と有効性確認で区別する。未知の状態を英語の内部値で表示する fallback は設けず、状態追加時には型検査でラベル追加を要求する。
+
+
+## ライブ通知の配送
+
+スクリーンリーダー向け通知は、現在状態の表示とは別の未通知 queue で管理する。command 単独の error も `alert`、warning と通常の状態遷移は `status` へ送り、同時障害は alert 優先・同優先度は発生順で一件ずつ配送する。ID は発生を、correlation と状態 context は同一原因を識別し、同文でも別発生を落とさない。遅れて届いた log/event の同一原因は既読の原因と照合する。
+
+安定した空の live region を先に用意し、通知の間に100msの空更新を挟む。同文の別発生も DOM が変化する。表示保持は最低2.5秒・本文1文字80msを目安とし、error は通常通知の保持待ちより優先する。これは支援技術の発話完了を検知する機能ではないため、実 Windows のスクリーンリーダーでの聞き取りは別途確認する。明示クリアは待機中と表示中の通知を解除し、unmount は配送 timer を破棄する。
+
+参照: [WAI-ARIA 1.2](https://www.w3.org/TR/wai-aria/) と [ARIA19: 動的なエラー通知](https://www.w3.org/WAI/WCAG21/Techniques/aria/ARIA19)。
