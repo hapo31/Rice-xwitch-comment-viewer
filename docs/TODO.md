@@ -105,6 +105,8 @@
 
 ## 現在の進捗サマリ
 
+Issue #216: 設定初期化に読込状態・世代・更新番号を導入し、古い読込による保存結果の巻き戻りを防いだ。対象23件の回帰成功、最終 CI は PR #259 で追跡する。
+
 2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、subscription token identity/logout orderingと別Login generationの隔離を回帰化した。EventSubConnectionParamsは接続generationと認証generation/client/user identityを区別して保持し、旧接続をobsoleteとして再試行せず終了する。追加レビューで、auth generationのみ変更された際に現行Chat generationのsnapshotがConnectingのまま残る問題を修正し、AppEventState recorderで同一Chat generationはDisconnectedに、新しいChat generationは維持されることを回帰化した。reviewed main `d0c58b9` までのwire contract、認証復元型付け、共通chat delivery変更を統合した。Rust fmt / diff check、app-feature Twitch tests 95件、strict all-target app Clippy、generated wire contract test 1件が成功した。親レビューで obsolete 終端 snapshot と新世代保護を確認した。実装 head 9fcbab0 の全16 CI が成功し、#214 の reviewed main c58904d を統合した。最終 head の CI と統合結果は PR #243 に記録する。
 
 - [x] Issue #214: コメントの受信と読み上げ受付を区別し、自動読み上げ OFF の対象外結果を backend の型付き outcome として通知・保持する。ON/OFF 切替、event の前後順、snapshot 復元を契約テストで確認する。
@@ -607,4 +609,6 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 ## Issue #216: 設定初期化の競合防止
 
-- [ ] 設定初期化の loading/ready/error と取得世代を明示し、遅い取得応答が新しい保存結果を上書きしない共通境界を設ける。初期値表示と保存可否を区別し、読込失敗後の再試行・逆順完了・StrictMode・unmount を回帰化する。
+- [x] 設定初期化の loading/ready/error と取得世代を明示し、遅い取得応答が新しい保存結果を上書きしない共通境界を設ける。初期値表示と保存可否を区別し、読込失敗後の再試行・逆順完了・StrictMode・unmount を回帰化する。
+
+2026-10-06 Issue #216: 設定読込・直列保存を SettingsController へまとめ、load generation / store publication revision / effect lifetime で応答を照合する。Settings/Filter は読込中に既定値フォームを編集させず、失敗時に明示再試行を出す。接続用の二重 settingsSnapshot をなくし、store を正本にした。StrictMode の一回限りの復旧通知は load 間で共有し、現在の load が一度だけ通知する。読込対保存（成功/失敗）、同 lifetime の取得逆順、StrictMode、unmount、Launcher 更新を含む対象23件と typecheck が成功。最終 frontend 全体、CI と統合結果は PR #259 に記録する。
