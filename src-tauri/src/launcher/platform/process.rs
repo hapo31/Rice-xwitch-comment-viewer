@@ -4,6 +4,7 @@ use std::io;
 use std::pin::Pin;
 use std::process::{ExitStatus, Stdio};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};
@@ -165,8 +166,10 @@ async fn run_child(
         .stderr
         .take()
         .ok_or_else(|| ProcessRunError::OutputTask("stderr pipe がありません".into()))?;
-    let mut stdout_reader = tokio::spawn(read_bounded(stdout, stdout_limit));
-    let mut stderr_reader = tokio::spawn(read_bounded(stderr, stderr_limit));
+    let mut readers = ReaderTasks {
+        stdout: ReaderState::Pending(tokio::spawn(read_bounded(stdout, stdout_limit))),
+        stderr: ReaderState::Pending(tokio::spawn(read_bounded(stderr, stderr_limit))),
+    };
 
     let deadline = tokio::time::Instant::now() + timeout;
     enum Completed {
@@ -177,9 +180,7 @@ async fn run_child(
     let completed = {
         let future = async {
             let status = child.wait().await.map_err(CompletionError::Wait)?;
-            let (stdout, stderr) = join_readers(&mut stdout_reader, &mut stderr_reader)
-                .await
-                .map_err(CompletionError::Output)?;
+            let (stdout, stderr) = readers.join().await.map_err(CompletionError::Output)?;
             Ok::<_, CompletionError>((status, stdout, stderr))
         };
         tokio::pin!(future);
@@ -195,13 +196,12 @@ async fn run_child(
     match completed {
         Completed::Cancelled => {
             let termination = terminate(&mut child).await;
-            let _ = finish_readers_after_termination(&mut stdout_reader, &mut stderr_reader).await;
+            let _ = finish_readers_after_termination(&mut readers).await;
             Err(ProcessRunError::Cancelled { termination })
         }
         Completed::Timeout => {
             let termination = terminate(&mut child).await;
-            let output_drained =
-                finish_readers_after_termination(&mut stdout_reader, &mut stderr_reader).await;
+            let output_drained = finish_readers_after_termination(&mut readers).await;
             Err(ProcessRunError::TimedOut {
                 termination,
                 output_drained,
@@ -209,7 +209,7 @@ async fn run_child(
         }
         Completed::Finished(Err(CompletionError::Wait(error))) => {
             let termination = terminate(&mut child).await;
-            let _ = finish_readers_after_termination(&mut stdout_reader, &mut stderr_reader).await;
+            let _ = finish_readers_after_termination(&mut readers).await;
             Err(ProcessRunError::Wait { error, termination })
         }
         Completed::Finished(Err(CompletionError::Output(error))) => Err(error),
@@ -235,35 +235,76 @@ enum CompletionError {
     Output(ProcessRunError),
 }
 
-async fn join_readers(
-    stdout_reader: &mut JoinHandle<io::Result<LimitedBytes>>,
-    stderr_reader: &mut JoinHandle<io::Result<LimitedBytes>>,
-) -> Result<(LimitedBytes, LimitedBytes), ProcessRunError> {
-    let (stdout, stderr) = tokio::join!(stdout_reader, stderr_reader);
-    let stdout = stdout
-        .map_err(|error| ProcessRunError::OutputTask(error.to_string()))?
-        .map_err(ProcessRunError::OutputRead)?;
-    let stderr = stderr
-        .map_err(|error| ProcessRunError::OutputTask(error.to_string()))?
-        .map_err(ProcessRunError::OutputRead)?;
-    Ok((stdout, stderr))
+enum ReaderState {
+    Pending(JoinHandle<io::Result<LimitedBytes>>),
+    Complete(Result<io::Result<LimitedBytes>, tokio::task::JoinError>),
+    Taken,
 }
 
-async fn finish_readers_after_termination(
-    stdout_reader: &mut JoinHandle<io::Result<LimitedBytes>>,
-    stderr_reader: &mut JoinHandle<io::Result<LimitedBytes>>,
-) -> bool {
-    let finished = tokio::time::timeout(
-        TERMINATED_PIPE_DRAIN_TIMEOUT,
-        join_readers(stdout_reader, stderr_reader),
-    )
-    .await;
-    match finished {
+struct ReaderTasks {
+    stdout: ReaderState,
+    stderr: ReaderState,
+}
+
+impl ReaderTasks {
+    async fn join(&mut self) -> Result<(LimitedBytes, LimitedBytes), ProcessRunError> {
+        std::future::poll_fn(|context| {
+            poll_reader(&mut self.stdout, context);
+            poll_reader(&mut self.stderr, context);
+            if matches!(&self.stdout, ReaderState::Complete(_))
+                && matches!(&self.stderr, ReaderState::Complete(_))
+            {
+                Poll::Ready(())
+            } else {
+                Poll::Pending
+            }
+        })
+        .await;
+
+        let stdout = take_reader_result(&mut self.stdout);
+        let stderr = take_reader_result(&mut self.stderr);
+        Ok((stdout?, stderr?))
+    }
+
+    fn abort_pending(&mut self) {
+        for state in [&mut self.stdout, &mut self.stderr] {
+            if let ReaderState::Pending(handle) = state {
+                handle.abort();
+            }
+        }
+    }
+}
+
+fn poll_reader(state: &mut ReaderState, context: &mut Context<'_>) {
+    let result = match state {
+        ReaderState::Pending(handle) => Pin::new(handle).poll(context),
+        ReaderState::Complete(_) | ReaderState::Taken => return,
+    };
+    if let Poll::Ready(result) = result {
+        *state = ReaderState::Complete(result);
+    }
+}
+
+fn take_reader_result(state: &mut ReaderState) -> Result<LimitedBytes, ProcessRunError> {
+    let result = std::mem::replace(state, ReaderState::Taken);
+    match result {
+        ReaderState::Complete(Ok(result)) => result.map_err(ProcessRunError::OutputRead),
+        ReaderState::Complete(Err(error)) => Err(ProcessRunError::OutputTask(error.to_string())),
+        ReaderState::Pending(_) | ReaderState::Taken => {
+            unreachable!("reader join only completes after both tasks")
+        }
+    }
+}
+
+async fn finish_readers_after_termination(readers: &mut ReaderTasks) -> bool {
+    match tokio::time::timeout(TERMINATED_PIPE_DRAIN_TIMEOUT, readers.join()).await {
         Ok(Ok(_)) => true,
-        Ok(Err(_)) | Err(_) => {
-            stdout_reader.abort();
-            stderr_reader.abort();
-            let _ = tokio::join!(stdout_reader, stderr_reader);
+        Ok(Err(_)) => false,
+        Err(_) => {
+            readers.abort_pending();
+            // Aborted Tokio tasks settle on the next poll. `join` only polls
+            // handles that are still pending, preserving already completed values.
+            let _ = readers.join().await;
             false
         }
     }
@@ -330,6 +371,7 @@ pub(in crate::launcher) async fn capture_bounded(
 mod tests {
     use super::*;
     use std::process::Command as StdCommand;
+    use tokio::io::{duplex, AsyncWriteExt};
 
     fn command(script: &str) -> Command {
         #[cfg(unix)]
@@ -386,11 +428,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn output_limit_accepts_exact_capacity_and_rejects_one_more_byte() {
+        async fn read_payload(payload: &[u8], limit: usize) -> LimitedBytes {
+            let (mut writer, reader) = duplex(payload.len().max(1));
+            writer.write_all(payload).await.unwrap();
+            drop(writer);
+            read_bounded(reader, limit).await.unwrap()
+        }
+
+        let exact = read_payload(b"12345678", 8).await;
+        assert_eq!(exact.bytes, b"12345678");
+        assert!(!exact.exceeded);
+
+        let over = read_payload(b"123456789", 8).await;
+        assert_eq!(over.bytes, b"12345678");
+        assert!(over.exceeded);
+    }
+
+    #[tokio::test]
+    async fn reader_error_cleanup_does_not_repoll_completed_handles() {
+        let mut readers = ReaderTasks {
+            stdout: ReaderState::Pending(tokio::spawn(async {
+                Err(io::Error::other("fixture read failure"))
+            })),
+            stderr: ReaderState::Pending(tokio::spawn(async {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                Ok(LimitedBytes {
+                    bytes: Vec::new(),
+                    exceeded: false,
+                })
+            })),
+        };
+
+        assert!(!tokio::time::timeout(
+            Duration::from_secs(1),
+            finish_readers_after_termination(&mut readers)
+        )
+        .await
+        .expect("reader error cleanup should finish"));
+        assert!(matches!(readers.stdout, ReaderState::Taken));
+        assert!(matches!(readers.stderr, ReaderState::Taken));
+    }
+
+    #[tokio::test]
     async fn timeout_kills_and_reaps_child() {
         #[cfg(unix)]
-        let command = command("exec sleep 30");
+        let command = command("exec 1>&-; exec sleep 30");
         #[cfg(windows)]
-        let command = command("Start-Sleep -Seconds 30");
+        let command = command("[Console]::OpenStandardOutput().Close(); Start-Sleep -Seconds 30");
         let started = tokio::time::Instant::now();
         let error = run_bounded(command, Duration::from_millis(50), 16, 16)
             .await
@@ -436,7 +521,10 @@ mod tests {
             std::env::temp_dir().join(format!("rice-process-cancel-{}.pid", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let mut command = StdCommand::new("sh");
-        command.args(["-c", "echo $$ > \"$RICE_TEST_PID_FILE\"; exec sleep 30"]);
+        command.args([
+            "-c",
+            "exec 1>&-; echo $$ > \"$RICE_TEST_PID_FILE\"; exec sleep 30",
+        ]);
         command.env("RICE_TEST_PID_FILE", &path);
         let task = tokio::spawn(run_bounded(
             Command::from(command),
@@ -451,6 +539,7 @@ mod tests {
         })
         .await
         .expect("child should publish its pid");
+        tokio::time::sleep(Duration::from_millis(100)).await;
         let pid = std::fs::read_to_string(&path)
             .unwrap()
             .trim()
@@ -483,7 +572,7 @@ mod tests {
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            "[IO.File]::WriteAllText($env:RICE_TEST_PID_FILE, [string]$PID); Start-Sleep -Seconds 30",
+            "[Console]::OpenStandardOutput().Close(); [IO.File]::WriteAllText($env:RICE_TEST_PID_FILE, [string]$PID); Start-Sleep -Seconds 30",
         ]);
         command.env("RICE_TEST_PID_FILE", &path);
         let task = tokio::spawn(run_bounded(
@@ -499,6 +588,7 @@ mod tests {
         })
         .await
         .expect("child should publish its pid");
+        tokio::time::sleep(Duration::from_millis(100)).await;
         let pid = std::fs::read_to_string(&path)
             .unwrap()
             .trim()
