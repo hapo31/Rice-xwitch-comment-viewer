@@ -1,13 +1,14 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { AuthOperationController } from "../authOperation";
-import { createTwitchController } from "./twitchController";
-import { initialAppState, appReducer, type AppAction } from "../stores/appStore";
-import type { TwitchDeviceAuthStart, TwitchUserProfile } from "../types";
-import { AppShell } from "../AppShell";
-import { createDomainStores, DomainProvider } from "../stores/domainStores";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AppShell } from "../AppShell";
+import { AuthOperationController } from "../authOperation";
+import { type AppAction, initialAppState } from "../stores/appState";
+import { createDomainStores, DomainProvider } from "../stores/domainStores";
 import { tauriMock } from "../testing/tauriMock";
+import type { TwitchDeviceAuthStart, TwitchUserProfile } from "../types";
+import { dispatchDomainAction } from "./domainOrchestration";
+import { createTwitchController } from "./twitchController";
 
 const prompt: TwitchDeviceAuthStart = {
   userCode: "ABCD-EFGH",
@@ -34,19 +35,20 @@ function deferred<T>() {
 }
 
 function makeController(state = initialAppState) {
-  let current = state;
+  const stores = createDomainStores();
+  dispatchDomainAction(stores, { type: "twitch.authStatus", status: state.twitchAuthStatus });
+  dispatchDomainAction(stores, { type: "twitch.authPrompt", prompt: state.twitchAuthPrompt });
+  dispatchDomainAction(stores, { type: "twitch.profile", profile: state.twitchProfile });
   const operations = new AuthOperationController();
   const reportInfo = vi.fn();
   const reportNotification = vi.fn();
   const reportError = vi.fn();
   const controller = createTwitchController({
     operations,
-    dispatch: (action: AppAction) => {
-      current = appReducer(current, action);
-    },
-    getAuthPrompt: () => current.twitchAuthPrompt,
-    getAuthStatus: () => current.twitchAuthStatus,
-    getAuthProfile: () => current.twitchProfile,
+    dispatch: (action: AppAction) => dispatchDomainAction(stores, action),
+    getAuthPrompt: () => stores.connection.getState().twitchAuthPrompt,
+    getAuthStatus: () => stores.connection.getState().twitchAuthStatus,
+    getAuthProfile: () => stores.connection.getState().twitchProfile,
     getChannelLogin: () => undefined,
     getConfirmBeforeStopChat: () => false,
     waitForSettings: async () => undefined,
@@ -60,7 +62,10 @@ function makeController(state = initialAppState) {
   return {
     controller,
     operations,
-    getState: () => current,
+    getState: () => ({
+      ...initialAppState,
+      ...stores.connection.getState(),
+    }),
     reportInfo,
     reportNotification,
     reportError,
@@ -150,7 +155,7 @@ describe("Twitch controller auth-operation lifecycle", () => {
       vi.spyOn(window, "confirm").mockReturnValue(true);
       const pendingStart = deferred<TwitchDeviceAuthStart>();
       const pendingValidation = deferred<{ profile: TwitchUserProfile }>();
-      const pendingDisconnect = deferred<void>();
+      const pendingDisconnect = deferred<null>();
       tauriMock.setCommand("twitch_start_auth", () => pendingStart.promise);
       tauriMock.setCommand("twitch_validate_auth", () => pendingValidation.promise);
       tauriMock.setCommand("twitch_disconnect", () => pendingDisconnect.promise);
@@ -173,7 +178,7 @@ describe("Twitch controller auth-operation lifecycle", () => {
 
       if (operation === "start") pendingStart.resolve({ ...prompt, userCode: "NEW-CODE" });
       else if (operation === "validate") pendingValidation.resolve({ profile });
-      else pendingDisconnect.resolve();
+      else pendingDisconnect.resolve(null);
       await act(async () => manual);
 
       expect(tauriMock.invoke).not.toHaveBeenCalledWith("twitch_poll_auth");

@@ -1,19 +1,10 @@
-import { presentError } from "../presentation/errors";
-import { getDeviceAuthRemainingSeconds } from "../features/auth/deviceAuthExpiry";
+import { type AuthFlowEvent, type AuthFlowState, authFlowTransition } from "../authFlow";
 import { AuthOperationController } from "../authOperation";
-import { authFlowTransition, type AuthFlowEvent, type AuthFlowState } from "../authFlow";
-import { autoConnectTimelineEvent } from "../presentation/systemTimeline";
+import { getDeviceAuthRemainingSeconds } from "../features/auth/deviceAuthExpiry";
 import type { SystemTimelineEvent } from "../models/systemTimeline";
-import { routeAuthStorageWarning } from "./authWarnings";
-import { restoreStartupAuth } from "./domainOrchestration";
-import type { AppAction } from "../stores/appStore";
-import type {
-  AuthStatus,
-  NotificationSeverity,
-  NotificationSource,
-  TwitchDeviceAuthStart,
-  TwitchUserProfile,
-} from "../types";
+import { presentError } from "../presentation/errors";
+import { autoConnectTimelineEvent } from "../presentation/systemTimeline";
+import type { AppAction } from "../stores/appState";
 import {
   appOpenExternalUrl,
   twitchConnect,
@@ -24,6 +15,15 @@ import {
   twitchStopChat,
   twitchValidateAuth,
 } from "../tauri/client";
+import type {
+  AuthStatus,
+  NotificationSeverity,
+  NotificationSource,
+  TwitchDeviceAuthStart,
+  TwitchUserProfile,
+} from "../types";
+import { routeAuthStorageWarning } from "./authWarnings";
+import { restoreStartupAuth } from "./domainOrchestration";
 
 export interface TwitchControllerDependencies {
   operations: AuthOperationController;

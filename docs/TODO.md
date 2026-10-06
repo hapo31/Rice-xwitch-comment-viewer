@@ -108,6 +108,8 @@
 
 Issue #199 は system timeline の中立モデルと型付き購読境界、source 別 transition 契約を実装した。初期 snapshot の認証/speech 通知、連続重複と復旧後の再通知、購読終了後の無視、不正 callback の型エラーを検証した。独立レビューで認証/接続の状態集合をさらに限定し、案内文を含む認証の重複抑制を維持した。最終 CI 結果と統合状況は PR #239 に記録する。
 
+2026-10-06 Issue #203: appReducer/appStore.test の旧状態処理を除去し、AppState は読み取り用合成モデルとして appState.ts へ分離した。ログ ID／通知重複処理は logsStore を正本にし、明示 backend event ID の replay は抑制、IDなし同内容ログと表示IDの衝突は suffix で保持する。domain event bridge は store が受理したログにのみ通知等の副作用を行う。SettingsUpdateQueue と専用テストを削除し、失敗前から待機している後続保存の継続と idle 待機を createSettingsMutationOrchestrator で検証する。親レビューで旧 reducer の observable regression 4件を DomainStores/dispatchDomainAction の本番経路へ移し、最新 reviewed main 6bdb52c も統合した。frontend 366件、typecheck/build、変更ファイル Biome check と diff check が成功。親レビューと本番経路15 tests の再検証、実装 head 5185791 の全16 CI が成功した。その後 reviewed main 493c57f（Settings 分割・EventSub 終端状態・wire schema）を統合し、frontend 405件、format/lint/typecheck/build と diff check が成功した。最終 head の CI と統合結果は PR #251 に記録する。
+
 2026-10-06: Issue #195の実装を専用 Draft PR #236 に分離した。AppShell配下へ controller/actions provider を組み立て、Twitch認証の非同期遷移、speech/queue/Launcher command、終了保護を責務別 controller/provider へ移した。画面はdomain別の安定action Contextと必要な selector を参照し、旧AppStateの再構成を除去した。初期レビューで見つかったDevice Code pollingのproduction lifecycle未接続、認証結果遷移の分散、実画面render計測の不足、手動操作/終了時の遅延応答競合を修正し、本番AppShell/provider/routes経由のtimer/render回帰へ更新した。親レビュー指摘を解消し、#205 の共通ラベルとの統合後は frontend 362件、format/lint/typecheck/build と diff check が成功。最終 CI と main 反映は PR #236 で確認する。
 
 2026-10-06 レビュー対応: Device Code pollingをAppShellのprompt/status lifecycleへ接続し、初回interval、pending/slowDown後のinterval更新、手動start/validate/disconnectの競合、期限切れ、unmount中の遅延応答/restore callback抑制をcontrollerと本番AppShell経由の回帰で確認した。追加レビュー対応として期限切れtimerもschedule時のgenerationとprompt identityを照合し、手動start/validate進行中のdeadline callbackと期限到達済みpromptの即時expireを遅延応答テストで保護する。#200のdiscriminated state/runtime contractsを含む最新mainを統合して全 frontend gate を再実行する。timerはschedule時のgeneration/promptを照合し、AuthOperationControllerは世代付き完了、手動優先、poll排他、dispose invalidationを管理する。認証結果・prompt・profile・statusと通知/error副作用は小さな純粋遷移モデルへまとめた。render回帰は実AppShell/provider/routes上のSettings/Logs/Launcher各bodyをProfiler計測し、queue revisionのみの連続更新を確認する。PRは親レビュー再確認待ちのためDraft、Issueはmain反映まで未完了。
@@ -374,6 +376,9 @@ Issue #194 の親レビュー追補で、連投抑制秒の空欄/空白を拒�
 2026-10-05進捗: #179（download-artifact 8.0.1）は公式の Node 24・digest mismatch の既定拒否・展開仕様を確認し、既存の name/path/run-id 指定と互換であることを確認した。ポリシー91件、PRの全16 checks、exact headの開発build、検証済み配布物の取得・digest照合と両形式のWindows native診断が成功してマージした。追加診断のtitlebar操作は初回・再試行で失敗し、同じsourceの3回目が成功したため、UI入力の不安定性は調査境界として記録する。#180以降を順次確認する。監査の閾値・例外や配布の検証条件は変更しない。
 
 - [x] Issue #48: Tauri bridge の `Option` を JSON field omission に統一し、Rust/TypeScript の camelCase・nullability 契約、Device Code 後の保存警告経路を共通 fixture と runtime validation で検証する。
+- [x] Issue #201: 全 command 応答と event を runtime schema で検証し、Rust wire 型生成と schema 型一致・生成差分検査を導入する。既存 domain 変換と IPC 境界を保持する。
+  - 作業進捗: Zod 4 schema から frontend DTO を導出し、ts-rs 12 の Serde 型生成と全51 wire 型の双方向一致検査を導入。全32 command の正常/不正応答と unit null を検証し、frontend 414 tests・型検査・lint・format・build が最新 main（#194 / #208）統合後に成功。導入時の Rust no-default 218 tests と全機能 287 tests・型生成も成功。#200 の厳密な状態契約を維持し、#195 の解除テストも実際の unit null 応答に統一。独立レビュー済みで、#199 の snapshot テストにも必須 adapterHealth を補い、#197 の Chat 状態所有権も統合した。Windows checkout の CRLF は生成比較前に改行だけ正規化し、LF/CRLF 成功・型差分の失敗・復元後成功も確認した。最終 CI・統合結果は PR #247 に記録する。
+  - 性能確認: 同一 Node 24 プロセス、1000 warmup 後の5回中央値で chat 1万件は旧 parser 5.74ms / schema 10.88ms、200件 queue 1000回は46.55ms / 39.67ms。Settings 分割も統合した production JS は600.33kB (gzip182.65kB)で、schema 導入前の469.75kB (gzip142.31kB)から増加し Vite の500kB警告が出る。警告上限は変更しない。
 
 Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態・付随情報を判別可能 union に揃えた。既存21 outcome fixtureと新しい型/runtime共通の正負 fixtureを検証し、frontend 327件とformat/lint/typecheck/buildが成功した。独立レビューを受け、再送不能かつ送達不明な理由には送達確認を必須にした。最終 CI 結果と統合状況は PR #240 に記録する。
 - [x] Issue #200: 読み上げ outcome の kind/reason と retry/recovery、Twitch の domain と状態・付随情報を判別可能 union にし、不正組合せを型検査と bridge parser の両方で拒否する。既存 Rust payload と共通 fixture の互換性、品質 gate で検証する。
@@ -419,11 +424,15 @@ Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態
 - [x] Issue #5: 変更のない Filter / Settings で非表示の保存ボタンをフォーカス順とアクセシビリティツリーから除外し、キーボード回帰テストを追加する。
 - [x] Issue #14: 通知を severity/source/correlation を持つ構造化モデルへ移し、成功通知を警告から分離し、同一障害の重複表示を抑止する。OAuth 認可待ち/待機延長の info 進捗も Logs と system Chat に記録する。
 
+- [x] Issue #203: 旧 `appReducer` と `SettingsUpdateQueue` を削除し、reducer/ID/通知重複判定と設定更新直列化の正本を domain store/orchestrator に統合する。既存回帰を本番経路へ移し、ID衝突と replay 重複を区別して検証した。
+  - 最新 reviewed main（6bdb52c）との統合後: frontend 366 tests、typecheck/build、変更ファイル Biome check、diff check が成功。
+- [x] Issue #203: 親レビューと実装 head の全16 CI を確認した。文書追補後の最終 CI と統合は PR #251 で管理する。
 Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離し、成功操作で警告を失わないようにした。frontend 326件、format/lint/typecheck/build を確認済み。独立レビュー・最終CI・統合状況は PR #242 に記録する。
 - [x] Issue #204: 対処待ち warning/error と info/success 履歴の保持上限を分離し、大量の成功通知で警告を失わないようにする。明示クリア・severity昇格・correlation重複排除・容量上限の logsReducer 回帰を追加した。
   - 最新 main（#193 / #196 / #198 / #202 と統合追補 #245）との統合検証: frontend 342 tests、format/lint/typecheck/build、diff check が成功。
 - 2026-10-06 Issue #204: 実際に使用する logsReducer で warning/error を notifications、info/success を notificationHistory へ分離した。昇格時は元のIDを保ち履歴から対処待ちへ移し、correlationId と本文/5秒の重複排除、明示クリア、独立した保持上限を回帰する。旧 appReducer の整理は別Issue #203 の範囲とし、runtime の正本を直接検証した。
 
+- [x] Issue #213: 未保存の保存と保存後の終了/画面遷移を操作 token で分離し、キャンセル・破棄・新しい終了要求・unmount で古い継続を無効化する。同一要求の重複保存を拒否し、別の確認中に以前の保存が完了しても現在の要求を自動承認しない。実 AppShell の deferred 応答でキャンセル、再試行、失敗、連打、古い応答、別の遷移先、unmount を検証する。最終 CI・統合結果は PR #254 に記録する。
 - [x] Issue #28: Filter / Settings の未保存変更を Activity Bar 遷移・履歴戻る・ウィンドウ終了で共通確認し、保存・破棄・キャンセルをキーボード操作可能にする。native close listener は mount 中に一度だけ登録し、直後の終了要求も保護する。
 - [x] Issue #194: React Hook Form 7 を採用し、Settings / Filter の値・dirty・reset を責務別 FormProvider / Controller へ移行する。Rice 固有の saved-value 同期、保存対象 field ごとの pending、leaf patch、日本語 validation、空欄/数値、NG リスト正規化、native 接続許可を維持し、外部更新ごとの全フォーム reset を避ける。テストで外部同期、保存中の追加入力、失敗、破棄、診断、許可、空欄と 0 の区別、重複する保存完了、診断・テスト読み上げ section の単独操作を確認する。
 - [x] Issue #194: 親レビューと実装 head の全16 CI を確認した。文書追補後の最終 CI と統合は PR #246 で管理する。
@@ -579,3 +588,7 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 - 2026-10-06 Issue #198: [Biome noExplicitAny](https://biomejs.dev/linter/rules/no-explicit-any/) の型引数制約の例外を維持する。条件型で任意の引数列から戻り値を推論する場合に限り、理由付きの行単位 `biome-ignore lint/suspicious/noExplicitAny` を使える。DTO、mock、値のキャストには使わず、ファイル単位の無効化はしない。`noEnum` は const enum を検出しないため `noConstEnum` も有効にした。既存 quality policy の正負 fixture で named/alias import と許容例外を含め検証し、別の AST 検査器や workflow は追加していない。
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
+
+2026-10-06 Issue #213: 保存待ちキャンセル後の app_exit と reset 済み blocker の proceed 例外を実 AppShell で再現し、保存後の操作を現在の token と blocker location key で照合する。取り消した保存そのものは完了してよいが、旧終了・遷移の副作用は実行しない。保存済みになった新しい確認要求も続行/キャンセルを明示選択できる。
+
+2026-10-06 Issue #213 統合確認: reviewed main 493c57f の wire schema を取り込み、本番 AppShell と保存継続の DOM 33件、format/lint/typecheck/build が成功した。最終 head の CI とマージは PR #254 に記録する。

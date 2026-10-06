@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { initialAppState, type AppState } from "../stores/appStore";
-import type { AppSettings } from "../types";
+import { type AppState, initialAppState } from "../stores/appState";
 import { utcTimestamp } from "../time";
+import type { AppSettings } from "../types";
 import { claimStartupGuideForSession, getStartupGuideMessages } from "./startupGuide";
 
 const receivedAt = utcTimestamp("2026-07-11T12:00:00.000Z");
