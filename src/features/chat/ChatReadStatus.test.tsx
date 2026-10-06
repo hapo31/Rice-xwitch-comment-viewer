@@ -1,9 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ChatRow, ChatView } from "./ChatView";
-import { initialAppState } from "../../stores/appStore";
-import type { ChatDisplayState, UserChatMessage } from "../../types";
+import { initialAppState } from "../../stores/appState";
 import { utcTimestamp } from "../../time";
+import type { ChatDisplayState, UserChatMessage } from "../../types";
+import { ChatRow, ChatView } from "./ChatView";
 
 const virtualizerState = vi.hoisted(() => ({ indexes: [0], totalSize: 44 }));
 
