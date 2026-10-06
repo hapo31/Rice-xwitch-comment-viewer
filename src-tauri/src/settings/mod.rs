@@ -1,5 +1,5 @@
 #[cfg(feature = "app")]
-use crate::app_events::{AppLogLevel, emit_app_log};
+use crate::app_events::{emit_app_log, AppLogLevel};
 #[cfg(feature = "app")]
 use crate::application::AppState;
 use crate::launcher::{apply_launcher_edits, validate_launcher_resources};
@@ -21,9 +21,9 @@ pub use model::{
 };
 #[cfg(all(test, unix))]
 use persistence::validate_owner;
-pub use persistence::{LoadedSettings, SettingsRecoveryNotice, SettingsStore};
 #[cfg(test)]
-use persistence::{SaveFault, backup_path, protect_existing_file, write_temp_file};
+use persistence::{backup_path, protect_existing_file, write_temp_file, SaveFault};
+pub use persistence::{LoadedSettings, SettingsRecoveryNotice, SettingsStore};
 
 fn validate_repeat_suppression_seconds(seconds: u16) -> Result<(), String> {
     if seconds <= 30 {
@@ -305,20 +305,13 @@ fn validate_range(value: i16, min: i16, max: i16, label: &str) -> Result<i16, St
     }
 }
 
-#[cfg(feature = "app")]
-fn settings_path<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-) -> anyhow::Result<std::path::PathBuf> {
-    Ok(app.path().app_data_dir()?.join("settings.json"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        AppSettings, SaveFault, SettingsPatch, SettingsStore, WindowPosition, apply_patch,
-        backup_path, update_settings_transaction,
+        apply_patch, backup_path, update_settings_transaction, AppSettings, SaveFault,
+        SettingsPatch, SettingsStore, WindowPosition,
     };
-    use crate::launcher::{LauncherItem, LauncherItemKind, normalize_launcher_items};
+    use crate::launcher::{normalize_launcher_items, LauncherItem, LauncherItemKind};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -412,26 +405,22 @@ mod tests {
         let patch = parse_settings_request(&serde_json::json!({"patch": {"twitch": {"channelLogin": "candidate"}, "launcher": {"items": [{"id": "new", "displayName": "name", "order": 0}]}}})).unwrap();
         let mut settings = AppSettings::default();
         let saved = std::cell::Cell::new(false);
-        assert!(
-            update_settings_transaction(
-                &mut settings,
-                |candidate| apply_patch(candidate, patch),
-                |_| {
-                    saved.set(true);
-                    Ok(())
-                }
-            )
-            .is_err()
-        );
+        assert!(update_settings_transaction(
+            &mut settings,
+            |candidate| apply_patch(candidate, patch),
+            |_| {
+                saved.set(true);
+                Ok(())
+            }
+        )
+        .is_err());
         assert_eq!(settings.twitch.channel_login, "");
         assert!(!saved.get());
         let huge = serde_json::json!({"patch": {"speech": {"blockedWords": ["x".repeat(super::MAX_SETTINGS_JSON_BYTES)]}}});
-        assert!(
-            parse_settings_request(&huge)
-                .unwrap_err()
-                .message
-                .contains("最大")
-        );
+        assert!(parse_settings_request(&huge)
+            .unwrap_err()
+            .message
+            .contains("最大"));
     }
 
     #[test]
@@ -588,12 +577,10 @@ mod tests {
                 .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"))
                 .collect();
             assert_eq!(quarantined.len(), if bad_backup { 2 } else { 1 });
-            assert!(
-                quarantined
-                    .iter()
-                    .all(|entry| entry.metadata().unwrap().len()
-                        == super::MAX_SETTINGS_JSON_BYTES as u64 + 1)
-            );
+            assert!(quarantined
+                .iter()
+                .all(|entry| entry.metadata().unwrap().len()
+                    == super::MAX_SETTINGS_JSON_BYTES as u64 + 1));
             cleanup(&path);
         }
     }
@@ -664,7 +651,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn settings_reject_symlinks_non_regular_files_and_foreign_owners() {
-        use std::os::unix::fs::{MetadataExt, symlink};
+        use std::os::unix::fs::{symlink, MetadataExt};
         let path = settings_path_for_test("unsafe-path");
         let outside = path.parent().unwrap().join("outside.json");
         fs::write(&outside, "private").unwrap();
@@ -904,24 +891,21 @@ mod tests {
         let loaded = SettingsStore::load_from_path(&path).expect("recover settings");
 
         assert_eq!(loaded.settings.twitch.channel_login, "backup_channel");
-        assert!(
-            loaded
-                .recovery_notice
-                .expect("recovery notice")
-                .message
-                .contains("バックアップから復旧")
-        );
-        assert!(
-            path.parent()
-                .expect("test directory")
-                .read_dir()
-                .expect("read directory")
-                .any(|entry| entry
-                    .expect("directory entry")
-                    .file_name()
-                    .to_string_lossy()
-                    .contains("settings.json.corrupt-"))
-        );
+        assert!(loaded
+            .recovery_notice
+            .expect("recovery notice")
+            .message
+            .contains("バックアップから復旧"));
+        assert!(path
+            .parent()
+            .expect("test directory")
+            .read_dir()
+            .expect("read directory")
+            .any(|entry| entry
+                .expect("directory entry")
+                .file_name()
+                .to_string_lossy()
+                .contains("settings.json.corrupt-")));
         cleanup(&path);
     }
 
@@ -934,13 +918,11 @@ mod tests {
         let loaded = SettingsStore::load_from_path(&path).expect("recover settings");
 
         assert_eq!(loaded.settings.twitch.channel_login, "");
-        assert!(
-            loaded
-                .recovery_notice
-                .expect("recovery notice")
-                .message
-                .contains("既定値")
-        );
+        assert!(loaded
+            .recovery_notice
+            .expect("recovery notice")
+            .message
+            .contains("既定値"));
         let quarantined_count = path
             .parent()
             .expect("test directory")

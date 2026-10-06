@@ -20,8 +20,8 @@ pub type SpeechFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output 
 use crate::app_events::SpeechQueueItemEvent;
 #[cfg(feature = "app")]
 use crate::app_events::{
-    AppEventState, AppLogLevel, SpeechStateSnapshot, emit_app_log, emit_speech_adapter_health,
-    emit_speech_queue_updated, emit_speech_status,
+    emit_app_log, emit_speech_adapter_health, emit_speech_queue_updated, emit_speech_status,
+    AppEventState, AppLogLevel, SpeechStateSnapshot,
 };
 #[cfg(feature = "app")]
 use crate::application::AppState;
@@ -1688,15 +1688,13 @@ mod tests {
         );
 
         for _ in 0..MAX_REPEAT_SUPPRESSION_ENTRIES / REPEAT_SUPPRESSION_CLEANUP_BATCH {
-            assert!(
-                suppress_repeated_message(
-                    &mut queue,
-                    &settings,
-                    &message,
-                    now + MAX_REPEAT_SUPPRESSION_WINDOW
-                )
-                .is_none()
-            );
+            assert!(suppress_repeated_message(
+                &mut queue,
+                &settings,
+                &message,
+                now + MAX_REPEAT_SUPPRESSION_WINDOW
+            )
+            .is_none());
         }
         assert!(queue.last_user_enqueue.is_empty());
         assert!(queue.repeat_suppression_expirations.is_empty());
@@ -1784,12 +1782,10 @@ mod tests {
 
         assert!(queue.pending.is_empty());
         assert_eq!(queue.history.len(), DEFAULT_QUEUE_LIMIT);
-        assert!(
-            queue
-                .history
-                .iter()
-                .all(|item| item.status == SpeechQueueItemStatus::Skipped)
-        );
+        assert!(queue
+            .history
+            .iter()
+            .all(|item| item.status == SpeechQueueItemStatus::Skipped));
         assert_eq!(queue.history[0].id, "item-199");
         assert_eq!(queue.history[DEFAULT_QUEUE_LIMIT - 1].id, "item-0");
     }
@@ -2410,13 +2406,10 @@ mod tests {
                 );
                 assert_eq!(queue.pending.front().unwrap().id, "sending");
             }
-            assert!(
-                !queue
-                    .history
-                    .iter()
-                    .any(|item| item.id == "sending"
-                        && item.status == SpeechQueueItemStatus::Skipped)
-            );
+            assert!(!queue
+                .history
+                .iter()
+                .any(|item| item.id == "sending" && item.status == SpeechQueueItemStatus::Skipped));
         }
     }
 
@@ -2434,12 +2427,10 @@ mod tests {
         queue.clear_pending();
         let snapshot = queue_event_snapshot(&queue, None);
         assert_eq!(snapshot.queued_count, 0);
-        assert!(
-            snapshot
-                .items
-                .iter()
-                .all(|item| item.status == SpeechQueueItemStatus::Skipped)
-        );
+        assert!(snapshot
+            .items
+            .iter()
+            .all(|item| item.status == SpeechQueueItemStatus::Skipped));
     }
 
     #[test]

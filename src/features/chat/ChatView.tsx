@@ -1,14 +1,14 @@
-import { getTwitchConnectionLabel } from "../../presentation/twitch";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { KeyRound } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { SpeechOutcomeDetails } from "../../components/SpeechOutcomeDetails";
-import { ChatLiveAnnouncementController } from "../../presentation/chatLiveAnnouncements";
 import { getChatMessagePresentation, getChatStatusPresentation } from "../../presentation/chat";
+import { ChatLiveAnnouncementController } from "../../presentation/chatLiveAnnouncements";
 import { getStartupGuideMessages, type StartupGuideMessage } from "../../presentation/startupGuide";
+import { getTwitchConnectionLabel } from "../../presentation/twitch";
 import { routeHeadingId } from "../../routeAccessibility";
-import type { AppState } from "../../stores/appStore";
+import type { AppState } from "../../stores/appState";
 import { formatLocalChatTime, utcNow } from "../../time";
 import type { ChatMessage, UserChatMessage } from "../../types";
 import { ChatBadges } from "./ChatBadges";

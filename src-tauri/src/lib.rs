@@ -12,12 +12,14 @@ mod speech;
 mod twitch;
 #[cfg(all(test, feature = "app"))]
 mod twitch_test_ports;
+#[cfg(test)]
+mod wire_contracts;
 
 #[cfg(feature = "app")]
 use app_events::{
-    AppEventState, AppLogLevel, TwitchAuthRequiredReason, TwitchStatus, TwitchStatusDomain,
     app_events_snapshot, emit_app_log, emit_speech_adapter_health, emit_twitch_auth_required,
-    emit_twitch_status,
+    emit_twitch_status, AppEventState, AppLogLevel, TwitchAuthRequiredReason, TwitchStatus,
+    TwitchStatusDomain,
 };
 #[cfg(feature = "app")]
 use application::AppState;
@@ -26,8 +28,8 @@ use launcher::commands::{launcher_add, launcher_launch, launcher_launch_all, lau
 use serde::Serialize;
 #[cfg(feature = "app")]
 use settings::{
-    AppSettings, SettingsStore, WindowPosition, settings_get, settings_take_recovery_notice,
-    settings_update,
+    settings_get, settings_take_recovery_notice, settings_update, AppSettings, SettingsStore,
+    WindowPosition,
 };
 #[cfg(feature = "app")]
 use speech::bouyomi::speech_connection_diagnostics;
@@ -72,6 +74,8 @@ fn app_open_external_url(url: String) -> Result<(), String> {
 
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 struct AppBuildInfo {
     version: &'static str,
     is_dev: bool,

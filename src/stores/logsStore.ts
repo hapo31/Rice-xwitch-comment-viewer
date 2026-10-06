@@ -1,7 +1,7 @@
 import type { AppLogEvent, AppNotification } from "../types";
 import { createExternalStore, type ExternalStore } from "./store";
 
-export type StoredAppLogEvent = AppLogEvent & { id: string };
+export type StoredAppLogEvent = AppLogEvent & { id: string; sourceEventId?: string };
 
 export interface LogsState {
   logs: StoredAppLogEvent[];
@@ -28,10 +28,18 @@ function notificationBucket(notification: AppNotification): keyof typeof notific
 export function logsReducer(state: LogsState, action: LogsAction): LogsState {
   switch (action.type) {
     case "log.added":
-      if (action.log.id && state.logs.some((log) => log.id === action.log.id)) return state;
+      if (action.log.id && state.logs.some((log) => log.sourceEventId === action.log.id))
+        return state;
       return {
         ...state,
-        logs: [{ ...action.log, id: uniqueLogId(action.log, state.logs) }, ...state.logs]
+        logs: [
+          {
+            ...action.log,
+            id: uniqueLogId(action.log, state.logs),
+            ...(action.log.id ? { sourceEventId: action.log.id } : {}),
+          },
+          ...state.logs,
+        ]
           .sort((a, b) => b.occurredAtMs - a.occurredAtMs)
           .slice(0, 500),
       };

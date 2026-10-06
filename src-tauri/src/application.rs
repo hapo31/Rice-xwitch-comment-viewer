@@ -1,9 +1,9 @@
-use crate::SharedSettings;
 use crate::settings::{AppSettings, SettingsRecoveryNotice};
 use crate::speech::SpeechQueueState;
 use crate::twitch::TwitchAuthState;
 #[cfg(feature = "app")]
 use crate::twitch::{TwitchAuthStore, TwitchConnectionHandle};
+use crate::SharedSettings;
 
 #[derive(Default)]
 pub struct AppState {

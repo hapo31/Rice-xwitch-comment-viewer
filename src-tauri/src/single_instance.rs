@@ -1,4 +1,4 @@
-use crate::app_events::{AppLogLevel, emit_app_log};
+use crate::app_events::{emit_app_log, AppLogLevel};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 

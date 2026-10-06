@@ -1,7 +1,7 @@
 use super::runtime::{SelectedSpeechAdapter, SpeechClock, SpeechDispatcher};
 use super::{
-    RETRY_DELAY, SpeechPlaybackCompletion, SpeechQueueFailureTransition, SpeechQueueState,
-    SpeechStatus,
+    SpeechPlaybackCompletion, SpeechQueueFailureTransition, SpeechQueueState, SpeechStatus,
+    RETRY_DELAY,
 };
 use crate::app_events::AppLogLevel;
 use crate::speech::SpeechAdapterHealth;

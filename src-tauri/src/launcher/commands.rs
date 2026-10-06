@@ -1,6 +1,6 @@
 //! IPC conversion and composition only. Use cases and log policy live elsewhere.
 use super::events::AppEventSink;
-use super::model::{LauncherAddResult, LauncherItem, LauncherLaunchResult, parse_add_request};
+use super::model::{parse_add_request, LauncherAddResult, LauncherItem, LauncherLaunchResult};
 use super::repository::AppSettingsRepository;
 use crate::application::AppState;
 use crate::settings::{AppSettings, SettingsStore};

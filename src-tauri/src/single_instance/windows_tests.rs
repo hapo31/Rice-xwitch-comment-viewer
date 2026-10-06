@@ -9,7 +9,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, IsIconic, PostMessageW, SW_MINIMIZE, ShowWindow, WM_CLOSE,
+    GetForegroundWindow, IsIconic, PostMessageW, ShowWindow, SW_MINIMIZE, WM_CLOSE,
 };
 
 const FIXTURE: &str = "single_instance::windows_tests::native_instance_fixture";

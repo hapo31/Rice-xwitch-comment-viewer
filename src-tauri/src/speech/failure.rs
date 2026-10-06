@@ -4,6 +4,7 @@ use super::{SpeechAdapterHealth, SpeechStatus};
 /// errors here; the scheduler never inspects protocol errors or display strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum FailureCode {
     Configuration,
     ConnectionRefused,

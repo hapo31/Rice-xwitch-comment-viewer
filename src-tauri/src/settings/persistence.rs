@@ -1,7 +1,7 @@
-use super::{AppSettings, validation};
+use super::{validation, AppSettings};
 use crate::launcher::validate_launcher_resources;
 use crate::resource_limits::{
-    MAX_SETTINGS_JSON_BYTES, SizeLimitExceeded, check_bytes, read_bounded, serialize_bounded,
+    check_bytes, read_bounded, serialize_bounded, SizeLimitExceeded, MAX_SETTINGS_JSON_BYTES,
 };
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -15,6 +15,11 @@ use super::schema;
 use super::writer;
 
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(feature = "app")]
+fn settings_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyhow::Result<PathBuf> {
+    Ok(app.path().app_data_dir()?.join("settings.json"))
+}
 
 pub struct SettingsStore;
 
@@ -418,7 +423,7 @@ fn atomic_replace(source: &Path, destination: &Path) -> io::Result<()> {
 fn atomic_replace(source: &Path, destination: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
-        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
     };
 
     let source = source

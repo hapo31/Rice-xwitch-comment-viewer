@@ -2,11 +2,11 @@
 //! Borrow raw fields and cap arrays before allocating values, not an 8MiB Value tree.
 use super::{AppSettings, SettingsPatch, WindowPosition};
 use crate::launcher::{
-    LauncherItem, LauncherItemKind, normalize_launcher_icon_data_url, validate_launcher_structure,
+    normalize_launcher_icon_data_url, validate_launcher_structure, LauncherItem, LauncherItemKind,
 };
 use serde::de::{DeserializeOwned, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserializer, Serialize};
-use serde_json::{Value, value::RawValue};
+use serde_json::{value::RawValue, Value};
 use std::fmt;
 
 pub(super) const CURRENT_VERSION: u64 = 1;

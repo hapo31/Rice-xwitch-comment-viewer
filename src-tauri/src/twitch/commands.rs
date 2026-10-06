@@ -1,6 +1,6 @@
 //! Stable Tauri adapters: service calls only, no HTTP or keyring implementation.
-use super::auth_service::TwitchAuthService;
 use super::auth_service::stored_auth_profile;
+use super::auth_service::TwitchAuthService;
 use super::auth_state::{
     TwitchAuthPollResult, TwitchAuthValidationResult, TwitchDeviceAuthStart, TwitchUserProfile,
 };

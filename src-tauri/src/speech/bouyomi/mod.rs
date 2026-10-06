@@ -6,7 +6,7 @@ use crate::speech::{SpeechAdapter, SpeechHealth, SpeechRequest, SpeechResult};
 
 mod error;
 use crate::speech::{SpeechFailure, SpeechFuture, SpeechPlaybackCompletion};
-pub(crate) use error::{BouyomiError, classify_error};
+pub(crate) use error::{classify_error, BouyomiError};
 use serde::Serialize;
 
 pub use crate::speech::endpoint::BouyomiAddress;
@@ -15,7 +15,7 @@ use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
-    time::{Instant, timeout},
+    time::{timeout, Instant},
 };
 
 pub type BouyomiDispatcher = crate::speech::runtime::SpeechDispatcher;
@@ -48,6 +48,8 @@ pub struct BouyomiTalkConfig {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct BouyomiConnectionDiagnostics {
     pub configured_addr: String,
     pub attempted: Vec<BouyomiConnectionAttempt>,
@@ -56,6 +58,8 @@ pub struct BouyomiConnectionDiagnostics {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct BouyomiConnectionAttempt {
     pub addr: String,
     pub status: BouyomiConnectionStatus,
@@ -65,6 +69,7 @@ pub struct BouyomiConnectionAttempt {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum BouyomiConnectionStatus {
     Connected,
     Failed,
@@ -684,7 +689,7 @@ mod tests {
     async fn shared_dispatcher_keeps_control_behind_an_in_flight_talk(
         command: BouyomiControlCommand,
     ) {
-        use crate::speech::{SpeechControl, runtime::SpeechRuntime};
+        use crate::speech::{runtime::SpeechRuntime, SpeechControl};
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let runtime = SpeechRuntime::default();
@@ -813,11 +818,9 @@ mod tests {
         });
 
         assert!(!talk.await.unwrap());
-        assert!(
-            timeout(Duration::from_millis(75), listener.accept())
-                .await
-                .is_err()
-        );
+        assert!(timeout(Duration::from_millis(75), listener.accept())
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -965,30 +968,22 @@ mod tests {
             for value in [0, 1] {
                 probe_fixture(Some(vec![value]), diagnose).await.unwrap();
             }
-            assert!(
-                probe_fixture(Some(vec![2]), diagnose)
-                    .await
-                    .unwrap_err()
-                    .contains("互換性")
-            );
-            assert!(
-                probe_fixture(Some(b"HTTP/1.1".to_vec()), diagnose)
-                    .await
-                    .unwrap_err()
-                    .contains("ポート競合")
-            );
-            assert!(
-                probe_fixture(Some(vec![]), diagnose)
-                    .await
-                    .unwrap_err()
-                    .contains("切断")
-            );
-            assert!(
-                probe_fixture(None, diagnose)
-                    .await
-                    .unwrap_err()
-                    .contains("タイムアウト")
-            );
+            assert!(probe_fixture(Some(vec![2]), diagnose)
+                .await
+                .unwrap_err()
+                .contains("互換性"));
+            assert!(probe_fixture(Some(b"HTTP/1.1".to_vec()), diagnose)
+                .await
+                .unwrap_err()
+                .contains("ポート競合"));
+            assert!(probe_fixture(Some(vec![]), diagnose)
+                .await
+                .unwrap_err()
+                .contains("切断"));
+            assert!(probe_fixture(None, diagnose)
+                .await
+                .unwrap_err()
+                .contains("タイムアウト"));
         }
     }
 
@@ -1055,11 +1050,9 @@ mod tests {
             stream.read_exact(&mut command).await.unwrap();
             assert_eq!(command, 0x120_i16.to_le_bytes());
             stream.write_all(&[5]).await.unwrap();
-            assert!(
-                timeout(Duration::from_millis(50), listener.accept())
-                    .await
-                    .is_err()
-            );
+            assert!(timeout(Duration::from_millis(50), listener.accept())
+                .await
+                .is_err());
         });
         assert!(adapter.health_check(true, "test").await.is_err());
         server.await.unwrap();

@@ -10,15 +10,15 @@ use super::error::SubscriptionRequestError;
 use super::eventsub::{EventSubRuntime, EventSubSocket};
 use super::model::ChatMessage;
 use super::oauth::{
-    DeviceOAuthTransport, OAuthTransport, PollAuthError, TwitchOAuthHttp, fetch_twitch_user,
+    fetch_twitch_user, DeviceOAuthTransport, OAuthTransport, PollAuthError, TwitchOAuthHttp,
 };
 use super::subscription::{
-    SubscriptionRuntime, create_chat_message_subscription, send_chat_message_subscription,
+    create_chat_message_subscription, send_chat_message_subscription, SubscriptionRuntime,
 };
 use crate::app_events::{
-    AppLogLevel, TwitchActiveConnection, TwitchAuthRequiredReason, TwitchStatus,
-    TwitchStatusDomain, emit_app_log, emit_twitch_auth_required, emit_twitch_chat_message,
-    emit_twitch_chat_status, emit_twitch_status,
+    emit_app_log, emit_twitch_auth_required, emit_twitch_chat_message, emit_twitch_chat_status,
+    emit_twitch_status, AppLogLevel, TwitchActiveConnection, TwitchAuthRequiredReason,
+    TwitchStatus, TwitchStatusDomain,
 };
 use crate::application::AppState;
 use crate::settings::default_twitch_client_id;

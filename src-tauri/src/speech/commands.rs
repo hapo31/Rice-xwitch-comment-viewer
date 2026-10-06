@@ -1,7 +1,7 @@
 use super::{SpeechControl, SpeechFailure, SpeechHealth, SpeechRequest};
 use crate::app_events::{
-    AppLogLevel, SpeechAdapterHealth, SpeechStatus, emit_app_log, emit_speech_adapter_health,
-    emit_speech_status,
+    emit_app_log, emit_speech_adapter_health, emit_speech_status, AppLogLevel, SpeechAdapterHealth,
+    SpeechStatus,
 };
 use crate::application::AppState;
 

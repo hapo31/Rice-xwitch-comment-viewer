@@ -1,7 +1,7 @@
 //! Every Bouyomi TCP connection passes this backend-only privacy boundary.
 //! Approval is process-local, bound to the exact endpoint and resolved addresses.
-use super::SpeechFuture;
 use super::bouyomi::BouyomiAddress;
+use super::SpeechFuture;
 use crate::settings::validation::ValidationError;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
