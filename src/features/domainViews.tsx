@@ -1,18 +1,4 @@
 import { useMemo } from "react";
-import { AuthView } from "./auth/AuthView";
-import { ChatView } from "./chat/ChatView";
-import { FilterView } from "./filter/FilterView";
-import { LauncherView } from "./launcher/LauncherView";
-import { LogsView } from "./logs/LogsView";
-import { QueueView } from "./queue/QueueView";
-import { SettingsView } from "./settings/SettingsView";
-import {
-  useChatSelector,
-  useConnectionSelector,
-  useLogsSelector,
-  useQueueSelector,
-  useSettingsSelector,
-} from "../stores/domainStores";
 import {
   useAuthController,
   useLauncherController,
@@ -20,6 +6,21 @@ import {
   useSettingsController,
   useSpeechController,
 } from "../orchestration/domainControllerContext";
+import {
+  useChatSelector,
+  useConnectionSelector,
+  useLogsSelector,
+  useQueueSelector,
+  useSettingsSelector,
+} from "../stores/domainStores";
+import { AuthView } from "./auth/AuthView";
+import { ChatView } from "./chat/ChatView";
+import { FilterView } from "./filter/FilterView";
+import { LauncherView } from "./launcher/LauncherView";
+import { LogsView } from "./logs/LogsView";
+import { QueueView } from "./queue/QueueView";
+import { SettingsInitializationView } from "./settings/SettingsInitializationView";
+import { SettingsView } from "./settings/SettingsView";
 
 export function DomainChatView({ showStartupGuide }: { showStartupGuide: boolean }) {
   const messages = useChatSelector((state) => state.messages);
@@ -88,14 +89,30 @@ export function DomainLauncherView() {
 }
 
 export function DomainFilterView() {
-  const { updateSettings } = useSettingsController();
-  const settings = useSettingsSelector((state) => state.settings);
+  const { updateSettings, reloadSettings } = useSettingsController();
+  const { settings, initialization } = useSettingsSelector((state) => state);
+  if (initialization.status !== "ready")
+    return (
+      <SettingsInitializationView
+        title="Filter"
+        initialization={initialization}
+        onRetry={reloadSettings}
+      />
+    );
   return <FilterView settings={settings} onSettingsUpdate={updateSettings} />;
 }
 
 export function DomainSettingsView() {
   const actions = useSettingsController();
-  const settings = useSettingsSelector((state) => state.settings);
+  const { settings, initialization } = useSettingsSelector((state) => state);
+  if (initialization.status !== "ready")
+    return (
+      <SettingsInitializationView
+        title="Settings"
+        initialization={initialization}
+        onRetry={actions.reloadSettings}
+      />
+    );
   return (
     <SettingsView
       settings={settings}

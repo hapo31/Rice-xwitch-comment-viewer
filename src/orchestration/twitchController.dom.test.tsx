@@ -301,7 +301,6 @@ describe("Twitch controller auth-operation lifecycle", () => {
     });
 
     expect(stores.chat.getState().messages).toEqual(chatBeforeUnmount);
-    expect(stores.chat.getState().messages).toHaveLength(0);
     expect(stores.logs.getState().logs).toEqual([]);
   });
 });

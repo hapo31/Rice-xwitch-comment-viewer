@@ -29,12 +29,9 @@ import {
   createSpeechController,
 } from "./orchestration/domainCommandControllers";
 import { DomainControllerActionsProvider } from "./orchestration/domainControllerContext";
-import {
-  createSettingsMutationOrchestrator,
-  dispatchDomainAction,
-  subscribeDomainEvents,
-} from "./orchestration/domainOrchestration";
+import { dispatchDomainAction, subscribeDomainEvents } from "./orchestration/domainOrchestration";
 import { ExitProtectionProvider, useExitController } from "./orchestration/ExitProtectionProvider";
+import { createSettingsController } from "./orchestration/settingsController";
 import { startSpeechHealthMonitor } from "./orchestration/speechHealthMonitor";
 import { createTwitchController } from "./orchestration/twitchController";
 import { type ErrorOperation, presentError, reportPresentedError } from "./presentation/errors";
@@ -73,7 +70,6 @@ import { subscribeWithCleanup } from "./tauri/subscriptions";
 import { utcNow } from "./time";
 import type {
   AppNotification,
-  AppSettings,
   AppSettingsPatch,
   NotificationSeverity,
   NotificationSource,
@@ -102,16 +98,36 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const autoConnectAttempted = useRef(false);
   const settingsMutation = useRef(
-    createSettingsMutationOrchestrator({
+    createSettingsController({
       updateSettings,
-      onSettingsLoaded: (nextSettings) => {
-        settingsSnapshot.current = nextSettings;
-        dispatch({ type: "settings.loaded", settings: nextSettings });
+      loadSettings: getSettings,
+      takeRecoveryNotice: takeSettingsRecoveryNotice,
+      initialGeneration: stores.settings.getState().initialization.generation,
+      getSettingsRevision: () => stores.settings.getState().revision,
+      onSettingsLoaded: (nextSettings) =>
+        dispatch({ type: "settings.loaded", settings: nextSettings }),
+      onInitializationChanged: (initialization) => {
+        stores.settings.dispatch({ type: "initialization.changed", initialization });
+        addSystemChatMessage(
+          initialization.status === "loading"
+            ? "設定を読み込んでいます。"
+            : initialization.status === "ready"
+              ? "設定を読み込みました。"
+              : initialization.message,
+        );
       },
+      onRecoveryNotice: (notice) => {
+        addSystemChatMessage(notice.message);
+        dispatch({
+          type: "log.added",
+          log: { level: "warning", message: notice.message, occurredAtMs: Date.now() },
+        });
+        reportNotification("warning", "system", notice.message);
+      },
+      loadErrorMessage: (error) => presentError(error, "settings").message,
       onError: (error) => reportError(error, "settings"),
     }),
   );
-  const settingsSnapshot = useRef<AppSettings | undefined>(undefined);
   const startupAuthAttempted = useRef(false);
   const authOperations = useRef(new AuthOperationController());
   const systemTimelineRouter = useRef(new SystemTimelineRouter());
@@ -119,24 +135,9 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
   useEffect(() => () => authOperations.current.invalidate(), []);
 
   useEffect(() => {
-    Promise.all([getSettings(), takeSettingsRecoveryNotice()])
-      .then(([settings, recoveryNotice]) => {
-        settingsSnapshot.current = settings;
-        dispatch({ type: "settings.loaded", settings });
-        if (recoveryNotice) {
-          addSystemChatMessage(recoveryNotice.message);
-          dispatch({
-            type: "log.added",
-            log: {
-              level: "warning",
-              message: recoveryNotice.message,
-              occurredAtMs: Date.now(),
-            },
-          });
-          reportNotification("warning", "system", recoveryNotice.message);
-        }
-      })
-      .catch((error) => reportError(error, "settings"));
+    settingsMutation.current.activate();
+    void settingsMutation.current.load();
+    return () => settingsMutation.current.invalidate();
   }, []);
 
   useEffect(() => {
@@ -219,9 +220,7 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
         getAuthStatus: () => stores.connection.getState().twitchAuthStatus,
         getAuthRevision: () => stores.connection.getState().authRevision,
         getAuthProfile: () => stores.connection.getState().twitchProfile,
-        getChannelLogin: () =>
-          settingsSnapshot.current?.twitch.channelLogin ??
-          stores.settings.getState().settings?.twitch.channelLogin,
+        getChannelLogin: () => stores.settings.getState().settings?.twitch.channelLogin,
         getConfirmBeforeStopChat: () =>
           stores.settings.getState().settings?.twitch.confirmBeforeStopChat ?? true,
         waitForSettings: () => settingsMutation.current.waitForIdle(),
@@ -329,6 +328,7 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
   const handleSpeechDiagnostics = commandControllers.speech.diagnostics;
 
   function handleSettingsUpdate(patch: AppSettingsPatch): Promise<boolean> {
+    if (stores.settings.getState().initialization.status !== "ready") return Promise.resolve(false);
     return settingsMutation.current.mutate(patch);
   }
 
@@ -373,6 +373,9 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
       <DomainControllerActionsProvider
         actions={{
           updateSettings: handleSettingsUpdate,
+          reloadSettings: () => {
+            void settingsMutation.current.load();
+          },
           speechHealthCheck: handleSpeechHealthCheck,
           speechDiagnostics: handleSpeechDiagnostics,
           speechTest: handleSpeechTest,
