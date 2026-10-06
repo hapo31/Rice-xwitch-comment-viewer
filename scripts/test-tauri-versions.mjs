@@ -101,3 +101,11 @@ test("rejects a stale installed plugin even when both locked minors agree", t =>
   }
   assert.throws(() => verifyTauriVersions(fixture, { installed: true }), /Installed Tauri package.*plugin-dialog/);
 });
+
+for (const suffix of ["-unreviewed", "garbage"]) test(`rejects malformed plugin lock suffix ${suffix}`, t => {
+  const fixture = pluginFixture(t);
+  const path = join(fixture, "pnpm-lock.yaml");
+  const source = readFileSync(path, "utf8");
+  writeFileSync(path, source.replace(/('@tauri-apps\/plugin-dialog':\n    specifier: [^\n]+\n    version: )(\d+\.\d+\.\d+)/, (_, prefix, version) => `${prefix}${version}${suffix}`));
+  assert.throws(() => verifyTauriVersions(fixture), /Missing locked JS Tauri plugin/);
+});

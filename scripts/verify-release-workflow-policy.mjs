@@ -19,10 +19,6 @@ function runText(steps) {
   return steps.map((step) => step?.run).filter((run) => typeof run === "string").join("\n");
 }
 
-function requirePermissionMap(permissions, label) {
-  requirePolicy(permissions && typeof permissions === "object" && !Array.isArray(permissions), `${label} permissions must be an explicit map`);
-}
-
 function requireExactMap(actual, expected, message) {
   requirePolicy(actual && typeof actual === "object" && !Array.isArray(actual), message);
   const actualKeys = Object.keys(actual).sort();

@@ -43,7 +43,7 @@ test("TOML comments and single quotes preserve only the reviewed Cargo ignores",
   mkdirSync(join(root, ".cargo"), { recursive: true });
   mkdirSync(join(root, "security"), { recursive: true });
   writeFileSync(join(root, "security/advisory-exceptions.json"), readFileSync(new URL("../security/advisory-exceptions.json", import.meta.url)));
-  writeFileSync(join(root, ".cargo/audit.toml"), "# reviewed allowlist\n[advisories]\nignore = ['RUSTSEC-2024-0370', 'RUSTSEC-2024-0429']\n");
+  writeFileSync(join(root, ".cargo/audit.toml"), "# RUSTSEC-2026-9999 is not an ignored advisory\n[advisories]\nignore = ['RUSTSEC-2024-0370', 'RUSTSEC-2024-0429']\n");
   assert.equal(readExceptions(root).size, 2);
   writeFileSync(join(root, ".cargo/audit.toml"), "[advisories]\nignore = ['RUSTSEC-2024-0370', 'RUSTSEC-2024-0429', 'RUSTSEC-2026-9999']\n");
   assert.throws(() => readExceptions(root), /Unreviewed cargo-audit ignore/);

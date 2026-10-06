@@ -32,7 +32,7 @@ export function verifyTauriVersions(root, { installed = false } = {}) {
       if (crates.length !== 1) throw new Error(`Expected exactly one locked Tauri plugin: ${rustName}`);
       const rustVersion = crates[0].version;
       const lockedPlugin = npmLock.dependencies[name] ?? npmLock.devDependencies[name];
-      const jsVersion = lockedPlugin?.version?.match(/^(\d+\.\d+\.\d+)/)?.[1];
+      const jsVersion = typeof lockedPlugin?.version === "string" ? lockedPlugin.version.match(/^(\d+\.\d+\.\d+)(?:\([^\n]*\))?$/)?.[1] : undefined;
       if (!jsVersion) throw new Error(`Missing locked JS Tauri plugin: ${name}`);
       if (minor(jsVersion) !== minor(rustVersion)) throw new Error(`Tauri Rust/JS major-minor mismatch: ${name}`);
       if (installed) {
