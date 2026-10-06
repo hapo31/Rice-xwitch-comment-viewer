@@ -703,4 +703,6 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #223: immutableなstore snapshotとselectorをReact公式helperへ別々に渡し、Object.is既定と任意比較関数を全domain hookで使えるようにした。通常/StrictModeの派生object・array、selector変更、store変更と購読解除、同一storeの無関係更新、Provider隔離と1eventあたりの通知/描画をDOM6件で回帰化した。frontend全462件（78 files）、build/typecheck、format、lint、diff検査成功。production JS gzip増加0.28 kB。Jotaiへの全domain移行と比べ、既存reducer・generation/revision・replayを保持する小さな境界変更を選んだ。最終headのCI・マージはPR #268で確認する。Windows実アプリの手動描画確認は未実施。
 
-- [ ] Issue #232: Twitch transportがreqwest Clientを共有し、timeout/TLSと要求ごとの認証header、pool再利用・期限・credential切替・失敗分類を検証する。service/fake transportと認証更新順序を維持する。
+- [x] Issue #232: Twitch transportがreqwest Clientを共有し、timeout/TLSと要求ごとの認証header、pool再利用・期限・credential切替・失敗分類を検証する。service/fake transportと認証更新順序を維持する。
+
+2026-10-06 Issue #232: TwitchHttpをapp setupで一度構築し、runtime cloneを通じ全OAuth・Helix・EventSub HTTP要求にpoolを共有する。ローカルHTTP fixtureで7要求/cloneのTCP接続1本、全6操作の期限、token/client切替、poll・認証・購読失敗分類を追加。実装head 2f67990の全16 CI（Rust all-feature/no-default・strict Clippy・Windows・frontend）とfrontend build/fmt/diff検査成功。ローカルの重複再buildはCI成功後に停止した。実Twitchログインは未実施。
