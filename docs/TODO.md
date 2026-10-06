@@ -1,5 +1,19 @@
 # 実装 TODO
 
+- [x] Issue #206: Twitch の validate と EventSub refresh を共通の credential service/revision で管理する。成功・失敗・scope 不足・永続化結果を同一 credential revision と照合し、別generation/client/userの再ログインと古い購読が交差しても新しい認証を流用・解除しない。同一auth session内のrefresh token rotationは安全に再購読し、deferred fake transportで各競合順序を回帰化する。
+
+2026-10-06 実装進捗: 共通 credential revision と credential-update lock を導入し、validate と EventSub の refresh・scope 判定・rotation・保存を共通 helper へ集約した。古い success/error/revocation/scope failure と遅延 save/clear は generation・revision・token identity が一致する場合だけ適用する。deferred fake で validate 対 EventSub refresh、refresh 対 refresh、revision 変更後の invalid_grant・遅延成功、同一 generation 内の古い保存、保存中の revision 変更を固定した。architecture と Twitch ingestion の設計メモも更新した。`cargo fmt --check`・`git diff --check` は成功し、公式 Debian DBus package を `/tmp` の sysroot に置いた環境で `cargo test --lib twitch:: --no-default-features` は20件成功した。no-default featureでは `service_tests` が有効にならないため、deferred regressionの実行結果はCIで確認する。no-default clippy は既存のno-app dead-code warningsを許容して完了したが、strict clippy とGitHub CIは未確認。
+
+2026-10-06 レビュー修正: 送信した subscription token と失敗時に照合する EventSubAuthCredentials をrefresh関数の同じ返却値から記録し、待機中に認証が変わった古い401/403は credential clear/AuthRequired ではなく retryable として扱う。deferred subscription fake で送信後に認証をrotationしてから401が戻る順序を追加し、最新のメモリ/保存credential保持とterminal auth errorなしを検証する。logout は共有更新lockを待つ前にgeneration/revisionを無効化し、遅延 validate と logout の順序を回帰化した。test-onlyでしか使われない保存/clear helper wrapperを削除し、本番未使用のprivate itemを残さない。環境DNS制限でgit fetchは失敗したためGitHub REST compareを使用。現在の `main` (`98bfd81`) は `d966846` から45 commit進み、frontend、Auth controller、Settings、timeline、docsのみの変更で、Twitch Rust factory/serviceの追加差分はない。#205 の status presentation factory も frontend側の変更で認証serviceと競合しない。他Issue branchは取り込んでいない。Rust 1.90 app feature Twitch service tests 83件と `cargo clippy --all-targets --features app -- -D warnings` が成功した。
+
+2026-10-06 第2レビュー対応: 同一auth generation内のtoken rotationと別Login sessionを区別する。EventSub接続paramsに認証generation/client/user identityを固定し、古い接続の遅延401やrefresh完了が新しいログイン資格情報で再購読しないようにする。stale refresh応答もgeneration/client/userが一致する場合だけ最新rotationを採用し、別sessionならobsolete接続として静かに終了する。遅延401中の再ログイン、古いrefresh応答中の再ログイン、再接続開始時の旧paramsを実購読経路のdeferred fakeで検証する。最新 origin/main `6916a44` を通常workspaceのfetch済みobjectから専用cloneのorigin/mainへfetchし、mergeした。#208 のterminal supervisor / AppEventState snapshot回帰と既存factory呼び出しも統合し、auth generation保護との競合がないことをレビューした。統合後のRust 1.90 app-feature Twitch tests 88件とstrict all-target clippyが成功した。
+
+2026-10-06 第3レビュー・最新main統合: refresh後に返したaccess tokenと、その送信失敗を照合するcredential snapshotが一対であることを確認する。deferred実購読テストで初回401待機中の別Login、refresh/validate応答中の別Login、同一auth session内のtoken rotationを区別し、古いgenerationの処理が最新tokenで旧user/client条件を送信せず、新しい認証をclear/AuthRequiredにしないことを検証した。StaleCredentialResponse経路もgeneration/client/userを一致させてから最新tokenを採用する。最新 `origin/main` `0d72925`（#194 Settings/Filterのfrontend・依存変更のみ）を専用branchへ統合し、Rust 1.90 app-feature Twitch tests 88件、strict all-target app Clippy、fmt check、diff checkが成功した。
+
+2026-10-06 追加レビュー対応: auth generation変更により subscription が ObsoleteConnection で終了しても Chat generation が同じ場合、supervisorがConnecting等のsnapshotを残したまま taskを終了する問題を修正した。ObsoleteConnection終了時はparamsのChat generationにDisconnectedを記録するため、同じChat generationのみ終了状態になり、AppEventStateがより新しいChat generationのsnapshotを保護する。production AppEventState recorderを使ったsupervisor回帰で、現行Chat generationと新しいChat generationの双方を確認した。reviewed `origin/main` `1743979` のwire contract generationと `ffc391a` の認証復元型付けを統合し、`d0c58b9` のshared chat delivery境界も保持した。`bindings/wire.ts` と `src-tauri/src/wire_contracts.rs` はmainと完全一致し、wire contract generation回帰が成功した。Rust 1.90 app-feature Twitch tests 95件とstrict all-target app Clippyも成功した。#212はmain統合済み、#207の生成境界も含む親レビューを待つ。
+
+2026-10-06 着手計画: auth_service.rs と subscription.rs の認証更新/失効経路、および auth_state.rs・auth_store.rs の generation と永続化境界を調査する。revision を含む共通 service に refresh/validate/rotation/clear/save の判定を集約し、validate 対 EventSub、refresh 対 refresh、scope 不足、遅延保存を deferred fake で検証する。Rust の Twitch 関連回帰、fmt、clippy を実行し、設計文書と実装の整合を確認する。
+
 - [x] Issue #195: AppShellの認証・接続・speech・Launcher・終了保護をcontroller/providerへ分離し、各画面がdomain selector/actionを直接利用する。巨大な旧AppStateの再構成とMainView経由のcallback転送をなくし、無関係な画面の再renderを計測回帰で保証する。認証の遷移は既存のgeneration/poll排他と手動優先を保ち、XState invoke/delayと小さなreducerを比較して判断する。
 
 - [x] Issue #44: Twitchのmodel/error、認証service/store/OAuth、EventSub transport/state/subscription/dedupe/正規化を責務別moduleへ分割する。Tauri commandを薄いadapterにし、型付き状態制御、command/event payload、generationによる競合制御を維持する。fake transport/storeと明示clockを使う既存・追加回帰を分割後の本番経路へ適用し、両OS/feature matrix/native CIで確認する。
@@ -92,6 +106,16 @@
 ## 現在の進捗サマリ
 
 - [ ] Issue #211: speech の queue・formatter/URL・commands・runtime/event mapper を責務別 module へ分離し、明示 import と最小公開境界に整理する。既存回帰と no-default/DTO 契約を維持し、URL 検出 crate の比較と互換処理の範囲を記録する。
+
+- [x] Issue #215: live 通知を ID・severity・correlation を持つ未通知 queue として扱い、command error・同文の別発生・同時障害の欠落を防ぐ。状態/event/log の同一障害は重複を抑え、実 DOM の配送・クリア・再通知を検証する。
+
+2026-10-06 Issue #215: warning/error を ID・severity・correlation と明示の状態 context で受ける配送 queue に変更した。alert を優先し、同優先度は発生順に読み、同文の別IDには安定した live region の空更新を挟む。状態 summary とその event/log/command は同じ原因をまとめ、同時に起きた別障害や状態が変わらない別IDを残す。明示 clear と unmount では残る通知/timer を片付け、古い既存通知が次の障害を消費しない。frontend 全423件と追加の同一状態・別障害・長時間保持回帰14件、typecheck/format/lint/build が成功。最新 main 統合後の最終検証・CI は PR #258 に記録する。実スクリーンリーダーの発話確認は未実施。
+
+2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、subscription token identity/logout orderingと別Login generationの隔離を回帰化した。EventSubConnectionParamsは接続generationと認証generation/client/user identityを区別して保持し、旧接続をobsoleteとして再試行せず終了する。追加レビューで、auth generationのみ変更された際に現行Chat generationのsnapshotがConnectingのまま残る問題を修正し、AppEventState recorderで同一Chat generationはDisconnectedに、新しいChat generationは維持されることを回帰化した。reviewed main `d0c58b9` までのwire contract、認証復元型付け、共通chat delivery変更を統合した。Rust fmt / diff check、app-feature Twitch tests 95件、strict all-target app Clippy、generated wire contract test 1件が成功した。親レビューで obsolete 終端 snapshot と新世代保護を確認した。実装 head 9fcbab0 の全16 CI が成功し、#214 の reviewed main c58904d を統合した。最終 head の CI と統合結果は PR #243 に記録する。
+
+- [x] Issue #214: コメントの受信と読み上げ受付を区別し、自動読み上げ OFF の対象外結果を backend の型付き outcome として通知・保持する。ON/OFF 切替、event の前後順、snapshot 復元を契約テストで確認する。
+
+2026-10-06 Issue #214: backend の OFF 早期 return を理由付き skipped history の保存・通知に変更し、frontend の初期表示を received とした。message/queue の到着順、snapshot、現在の設定が受信時と逆の場合を実 AppShell で検証し、関連48件・frontend全420件が成功した。設定 snapshot の ON/OFF 判定、非 enqueue と履歴200件上限を含む no-default Rust 読み上げ107件、Rust由来の wire 型生成、typecheck/format/lint/build が成功した。PR #257 で app feature と最終 head の CI・統合結果を記録する。
 
 2026-10-06: Issue #207 で EventSub 正規化時に ChatMessage へ接続 generation を付け、同じ値のまま UI と speech へ渡す。親レビュー対応で generation 検証と両sink配送を共有 `dispatch_chat_message` に集約し、本番 runtime と fake が同じ境界を使用する。回帰は同一 channel の世代交換、旧世代の遅延通知、停止後の通知、別 channel、UI/speech 両sinkの同一内容と順序を確認する。main `2802a4a`、`98bfd81`、`6bdb52c`、`6916a44`、`0d72925`、`493c57f` を統合。#203 の `7e880c4` と #213 の変更は frontend と docs に限られ、今回の Rust 本番処理との重複がないことを確認した。Tauri非依存 boundary test、strict app-feature Clippy、frontend 414件、format/lint/typecheck/build が成功。親レビューで本番/fake 共通配送と generation 保持、strict Clippy 指摘の修正を確認した。最終 app-feature runtime 回帰、exact-head CI と統合結果は PR #248 に記録する。no-default strict Clippy は既存 dead_code 警告群で失敗するが、警告抑制なしの通常 no-default Clippy と対象 unit test は成功した。実 Twitch 環境の手動確認は未実施。
 
