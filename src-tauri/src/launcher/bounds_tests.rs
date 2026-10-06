@@ -272,6 +272,19 @@ fn validated_icon_clones_and_quota_validation_do_not_decode_png_again() {
     let cloned = items.clone();
     validate_launcher_resources(&cloned).unwrap();
     serde_json::to_vec(&cloned).unwrap();
+    let edits = cloned
+        .iter()
+        .map(|item| LauncherItemEdit {
+            id: item.id.clone(),
+            display_name: "renamed".into(),
+            background_color: item.background_color.clone(),
+            group_id: item.group_id.clone(),
+            order: item.order,
+        })
+        .collect();
+    let renamed = apply_launcher_edits(&cloned, edits).unwrap();
+    assert_eq!(renamed.len(), MAX_LAUNCHER_ITEMS);
+    assert!(renamed.iter().all(|item| item.display_name == "renamed"));
 
     assert_eq!(icon_png_decode_count(), MAX_LAUNCHER_ITEMS);
 }

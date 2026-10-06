@@ -18,7 +18,7 @@ export type ChatMessage = { id: string, platform: Platform, channelId: string, c
 export type FailureCode = "configuration" | "connectionRefused" | "connectTimeout" | "connectFailed" | "connectionLost" | "permissionDenied" | "writeTimeout" | "writeFailed" | "responseTimeout" | "responseFailed" | "protocolMismatch" | "unknown";
 export type LauncherAddResult = { items: Array<LauncherItem>, addedCount: number, };
 export type LauncherCapabilities = { canRegisterApplications: boolean, canLaunchApplications: boolean, reason?: string, };
-export type LauncherItem = { id: string, kind: LauncherItemKind, target: string, displayName: string, iconDataUrl?: ValidatedLauncherIconDataUrl, backgroundColor?: string, groupId?: string, order: number, };
+export type LauncherItem = { id: string, kind: LauncherItemKind, target: string, displayName: string, iconDataUrl?: string, backgroundColor?: string, groupId?: string, order: number, };
 export type LauncherItemKind = "application" | "website";
 export type LauncherLaunchFailure = { itemId: string, displayName: string, message: string, };
 export type LauncherLaunchResult = {
@@ -73,7 +73,6 @@ export type TwitchStatusDomain = "auth" | "chat";
 export type TwitchStatusEvent = { revision: number, domain: TwitchStatusDomain, status: TwitchStatus, reason?: TwitchAuthRequiredReason, connectionGeneration?: number, activeConnection?: TwitchActiveConnection, message?: string, occurredAtMs: number, };
 export type TwitchUserProfile = { userId: string, login: string, scopes: Array<string>, expiresIn: number, };
 export type UrlHandling = "replace" | "read" | "block";
-export type ValidatedLauncherIconDataUrl = string;
 export type WindowPosition = { x: number, y: number, };
 export type WindowSettings = { position?: WindowPosition, };
 
@@ -127,7 +126,6 @@ export type WireContracts = {
   TwitchStatusEvent: TwitchStatusEvent;
   TwitchUserProfile: TwitchUserProfile;
   UrlHandling: UrlHandling;
-  ValidatedLauncherIconDataUrl: ValidatedLauncherIconDataUrl;
   WindowPosition: WindowPosition;
   WindowSettings: WindowSettings;
 };

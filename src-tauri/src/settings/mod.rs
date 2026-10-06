@@ -796,6 +796,16 @@ pub(crate) fn update_shared_settings_transaction<E: From<String>>(
     update: impl FnOnce(&mut AppSettings) -> Result<(), E>,
     save: impl FnOnce(&AppSettings) -> Result<(), E>,
 ) -> Result<(AppSettings, AppSettings), E> {
+    update_shared_settings_transaction_with_publish(settings, transaction, update, save, |_, _| {})
+}
+
+fn update_shared_settings_transaction_with_publish<E: From<String>>(
+    settings: &SharedSettings<AppSettings>,
+    transaction: &SharedSettings<()>,
+    update: impl FnOnce(&mut AppSettings) -> Result<(), E>,
+    save: impl FnOnce(&AppSettings) -> Result<(), E>,
+    before_publish: impl FnOnce(&AppSettings, &AppSettings),
+) -> Result<(AppSettings, AppSettings), E> {
     let _transaction = transaction
         .lock()
         .map_err(|error| E::from(error.to_string()))?;
@@ -806,9 +816,12 @@ pub(crate) fn update_shared_settings_transaction<E: From<String>>(
     let mut candidate = previous.clone();
     apply_settings_candidate(&mut candidate, update)?;
     save(&candidate)?;
-    *settings
+    let mut published = settings
         .lock()
-        .map_err(|error| E::from(error.to_string()))? = candidate.clone();
+        .map_err(|error| E::from(error.to_string()))?;
+    // Endpoint consent invalidation must be atomic with publishing new settings.
+    before_publish(&previous, &candidate);
+    *published = candidate.clone();
     Ok((previous, candidate))
 }
 
@@ -841,7 +854,7 @@ pub fn settings_update(
 ) -> Result<AppSettings, validation::ValidationError> {
     let patch = parse_settings_request(crate::resource_limits::request_json(&request)?)?;
     validation::validate_patch(&patch)?;
-    let (previous, settings) = update_shared_settings_transaction(
+    let (_, settings) = update_shared_settings_transaction_with_publish(
         &state.settings,
         &state.settings_transaction,
         |candidate| {
@@ -864,18 +877,20 @@ pub fn settings_update(
                 )
             })
         },
+        |previous, candidate| {
+            if (
+                previous.speech.bouyomi_host.as_str(),
+                previous.speech.bouyomi_port,
+                previous.speech.bouyomi_remote_mode,
+            ) != (
+                candidate.speech.bouyomi_host.as_str(),
+                candidate.speech.bouyomi_port,
+                candidate.speech.bouyomi_remote_mode,
+            ) {
+                state.speech_runtime.destination_policy().revoke();
+            }
+        },
     )?;
-    if (
-        previous.speech.bouyomi_host,
-        previous.speech.bouyomi_port,
-        previous.speech.bouyomi_remote_mode,
-    ) != (
-        settings.speech.bouyomi_host.clone(),
-        settings.speech.bouyomi_port,
-        settings.speech.bouyomi_remote_mode,
-    ) {
-        state.speech_runtime.destination_policy().revoke();
-    }
     emit_app_log(&app, AppLogLevel::Info, "設定を保存しました。");
     Ok(settings)
 }
@@ -1149,6 +1164,37 @@ mod tests {
         let settings = settings.lock().unwrap();
         assert_eq!(settings.twitch.channel_login, "first");
         assert_eq!(settings.speech.bouyomi_port, 50_002);
+    }
+
+    #[test]
+    fn publication_side_effect_runs_under_the_settings_lock_before_new_state_is_visible() {
+        let settings = std::sync::Mutex::new(AppSettings::default());
+        let transaction = std::sync::Mutex::new(());
+        let revoked = std::cell::Cell::new(false);
+        super::update_shared_settings_transaction_with_publish(
+            &settings,
+            &transaction,
+            |candidate| {
+                candidate.speech.bouyomi_port = 50002;
+                Ok::<(), String>(())
+            },
+            |_| {
+                assert!(!revoked.get());
+                Ok::<(), String>(())
+            },
+            |previous, candidate| {
+                assert_eq!(previous.speech.bouyomi_port, 50001);
+                assert_eq!(candidate.speech.bouyomi_port, 50002);
+                assert!(matches!(
+                    settings.try_lock(),
+                    Err(std::sync::TryLockError::WouldBlock)
+                ));
+                revoked.set(true);
+            },
+        )
+        .unwrap();
+        assert!(revoked.get());
+        assert_eq!(settings.lock().unwrap().speech.bouyomi_port, 50002);
     }
 
     #[test]

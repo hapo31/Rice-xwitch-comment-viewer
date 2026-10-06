@@ -64,8 +64,7 @@ pub(super) const MAX_PNG_DECODER_BYTES: usize = 1024 * 1024;
 /// PNG data that passed the complete, bounded decoder at an untrusted input boundary.
 /// Cloning an icon shares immutable bytes and never repeats image decoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-pub struct ValidatedLauncherIconDataUrl(#[cfg_attr(test, ts(type = "string"))] Arc<str>);
+pub struct ValidatedLauncherIconDataUrl(Arc<str>);
 
 impl ValidatedLauncherIconDataUrl {
     pub(crate) fn parse(value: &str) -> Result<Self, String> {
@@ -151,6 +150,7 @@ pub struct LauncherItem {
         deserialize_with = "deserialize_launcher_icon_data_url",
         skip_serializing_if = "Option::is_none"
     )]
+    #[cfg_attr(test, ts(as = "Option<String>"))]
     pub icon_data_url: Option<ValidatedLauncherIconDataUrl>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_color: Option<String>,
