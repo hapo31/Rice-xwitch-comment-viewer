@@ -22,6 +22,18 @@ import type {
  */
 export function dispatchDomainAction(stores: DomainStores, action: AppAction): void {
   switch (action.type) {
+    case "twitch.disconnectStarted":
+      stores.connection.dispatch({
+        type: "auth.disconnect.started",
+        generation: action.generation,
+      });
+      break;
+    case "twitch.disconnectFinished":
+      stores.connection.dispatch({
+        type: "auth.disconnect.finished",
+        generation: action.generation,
+      });
+      break;
     case "settings.loaded":
       stores.settings.dispatch({ type: "settings.loaded", settings: action.settings });
       break;
