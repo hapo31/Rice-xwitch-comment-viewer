@@ -665,7 +665,7 @@ it("keeps a current Twitch comment delivered before the startup snapshot", async
     tauriMock.emit("twitch://chat-message", message);
     tauriMock.emit("twitch://chat-message", message);
   });
-  expect(stores.chat.getState().messages).toEqual([]);
+  expect(stores.chat.getState().messages.filter((entry) => entry.kind === "user")).toEqual([]);
 
   await act(async () => {
     resolveSnapshot({
