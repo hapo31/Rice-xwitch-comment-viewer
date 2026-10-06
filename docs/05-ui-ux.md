@@ -178,11 +178,21 @@ Issue #85の結果詳細は、outcomeを持つuser行の状態ラベルをキー
 - `blocked`: ルールで除外
 - `error`: 読み上げ失敗
 
+### Launcher の項目メニュー
+
+`LauncherItemMenu` が [Radix Dropdown Menu](https://www.radix-ui.com/primitives/docs/components/dropdown-menu) の開閉・外側操作・roving focus・循環移動・Escapeを使い、LauncherViewは起動/登録/削除に限定する。親のopen ID、trigger Map、document listenerと汎用key parserは持たない。非modal menuはTab/Shift+Tabでtriggerから自然なdocument順へ離脱する。Radix既定はTabを消費するため、この2キーだけcaptureで閉じてnative移動を許可し、閉じる際のfocus復帰を抑える。削除成功で発火元が消えた場合は画面見出しへ移す。
+
+#225 の確認dialogと同じRadix系列を選び、focus scope・dismissable layerなどを共有する。native dialogはmodal向け、popover単体はmenu keyboard操作を提供しないため、menuでは専用primitiveを使用する。Portalは画面端/タイルのoverflowを避け、衝突補正をライブラリへ委ねる。実DOMで通常キー操作・busy・削除後focusを検証し、Windows WebView上のpixel配置は別の手動確認とする。
+
 ## キーボード操作
 
 ### 未保存変更
 
 Filter と Settings に未保存の変更があるときは、Activity Bar の画面遷移、履歴戻る、ウィンドウ終了を共通の確認ダイアログで止める。ダイアログでは「保存して続ける」「破棄して続ける」「キャンセル」をキーボードで選択できる。保存に失敗した場合は画面に留まり、下書きを失わない。
+
+共通の確認部品は [Radix Dialog](https://www.radix-ui.com/primitives/docs/components/dialog) の modal、Portal、Title/Description を利用する。Tab循環・背景抑止・Escape・重なりの管理をprimitiveへ委ね、保存/終了の承認・世代管理はExitProtectionProviderに残す。背景クリックでは確認を閉じない。キャンセル時は起点へ戻し、起点消失時はAppShellを復帰先にする。遷移先の見出しが既にfocusを得た場合は復帰で上書きしない。保存中はdisabledになった保存ボタンからキャンセルへ、終了処理中は確認本文へfocusを移す。
+
+native `<dialog>.showModal()` も比較したが、Linux Chromium 153の実AppShellでは端のTab/Shift+Tabでdocument.bodyへfocusが外れたためRadixを選んだ。native dialogを模したjsdom stubは使わず、本番primitiveのDOM回帰と実ブラウザを併用する。`scripts/check-modal-browser.mjs` は起動中Viteと外部にインストールしたPlaywright（`PLAYWRIGHT_MODULE`）で実AppShellを操作し、Tauri IPCだけを公式mockで置き換える。Chromiumでの成功はWindows WebView2の実機確認とは区別する。
 
 - `Space`: 読み上げ一時停止/再開
 - `S`: 現在の読み上げをスキップ

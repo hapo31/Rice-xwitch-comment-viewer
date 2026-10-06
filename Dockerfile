@@ -121,6 +121,7 @@ COPY package.json pnpm-lock.yaml ./
 COPY LICENSE ./LICENSE
 COPY scripts/verify-project-license.mjs ./scripts/verify-project-license.mjs
 COPY scripts/verify-tauri-versions.mjs ./scripts/verify-tauri-versions.mjs
+COPY scripts/config-parsers.mjs ./scripts/config-parsers.mjs
 RUN pnpm install --frozen-lockfile
 
 COPY index.html postcss.config.js tailwind.config.js tsconfig.json vite.config.ts ./

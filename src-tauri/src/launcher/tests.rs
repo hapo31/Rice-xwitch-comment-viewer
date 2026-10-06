@@ -222,8 +222,8 @@ fn recognizes_supported_extensions_without_case_sensitivity() {
 fn launcher_icons_only_allow_base64_png_data_urls() {
     let valid = png_data_url(&png_bytes(1, 1));
     assert_eq!(
-        normalize_launcher_icon_data_url(Some(format!(" {valid} "))),
-        Some(valid)
+        normalize_launcher_icon_data_url(Some(format!(" {valid} "))).as_deref(),
+        Some(valid.as_str())
     );
     assert_eq!(
         normalize_launcher_icon_data_url(Some("https://example.com/icon.png".to_string())),

@@ -239,7 +239,9 @@ Issue #75の最小集合は次の9 core/plugin permissionと既存の明示custo
 
 Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、base64部分64KiB / PNG file48KiB、PNGのchecksum・終端・単一frame・最大128×128pxを検証する。PNG decoder作業領域は1MiB、pixel出力bufferは128KiB以内。保存済みの不正/旧上限超過iconは読み込み時に汎用iconへfallbackし、新規追加の上限超過は全体を拒否する。合計data URLは4MiB以内。inline PNGをquotaで制限するため、cache用の追加filesystem権限や`assetProtocol`は有効化しない。
 
-Launcherの資源境界（#71）: 最大200件、pathは各4096UTF-8 bytes・合計128KiB、IDは64 ASCII bytes以内の英数字/ハイフン/下線、表示名1〜120 Unicode文字、group1〜64文字（いずれも制御文字なし）、背景色`#RRGGBB`。追加要求のJSONは256KiB、設定patch/保存JSONは8MiB、要求treeは4096nodes/深さ16まで。Tauriのparse済みbodyを`Request`で借用し、アプリDTOをcloneする前に検査する。framework自体の初回transport parseのallocationを制限できたとは扱わない。
+Launcher PNG（#222）: rendererからのpersisted settings decodeとicon extractor出力は未検証文字列として受け取り、base64/PNGの完全decode・CRC・単一frame・寸法・展開量を境界で検証してから`ValidatedLauncherIconDataUrl`へ変換する。このdomain値は不変の`Arc<str>`を共有し、clone・metadata編集・quota/schema検査・保存候補の検証では画像を再decodeしない。保存済みJSONを再読込する時と新しい外部ファイルからiconを抽出した時は、それぞれのbytesを改めて検証する。
+
+Settings write transactionは別のtransaction mutexで直列化する。候補を計算し、schema/quota検査とatomic保存を行う間は公開settings mutexを保持せず、保存成功後の候補置換だけに使う。失敗時は既存の公開stateを保つ。`settings_update`、Launcher repository、window位置保存は同じtransaction gateを通すため、並行更新を上書きせず、読み取り側のspeech enqueueは長いPNG検査やdisk I/Oを待たない。既存disk bytesは保存ごとにschema/read-onlyを確認するためbounded decodeを維持する。
 
 設定patchのLauncher itemsは`LauncherItemEdit`（登録済みIDを参照し、displayName/backgroundColor/groupId/orderだけを更新する置換一覧）へ分離する。新規ID、target/kind/iconDataUrl、未知の編集fieldは保存前に拒否する。canonical登録は`launcher_add`だけが行い、並行追加は最新stateへmergeし、件数/合計quota超過で一部だけ保存しない。永続pathの検査はpureな文字列検査で、metadata編集/設定load時にfilesystem/COMへ触れない。実ファイル検査は登録・起動時に行う。
 
@@ -307,3 +309,9 @@ frontend は effect 開始時に認証復元の世代を予約し、event snapsh
 Settings/Filter は ready 前の既定値を編集可能な設定として提示せず、loading 表示または error と再試行を出す。起動/再試行の進捗と結果は system Chat にも残す。StrictMode の effect 再実行では一度だけ取り出せる復旧通知を同じ controller の read 間で共有し、受理された read だけが一度通知する。unmount 後の read/write 応答は通知・store 更新を行わず、旧 lifetime の未実行 write は開始しない。
 
 参照: [React StrictMode の effect 再実行](https://react.dev/reference/react/StrictMode#fixing-bugs-found-by-re-running-effects-in-development)。
+
+### 保存用一時ファイルの所有権
+
+設定保存とbackupの一時fileは `tempfile::Builder::make_in` の `NamedTempFile<File>` で生成・write/syncし、handleを閉じた後は `TempPath` がreplaceまで所有する。通常の早期returnとunwindはDropでcleanupし、成功したrename直後にguardのcleanupを解除する。親directory/owner/linkの検査、0600/0700とWindows ACL、writer lock、将来schema保護とbackup順序は既存の保存境界に残す。
+
+`NamedTempFile::persist` もatomic replacementを提供するがfile/directory同期は行わない。ここではUnix renameとWindowsのwrite-through MoveFileExによる既存 `atomic_replace` を保持し、`sync_all` と `sync_parent_directory` も残す。`make_in` の生成closureは既存OpenOptionsを使うため、Windows保存先にFILE_ATTRIBUTE_TEMPORARYを残さず、ファイル名の乱数・再試行・RAIIはcrateへ委ねる。参照: [NamedTempFile](https://docs.rs/tempfile/3.27.0/tempfile/struct.NamedTempFile.html)、[Builder::make_in](https://docs.rs/tempfile/3.27.0/tempfile/struct.Builder.html#method.make_in)、[TempPath](https://docs.rs/tempfile/3.27.0/tempfile/struct.TempPath.html)。
