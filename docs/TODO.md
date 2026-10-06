@@ -107,7 +107,7 @@
 
 ## 現在の進捗サマリ
 
-Issue #209では、接続taskをspawnしてからhandle登録・Connecting通知を行っていたため、即時lookup失敗のErrorをConnectingが後から上書きし、登録失敗時にtaskがdetachする競合を解消した。oneshot開始gateで登録・Connecting通知後にlookupを開始し、TwitchConnectionHandleのDropが所有taskをabortする。追補では予約・登録・cancelを同じmutex保護のTwitchConnectionOwnerへ集約し、古い予約の登録拒否を登録直前 barrier でstop／新接続の両順序から検証する。即時 lookup 成功／失敗はmulti-thread runtime上でconnect return前のlookup開始を同期し、Connectingとterminal statusの順を確認する。reviewed main `cca1f32` までを統合し、Rust 1.90 all-features Twitch tests 100件、strict all-target clippy、fmt check、diff checkが成功した。最終CIと親レビューはPR #252で確認する。
+Issue #209では、接続taskをspawnしてからhandle登録・Connecting通知を行っていたため、即時lookup失敗のErrorをConnectingが後から上書きし、登録失敗時にtaskがdetachする競合を解消した。oneshot開始gateで登録・Connecting通知後にlookupを開始し、TwitchConnectionHandleのDropが所有taskをabortする。追補では予約・登録・cancelを同じmutex保護のTwitchConnectionOwnerへ集約し、古い予約の登録拒否を登録直前 barrier でstop／新接続の両順序から検証する。即時 lookup 成功／失敗はmulti-thread runtime上でconnect return前のlookup開始を同期し、Connectingとterminal statusの順を確認する。reviewed main `c868999` までを統合し、追加差分はfrontendと文書の変更でRustのTwitch接続ownerに重ならないことを確認した。Rust 1.90 all-features Twitch tests 100件、strict all-target clippy、fmt check、diff checkが成功した。最終CIと親レビューはPR #252で確認する。
 
 Issue #219: 認証解除の要求を認証状態から分離し、失敗後に再試行できる調停を追加した。PR #264で最終検証を確認する。
 
