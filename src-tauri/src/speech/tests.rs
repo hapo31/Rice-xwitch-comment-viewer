@@ -1,4 +1,5 @@
 use super::*;
+#[cfg(feature = "app")]
 use crate::app_events::SpeechQueuePhase;
 use crate::twitch::Platform;
 
