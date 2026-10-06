@@ -1,13 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
-import { SidePanel } from "./SidePanel";
-import { initialAppState } from "../stores/appStore";
-import {
-  DomainControllerActionsProvider,
-  type DomainControllerActions,
-} from "../orchestration/domainControllerContext";
 import { defaultSpeechSettings, defaultTwitchSettings } from "../features/settings/defaults";
+import {
+  type DomainControllerActions,
+  DomainControllerActionsProvider,
+} from "../orchestration/domainControllerContext";
+import { initialAppState } from "../stores/appState";
+import { SidePanel } from "./SidePanel";
 
 const actions: DomainControllerActions = {
   updateSettings: async () => true,

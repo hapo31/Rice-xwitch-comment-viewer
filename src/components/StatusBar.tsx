@@ -1,9 +1,10 @@
-import { getTwitchAuthLabel, getTwitchConnectionLabel } from "../presentation/twitch";
 import { useEffect, useState } from "react";
 import { countIncompleteQueueItems } from "../presentation/queue";
 import { speechHealthLabels, speechQueuePhaseLabels } from "../presentation/speech";
-import { warningNotifications, type AppState } from "../stores/appStore";
-import { getAppBuildInfo, type AppBuildInfo } from "../tauri/client";
+import { getTwitchAuthLabel, getTwitchConnectionLabel } from "../presentation/twitch";
+import type { AppState } from "../stores/appState";
+import { warningNotifications } from "../stores/logsStore";
+import { type AppBuildInfo, getAppBuildInfo } from "../tauri/client";
 import { formatBouyomiAddress } from "../validation";
 
 type StatusBarState = Pick<
