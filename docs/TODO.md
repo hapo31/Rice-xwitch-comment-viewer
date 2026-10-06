@@ -662,6 +662,11 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - 2026-10-06 Issue #198: [Biome noExplicitAny](https://biomejs.dev/linter/rules/no-explicit-any/) の型引数制約の例外を維持する。条件型で任意の引数列から戻り値を推論する場合に限り、理由付きの行単位 `biome-ignore lint/suspicious/noExplicitAny` を使える。DTO、mock、値のキャストには使わず、ファイル単位の無効化はしない。`noEnum` は const enum を検出しないため `noConstEnum` も有効にした。既存 quality policy の正負 fixture で named/alias import と許容例外を含め検証し、別の AST 検査器や workflow は追加していない。
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
 
+- [x] Issue #210: AppState と組立を composition root へ移し、設定 model/validation と永続化、接続先の純粋検証と TCP adapter、Speech domain 状態と app event DTO の依存方向を分離する。既存 payload と port 境界、no-default 検証を維持し、新 adapter は追加しない。
+- [x] Issue #210 親レビュー追補: speech/queue.rs のstatus参照をdomain型へ寄せ、純粋queueがapp_eventsへ依存しないarchitecture回帰を追加した。TODOのvalidated iconを#222へ修正し、別Issue #261/#262で解決したGHSA記述をPR本文にも反映した。
+
+2026-10-06 進捗: AppStateをapplication.rsへ移し、設定DTOとJSON保存をsettings/model.rs・settings/persistence.rsへ分割した。host/address値はTCP実装からspeech/endpoint.rsへ移し、Speech status/health/queue分類はspeech/types.rsとfailure.rsへ移動した。SpeechRuntimeはAppStateに依存せず、queue snapshotのDTO変換とlog level変換はapp_events adapterへ置き、source boundary回帰で依存方向を確認する。既存ts-rs属性とwire生成一致を維持し、unused-importsをdenyするno-default/appの両featureで検査する。reviewed main dcf6709まで統合し、#211 module分割、#220再生session、#209 TwitchConnectionOwner、#222 settings_transaction・validated icon・endpoint revoke-before-publish、#231 TempPath cleanup、#232 shared TwitchHttp、#234 host-validation契約を保持した。Rust 1.90 strict no-default 235件、app有効331件、strict all-target/all-features Clippy、wire contract一致、format、frontend production buildが成功。PR #253の最終CIは親レビュー担当に引き継ぐ。
+
 2026-10-06 Issue #213: 保存待ちキャンセル後の app_exit と reset 済み blocker の proceed 例外を実 AppShell で再現し、保存後の操作を現在の token と blocker location key で照合する。取り消した保存そのものは完了してよいが、旧終了・遷移の副作用は実行しない。保存済みになった新しい確認要求も続行/キャンセルを明示選択できる。
 
 2026-10-06 Issue #213 統合確認: reviewed main 493c57f の wire schema を取り込み、本番 AppShell と保存継続の DOM 33件、format/lint/typecheck/build が成功した。最終 head の CI とマージは PR #254 に記録する。

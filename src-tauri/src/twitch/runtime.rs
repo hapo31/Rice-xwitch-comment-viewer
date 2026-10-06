@@ -18,7 +18,8 @@ use crate::app_events::{
     emit_twitch_status, AppLogLevel, TwitchActiveConnection, TwitchAuthRequiredReason,
     TwitchStatus, TwitchStatusDomain,
 };
-use crate::settings::{default_twitch_client_id, AppState};
+use crate::application::AppState;
+use crate::settings::default_twitch_client_id;
 use crate::speech::enqueue_chat_message_for_speech;
 use tauri::Manager;
 use tokio_tungstenite::connect_async;

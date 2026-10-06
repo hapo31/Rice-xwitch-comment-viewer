@@ -5,7 +5,7 @@ use super::queue::{enqueue_message, REPEAT_SUPPRESSION_CLEANUP_INTERVAL};
 use super::worker;
 use super::SpeechControl;
 use crate::app_events::{AppEventState, SpeechStateSnapshot};
-use crate::settings::AppState;
+use crate::application::AppState;
 use crate::twitch::ChatMessage;
 use tauri::Manager;
 
@@ -260,7 +260,7 @@ async fn process_speech_queue(app: tauri::AppHandle<tauri::Wry>) {
         clock: state.speech_runtime.clock.clone(),
         select: std::sync::Arc::new(move || {
             let state = selector_app.state::<AppState>();
-            state.speech_runtime.select_from_state(&state)
+            super::commands::selected(&state)
         }),
         events: std::sync::Arc::new(TauriSpeechQueueEvents(app.clone())),
     };

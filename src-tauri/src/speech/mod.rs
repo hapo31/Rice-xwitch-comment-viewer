@@ -2,7 +2,8 @@ pub mod bouyomi;
 #[cfg(feature = "app")]
 pub mod commands;
 pub(crate) mod destination;
-#[cfg(any(feature = "app", test))]
+pub mod endpoint;
+#[cfg(feature = "app")]
 mod events;
 mod factory;
 mod failure;
@@ -12,18 +13,21 @@ mod queue;
 #[cfg(feature = "app")]
 mod queue_commands;
 pub mod runtime;
+mod types;
 #[cfg(any(feature = "app", test))]
 mod worker;
 
-#[cfg(any(feature = "app", test))]
-pub(crate) use crate::app_events::SpeechStatus;
 pub use failure::{FailureCode, SpeechFailure};
 #[cfg(test)]
 pub(crate) use formatter::{SpeechFormatDecision, SpeechFormatter, SpeechFormatterOptions};
 #[cfg(test)]
 pub(crate) use outcome::BlockedReason;
+#[cfg(any(feature = "app", test))]
 pub use queue::SpeechQueueState;
 use serde::{Deserialize, Serialize};
+pub use types::{SpeechAdapterHealth, SpeechQueueItemStatus, SpeechQueuePhase, SpeechStatus};
+#[cfg(any(feature = "app", test))]
+pub(crate) use types::{SpeechLogLevel, SpeechQueueItemSnapshot, SpeechQueueSnapshot};
 pub type SpeechFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,13 +82,9 @@ pub enum SpeechPlaybackCompletion {
 }
 
 #[cfg(test)]
-use crate::app_events::SpeechQueueItemStatus;
-#[cfg(test)]
 use crate::twitch::{ChatMessage, MessageFragment};
 #[cfg(test)]
 use chrono::{DateTime, Utc};
-#[cfg(test)]
-pub(crate) use events::queue_event_snapshot;
 #[cfg(test)]
 use formatter::DEFAULT_MAX_COMMENT_LENGTH;
 #[cfg(test)]

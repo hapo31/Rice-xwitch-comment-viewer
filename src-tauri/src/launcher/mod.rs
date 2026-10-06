@@ -19,6 +19,7 @@ pub(crate) use model::{
     validate_launcher_resources, validate_launcher_structure, LauncherCapabilities, LauncherItem,
     LauncherItemKind, LauncherSettings, LauncherSettingsPatch,
 };
+#[cfg(feature = "app")]
 pub(crate) use service::LauncherRuntime;
 
 #[cfg(test)]

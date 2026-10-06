@@ -1,4 +1,8 @@
 mod app_events;
+#[cfg(feature = "app")]
+mod application;
+#[cfg(test)]
+mod architecture_tests;
 mod launcher;
 mod resource_limits;
 mod settings;
@@ -18,12 +22,14 @@ use app_events::{
     TwitchStatusDomain,
 };
 #[cfg(feature = "app")]
+use application::AppState;
+#[cfg(feature = "app")]
 use launcher::commands::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
 use serde::Serialize;
 #[cfg(feature = "app")]
 use settings::{
-    settings_get, settings_take_recovery_notice, settings_update, AppSettings, AppState,
-    SettingsStore, WindowPosition,
+    settings_get, settings_take_recovery_notice, settings_update, AppSettings, SettingsStore,
+    WindowPosition,
 };
 #[cfg(feature = "app")]
 use speech::bouyomi::speech_connection_diagnostics;

@@ -2,7 +2,7 @@ use super::{
     SpeechAdapter, SpeechControl, SpeechFailure, SpeechFuture, SpeechHealth,
     SpeechPlaybackCompletion, SpeechRequest, SpeechResult,
 };
-use crate::settings::{AppState, SpeechSettings};
+use crate::settings::SpeechSettings;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -86,19 +86,6 @@ impl SpeechRuntime {
             active: self.active.clone(),
             confirmation_text: self.factory.connection_confirmation(settings),
         })
-    }
-
-    pub(crate) fn select_from_state(
-        &self,
-        state: &AppState,
-    ) -> Result<SelectedSpeechAdapter, SpeechFailure> {
-        let snapshot = state
-            .settings
-            .lock()
-            .map_err(|error| SpeechFailure::unknown(error.to_string()))?
-            .speech
-            .clone();
-        self.select(&snapshot)
     }
 
     pub(crate) fn dispatcher(&self) -> SpeechDispatcher {
