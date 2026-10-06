@@ -253,6 +253,8 @@ Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既
 2026-09-08: ローカル worktree の整理を完了。Issue #29/#31/#33 は main 反映済み、#42/#43 は既存 PR #164/#163 に保持。詳細は調査メモを参照。
 
 
+Issue #224: 本番ChatViewのanchorをVirtualItem座標と共通helperへ統一した。部分行・複数prepend・可変/後発行高・履歴上限・追従と新着件数の実DOM検査が成功。最終CIはPR #269で確認する。
+
 | Phase | 状態 | メモ |
 | --- | --- | --- |
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込、原子的保存、破損時のbackup/既定値復旧を確認した。Issue #50 で UI 倍率を名前付き radio group にし、現在の選択状態と表示倍率を支援技術へ公開した。Issue #49 で route ごとの document title 更新と、PUSH 遷移後の画面見出しへのフォーカス移動を追加した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。Issue #202 で既定値 factory を UI feature 非依存の settings model に集約し、browser preview の連続 patch と入力配列の snapshot を保持し、接続診断にも保存済み host/port を反映するようにした。frontend unit 301 件、typecheck、format check が成功した。 |
@@ -546,6 +548,7 @@ Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離
 - [x] 配信者向け文言を「読み上げ」へ統一する。
 - [x] Chat view のチャットリストを仮想スクロール化する。
 - [x] Issue #53: Chat を遡っている間も prepend 後の可視アンカーを維持し、新着件数から先頭へ戻れるようにする。
+- [x] Issue #224: 本番ChatViewのanchor取得・復元をVirtualItemの座標源と共通helperへ統一し、部分行・複数prepend・可変行高・履歴上限・最上部追従を実virtualizerで検証する。
 - [x] Queue view を読み上げ待ち・エラー・フィルターによる読み飛ばしだけに絞り、Chat view と同じ新着順にする。
 - [x] 起動時の仮チャットを設定状態に応じた system 操作案内へ置き換える。
 - [x] 配信中に判断しやすい日本語エラー文言を整理する（Issue #46: 操作別の原因・復旧案内と Logs の技術詳細）。
@@ -669,6 +672,8 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] 解除中の表示と認証正本を調停し、削除失敗後に現行認証と操作性を維持する。keyring失敗後の再試行と後発認証/eventとの競合を回帰化する。
 
 2026-10-06 Issue #219: 解除中はUI操作世代付きの要求として認証状態と分離し、削除失敗後はbackendの現在profileを照合する。後発操作・Auth revision変更後の古い解除/調停応答を拒否する。実AppShellで失敗後再試行、認証保持/消失、後発event、再取得失敗とcontrollerの後発loginを回帰化した。追加レビューで、解除成功eventがcommand応答より先だと古いprofileが残ることを再現し、revision検証済みのAuth disconnectedをprofile/promptと同時反映する。最終検証・CIはPR #264に記録する。
+
+2026-10-06 Issue #224: DOM測定cleanupと逆符号のoffset加算を除去し、commit/scroll時のVirtualItemからanchorを保存して同じhelperで復元する。ref測定後に座標cacheを更新することで可変行高の追加差分も反映した。修正前は実ChatViewで上端-8pxが52pxとなる失敗を再現。対象7件（実DOM5件とhelper2件）、frontend全461件、build/typecheck、format/lint、diff検査成功。新着件数と先頭への復帰を維持し、実WebViewのpixel手動検証は未実施。
 
 ## Issue #223: 派生selectorのsnapshot契約
 
