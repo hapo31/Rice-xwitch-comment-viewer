@@ -24,11 +24,8 @@ use crate::app_events::{
 use crate::application::AppState;
 use crate::settings::default_twitch_client_id;
 use crate::speech::enqueue_chat_message_for_speech;
-use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::Manager;
 use tokio_tungstenite::connect_async;
-
-static NEXT_TWITCH_CONNECTION_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone)]
 pub(super) struct TauriTwitchRuntime {
@@ -77,19 +74,13 @@ impl AuthRuntime for TauriTwitchRuntime {
     fn now(&self) -> std::time::SystemTime {
         std::time::SystemTime::now()
     }
-    fn cancel_chat(&self) -> Result<bool, String> {
+    fn cancel_chat(&self) -> Result<super::chat_service::ChatCancellation, String> {
         let state = self.app.state::<AppState>();
-        let stopped = state
+        state
             .twitch_connection
             .lock()
-            .map_err(|error| error.to_string())?
-            .take();
-        if let Some(handle) = stopped {
-            handle.abort();
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+            .map_err(|error| error.to_string())
+            .map(|mut owner| owner.cancel())
     }
     fn auth_status(
         &self,
@@ -123,20 +114,21 @@ impl ChatRuntime for TauriTwitchRuntime {
         let settings = state.settings.lock().map_err(|error| error.to_string())?;
         Ok(settings.twitch.channel_login.clone())
     }
-    fn next_generation(&self) -> u64 {
-        NEXT_TWITCH_CONNECTION_GENERATION.fetch_add(1, Ordering::Relaxed)
-    }
-    fn replace_connection(&self, connection: TwitchConnectionHandle) -> Result<(), String> {
+    fn reserve_connection(&self) -> Result<u64, String> {
         let state = self.app.state::<AppState>();
-        let mut current = state
+        state
+            .twitch_connection
+            .lock()
+            .map_err(|error| error.to_string())
+            .map(|mut owner| owner.reserve())
+    }
+    fn register_connection(&self, connection: TwitchConnectionHandle) -> Result<(), String> {
+        let state = self.app.state::<AppState>();
+        let mut owner = state
             .twitch_connection
             .lock()
             .map_err(|error| error.to_string())?;
-        if let Some(previous) = current.take() {
-            previous.abort();
-        }
-        *current = Some(connection);
-        Ok(())
+        owner.register(connection)
     }
     fn connection_is_current(&self, generation: u64) -> bool {
         self.app
@@ -144,11 +136,7 @@ impl ChatRuntime for TauriTwitchRuntime {
             .twitch_connection
             .lock()
             .ok()
-            .and_then(|current| {
-                current
-                    .as_ref()
-                    .map(|handle| handle.generation == generation)
-            })
+            .map(|owner| owner.is_current(generation))
             .unwrap_or(false)
     }
     async fn lookup_user(
@@ -203,7 +191,7 @@ impl EventSubRuntime for TauriTwitchRuntime {
                 return;
             }
         };
-        let active_generation = current.as_ref().map(|connection| connection.generation);
+        let active_generation = current.active_generation();
         // Keep stop/replacement behind this shared delivery boundary so UI and
         // speech observe the same accepted model before its generation expires.
         dispatch_chat_message(

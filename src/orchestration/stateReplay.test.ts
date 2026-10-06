@@ -10,6 +10,7 @@ import type {
   SpeechStateSnapshot,
   SpeechQueueUpdatedEvent,
   SpeechStatusEvent,
+  TwitchChatMessageEvent,
   TwitchStatusEvent,
   AppLogEvent,
 } from "../types";
@@ -41,6 +42,40 @@ function speechSnapshot(revision = 5): SpeechStateSnapshot {
     queue: { revision, queuedCount: 1, items: [item], phase: "paused", occurredAtMs: 1 },
   };
 }
+function chatMessage(
+  id: string,
+  overrides: Partial<TwitchChatMessageEvent> = {},
+): TwitchChatMessageEvent {
+  return {
+    id,
+    platform: "twitch",
+    channelId: "channel-7",
+    channelLogin: "channel_7",
+    userId: "user-1",
+    userLogin: "viewer",
+    userDisplayName: "Viewer",
+    text: id,
+    fragments: [],
+    badges: [],
+    receivedAt: "2026-08-01T00:00:00Z" as TwitchChatMessageEvent["receivedAt"],
+    connectionGeneration: 7,
+    ...overrides,
+  };
+}
+function connectedChatStatus(generation = 7): TwitchStatusEvent {
+  return {
+    revision: 10,
+    domain: "chat",
+    status: "connected",
+    occurredAtMs: 1,
+    connectionGeneration: generation,
+    activeConnection: {
+      generation,
+      broadcasterUserId: `channel-${generation}`,
+      broadcasterLogin: `channel_${generation}`,
+    },
+  };
+}
 function setup() {
   const stores = createDomainStores();
   const events = deferred<AppEventsSnapshot>();
@@ -49,6 +84,7 @@ function setup() {
     queue?: (event: SpeechQueueUpdatedEvent) => void;
     speech?: (event: SpeechStatusEvent) => void;
     twitch?: (event: TwitchStatusEvent) => void;
+    chat?: (event: TwitchChatMessageEvent) => void;
     log?: (event: AppLogEvent) => void;
   } = {};
   const unlisten = vi.fn();
@@ -61,7 +97,10 @@ function setup() {
       listeners.twitch = listener;
       return unlisten;
     },
-    subscribeTwitchChatMessageEvents: async () => unlisten,
+    subscribeTwitchChatMessageEvents: async (listener) => {
+      listeners.chat = listener;
+      return unlisten;
+    },
     subscribeSpeechStatusEvents: async (listener) => {
       listeners.speech = listener;
       return unlisten;
@@ -192,6 +231,132 @@ describe("backend state replay", () => {
       twitchAuthStatus: "authenticated",
       twitchConnectionStatus: "connected",
     });
+    cleanup();
+  });
+  it("buffers chat received before the startup connection snapshot and flushes it once in order", async () => {
+    const h = setup();
+    const cleanup = h.start();
+    await tick();
+    h.listeners.chat!(chatMessage("before"));
+    h.listeners.chat!(chatMessage("before"));
+    expect(h.stores.chat.getState().messages).toEqual([]);
+
+    h.events.resolve({
+      revision: 5,
+      logs: [],
+      emitErrors: [],
+      twitchStatuses: [connectedChatStatus()],
+    });
+    h.speech.resolve(speechSnapshot());
+    await tick();
+    h.listeners.chat!(chatMessage("after"));
+
+    expect(h.stores.chat.getState().messages.map((message) => message.id)).toEqual([
+      "after",
+      "before",
+    ]);
+    cleanup();
+  });
+  it("keeps arrival order when live connection status resolves before the snapshot", async () => {
+    const h = setup();
+    const cleanup = h.start();
+    await tick();
+    h.listeners.chat!(chatMessage("first"));
+    h.listeners.twitch!(connectedChatStatus());
+    h.listeners.chat!(chatMessage("second"));
+    h.events.resolve({
+      revision: 5,
+      logs: [],
+      emitErrors: [],
+      twitchStatuses: [connectedChatStatus()],
+    });
+    h.speech.resolve(speechSnapshot());
+    await tick();
+    expect(h.stores.chat.getState().messages.map((message) => message.id)).toEqual([
+      "second",
+      "first",
+    ]);
+    cleanup();
+  });
+  it("applies the restored queue outcome to buffered chat", async () => {
+    const h = setup();
+    const cleanup = h.start();
+    await tick();
+    h.listeners.chat!(chatMessage("chat1"));
+    h.events.resolve({
+      revision: 5,
+      logs: [],
+      emitErrors: [],
+      twitchStatuses: [connectedChatStatus()],
+    });
+    h.speech.resolve(speechSnapshot());
+    await tick();
+    expect(h.stores.chat.getState().messages[0]).toMatchObject({ kind: "user", status: "queued" });
+    cleanup();
+  });
+  it("rechecks buffered messages against the restored generation and channel identity", async () => {
+    const h = setup();
+    const cleanup = h.start();
+    await tick();
+    h.listeners.chat!(chatMessage("old-generation", { connectionGeneration: 6 }));
+    h.listeners.chat!(chatMessage("wrong-channel", { channelId: "channel-other" }));
+    h.listeners.chat!(chatMessage("valid"));
+    h.events.resolve({
+      revision: 5,
+      logs: [],
+      emitErrors: [],
+      twitchStatuses: [connectedChatStatus()],
+    });
+    h.speech.resolve(speechSnapshot());
+    await tick();
+
+    expect(h.stores.chat.getState().messages.map((message) => message.id)).toEqual(["valid"]);
+    cleanup();
+  });
+  it("drops startup chat after snapshot failure and cleanup", async () => {
+    const failed = setup();
+    failed.bridge.getAppEventsSnapshot = async () => {
+      throw Error("snapshot unavailable");
+    };
+    const cleanupFailed = failed.start();
+    await tick();
+    failed.listeners.chat!(chatMessage("failed-snapshot"));
+    failed.speech.resolve(speechSnapshot());
+    await tick();
+    expect(failed.stores.chat.getState().messages).toEqual([]);
+    expect(failed.reportNotification).toHaveBeenCalledOnce();
+    cleanupFailed();
+
+    const unmounted = setup();
+    const cleanupUnmounted = unmounted.start();
+    await tick();
+    unmounted.listeners.chat!(chatMessage("unmounted"));
+    cleanupUnmounted();
+    unmounted.resolve();
+    await tick();
+    expect(unmounted.stores.chat.getState().messages).toEqual([]);
+    expect(unmounted.onRestored).not.toHaveBeenCalled();
+  });
+  it("bounds startup chat buffering to the newest 200 distinct messages", async () => {
+    const h = setup();
+    const cleanup = h.start();
+    await tick();
+    for (let index = 0; index <= 200; index += 1) h.listeners.chat!(chatMessage(`buffer-${index}`));
+    h.listeners.chat!(chatMessage("buffer-200"));
+    h.events.resolve({
+      revision: 5,
+      logs: [],
+      emitErrors: [],
+      twitchStatuses: [connectedChatStatus()],
+    });
+    h.speech.resolve(speechSnapshot());
+    await tick();
+
+    const messages = h.stores.chat.getState().messages;
+    expect(messages).toHaveLength(200);
+    expect(messages[0]?.id).toBe("buffer-200");
+    expect(messages[messages.length - 1]?.id).toBe("buffer-1");
+    expect(messages.some((message) => message.id === "buffer-0")).toBe(false);
     cleanup();
   });
   it("restored unvalidated auth is checking, not authenticated", async () => {

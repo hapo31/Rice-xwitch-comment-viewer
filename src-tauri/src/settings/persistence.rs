@@ -1,7 +1,8 @@
 use super::{validation, AppSettings};
 use crate::launcher::validate_launcher_resources;
 use crate::resource_limits::{
-    check_bytes, read_bounded, serialize_bounded, SizeLimitExceeded, MAX_SETTINGS_JSON_BYTES,
+    check_bytes, read_bounded, serialize_bounded, BoundedReadError, SizeLimitExceeded,
+    MAX_SETTINGS_JSON_BYTES,
 };
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -37,14 +38,25 @@ pub struct LoadedSettings {
     pub recovery_notice: Option<SettingsRecoveryNotice>,
 }
 
-fn read_settings_text(path: &Path) -> anyhow::Result<Result<String, String>> {
+#[derive(Debug, thiserror::Error)]
+pub(super) enum SettingsContentError {
+    #[error("設定ファイルが正しいUTF-8ではありません。")]
+    Encoding(#[source] std::string::FromUtf8Error),
+    #[error(transparent)]
+    TooLarge(SizeLimitExceeded),
+    #[error("{0}")]
+    Document(String),
+}
+
+pub(super) fn read_settings_text(
+    path: &Path,
+) -> anyhow::Result<Result<String, SettingsContentError>> {
     match read_bounded(path, MAX_SETTINGS_JSON_BYTES) {
         Ok(text) => Ok(Ok(text)),
-        Err(error) if error.downcast_ref::<SizeLimitExceeded>().is_some() => {
-            Ok(Err(error.to_string()))
-        }
+        Err(BoundedReadError::TooLarge(error)) => Ok(Err(SettingsContentError::TooLarge(error))),
+        Err(BoundedReadError::Encoding(error)) => Ok(Err(SettingsContentError::Encoding(error))),
         // IO/permission failures are not evidence of corrupt content. Fail closed.
-        Err(error) => Err(error),
+        Err(BoundedReadError::Io(error)) => Err(error.into()),
     }
 }
 
@@ -68,7 +80,8 @@ impl SettingsStore {
             });
         }
 
-        let loaded = read_settings_text(path)?.and_then(|text| schema::decode(&text));
+        let loaded = read_settings_text(path)?
+            .and_then(|text| schema::decode(&text).map_err(SettingsContentError::Document));
         match loaded {
             Ok(decoded) => {
                 if decoded.needs_resave {
@@ -83,7 +96,7 @@ impl SettingsStore {
                     }),
                 })
             }
-            Err(reason) => Self::recover_from_invalid_primary(path, &reason),
+            Err(reason) => Self::recover_from_invalid_primary(path, &reason.to_string()),
         }
     }
 
@@ -187,7 +200,7 @@ impl SettingsStore {
                             }),
                         });
                     }
-                    Err(reason) => reason,
+                    Err(reason) => SettingsContentError::Document(reason),
                 },
                 Err(reason) => reason,
             };

@@ -585,6 +585,82 @@ mod tests {
         }
     }
 
+    #[test]
+    fn invalid_utf8_primary_recovers_backup_and_preserves_original_bytes() {
+        let path = settings_path_for_test("utf8-backup");
+        let invalid = b"{\"private\":\"\xff\xfe\"}";
+        fs::write(&path, invalid).unwrap();
+        let backup = serde_json::to_vec(&super::schema::PersistedSettings::new(
+            &settings_with_channel("recovered"),
+        ))
+        .unwrap();
+        fs::write(backup_path(&path), &backup).unwrap();
+        assert!(matches!(
+            super::persistence::read_settings_text(&path).unwrap(),
+            Err(super::persistence::SettingsContentError::Encoding(_))
+        ));
+        let loaded = SettingsStore::load_from_path(&path).unwrap();
+        assert_eq!(loaded.settings.twitch.channel_login, "recovered");
+        let notice = loaded.recovery_notice.unwrap().message;
+        assert!(notice.contains("UTF-8") && notice.contains("バックアップから復旧"));
+        assert!(!notice.contains("private"));
+        assert_eq!(fs::read(&path).unwrap(), backup);
+        assert_eq!(quarantined_bytes(&path), vec![invalid.to_vec()]);
+        cleanup(&path);
+    }
+
+    fn quarantined_bytes(path: &std::path::Path) -> Vec<Vec<u8>> {
+        let mut bytes: Vec<_> = fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"))
+            .map(|entry| fs::read(entry.path()).unwrap())
+            .collect();
+        bytes.sort();
+        bytes
+    }
+
+    #[test]
+    fn invalid_utf8_backup_and_broken_primary_recover_defaults_and_preserve_both() {
+        for primary in [b"{\"twitch\":".as_slice(), b"\xff\x80".as_slice()] {
+            let path = settings_path_for_test("utf8-defaults");
+            let backup = b"\xfe\xff";
+            fs::write(&path, primary).unwrap();
+            fs::write(backup_path(&path), backup).unwrap();
+            let loaded = SettingsStore::load_from_path(&path).unwrap();
+            assert_eq!(loaded.settings.twitch.channel_login, "");
+            let notice = loaded.recovery_notice.unwrap().message;
+            assert!(notice.contains("UTF-8") && notice.contains("既定値"));
+            let mut originals = vec![primary.to_vec(), backup.to_vec()];
+            originals.sort();
+            assert_eq!(quarantined_bytes(&path), originals);
+            super::schema::decode(&fs::read_to_string(&path).unwrap()).unwrap();
+            cleanup(&path);
+        }
+    }
+
+    #[test]
+    fn invalid_utf8_recovery_keeps_a_future_backup_read_only() {
+        let path = settings_path_for_test("utf8-future-backup");
+        let future = br#"{"schemaVersion":999,"futureField":"keep exactly"}"#;
+        fs::write(&path, b"\xff").unwrap();
+        fs::write(backup_path(&path), future).unwrap();
+        let loaded = SettingsStore::load_from_path(&path).unwrap();
+        assert!(loaded
+            .recovery_notice
+            .unwrap()
+            .message
+            .contains(super::schema::READ_ONLY_MESSAGE));
+        assert!(SettingsStore::save_to_path(&path, &loaded.settings)
+            .unwrap_err()
+            .downcast_ref::<super::schema::ReadOnlySettings>()
+            .is_some());
+        assert_eq!(fs::read(&path).unwrap(), future);
+        assert_eq!(fs::read(backup_path(&path)).unwrap(), future);
+        assert_eq!(quarantined_bytes(&path), vec![vec![0xff]]);
+        cleanup(&path);
+    }
+
     pub(super) fn settings_path_for_test(name: &str) -> PathBuf {
         let counter = TEST_DIRECTORY_COUNTER.fetch_add(1, Ordering::Relaxed);
         let directory = std::env::temp_dir().join(format!(
