@@ -91,6 +91,10 @@
 
 ## 現在の進捗サマリ
 
+- [x] Issue #214: コメントの受信と読み上げ受付を区別し、自動読み上げ OFF の対象外結果を backend の型付き outcome として通知・保持する。ON/OFF 切替、event の前後順、snapshot 復元を契約テストで確認する。
+
+2026-10-06 Issue #214: backend の OFF 早期 return を理由付き skipped history の保存・通知に変更し、frontend の初期表示を received とした。message/queue の到着順、snapshot、現在の設定が受信時と逆の場合を実 AppShell で検証し、関連48件・frontend全420件が成功した。設定 snapshot の ON/OFF 判定、非 enqueue と履歴200件上限を含む no-default Rust 読み上げ107件、Rust由来の wire 型生成、typecheck/format/lint/build が成功した。PR #257 で app feature と最終 head の CI・統合結果を記録する。
+
 2026-10-06: Issue #207 で EventSub 正規化時に ChatMessage へ接続 generation を付け、同じ値のまま UI と speech へ渡す。親レビュー対応で generation 検証と両sink配送を共有 `dispatch_chat_message` に集約し、本番 runtime と fake が同じ境界を使用する。回帰は同一 channel の世代交換、旧世代の遅延通知、停止後の通知、別 channel、UI/speech 両sinkの同一内容と順序を確認する。main `2802a4a`、`98bfd81`、`6bdb52c`、`6916a44`、`0d72925`、`493c57f` を統合。#203 の `7e880c4` と #213 の変更は frontend と docs に限られ、今回の Rust 本番処理との重複がないことを確認した。Tauri非依存 boundary test、strict app-feature Clippy、frontend 414件、format/lint/typecheck/build が成功。親レビューで本番/fake 共通配送と generation 保持、strict Clippy 指摘の修正を確認した。最終 app-feature runtime 回帰、exact-head CI と統合結果は PR #248 に記録する。no-default strict Clippy は既存 dead_code 警告群で失敗するが、警告抑制なしの通常 no-default Clippy と対象 unit test は成功した。実 Twitch 環境の手動確認は未実施。
 
 - [x] Issue #212: 認証復元結果に scope 不足・保存先障害・破損・移行の型付き reason を保持し、composition root の日本語部分一致を除去する。文言に依存しない状態通知と secret 非公開・旧 store 移行・失敗時保持を検証する。

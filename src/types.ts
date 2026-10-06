@@ -14,7 +14,7 @@ export type AuthStatus =
 
 export type SpeechStatus = z.infer<typeof schemas.speechStatusSchema>;
 
-export type ChatDisplayState = Exclude<QueueDisplayState, "speaking">;
+export type ChatDisplayState = "received" | Exclude<QueueDisplayState, "speaking">;
 export type QueueDisplayState = z.infer<typeof schemas.queueDisplayStateSchema>;
 
 export const speechOutcomeReasonCodes = {
