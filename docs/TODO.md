@@ -1,5 +1,9 @@
 # 実装 TODO
 
+- [ ] Issue #225: 未保存確認と稼働中終了確認を共通modal dialog primitiveへ統合し、Tab/Shift+Tabのfocus containment、Escapeキャンセル、背景操作抑止、閉じた後のfocus復帰、処理中のキャンセル不可を実AppShell DOM回帰で検証する。#213の保存継続token制御は維持する。
+
+2026-10-06 着手計画: #225のIssue記載と既存確認dialog・ExitProtectionProvider・AppShell回帰を調べ、native dialogとheadless primitiveのWebView/React上の挙動を比較する。共通dialog境界へ2種類の確認を移し、focus復帰先消失・複数確認・非同期保存/終了中・OS close requestの境界を回帰化する。frontend関連DOM test、typecheck、format/lint、buildを実行し、docs/TODO.mdを更新する。
+
 - [x] Issue #209: Twitch接続taskの開始前にgeneration・connection handle・Connecting状態を確定する。mutex共有のconnection ownerでgeneration予約・登録・stop/cancelを順序付け、古い予約の登録拒否、Connecting公開後のstart gate、即時lookup・登録前stop/新接続・登録失敗をdeterministicに検証する。
 
 - [x] Issue #206: Twitch の validate と EventSub refresh を共通の credential service/revision で管理する。成功・失敗・scope 不足・永続化結果を同一 credential revision と照合し、別generation/client/userの再ログインと古い購読が交差しても新しい認証を流用・解除しない。同一auth session内のrefresh token rotationは安全に再購読し、deferred fake transportで各競合順序を回帰化する。
