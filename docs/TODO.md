@@ -105,6 +105,8 @@
 
 ## 現在の進捗サマリ
 
+Issue #261: 共通CIを止めた source-map-js advisoryを修正版へのlockfile統一で解消した。最終CIはPR #262で確認する。
+
 - [x] Issue #215: live 通知を ID・severity・correlation を持つ未通知 queue として扱い、command error・同文の別発生・同時障害の欠落を防ぐ。状態/event/log の同一障害は重複を抑え、実 DOM の配送・クリア・再通知を検証する。
 
 2026-10-06 Issue #215: warning/error を ID・severity・correlation と明示の状態 context で受ける配送 queue に変更した。alert を優先し、同優先度は発生順に読み、同文の別IDには安定した live region の空更新を挟む。状態 summary とその event/log/command は同じ原因をまとめ、同時に起きた別障害や状態が変わらない別IDを残す。明示 clear と unmount では残る通知/timer を片付け、古い既存通知が次の障害を消費しない。frontend 全423件と追加の同一状態・別障害・長時間保持回帰14件、typecheck/format/lint/build が成功。最新 main 統合後の最終検証・CI は PR #258 に記録する。実スクリーンリーダーの発話確認は未実施。
@@ -607,3 +609,9 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 2026-10-06 Issue #213: 保存待ちキャンセル後の app_exit と reset 済み blocker の proceed 例外を実 AppShell で再現し、保存後の操作を現在の token と blocker location key で照合する。取り消した保存そのものは完了してよいが、旧終了・遷移の副作用は実行しない。保存済みになった新しい確認要求も続行/キャンセルを明示選択できる。
 
 2026-10-06 Issue #213 統合確認: reviewed main 493c57f の wire schema を取り込み、本番 AppShell と保存継続の DOM 33件、format/lint/typecheck/build が成功した。最終 head の CI とマージは PR #254 に記録する。
+
+## Issue #261: dependency audit の共通 blocker
+
+- [x] source-map-js の影響版を修正版へ統一し、既存監査・frozen install・frontend gates を通す。監査例外は追加しない。
+
+2026-10-06 Issue #261: @tailwindcss/node 4.3.3 の許容範囲 ^1.2.1 内で source-map-js を1.2.2へ統一し、未使用の1.2.1 entryを除去した。他の依存とpackage.jsonは変更しない。frozen offline install、frontend全429件、production build成功。pnpm auditはhigh/critical 0件で対象GHSAが消え、既存moderate 5件のみ。全CIの結果は PR #262 に記録する。
