@@ -10,6 +10,7 @@ import { initialAppState } from "../stores/appState";
 import { SidePanel } from "./SidePanel";
 
 const actions: DomainControllerActions = {
+  reloadSettings: () => undefined,
   updateSettings: async () => true,
   speechHealthCheck: () => undefined,
   speechDiagnostics: async () => ({

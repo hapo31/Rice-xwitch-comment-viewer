@@ -1,7 +1,13 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { flushSync } from "react-dom";
 import { expect, it } from "vitest";
+import { createLauncherController } from "../../orchestration/domainCommandControllers";
+import {
+  type DomainControllerActions,
+  DomainControllerActionsProvider,
+} from "../../orchestration/domainControllerContext";
 import { createDomainStores, DomainProvider } from "../../stores/domainStores";
+import { defaultSettings, tauriMock } from "../../testing/tauriMock";
 import type {
   AppSettings,
   AppSettingsPatch,
@@ -10,12 +16,6 @@ import type {
   LauncherItem,
   LauncherLaunchResult,
 } from "../../types";
-import {
-  DomainControllerActionsProvider,
-  type DomainControllerActions,
-} from "../../orchestration/domainControllerContext";
-import { createLauncherController } from "../../orchestration/domainCommandControllers";
-import { defaultSettings, tauriMock } from "../../testing/tauriMock";
 import { DomainLauncherView } from "../domainViews";
 
 function launcherItem(id: string, target: string, order: number): LauncherItem {
@@ -41,6 +41,7 @@ function mountLauncher(stores: ReturnType<typeof createDomainStores>) {
     },
   });
   const actions: DomainControllerActions = {
+    reloadSettings: () => undefined,
     updateSettings: async (_patch: AppSettingsPatch) => true,
     speechHealthCheck: () => undefined,
     speechDiagnostics: async (): Promise<BouyomiConnectionDiagnostics> => ({

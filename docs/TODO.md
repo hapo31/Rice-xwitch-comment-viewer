@@ -107,6 +107,10 @@
 
 Issue #218: 起動時認証復元より後発の手動ログインを優先する世代予約を追加した。PR #263で最終CIを確認する。
 
+Issue #216: 設定初期化に読込状態・世代・更新番号を導入し、古い読込による保存結果の巻き戻りを防いだ。対象23件の回帰成功、最終 CI は PR #259 で追跡する。
+
+Issue #261: 共通CIを止めた source-map-js advisoryを修正版へのlockfile統一で解消した。最終CIはPR #262で確認する。
+
 - [x] Issue #215: live 通知を ID・severity・correlation を持つ未通知 queue として扱い、command error・同文の別発生・同時障害の欠落を防ぐ。状態/event/log の同一障害は重複を抑え、実 DOM の配送・クリア・再通知を検証する。
 
 2026-10-06 Issue #215: warning/error を ID・severity・correlation と明示の状態 context で受ける配送 queue に変更した。alert を優先し、同優先度は発生順に読み、同文の別IDには安定した live region の空更新を挟む。状態 summary とその event/log/command は同じ原因をまとめ、同時に起きた別障害や状態が変わらない別IDを残す。明示 clear と unmount では残る通知/timer を片付け、古い既存通知が次の障害を消費しない。frontend 全423件と追加の同一状態・別障害・長時間保持回帰14件、typecheck/format/lint/build が成功。最新 main 統合後の最終検証・CI は PR #258 に記録する。実スクリーンリーダーの発話確認は未実施。
@@ -615,3 +619,16 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] 起動開始時の認証操作を予約し、遅い snapshot/auth 復元が後発の手動 start/poll を無効化しない。実 AppShell と認証世代の逆順完了を回帰化する。
 
 2026-10-06 Issue #218: 起動effectで予約した世代をsnapshot復元後も使い、後発手動操作から世代を奪わない。Auth snapshotは手動開始後には反映せず、古いstored auth取得後にvalidate commandを追加起動しない。実AppShellのStrictMode、snapshot対start/poll、stored auth/validateの遅い成功・失敗7件を回帰化した。最終検証とCIはPR #263で追跡する。
+
+
+## Issue #216: 設定初期化の競合防止
+
+- [x] 設定初期化の loading/ready/error と取得世代を明示し、遅い取得応答が新しい保存結果を上書きしない共通境界を設ける。初期値表示と保存可否を区別し、読込失敗後の再試行・逆順完了・StrictMode・unmount を回帰化する。
+
+2026-10-06 Issue #216: 設定読込・直列保存を SettingsController へまとめ、load generation / store publication revision / effect lifetime で応答を照合する。Settings/Filter は読込中に既定値フォームを編集させず、失敗時に明示再試行を出す。接続用の二重 settingsSnapshot をなくし、store を正本にした。StrictMode の一回限りの復旧通知は load 間で共有し、現在の load が一度だけ通知する。読込対保存（成功/失敗）、同 lifetime の取得逆順、StrictMode、unmount、Launcher 更新を含む対象23件と typecheck が成功。最終 frontend 全体、CI と統合結果は PR #259 に記録する。
+
+## Issue #261: dependency audit の共通 blocker
+
+- [x] source-map-js の影響版を修正版へ統一し、既存監査・frozen install・frontend gates を通す。監査例外は追加しない。
+
+2026-10-06 Issue #261: @tailwindcss/node 4.3.3 の許容範囲 ^1.2.1 内で source-map-js を1.2.2へ統一し、未使用の1.2.1 entryを除去した。他の依存とpackage.jsonは変更しない。frozen offline install、frontend全429件、production build成功。pnpm auditはhigh/critical 0件で対象GHSAが消え、既存moderate 5件のみ。全CIの結果は PR #262 に記録する。

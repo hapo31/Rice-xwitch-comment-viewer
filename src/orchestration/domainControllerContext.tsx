@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useRef, type Context, type ReactNode } from "react";
+import { type Context, createContext, type ReactNode, useContext, useMemo, useRef } from "react";
 import type {
   AppSettingsPatch,
   BouyomiConnectionDiagnostics,
@@ -8,6 +8,7 @@ import type {
 } from "../types";
 
 export interface DomainControllerActions {
+  reloadSettings: () => void;
   updateSettings: (patch: AppSettingsPatch) => Promise<boolean>;
   speechHealthCheck: () => void;
   speechDiagnostics: () => Promise<BouyomiConnectionDiagnostics>;
@@ -39,7 +40,7 @@ type StableActions = {
 };
 type SettingsActions = Pick<
   StableActions,
-  "updateSettings" | "speechHealthCheck" | "speechDiagnostics" | "speechTest"
+  "reloadSettings" | "updateSettings" | "speechHealthCheck" | "speechDiagnostics" | "speechTest"
 >;
 type AuthActions = Pick<
   StableActions,
