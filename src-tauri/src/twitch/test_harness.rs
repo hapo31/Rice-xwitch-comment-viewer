@@ -302,9 +302,12 @@ async fn production_connection_handle_aborts_pending_session() {
         run_eventsub_connection_with(task_runtime.as_ref(), &params()).await
     });
     let handle = TwitchConnectionHandle::new(1, task);
+    let abort = handle.task.abort_handle();
     tokio::task::yield_now().await;
     handle.abort();
-    assert!(handle.task.await.unwrap_err().is_cancelled());
+    drop(handle);
+    tokio::task::yield_now().await;
+    assert!(abort.is_finished());
     assert!(runtime.subscriptions.lock().unwrap().is_empty());
 }
 

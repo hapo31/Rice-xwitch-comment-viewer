@@ -104,6 +104,8 @@ struct Runtime {
     backend: Arc<MemoryStore>,
     http: Arc<Transport>,
     connection: Arc<Mutex<Option<TwitchConnectionHandle>>>,
+    fail_connection_registration: Arc<AtomicBool>,
+    rejected_task: Arc<Mutex<Option<tokio::task::AbortHandle>>>,
     next_generation: Arc<AtomicU64>,
     cancels: Arc<AtomicUsize>,
     statuses: Arc<Mutex<Vec<TwitchStatus>>>,
@@ -124,6 +126,8 @@ impl Default for Runtime {
             backend,
             http: Arc::default(),
             connection: Arc::default(),
+            fail_connection_registration: Arc::default(),
+            rejected_task: Arc::default(),
             next_generation: Arc::new(AtomicU64::new(1)),
             cancels: Arc::default(),
             statuses: Arc::default(),
@@ -229,6 +233,13 @@ impl ChatRuntime for Runtime {
         self.next_generation.fetch_add(1, Ordering::Relaxed)
     }
     fn replace_connection(&self, handle: TwitchConnectionHandle) -> Result<(), String> {
+        if self
+            .fail_connection_registration
+            .swap(false, Ordering::Relaxed)
+        {
+            *self.rejected_task.lock().unwrap() = Some(handle.task.abort_handle());
+            return Err("fake connection registration failure".into());
+        }
         if let Some(previous) = self.connection.lock().unwrap().replace(handle) {
             previous.abort();
         }
@@ -758,6 +769,10 @@ async fn chat_service_connects_preferred_channel_and_stop_preserves_authenticati
     let service = TwitchChatService::new(runtime.clone());
     service.connect(None).await.unwrap();
     runtime.wait_for_subscription(1).await;
+    assert!(matches!(
+        runtime.statuses.lock().unwrap().first(),
+        Some(TwitchStatus::Connecting)
+    ));
     for _ in 0..10 {
         if !runtime.chats.lock().unwrap().is_empty() {
             break;
@@ -797,6 +812,110 @@ async fn chat_service_connects_preferred_channel_and_stop_preserves_authenticati
 }
 
 #[tokio::test]
+async fn chat_service_immediate_lookup_failure_follows_connecting_status() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    runtime
+        .http
+        .users
+        .lock()
+        .unwrap()
+        .push_back(Reply::ready(Err(api_error(503, None))));
+
+    TwitchChatService::new(runtime.clone())
+        .connect(Some("instant_failure".into()))
+        .await
+        .unwrap();
+    for _ in 0..100 {
+        if runtime
+            .statuses
+            .lock()
+            .unwrap()
+            .last()
+            .is_some_and(|status| matches!(status, TwitchStatus::Error))
+        {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+
+    let statuses = runtime.statuses.lock().unwrap();
+    assert_eq!(statuses.len(), 2);
+    assert!(matches!(statuses[0], TwitchStatus::Connecting));
+    assert!(matches!(statuses[1], TwitchStatus::Error));
+    assert!(runtime.connection_is_current(1));
+}
+
+#[tokio::test]
+async fn chat_service_registration_failure_cancels_task_before_lookup() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    runtime
+        .http
+        .users
+        .lock()
+        .unwrap()
+        .push_back(Reply::ready(Ok(HelixUser {
+            id: "unused".into(),
+            login: "unused".into(),
+        })));
+    runtime
+        .fail_connection_registration
+        .store(true, Ordering::Relaxed);
+
+    assert!(TwitchChatService::new(runtime.clone())
+        .connect(Some("registration_failure".into()))
+        .await
+        .is_err());
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+
+    assert!(runtime.connection.lock().unwrap().is_none());
+    assert!(runtime.statuses.lock().unwrap().is_empty());
+    assert!(runtime.http.lookup_calls.lock().unwrap().is_empty());
+    assert!(runtime
+        .rejected_task
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .is_finished());
+}
+
+#[tokio::test]
+async fn chat_service_stop_aborts_connection_waiting_for_lookup() {
+    let runtime = Runtime::default();
+    runtime.authorize();
+    let gate = Gate::default();
+    runtime.http.users.lock().unwrap().push_back(Reply::delayed(
+        Ok(HelixUser {
+            id: "broadcaster-id".into(),
+            login: "streamer".into(),
+        }),
+        &gate,
+    ));
+
+    let service = TwitchChatService::new(runtime.clone());
+    service.connect(Some("streamer".into())).await.unwrap();
+    gate.started.notified().await;
+    let abort = runtime
+        .connection
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .task
+        .abort_handle();
+    service.stop().unwrap();
+    tokio::task::yield_now().await;
+
+    assert!(abort.is_finished());
+    assert!(runtime.http.subscription_calls.lock().unwrap().is_empty());
+    assert!(runtime.auth.lock().unwrap().token.is_some());
+}
+
+#[tokio::test]
 async fn chat_service_replacement_aborts_pending_old_lookup_and_logout_clears_current_auth() {
     let runtime = Runtime::default();
     runtime.authorize();
@@ -833,6 +952,10 @@ async fn chat_service_replacement_aborts_pending_old_lookup_and_logout_clears_cu
         .abort_handle();
     service.connect(Some("new".into())).await.unwrap();
     runtime.wait_for_subscription(1).await;
+    assert!(matches!(
+        runtime.statuses.lock().unwrap().first(),
+        Some(TwitchStatus::Connecting)
+    ));
     assert!(old.is_finished());
     assert!(runtime.connection_is_current(2));
     assert_eq!(

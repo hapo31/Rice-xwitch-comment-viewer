@@ -20,6 +20,13 @@ impl TwitchConnectionHandle {
         self.task.abort();
     }
 }
+impl Drop for TwitchConnectionHandle {
+    fn drop(&mut self) {
+        // JoinHandle::drop detaches the task. Keep cancellation with its owner,
+        // including when registration fails and this handle is discarded.
+        self.task.abort();
+    }
+}
 
 #[allow(dead_code)]
 pub trait TwitchChatSource {
@@ -137,7 +144,11 @@ pub(super) async fn connect_validated_channel(
     let generation = state.next_generation();
     let channel_for_log = channel_login.clone();
     let app_for_task = (*state).clone();
+    let (start, started) = tokio::sync::oneshot::channel();
     let task = tokio::spawn(async move {
+        if started.await.is_err() {
+            return;
+        }
         let broadcaster = match app_for_task
             .lookup_user(&client_id, &access_token, &channel_login)
             .await
@@ -178,5 +189,8 @@ pub(super) async fn connect_validated_channel(
             channel_for_log
         ),
     );
+    // The registered handle and Connecting status are visible before the task
+    // can perform lookup or publish a terminal status.
+    let _ = start.send(());
     Ok(())
 }
