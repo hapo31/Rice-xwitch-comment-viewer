@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { speechHealthLabels, speechQueuePhaseLabels } from "../presentation/speech";
 import { getTwitchAuthLabel, getTwitchConnectionLabel } from "../presentation/twitch";
-import type { AppState } from "../stores/appStore";
+import type { AppState } from "../stores/appState";
 import type {
   AuthStatus,
   SpeechAdapterHealth,

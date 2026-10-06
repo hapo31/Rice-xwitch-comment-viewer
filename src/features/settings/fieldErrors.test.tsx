@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FloatingSaveButton } from "../../components/SettingsFormControls";
-import { AuthView } from "../auth/AuthView";
-import { initialAppState } from "../../stores/appStore";
+import { initialAppState } from "../../stores/appState";
 import type { AppSettings } from "../../types";
-import { SettingsView } from "./SettingsView";
+import { AuthView } from "../auth/AuthView";
 import { defaultSpeechSettings, defaultTwitchSettings } from "./defaults";
+import { SettingsView } from "./SettingsView";
 
 const invalidSettings: AppSettings = {
   twitch: defaultTwitchSettings(),
