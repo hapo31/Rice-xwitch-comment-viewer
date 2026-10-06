@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, renameSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateRawSync } from "node:zlib";
+import { Enums, Models, Serialize, Spec } from "@cyclonedx/cyclonedx-library";
 import { crc32, inspectPe, inspectPortable, expectedNsisExecutable, expectations, writeBundle, verifyBundle } from "./verify-release-artifacts.mjs";
 
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
@@ -33,6 +34,11 @@ function zip(files = [["rice.exe", pe()], ["LICENSE", Buffer.from("test-license\
   end.writeUInt32LE(0x06054b50); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10); end.writeUInt32LE(central.length, 12); end.writeUInt32LE(offset, 16);
   return Buffer.concat([...locals, central, end]);
 }
+function sbom(version) {
+  const bom = new Models.Bom({ version: 1 });
+  bom.metadata.component = new Models.Component(Enums.ComponentType.Application, "rice", { bomRef: "rice:test", version });
+  return new Serialize.JsonSerializer(new Serialize.JSON.Normalize.Factory(Spec.Spec1dot5)).serialize(bom, { space: 2, sortLists: true });
+}
 function fixture(t) {
   const source = mkdtempSync(join(tmpdir(), "rice-artifact-policy-"));
   t.after(() => rmSync(source, { recursive: true, force: true }));
@@ -47,7 +53,7 @@ function fixture(t) {
   const options = { commit, tag: "v0.2.3" }, plan = expectations(source, options), directory = join(source, "artifacts");
   writeFileSync(join(directory, plan.installer), pe()); writeFileSync(join(directory, plan.portable), zip()); writeFileSync(join(directory, "LICENSE"), "test-license\n");
   writeFileSync(join(directory, "BUILD-MATERIALS.json"), JSON.stringify({ schemaVersion: 1, commit, inputs, lockfiles: { npm: digest(Buffer.from("fake-lock")), cargo: digest(Buffer.from("fake-cargo-lock")) }, artifacts: [plan.installer, plan.portable, "LICENSE"].map(name => ({ name, sha256: digest(readFileSync(join(directory, name))) })) }));
-  writeFileSync(join(directory, "Rice.sbom.cdx.json"), JSON.stringify({ bomFormat: "CycloneDX", metadata: { component: { version: "0.2.3" } } }));
+  writeFileSync(join(directory, "Rice.sbom.cdx.json"), sbom("0.2.3"));
   return { source, directory, options, plan };
 }
 test("CRC has a known independent standard vector", () => assert.equal(crc32(Buffer.from("123456789")), 0xcbf43926));
@@ -73,13 +79,13 @@ for (const [name, mutate] of [
 test("checks both stored and max-compression ZIP entries and PE structure", () => {
   for (const compressed of [false, true]) assert.deepEqual(inspectPortable(zip(undefined, compressed)).map(x => x.name), ["rice.exe", "LICENSE"]);
 });
-test("writes and verifies an exact source-bound bundle (synthetic structural fixture only)", t => {
-  const f = fixture(t), manifest = writeBundle(f.source, f.directory, f.options);
-  assert.deepEqual(verifyBundle(f.source, f.directory, f.options).manifest, manifest);
+test("writes and verifies an exact source-bound bundle with a schema-valid CycloneDX 1.5 SBOM (synthetic structural fixture only)", async t => {
+  const f = fixture(t), manifest = await writeBundle(f.source, f.directory, f.options);
+  assert.deepEqual((await verifyBundle(f.source, f.directory, f.options)).manifest, manifest);
   assert.equal(manifest.artifacts.length, 5); assert.equal(manifest.portableEntries.length, 2);
   assert.deepEqual(manifest.nsisExecutable, expectedNsisExecutable(pe()));
-  assert.throws(() => verifyBundle(f.source, f.directory, { ...f.options, commit: "b".repeat(40) }), /source mismatch/);
-  assert.throws(() => verifyBundle(f.source, f.directory, { ...f.options, tag: "v9.9.9" }), /version mismatch/);
+  await assert.rejects(verifyBundle(f.source, f.directory, { ...f.options, commit: "b".repeat(40) }), /source mismatch/);
+  await assert.rejects(verifyBundle(f.source, f.directory, { ...f.options, tag: "v9.9.9" }), /version mismatch/);
 });
 for (const [name, mutate] of [
   ["extra executable", f => writeFileSync(join(f.directory, "extra.exe"), pe())],
@@ -91,7 +97,12 @@ for (const [name, mutate] of [
   ["NSIS executable descriptor drift", f => { const file = join(f.directory, "ARTIFACT-MANIFEST.json"), value = JSON.parse(readFileSync(file)); value.nsisExecutable.sha256 = "0".repeat(64); writeFileSync(file, JSON.stringify(value)); }],
   ["checksum omission", f => writeFileSync(join(f.directory, "SHA256SUMS.txt"), "")],
   ["lockfile drift", f => writeFileSync(join(f.source, "pnpm-lock.yaml"), "changed")],
-]) test(`rejects ${name}`, t => { const f = fixture(t); writeBundle(f.source, f.directory, f.options); mutate(f); assert.throws(() => verifyBundle(f.source, f.directory, f.options)); });
+]) test(`rejects ${name}`, async t => { const f = fixture(t); await writeBundle(f.source, f.directory, f.options); mutate(f); await assert.rejects(verifyBundle(f.source, f.directory, f.options)); });
+test("rejects a structurally invalid CycloneDX document even when its version field matches", async t => {
+  const f = fixture(t); await writeBundle(f.source, f.directory, f.options);
+  writeFileSync(join(f.directory, "Rice.sbom.cdx.json"), JSON.stringify({ bomFormat: "CycloneDX", specVersion: "1.5", version: 1, metadata: { component: { version: "0.2.3" } } }));
+  await assert.rejects(verifyBundle(f.source, f.directory, f.options), /CycloneDX 1\.5 schema validation failed/);
+});
 for (const [name, files] of [
   ["missing exe", [["LICENSE", Buffer.from("test-license\n")]]],
   ["extra file", [["rice.exe", pe()], ["LICENSE", Buffer.from("x")], ["evil.txt", Buffer.from("x")]]],

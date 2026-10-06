@@ -207,6 +207,8 @@ Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既
 
 2026-10-06 Issue #229 着手計画: SBOM generator、release artifact verifier、dependency-security設計と既存テスト/Node 22 release入力を確認する。inventory・provenanceとCycloneDX変換を切り分け、公式libraryとPackageURLの対応版/peer dependenciesを確認して固定する。手組みPURL/CycloneDX objectを標準modelへ置換し、installed graph fixtureでexact source/artifact情報・dependency edge・sortを保つ。標準PURLのnpm scoped/Cargo/Debian round-trip、公式CycloneDX 1.5 schemaの正例/不正例、release verifierの不正SBOM拒否を追加し、Node 22で関連policyテストを実行する。
 
+2026-10-06 Issue #229 調査・実装: CycloneDX JavaScript Library 10.3.0 (Node >=20.18.0) のmodel/serializer/公式JsonValidatorと `packageurl-js` 2.0.1を採用し、schema validatorの任意peer `ajv` 8.20.0・`ajv-formats` 3.0.1・`ajv-formats-draft2019` 1.6.1をexact pinする。依存inventory、Rice provenance、標準PURL構築、schema検証を別moduleへ分離し、release artifact verifierもasyncで同じ公式schema validationを必須にした。Node 22.22.0でSBOM単体のPURL round-trip/CycloneDX schema testとinstalled npm/Cargo graphが通過した。最終policy、diff、workflow全体の確認を継続する。
+
 2026-10-05: Issue #96でPR/main/weekly/releaseの共通advisory gate、期限/owner/根拠を必須とする例外validator、Dependabot、artifact digestとexact commitへ結び付けたCycloneDX 1.5 SBOMを追加した。policy/SBOMのunit10件と実installed graphのintegration1件を確認。RustSec DB ef6173cbc5c50ec8166f9a5b28f07834144373ee（1290 advisory）でRust警告7件、npm High1件をblockingとして検出した。gateが正常に失敗することを確認しており、clean auditではない。新規releaseの実配布は未実施。
 
 - [x] Issue #93: release build の base image / Debian snapshot / toolchain を固定し、時刻と build material を記録・検証する。SDK/CRT feed と NSIS/PE metadata の非決定性は material inventory と文書で明示する。

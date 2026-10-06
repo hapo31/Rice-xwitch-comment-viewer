@@ -12,7 +12,9 @@ Dependabotはnpm/Cargo/GitHub Actions/Dockerを毎週確認し、更新PRのlock
 
 ## SBOMの対象と制約
 
-各新規Windows releaseに `Rice.sbom.cdx.json` を添付する。形式は [CycloneDX 1.5](https://cyclonedx.org/docs/1.5/json/)。generator `rice-sbom` のversionをmetadataへ記録する。exact source commit、2つのlockfile digest、installer/portable ZIP digestをbuild materialと照合し、ずれた場合はreleaseを止める。公開workflowは従来の全asset checksum検証を維持する。
+各新規Windows releaseに `Rice.sbom.cdx.json` を添付する。形式は [CycloneDX 1.5](https://cyclonedx.org/docs/1.5/json/)。`scripts/sbom-inventory.mjs` はnpm/Cargoの依存graphを収集し、`scripts/sbom-provenance.mjs` は exact source commit・2つのlockfile digest・installer/portable ZIP digestと build environment inventory を照合する。`scripts/generate-sbom.mjs` はCycloneDX JavaScript Library 10.3.0のmodel/serializerへ変換し、CycloneDX公式 `JsonValidator` で1.5 schemaを検証してから出力する。公開前のartifact verifierも同じschema validatorを使い、不正なSBOMはchecksum作成・公開前に拒否する。PURLの生成・parseには `packageurl-js` 2.0.1を使う。generator `rice-sbom` のversionをmetadataへ記録し、標準model serializerの `sortLists` で並びを安定させる。公開workflowは従来の全asset checksum検証を維持する。
+
+このtoolingはpnpmのdev dependencyであり、本番アプリbundleには含めない。CycloneDX Library 10.3.0がJSON検証に必要とする任意peer dependencies `ajv` 8.20.0、`ajv-formats` 3.0.1、`ajv-formats-draft2019` 1.6.1と、PURL用optional peer `packageurl-js` 2.0.1を全て明示的にexact pinし、pnpm lockへ記録する。XML検証/serializerおよびSPDX helperのoptional peersは使用しない。ライブラリのengineはNode `>=20.18.0`で、現在のrelease toolchain Node 22.22.0が満たす。依存監査workflowでも同じfrozen pnpm installを行って、schema/PURL回帰テストを実行する。
 
 - npm: frozen installされたLinux cross-build環境のdirect/transitive依存。frontend runtimeはrequired、dev/buildのみはexcluded。未導入の他OS用optional packageは対象外で、lockfile全体のdigestも保存する。
 - Cargo:Windows MSVC/default featureのresolved graphとmetadata inventory。Windows runtimeをrequired、build/dev/他targetのみをexcludedにする。registry crateはCargo.lockのchecksumを付ける。
