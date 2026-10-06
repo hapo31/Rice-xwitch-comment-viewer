@@ -107,7 +107,11 @@
 
 ## 現在の進捗サマリ
 
+Issue #223: React公式selector helperで派生object/arrayのsnapshot契約と任意の比較関数を保証した。既存5 domainとProvider隔離を維持し、frontend全462件成功。最終CIはPR #268に記録する。
+
 Issue #217: snapshot復元中のコメントを上限200件で保留し、接続世代・チャンネルを照合して受信順に反映する。live statusが先着する順序も回帰化した。
+
+Issue #221: 不正UTF-8の設定を内容破損として退避・復旧し、真のIO障害と区別した。将来版backupの保持と復旧noticeを継続する。
 
 Issue #209では、接続taskをspawnしてからhandle登録・Connecting通知を行っていたため、即時lookup失敗のErrorをConnectingが後から上書きし、登録失敗時にtaskがdetachする競合を解消した。oneshot開始gateで登録・Connecting通知後にlookupを開始し、TwitchConnectionHandleのDropが所有taskをabortする。追補では予約・登録・cancelを同じmutex保護のTwitchConnectionOwnerへ集約し、古い予約の登録拒否を登録直前 barrier でstop／新接続の両順序から検証する。即時 lookup 成功／失敗はmulti-thread runtime上でconnect return前のlookup開始を同期し、Connectingとterminal statusの順を確認する。reviewed main `c868999` までを統合し、追加差分はfrontendと文書の変更でRustのTwitch接続ownerに重ならないことを確認した。Rust 1.90 all-features Twitch tests 100件、strict all-target clippy、fmt check、diff checkが成功した。親レビューで登録前stop/新接続・開始gate・Drop取消を確認した。reviewed main 928f1f6のspeech session制御を統合し、最終CIはPR #252で確認する。
 
@@ -124,6 +128,10 @@ Issue #261: 共通CIを止めた source-map-js advisoryを修正版へのlockfil
 - [x] Issue #211: speech の queue・formatter/URL・commands・runtime/event mapper を責務別 module へ分離し、明示 import と最小公開境界に整理する。既存回帰と no-default/DTO 契約を維持し、URL 検出 crate の比較と互換処理の範囲を記録する。
 
 2026-10-06 Issue #211: queue model/遷移を `queue.rs`、formatter/URL を `formatter.rs`、queue Tauri commands を `queue_commands.rs`、event snapshot/mapper を `events.rs` へ分離し、speech 回帰は `tests.rs` へ移した。`mod.rs` は共通型と境界の組立へ縮小。LinkFinderを比較したが、複数形式混在を含む互換性を保つには独自走査が依然必要なため、formatter内の単一走査を保持した。厳格な http/https/www、authority/port、ASCII・メール境界、日本語隣接の条件は formatter 側に維持した。reviewed main `2a06b79` の #220 active playback session ownership と #209 Twitch task ownership、および #216/#218/#219/#261 の reviewed 更新を統合。他Issue branchは含めていない。統合後のRust 1.90 all-targets/all-features 312件は成功。no-default は 223件成功し、既存の5秒 launcher performance regression は全 suite 実行で7.04秒、serial実行で5.29秒と閾値を超えたため隔離して再実行し4.54秒で成功した。no-default は最新 main 統合後も223件（性能予算テストのみfilter）成功し、app-feature Twitch tests 100件、strict all-target Clippy、fmt check、diff check も最新 main 統合後に成功した。launcher 性能テストは個別のno-default実行で引き続き成功した。#209 統合後はTwitch関連回帰を追加検証する。
+
+2026-10-06 Issue #211 親レビュー: linkifyのcandidateがあると互換走査を省く実装で、通常URLと `https://example.com(note)` の混在時に後者だけ置換しないことを本番formatter回帰で再現した。既存規則にはASCII境界・authority・括弧の独自検証が依然必要なため、依存導入と二重走査を取り止め、formatter module内の単一走査を保持する判断と公式資料をspeech設計へ記録した。混在回帰を追加し、最終検証はPR #255で確認する。
+
+2026-10-06 Issue #211 最終レビュー検証: URL混在回帰を含むapp speech全112件とstrict all-target Clippy、fmt/diff検査が成功。queue/formatter/commands/eventsの移動はimport・可視性・format以外の本体を保持していることを差分照合した。reviewed main 0ea7681までの起動chat buffer・設定復旧・selector helperも統合した。最終headの全CIはPR #255に記録する。
 
 - [x] Issue #215: live 通知を ID・severity・correlation を持つ未通知 queue として扱い、command error・同文の別発生・同時障害の欠落を防ぐ。状態/event/log の同一障害は重複を抑え、実 DOM の配送・クリア・再通知を検証する。
 
@@ -652,6 +660,12 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #261: @tailwindcss/node 4.3.3 の許容範囲 ^1.2.1 内で source-map-js を1.2.2へ統一し、未使用の1.2.1 entryを除去した。他の依存とpackage.jsonは変更しない。frozen offline install、frontend全429件、production build成功。pnpm auditはhigh/critical 0件で対象GHSAが消え、既存moderate 5件のみ。全CIの結果は PR #262 に記録する。
 
+## Issue #221: 不正UTF-8設定からの復旧
+
+- [x] IO障害とencoding/サイズ/JSON/schema破損を区別し、元bytesの退避・backup/既定値復旧・notice・将来schema保護をfileテストで確認する。
+
+2026-10-06 Issue #221: bounded readをIO/encoding/sizeの型付きエラーとし、JSON/schema破損と併せて復旧対象を明示した。不正UTF-8 primary＋正常backup、構文/encoding双方破損、元bytes退避、将来版backupのread-only、非特権ユーザーでのfile/ancestor権限拒否を回帰化。no-default全225件・strict Clippy・frontend build・format/diff検査成功。復旧noticeは既存のLogs/system Chat経路を使う。Windows実ファイルでの手動復旧確認は未実施。最終CIはPR #266に記録する。
+
 ## Issue #220: 再生中 session と制御先の一致
 
 - [x] 設定上の宛先と再生中sessionを区別し、Pause/Resume/Skip/Clear・完了確認を同じadapterへ送る。A再生中のB設定保存と後続itemの選択をfakeで検証する。
@@ -664,6 +678,8 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #219: 解除中はUI操作世代付きの要求として認証状態と分離し、削除失敗後はbackendの現在profileを照合する。後発操作・Auth revision変更後の古い解除/調停応答を拒否する。実AppShellで失敗後再試行、認証保持/消失、後発event、再取得失敗とcontrollerの後発loginを回帰化した。追加レビューで、解除成功eventがcommand応答より先だと古いprofileが残ることを再現し、revision検証済みのAuth disconnectedをprofile/promptと同時反映する。最終検証・CIはPR #264に記録する。
 
-2026-10-06 Issue #211 親レビュー: linkifyのcandidateがあると互換走査を省く実装で、通常URLと `https://example.com(note)` の混在時に後者だけ置換しないことを本番formatter回帰で再現した。既存規則にはASCII境界・authority・括弧の独自検証が依然必要なため、依存導入と二重走査を取り止め、formatter module内の単一走査を保持する判断と公式資料をspeech設計へ記録した。混在回帰を追加し、最終検証はPR #255で確認する。
+## Issue #223: 派生selectorのsnapshot契約
 
-2026-10-06 Issue #211 最終レビュー検証: URL混在回帰を含むapp speech全112件とstrict all-target Clippy、fmt/diff検査が成功。queue/formatter/commands/eventsの移動はimport・可視性・format以外の本体を保持していることを差分照合した。reviewed main 7a59928の起動chat bufferも統合した。最終headの全CIはPR #255に記録する。
+- [x] React公式selector helperとJotai移行を比較し、派生object/arrayの安定性・比較関数・Provider隔離・通知と描画回数をDOMで検証する。既存generation/revision/queue同期を維持する。
+
+2026-10-06 Issue #223: immutableなstore snapshotとselectorをReact公式helperへ別々に渡し、Object.is既定と任意比較関数を全domain hookで使えるようにした。通常/StrictModeの派生object・array、selector変更、store変更と購読解除、同一storeの無関係更新、Provider隔離と1eventあたりの通知/描画をDOM6件で回帰化した。frontend全462件（78 files）、build/typecheck、format、lint、diff検査成功。production JS gzip増加0.28 kB。Jotaiへの全domain移行と比べ、既存reducer・generation/revision・replayを保持する小さな境界変更を選んだ。最終headのCI・マージはPR #268で確認する。Windows実アプリの手動描画確認は未実施。
