@@ -155,6 +155,10 @@ Tailwind 4.3.3 と公式 `@tailwindcss/vite` を使い、`src/styles.css` の明
 
 ## チャットログ行
 
+履歴を閲覧中は、先頭可視message IDと行内部のoffset（scroll offset − VirtualItem.start）を保存する。測定はscroll eventまたはcommit後に行い、更新時のlayout cleanupでは座標を読み取らない。新着追加時は導入済みTanStack Virtualの測定値を更新してから、同じanchor helperと `getOffsetForIndex` / `scrollToOffset` で復元する。DOMの矩形差分やscrollTopへの追加加算は使わない。ref/ResizeObserverによる可変行高の補正はVirtualizerが担当し、ブラウザの独立したoverflow anchoringを無効にする。最上部だけ自動追従し、履歴閲覧中は新着件数から先頭へ戻れる。
+
+[Virtualizer API](https://tanstack.com/virtual/latest/docs/api/virtualizer) と [VirtualItem](https://tanstack.com/virtual/latest/docs/api/virtual-item) を参照し、実装は導入済み3.15.0のAPIで検証した。最新版資料の `anchorTo` / `followOnAppend` は使用しない。JSDOMでは実ChatView/virtualizerと固定されたviewport・行高を組み合わせて座標契約を検査する。Windows WebViewの実pixel確認は別途必要。
+
 Issue #85の結果詳細は、outcomeを持つuser行の状態ラベルをキーボード操作可能なbuttonにする。開くとChat下部の非modal詳細paneへfocusを移し、行の高さと本文2行上限を変えずに理由・code・発生時刻・item ID・安全な再送判断・復旧導線を表示する。閉じる/Escapeは起点buttonへfocusを戻す。対象の理由が手動再試行/完了等で消えた場合はpaneを閉じheadingへ戻す。Queueにも本文の下に同じ理由/復旧表示を置く。Filter/Settings/Queueへのrouteはfrontend定義から導出し、backend理由へ画面名/routeを埋め込まない。色/hoverだけを情報の唯一の表現にしない。
 
 表示項目:

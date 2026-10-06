@@ -11,6 +11,7 @@ fn backend_layers_keep_settings_and_speech_dependencies_inward() {
     let speech_types = include_str!("speech/types.rs");
     let app_events = include_str!("app_events/mod.rs");
     let speech_module = include_str!("speech/mod.rs");
+    let speech_events = include_str!("speech/events.rs");
     let speech_worker = include_str!("speech/worker.rs");
     let speech_domain_types = include_str!("speech/types.rs");
 
@@ -34,6 +35,8 @@ fn backend_layers_keep_settings_and_speech_dependencies_inward() {
     assert!(!speech_worker.contains("app_events::"));
     assert!(!speech_module.contains("SpeechQueueUpdatedEvent {"));
     assert!(!speech_module.contains("SpeechQueueItemEvent {"));
-    assert!(speech_module.contains("crate::app_events::speech_queue_updated_event("));
+    assert!(!speech_events.contains("SpeechQueueUpdatedEvent {"));
+    assert!(!speech_events.contains("SpeechQueueItemEvent {"));
+    assert!(speech_events.contains("crate::app_events::speech_queue_updated_event("));
     assert!(app_events.contains("pub(crate) fn speech_queue_updated_event("));
 }
