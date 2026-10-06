@@ -20,6 +20,76 @@ impl TwitchConnectionHandle {
         self.task.abort();
     }
 }
+impl Drop for TwitchConnectionHandle {
+    fn drop(&mut self) {
+        // JoinHandle::drop detaches the task. Keep cancellation with its owner,
+        // including when registration fails and this handle is discarded.
+        self.task.abort();
+    }
+}
+
+/// Serializes generation reservation, registration, and cancellation for the
+/// active EventSub connection. A reservation is current even before its task
+/// has been registered, so stop/replacement can invalidate that window.
+#[derive(Default)]
+pub(crate) struct TwitchConnectionOwner {
+    generation: u64,
+    connection: Option<TwitchConnectionHandle>,
+}
+impl TwitchConnectionOwner {
+    pub(crate) fn reserve(&mut self) -> u64 {
+        self.advance_generation();
+        if let Some(previous) = self.connection.take() {
+            previous.abort();
+        }
+        self.generation
+    }
+    pub(crate) fn register(&mut self, connection: TwitchConnectionHandle) -> Result<(), String> {
+        if connection.generation != self.generation || self.connection.is_some() {
+            return Err("Twitch 接続の開始要求が新しい操作に置き換えられました。".to_string());
+        }
+        self.connection = Some(connection);
+        Ok(())
+    }
+    pub(super) fn cancel(&mut self) -> ChatCancellation {
+        self.advance_generation();
+        let stopped = self.connection.take();
+        if let Some(handle) = stopped.as_ref() {
+            handle.abort();
+        }
+        ChatCancellation {
+            stopped: stopped.is_some(),
+            generation: self.generation,
+        }
+    }
+    pub(crate) fn is_current(&self, generation: u64) -> bool {
+        self.connection
+            .as_ref()
+            .is_some_and(|handle| handle.generation == generation)
+    }
+    pub(crate) fn active_generation(&self) -> Option<u64> {
+        self.connection.as_ref().map(|handle| handle.generation)
+    }
+    #[cfg(test)]
+    pub(crate) fn active_abort_handle(&self) -> Option<tokio::task::AbortHandle> {
+        self.connection
+            .as_ref()
+            .map(|handle| handle.task.abort_handle())
+    }
+    #[cfg(test)]
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation
+    }
+    fn advance_generation(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ChatCancellation {
+    pub(super) stopped: bool,
+    pub(super) generation: u64,
+}
 
 #[allow(dead_code)]
 pub trait TwitchChatSource {
@@ -34,9 +104,11 @@ pub(super) trait ChatRuntime:
     AuthRuntime + EventSubRuntime + Clone + Send + 'static
 {
     fn preferred_channel(&self) -> Result<String, String>;
-    fn next_generation(&self) -> u64;
-    fn replace_connection(&self, connection: TwitchConnectionHandle) -> Result<(), String>;
+    fn reserve_connection(&self) -> Result<u64, String>;
+    fn register_connection(&self, connection: TwitchConnectionHandle) -> Result<(), String>;
     fn connection_is_current(&self, generation: u64) -> bool;
+    async fn before_connection_registration(&self, _generation: u64) {}
+    async fn after_connection_start(&self, _generation: u64) {}
     fn lookup_user(
         &self,
         client_id: &str,
@@ -67,8 +139,8 @@ impl<R: ChatRuntime> TwitchChatService<R> {
             .map_err(Into::into)
     }
     pub(super) async fn disconnect(&self) -> Result<(), String> {
-        clear_twitch_auth_state(&self.runtime).await?;
-        let generation = self.runtime.next_generation();
+        let cancellation = clear_twitch_auth_state(&self.runtime).await?;
+        let generation = cancellation.generation;
         self.runtime.chat_status(
             TwitchStatus::Disconnected,
             Some("Twitch チャット受信を停止しました。".to_string()),
@@ -84,9 +156,8 @@ impl<R: ChatRuntime> TwitchChatService<R> {
         Ok(())
     }
     pub(super) fn stop(&self) -> Result<(), String> {
-        let stopped = self.runtime.cancel_chat()?;
-        let generation = self.runtime.next_generation();
-        let message = if stopped {
+        let cancellation = self.runtime.cancel_chat()?;
+        let message = if cancellation.stopped {
             "Twitch チャット受信を停止しました。"
         } else {
             "Twitch チャット受信は開始されていません。"
@@ -94,7 +165,7 @@ impl<R: ChatRuntime> TwitchChatService<R> {
         self.runtime.chat_status(
             TwitchStatus::Disconnected,
             Some(message.to_string()),
-            generation,
+            cancellation.generation,
         );
         self.runtime.auth_log(AppLogLevel::Info, message);
         Ok(())
@@ -135,10 +206,14 @@ pub(super) async fn connect_validated_channel(
     } else {
         channel_login
     };
-    let generation = state.next_generation();
+    let generation = state.reserve_connection()?;
     let channel_for_log = channel_login.clone();
     let app_for_task = (*state).clone();
+    let (start, started) = tokio::sync::oneshot::channel();
     let task = tokio::spawn(async move {
+        if started.await.is_err() {
+            return;
+        }
         let broadcaster = match app_for_task
             .lookup_user(&client_id, &access_token, &channel_login)
             .await
@@ -165,7 +240,8 @@ pub(super) async fn connect_validated_channel(
         };
         EventSubClient::new(&app_for_task).run(&params).await;
     });
-    state.replace_connection(TwitchConnectionHandle::new(generation, task))?;
+    state.before_connection_registration(generation).await;
+    state.register_connection(TwitchConnectionHandle::new(generation, task))?;
     state.chat_status(
         TwitchStatus::Connecting,
         Some(format!(
@@ -181,5 +257,9 @@ pub(super) async fn connect_validated_channel(
             channel_for_log
         ),
     );
+    // The registered handle and Connecting status are visible before the task
+    // can perform lookup or publish a terminal status.
+    let _ = start.send(());
+    state.after_connection_start(generation).await;
     Ok(())
 }

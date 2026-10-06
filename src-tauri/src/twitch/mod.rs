@@ -30,8 +30,10 @@ pub use auth_state::TwitchAuthState;
 pub(crate) use auth_store::{AuthCredentialStore, AuthLoadResult};
 #[cfg(feature = "app")]
 pub(crate) use auth_store::{AuthLoadNotice, AuthLoadReason, TwitchAuthStore};
+#[cfg(all(feature = "app", test))]
+pub(crate) use chat_service::TwitchConnectionHandle;
 #[cfg(feature = "app")]
-pub use chat_service::TwitchConnectionHandle;
+pub(crate) use chat_service::TwitchConnectionOwner;
 pub use model::*;
 use std::time::Duration;
 
