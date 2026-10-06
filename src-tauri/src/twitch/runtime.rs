@@ -9,19 +9,17 @@ use super::chat_delivery::dispatch_chat_message;
 use super::chat_service::{ChatRuntime, TwitchConnectionHandle};
 use super::error::SubscriptionRequestError;
 use super::eventsub::{EventSubRuntime, EventSubSocket};
+use super::http::TwitchHttp;
 use super::model::ChatMessage;
-use super::oauth::{
-    fetch_twitch_user, DeviceOAuthTransport, OAuthTransport, PollAuthError, TwitchOAuthHttp,
-};
-use super::subscription::{
-    create_chat_message_subscription, send_chat_message_subscription, SubscriptionRuntime,
-};
+use super::oauth::{DeviceOAuthTransport, OAuthTransport, PollAuthError};
+use super::subscription::{create_chat_message_subscription, SubscriptionRuntime};
 use crate::app_events::{
     emit_app_log, emit_twitch_auth_required, emit_twitch_chat_message, emit_twitch_chat_status,
     emit_twitch_status, AppLogLevel, TwitchActiveConnection, TwitchAuthRequiredReason,
     TwitchStatus, TwitchStatusDomain,
 };
-use crate::settings::{default_twitch_client_id, AppState};
+use crate::application::AppState;
+use crate::settings::default_twitch_client_id;
 use crate::speech::enqueue_chat_message_for_speech;
 use tauri::Manager;
 use tokio_tungstenite::connect_async;
@@ -31,11 +29,14 @@ pub(super) struct TauriTwitchRuntime {
     app: tauri::AppHandle<tauri::Wry>,
     auth: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,
     store: TwitchAuthStore,
+    http: TwitchHttp,
 }
 impl TauriTwitchRuntime {
     pub(super) fn new(state: &AppState, app: tauri::AppHandle<tauri::Wry>) -> Self {
+        let http = app.state::<TwitchHttp>().inner().clone();
         Self {
             app,
+            http,
             auth: state.twitch_auth.clone(),
             store: state.twitch_auth_store.clone(),
         }
@@ -43,21 +44,21 @@ impl TauriTwitchRuntime {
 }
 impl OAuthTransport for TauriTwitchRuntime {
     async fn refresh(&self, client_id: &str, refresh_token: &str) -> anyhow::Result<TokenResponse> {
-        TwitchOAuthHttp.refresh(client_id, refresh_token).await
+        self.http.refresh(client_id, refresh_token).await
     }
     async fn validate(&self, access_token: &str) -> anyhow::Result<ValidateResponse> {
-        TwitchOAuthHttp.validate(access_token).await
+        self.http.validate(access_token).await
     }
 }
 impl DeviceOAuthTransport for TauriTwitchRuntime {
     async fn device_code(&self, client_id: &str) -> anyhow::Result<DeviceCodeResponse> {
-        TwitchOAuthHttp.device_code(client_id).await
+        self.http.device_code(client_id).await
     }
     async fn poll_token(
         &self,
         pending: &PendingDeviceAuth,
     ) -> Result<TokenResponse, PollAuthError> {
-        TwitchOAuthHttp.poll_token(pending).await
+        self.http.poll_token(pending).await
     }
 }
 impl AuthRuntime for TauriTwitchRuntime {
@@ -104,7 +105,9 @@ impl SubscriptionRuntime for TauriTwitchRuntime {
         client_id: &str,
         access_token: &str,
     ) -> Result<(), SubscriptionRequestError> {
-        send_chat_message_subscription(params, session_id, client_id, access_token).await
+        self.http
+            .send_chat_message_subscription(params, session_id, client_id, access_token)
+            .await
     }
 }
 impl ChatRuntime for TauriTwitchRuntime {
@@ -144,7 +147,9 @@ impl ChatRuntime for TauriTwitchRuntime {
         access_token: &str,
         login: &str,
     ) -> anyhow::Result<HelixUser> {
-        fetch_twitch_user(client_id, access_token, login).await
+        self.http
+            .fetch_twitch_user(client_id, access_token, login)
+            .await
     }
 }
 impl EventSubRuntime for TauriTwitchRuntime {

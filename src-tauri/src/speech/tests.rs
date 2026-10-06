@@ -274,28 +274,16 @@ fn failed_history_waits_for_manual_retry_without_stopping_later_pending_work() {
     queue
         .history
         .push_back(history_item("failed", SpeechQueueItemStatus::Error));
-    assert_eq!(
-        queue_event_snapshot(&queue, None).phase,
-        SpeechQueuePhase::Error
-    );
+    assert_eq!(queue.snapshot(None).phase, SpeechQueuePhase::Error);
     queue.pending.push_back(queued_item("later"));
-    assert_eq!(
-        queue_event_snapshot(&queue, None).phase,
-        SpeechQueuePhase::Idle
-    );
+    assert_eq!(queue.snapshot(None).phase, SpeechQueuePhase::Idle);
     assert_eq!(
         queue.reserve_next_request_after_dispatch_lock().unwrap().id,
         "later"
     );
-    assert_eq!(
-        queue_event_snapshot(&queue, None).phase,
-        SpeechQueuePhase::Speaking
-    );
+    assert_eq!(queue.snapshot(None).phase, SpeechQueuePhase::Speaking);
     queue.paused = true;
-    assert_eq!(
-        queue_event_snapshot(&queue, None).phase,
-        SpeechQueuePhase::Paused
-    );
+    assert_eq!(queue.snapshot(None).phase, SpeechQueuePhase::Paused);
 }
 
 #[test]
@@ -954,12 +942,12 @@ fn snapshots_include_in_flight_and_clear_preserves_terminal_states() {
     queue.pending.push_back(queued_item("sending"));
     queue.pending.push_back(queued_item("waiting"));
     queue.begin_next_request().unwrap();
-    let snapshot = queue_event_snapshot(&queue, None);
+    let snapshot = queue.snapshot(None);
     assert_eq!(snapshot.queued_count, 2);
     assert_eq!(snapshot.phase, SpeechQueuePhase::Speaking);
     assert_eq!(snapshot.items[0].id, "sending");
     queue.clear_pending();
-    let snapshot = queue_event_snapshot(&queue, None);
+    let snapshot = queue.snapshot(None);
     assert_eq!(snapshot.queued_count, 0);
     assert!(snapshot
         .items

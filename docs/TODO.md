@@ -209,6 +209,18 @@ Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既
 
 - [x] Issue #96: pnpm/Cargoの監査・期限付き例外validator・定期scan・dependency更新PR・release SBOMを導入する。
 
+- [x] Issue #229: dependency inventoryとRice固有provenanceを分離し、CycloneDX公式model/serializer・schema validatorと標準Package URL parser/builderを使ってSBOMを生成する。依存graph・exact commit/lockfile/artifact照合・再現可能なsort・Rice propertiesを保持し、npm scoped/Cargo/Debian PURL round-tripとCycloneDX 1.5 schemaをテストする。追加のpeer/dev dependencyとNode互換性を記録する。
+
+2026-10-06 Issue #229 着手計画: SBOM generator、release artifact verifier、dependency-security設計と既存テスト/Node 22 release入力を確認する。inventory・provenanceとCycloneDX変換を切り分け、公式libraryとPackageURLの対応版/peer dependenciesを確認して固定する。手組みPURL/CycloneDX objectを標準modelへ置換し、installed graph fixtureでexact source/artifact情報・dependency edge・sortを保つ。標準PURLのnpm scoped/Cargo/Debian round-trip、公式CycloneDX 1.5 schemaの正例/不正例、release verifierの不正SBOM拒否を追加し、Node 22で関連policyテストを実行する。
+
+2026-10-06 Issue #229 調査・実装: CycloneDX JavaScript Library 10.3.0 (Node >=20.18.0) のmodel/serializer/公式JsonValidatorと `packageurl-js` 2.0.1を採用し、schema validatorの任意peer `ajv` 8.20.0・`ajv-formats` 3.0.1・`ajv-formats-draft2019` 1.6.1をexact pinする。依存inventory、Rice provenance、標準PURL構築、schema検証を別moduleへ分離し、release artifact verifierもasyncで同じ公式schema validationを必須にした。Node 22.22.0でSBOM単体のPURL round-trip/CycloneDX schema testとinstalled npm/Cargo graphが通過した。最終policy、diff、workflow全体の確認を継続する。
+
+2026-10-06 Issue #229 reviewed main統合: #228の共通TOML parser (`scripts/config-parsers.mjs`) をCargo.lock読み込みにも適用し、lock entryとregistry checksumをfail-closedに検証する。Cargo parser fixtureを正規TOMLにし、malformed TOML・checksum不正・registry crateのSHA-256保持を回帰化した。reviewed `origin/main` `27e8599` の#228 parser/CI/設計更新を統合した。SBOM/PURL/schema、artifact verifier、parser、release workflow policyとlicense testsは通過。実installed npm/Cargo graphでも10件全て成功した。
+
+2026-10-06 Issue #229 親レビュー: schema validator導入でWindows artifact smokeとtrusted publisherにもnpm依存が必要になったため、各検証前へfrozen/ignore-scripts installを追加した。publisherはsourceではなくtrustedのmanifest/lockだけを使い、依存install欠落・実行順・不正directory・script実行・skipをworkflow policy回帰で拒否する。Node22の関連71件（installed graph含む）と、独立checkoutで依存不足を再現→frozen install後の両verifier import成功を確認した。
+
+2026-10-06 Issue #229 完了: CycloneDX JavaScript Library 10.3.0と `packageurl-js` 2.0.1で正式model/serializerとPURL構築/parseを行う。inventory・provenance・standard model・schema validationは別moduleで、release verifierもofficial CycloneDX 1.5 validatorを使う。exact commit/lockfile/artifact、scope・dependency edge・hash・Rice propertiesとstable sortを維持し、Cargo registry lock hashをshared TOML parser経由で読む。Node 22.22.0のfrozen install、SBOM/artifact/parser/policy/license関連test、installed graph schema integration、license/workflow checksと`git diff --check`が成功した。追加dev dependenciesとJSON-validation peer dependenciesをexact pinし、Node >=20.18.0の要件が固定release Node 22.22.0を満たすことを文書化した。PR #273 の最終CIと親レビューを待つ。
+
 2026-10-05: Issue #96でPR/main/weekly/releaseの共通advisory gate、期限/owner/根拠を必須とする例外validator、Dependabot、artifact digestとexact commitへ結び付けたCycloneDX 1.5 SBOMを追加した。policy/SBOMのunit10件と実installed graphのintegration1件を確認。RustSec DB ef6173cbc5c50ec8166f9a5b28f07834144373ee（1290 advisory）でRust警告7件、npm High1件をblockingとして検出した。gateが正常に失敗することを確認しており、clean auditではない。新規releaseの実配布は未実施。
 
 - [x] Issue #93: release build の base image / Debian snapshot / toolchain を固定し、時刻と build material を記録・検証する。SDK/CRT feed と NSIS/PE metadata の非決定性は material inventory と文書で明示する。
@@ -510,6 +522,8 @@ Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離
 
 2026-10-06 Issue #196: `launcher_add`はsettings transactionで実際に追加した`addedCount`と更新後のitemsを返すようにし、Launcher通知は共有stateの件数差分を参照しない。実DomainStoresとLauncherViewを接続し、`flushSync`で共有stateをPromise解決前に更新してから結果を返すDOM回帰を追加した。新規/混在/重複通知と同一targetの並行結果独立性を確認する。Frontend全gate（format/lint/typecheck/test 324件/build）とsecurity/license policyが成功。Rust toolchainがこの実行環境にないためRust回帰のローカル実行は未確認。親レビューで追加した実store更新順序のDOM回帰2件も成功。Rustを含む最終CI結果はPR #237に記録する。
 - [x] Issue #68: Launcher のアイコン抽出を timeout/kill/reap 付きの上限制御 worker へ移し、設定 lock 外で実行して競合する設定変更を merge する。抽出失敗は汎用アイコンと bounded Logs へフォールバックする。
+- [x] Issue #230: Tokio process を使う共通 bounded runner へ Launcher icon 抽出と capture helper を集約し、5秒 timeout、stdout/stderr 上限と drain、kill/reap、Windows 非表示起動、job/permit 制限を維持する。同期 IconExtractor 境界と process feature の変更範囲を明記し、正常・大量出力・timeout・終了失敗・cancel を同じ runner で検証する。
+2026-10-06 Issue #230: Tokio process runnerへstdout/stderrの個別上限、超過後EOFまでのdrain、5秒全体期限、timeout/cancel後のkill/reapと終了後250msのpipe drainを集約した。同期IconExtractorはblocking filesystem/COM worker境界を保ち、Handle::block_on橋渡しと`process` featureをarchitecture文書に記載。レビューで見つかった片側JoinHandleが完了した後に`join!` futureが中断されるとcleanupから同じhandleを再pollする問題を、完了値を維持するreader stateへ修正した。片側先行EOF時のtimeout/cancel、reader error cleanup、exact-limit/limit+1を回帰化。親レビューで実pipeの片側EOFをjoinが取得した後にfutureを中断し、250ms cleanup期限超過後に残ったreaderをabort/reapする回帰も追加した。lock済みTokioで本番process moduleを直接compileした独立test harnessは全8件成功。Windows CIの正常出力testでPowerShell cold startが2秒を超えたため、このtestの待機予算を本番と同じ5秒へ合わせた。50msのkill/reap回帰は維持した。Rust all-features Launcher 49件/no-default 48件、all-targets/all-features strict Clippy、fmtとdiff checkが成功。実装headの[品質](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37411997140)、[Rust feature matrix](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37412005847)、[Windows native all-features/process adapters](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37411986016)がすべて成功し、Windows cancel回帰を含む。レビュー修正後の16必須CIは新しいheadのpush後に実行し、結果はPR #274へ追記する。
 - [x] Issue #18: Launcher の削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応させる。
 - [x] Issue #227: Launcherメニューの一般的な操作・focus・外側操作・配置をheadless primitiveへ委譲し、項目ごとの開閉・busy・削除後focusを実DOMで検証する。#225とのライブラリ共通化と導入サイズを比較する。
 
@@ -652,6 +666,11 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - 2026-10-06 Issue #198: [Biome noExplicitAny](https://biomejs.dev/linter/rules/no-explicit-any/) の型引数制約の例外を維持する。条件型で任意の引数列から戻り値を推論する場合に限り、理由付きの行単位 `biome-ignore lint/suspicious/noExplicitAny` を使える。DTO、mock、値のキャストには使わず、ファイル単位の無効化はしない。`noEnum` は const enum を検出しないため `noConstEnum` も有効にした。既存 quality policy の正負 fixture で named/alias import と許容例外を含め検証し、別の AST 検査器や workflow は追加していない。
 - Issue #18: 削除メニューは ARIA `menu` / `menuitem` を使うため、Menu Button pattern に従い、開いた直後は最初の項目へフォーカスする。矢印キーと Home/End は項目間を循環移動し、Escape はトリガーへ戻す。Tab はフォーカスを閉じ込めずにメニューだけを閉じ、外側クリックで閉じる既存動作は維持する。
 
+- [x] Issue #210: AppState と組立を composition root へ移し、設定 model/validation と永続化、接続先の純粋検証と TCP adapter、Speech domain 状態と app event DTO の依存方向を分離する。既存 payload と port 境界、no-default 検証を維持し、新 adapter は追加しない。
+- [x] Issue #210 親レビュー追補: speech/queue.rs のstatus参照をdomain型へ寄せ、純粋queueがapp_eventsへ依存しないarchitecture回帰を追加した。TODOのvalidated iconを#222へ修正し、別Issue #261/#262で解決したGHSA記述をPR本文にも反映した。
+
+2026-10-06 進捗: AppStateをapplication.rsへ移し、設定DTOとJSON保存をsettings/model.rs・settings/persistence.rsへ分割した。host/address値はTCP実装からspeech/endpoint.rsへ移し、Speech status/health/queue分類はspeech/types.rsとfailure.rsへ移動した。SpeechRuntimeはAppStateに依存せず、queue snapshotのDTO変換とlog level変換はapp_events adapterへ置き、source boundary回帰で依存方向を確認する。既存ts-rs属性とwire生成一致を維持し、unused-importsをdenyするno-default/appの両featureで検査する。reviewed main dcf6709まで統合し、#211 module分割、#220再生session、#209 TwitchConnectionOwner、#222 settings_transaction・validated icon・endpoint revoke-before-publish、#231 TempPath cleanup、#232 shared TwitchHttp、#234 host-validation契約を保持した。Rust 1.90 strict no-default 235件、app有効331件、strict all-target/all-features Clippy、wire contract一致、format、frontend production buildが成功。PR #253の最終CIは親レビュー担当に引き継ぐ。
+
 2026-10-06 Issue #213: 保存待ちキャンセル後の app_exit と reset 済み blocker の proceed 例外を実 AppShell で再現し、保存後の操作を現在の token と blocker location key で照合する。取り消した保存そのものは完了してよいが、旧終了・遷移の副作用は実行しない。保存済みになった新しい確認要求も続行/キャンセルを明示選択できる。
 
 2026-10-06 Issue #213 統合確認: reviewed main 493c57f の wire schema を取り込み、本番 AppShell と保存継続の DOM 33件、format/lint/typecheck/build が成功した。最終 head の CI とマージは PR #254 に記録する。
@@ -698,6 +717,10 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #219: 解除中はUI操作世代付きの要求として認証状態と分離し、削除失敗後はbackendの現在profileを照合する。後発操作・Auth revision変更後の古い解除/調停応答を拒否する。実AppShellで失敗後再試行、認証保持/消失、後発event、再取得失敗とcontrollerの後発loginを回帰化した。追加レビューで、解除成功eventがcommand応答より先だと古いprofileが残ることを再現し、revision検証済みのAuth disconnectedをprofile/promptと同時反映する。最終検証・CIはPR #264に記録する。
 
+- [x] Issue #234: frontend IPv6構文を既存validatorへ委譲し、host policyを分離してRustと共通fixtureで正常/不正入力・byte境界を検証する。
+
+2026-10-06 Issue #234: 手書きIPv6 group/IPv4 tail変換を除去し、既存Zod ipv6へ委譲した。共通settings fixtureを圧縮・埋込IPv4・先頭ゼロ・zone ID・DNS/IPv4・raw253 UTF-8 bytes境界へ拡張し、frontend検証103件、build/typecheck、lint/format、diff検査が成功。Rustとの共通fixture照合と最終CIはPR #278で管理する。実接続先の認可policyは変更しない。
+
 ## Issue #222: 検証済みPNGと設定transaction
 
 - [x] 未検証wireと検証済みPNGを型で分け、clone・metadata編集・quota検査の再decodeを避ける。settings update、Launcher update、window saveを共通transaction mutexで直列化し、高コスト検証/保存を公開settings lockから分離する。decode回数、200件保存、多数icon検証中もspeech enqueueがsettings lockを取得できること、schema拒否と保存失敗時の非変更を検証する。
@@ -722,3 +745,7 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 2026-10-06 Issue #233: `app_open_external_url` は Twitch activation URL を検証してから外部ブラウザ起動へ渡す。Windows/macOS は公式 `tauri-plugin-opener` 2.7.0 の Rust API、Linux/WSL は同 plugin が使う `open` 5.4.4 の `open::commands` で候補生成し、各プロセスの終了状態を待って非zero時だけ次候補を試す。OS判定と一般的なコマンド候補生成はライブラリへ委譲し、公式候補がすべて失敗した後の旧wslviewだけを互換fallbackとして保持した。Opener の自動JSリンク処理は無効、renderer capability は変更せずOpener URL/path権限も追加していない。allowlist、拒否前に起動関数を呼ばないこと、日本語失敗案内、fake executable による候補順・成功停止・全失敗詳細を回帰検証した。公式 plugin の Tauri 2.12.1 / release Rust 1.90.0 互換性を確認。初期実装のcargo checkとfocused testに加え、親が本番検証・エラー変換とadapterをlock済み依存へ直接linkしたharnessで2test（隔離process内の先頭成功、途中fallback、wslview成功、全失敗の4scenario）成功。各childのPATH変更は親のtest processへ漏らさない。fmt/diffも成功。統合後のapp/no-default・Clippy・Windowsを含む最終CI結果はPR #277で管理する。実Windows/macOS/Linux/WSL desktopの手動確認は未実施。
 
 2026-10-06 Issue #231: tempfileの乱数名生成とRAII cleanupを採用し、Windows write-throughを含む既存atomic_replaceと同期・権限検査を保持した。write/backup/replace失敗時のprimary/backup/メモリと残留temp、unwind後cleanupを回帰化。Rust settings47件、strict all-target/all-feature Clippy、frontend build、fmt/diff検査が成功。最終CIはPR #275で管理する。実機での電源断検証は未実施。
+
+- [x] Issue #232: Twitch transportがreqwest Clientを共有し、timeout/TLSと要求ごとの認証header、pool再利用・期限・credential切替・失敗分類を検証する。service/fake transportと認証更新順序を維持する。
+
+2026-10-06 Issue #232: TwitchHttpをapp setupで一度構築し、runtime cloneを通じ全OAuth・Helix・EventSub HTTP要求にpoolを共有する。ローカルHTTP fixtureで7要求/cloneのTCP接続1本、全6操作の期限、token/client切替、poll・認証・購読失敗分類を追加。実装head 2f67990の全16 CI（Rust all-feature/no-default・strict Clippy・Windows・frontend）とfrontend build/fmt/diff検査成功。ローカルの重複再buildはCI成功後に停止した。実Twitchログインは未実施。

@@ -2,7 +2,8 @@
 use super::events::AppEventSink;
 use super::model::{parse_add_request, LauncherAddResult, LauncherItem, LauncherLaunchResult};
 use super::repository::AppSettingsRepository;
-use crate::settings::{AppSettings, AppState, SettingsStore};
+use crate::application::AppState;
+use crate::settings::{AppSettings, SettingsStore};
 
 fn repository<'a>(
     app: &'a tauri::AppHandle<tauri::Wry>,

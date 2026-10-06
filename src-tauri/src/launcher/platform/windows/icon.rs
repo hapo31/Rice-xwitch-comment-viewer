@@ -1,19 +1,15 @@
 use super::super::super::model::{LAUNCHER_ICON_DATA_URL_PREFIX, MAX_ICON_BASE64_LENGTH};
 use super::super::super::ports::IconExtractionError;
-use super::super::process::{
-    read_pipe_bounded, terminate_and_reap_child, wait_for_child_exit, ChildExitWaitError,
-};
+use super::super::process::{run_bounded, ProcessRunError};
 use std::path::Path;
-use std::process::{Command, Stdio};
 use std::time::Duration;
+use tokio::process::Command;
 
 const ICON_EXTRACTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(in crate::launcher) fn extract_icon_data_url(
     target: &Path,
 ) -> Result<Option<String>, IconExtractionError> {
-    use std::os::windows::process::CommandExt;
-
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     const EXTRACT_ICON_SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
@@ -43,7 +39,8 @@ try {
 }
 "#;
 
-    let mut child = Command::new("powershell.exe")
+    let mut command = Command::new("powershell.exe");
+    command
         .args([
             "-NoLogo",
             "-NoProfile",
@@ -54,95 +51,43 @@ try {
             EXTRACT_ICON_SCRIPT,
         ])
         .creation_flags(CREATE_NO_WINDOW)
-        .env("RICE_LAUNCHER_ICON_PATH", target.as_os_str())
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("PowerShell を開始できませんでした: {error}"))?;
+        .env("RICE_LAUNCHER_ICON_PATH", target.as_os_str());
 
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "PowerShell の出力を取得できませんでした。".to_string())?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "PowerShell のエラー出力を取得できませんでした。".to_string())?;
-    let stdout_reader =
-        std::thread::spawn(move || read_pipe_bounded(stdout, MAX_ICON_BASE64_LENGTH));
-    let stderr_reader = std::thread::spawn(move || read_pipe_bounded(stderr, 8 * 1024));
-    let status = match wait_for_child_exit(&mut child, ICON_EXTRACTION_TIMEOUT) {
-        Ok(status) => status,
-        Err(ChildExitWaitError::TimedOut { termination }) => {
-            return match termination {
-                Ok(status) => {
-                    let stdout_result = stdout_reader.join();
-                    let stderr_result = stderr_reader.join();
-                    let pipe_error = !matches!(stdout_result, Ok(Ok(_)))
-                        || !matches!(stderr_result, Ok(Ok(_)));
-                    if pipe_error {
-                        Err(format!(
-                            "PowerShell のアイコン抽出が {} 秒でタイムアウトしました。子プロセスは終了しました（{status}）が、出力回収を確認できませんでした。",
-                            ICON_EXTRACTION_TIMEOUT.as_secs()
-                        ))
-                    } else {
-                        Err(format!(
-                            "PowerShell のアイコン抽出が {} 秒でタイムアウトしました。子プロセスの終了を確認しました（{status}）。",
-                            ICON_EXTRACTION_TIMEOUT.as_secs()
-                        ))
-                    }
-                }
-                Err(error) => Err(format!(
-                    "PowerShell のアイコン抽出が {} 秒でタイムアウトしました。子プロセスの終了を確認できませんでした: {error}",
-                    ICON_EXTRACTION_TIMEOUT.as_secs()
-                )),
-            }.map_err(IconExtractionError::from);
-        }
-        Err(ChildExitWaitError::Wait(error)) => {
-            let termination = terminate_and_reap_child(&mut child);
-            if termination.is_ok() {
-                let _ = stdout_reader.join();
-                let _ = stderr_reader.join();
-            }
-            return Err(IconExtractionError::Failed(match termination {
-                Ok(status) => format!(
-                    "PowerShell の状態を確認できませんでした。子プロセスの終了を確認しました（{status}）: {error}"
-                ),
-                Err(termination_error) => format!(
-                    "PowerShell の状態を確認できませんでした。子プロセスの終了も確認できませんでした: {error}; {termination_error}"
-                ),
-            }));
-        }
-    };
-    let stdout = stdout_reader
-        .join()
-        .map_err(|_| "PowerShell の出力処理が停止しました。".to_string())?
-        .map_err(|error| {
-            if error.kind() == std::io::ErrorKind::InvalidData {
-                IconExtractionError::ResourceLimit
-            } else {
-                IconExtractionError::Failed(format!("PowerShell の出力を読めませんでした: {error}"))
-            }
+    // IconExtractor remains synchronous because Launcher filesystem and COM
+    // work share one blocking worker/permit. Tokio documents Handle::block_on
+    // for this bridge from a spawn_blocking thread; process I/O stays on the
+    // app runtime instead of creating reader threads here.
+    let output = tokio::runtime::Handle::current()
+        .block_on(run_bounded(
+            command,
+            ICON_EXTRACTION_TIMEOUT,
+            MAX_ICON_BASE64_LENGTH,
+            8 * 1024,
+        ))
+        .map_err(|error| match error {
+            ProcessRunError::OutputLimit { stdout: true, .. } => IconExtractionError::ResourceLimit,
+            other => IconExtractionError::Failed(
+                other.message("PowerShell のアイコン抽出", ICON_EXTRACTION_TIMEOUT),
+            ),
         })?;
-    let stderr = stderr_reader
-        .join()
-        .map_err(|_| "PowerShell のエラー出力処理が停止しました。".to_string())?
-        .map_err(|error| format!("PowerShell のエラー出力を読めませんでした: {error}"))?;
-    if !status.success() {
-        let details = String::from_utf8_lossy(&stderr)
+
+    if !output.status.success() {
+        let details = String::from_utf8_lossy(&output.stderr)
             .trim()
             .chars()
             .take(400)
             .collect::<String>();
         return Err(IconExtractionError::Failed(if details.is_empty() {
-            format!("PowerShell のアイコン抽出が終了コード {status} で失敗しました。")
+            format!(
+                "PowerShell のアイコン抽出が終了コード {} で失敗しました。",
+                output.status
+            )
         } else {
             format!("PowerShell のアイコン抽出に失敗しました: {details}")
         }));
     }
 
-    let encoded = String::from_utf8(stdout)
+    let encoded = String::from_utf8(output.stdout)
         .map_err(|_| "PowerShell のアイコン出力が文字列ではありません。".to_string())?;
     let encoded = encoded.trim();
     if encoded.is_empty() || encoded.len() > MAX_ICON_BASE64_LENGTH {

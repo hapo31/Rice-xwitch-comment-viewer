@@ -1,7 +1,6 @@
 use super::queue::{SpeechQueueFailureTransition, SpeechQueueState, RETRY_DELAY};
 use super::runtime::{SelectedSpeechAdapter, SpeechClock, SpeechDispatcher};
-use super::{SpeechPlaybackCompletion, SpeechStatus};
-use crate::app_events::{AppLogLevel, SpeechAdapterHealth};
+use super::{SpeechAdapterHealth, SpeechLogLevel, SpeechPlaybackCompletion, SpeechStatus};
 use crate::speech::SpeechFailure;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -13,7 +12,7 @@ pub(crate) trait SpeechQueueEvents: Send + Sync {
     fn snapshot(&self, queue: &SpeechQueueState, warning: Option<String>);
     fn activity(&self, status: SpeechStatus, message: Option<String>);
     fn health(&self, health: SpeechAdapterHealth, message: Option<String>);
-    fn log(&self, level: AppLogLevel, message: String);
+    fn log(&self, level: SpeechLogLevel, message: String);
 }
 
 pub(crate) struct SpeechQueueWorker {
@@ -37,7 +36,7 @@ impl SpeechQueueWorker {
                 let mut queue = match self.queue.lock() {
                     Ok(queue) => queue,
                     Err(error) => {
-                        self.events.log(AppLogLevel::Error, error.to_string());
+                        self.events.log(SpeechLogLevel::Error, error.to_string());
                         return;
                     }
                 };
@@ -75,7 +74,7 @@ impl SpeechQueueWorker {
                 drop(dispatch_guard);
                 if control_pending {
                     if let Err(error) = self.wait_for_control().await {
-                        self.events.log(AppLogLevel::Error, error);
+                        self.events.log(SpeechLogLevel::Error, error);
                         return;
                     }
                     continue;
@@ -105,7 +104,7 @@ impl SpeechQueueWorker {
                 Err(failure) => Err(failure.clone()),
             };
             if let Err(error) = self.wait_for_control().await {
-                self.events.log(AppLogLevel::Error, error);
+                self.events.log(SpeechLogLevel::Error, error);
                 return;
             }
             match result {
@@ -113,7 +112,7 @@ impl SpeechQueueWorker {
                     let mut queue = match self.queue.lock() {
                         Ok(queue) => queue,
                         Err(error) => {
-                            self.events.log(AppLogLevel::Error, error.to_string());
+                            self.events.log(SpeechLogLevel::Error, error.to_string());
                             return;
                         }
                     };
@@ -125,7 +124,7 @@ impl SpeechQueueWorker {
                     let mut queue = match self.queue.lock() {
                         Ok(queue) => queue,
                         Err(error) => {
-                            self.events.log(AppLogLevel::Error, error.to_string());
+                            self.events.log(SpeechLogLevel::Error, error.to_string());
                             return;
                         }
                     };
@@ -133,13 +132,13 @@ impl SpeechQueueWorker {
                         self.events
                             .health(failure.adapter_health(), Some(message.clone()));
                         self.events.log(
-                            AppLogLevel::Error,
+                            SpeechLogLevel::Error,
                             format!("[{}] {}", request.id, failure.log_message()),
                         );
                         self.events.snapshot(&queue, Some(message));
                     } else {
                         self.events.log(
-                            AppLogLevel::Warning,
+                            SpeechLogLevel::Warning,
                             format!("[{}] 取消済みの読み上げは読み上げ先側の完了を確認できませんでした。", request.id),
                         );
                     }
@@ -151,14 +150,14 @@ impl SpeechQueueWorker {
                         let mut queue = match self.queue.lock() {
                             Ok(queue) => queue,
                             Err(error) => {
-                                self.events.log(AppLogLevel::Error, error.to_string());
+                                self.events.log(SpeechLogLevel::Error, error.to_string());
                                 return;
                             }
                         };
                         transition = queue.fail_request_with_retry(&request.id, &failure);
                         if transition == SpeechQueueFailureTransition::Ignored {
                             self.events.log(
-                                AppLogLevel::Warning,
+                                SpeechLogLevel::Warning,
                                 format!(
                                     "[{}] 取消済みの読み上げ送信が失敗しました: {}",
                                     request.id,
@@ -183,7 +182,7 @@ impl SpeechQueueWorker {
                         self.events
                             .health(failure.adapter_health(), Some(queue_message.clone()));
                         self.events.log(
-                            AppLogLevel::Error,
+                            SpeechLogLevel::Error,
                             format!("{queue_message} {}", failure.log_message()),
                         );
                         self.events.snapshot(&queue, Some(queue_message));
@@ -193,7 +192,7 @@ impl SpeechQueueWorker {
                         let mut queue = match self.queue.lock() {
                             Ok(queue) => queue,
                             Err(error) => {
-                                self.events.log(AppLogLevel::Error, error.to_string());
+                                self.events.log(SpeechLogLevel::Error, error.to_string());
                                 return;
                             }
                         };

@@ -6,6 +6,12 @@ Twitch公式のEventSub WebSocketを採用する。TwitchのChat & Chatbotsド�
 
 MultiCommentViewerはTwitch用ディレクトリとして `TwitchIF` と `TwitchSitePlugin` を持つ既存チャットビューア実装で、参考対象としては有用。ただしGPL-3.0のため、コードを流用せず、挙動やUI観察に留める。
 
+## HTTP transportの寿命
+
+アプリsetup時に `TwitchHttp` を一度生成し、各runtimeへClientをcheap cloneする。OAuth device/poll/refresh/validate、Helix user取得、EventSub購読は同じreqwest poolを使う。connect/全要求timeoutは15秒、TLSはrustlsで既存の証明書検証を使い、生成policyは一箇所に集める。認証headerやrefresh tokenはClientの既定値に保存せず要求ごとに渡し、ログイン変更・token rotation直後にも古い資格情報を送らない。serviceのfake transport、認証generation/revision、refresh成功時の保存順序は変更しない。
+
+参照: [reqwest Clientの再利用と内部pool](https://docs.rs/reqwest/latest/reqwest/struct.Client.html)、[Twitch OAuth Device Code Flow](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow)。
+
 ## EventSub WebSocketの流れ
 
 ```text

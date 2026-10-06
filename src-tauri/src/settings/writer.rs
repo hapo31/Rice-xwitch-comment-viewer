@@ -1,7 +1,7 @@
 //! One process owns this settings directory for its entire lifetime.
 //! The stable lock file is never replaced or deleted: locking settings.json
 //! itself would lose ownership at the first atomic replacement.
-use super::{protect_metadata, protect_storage};
+use super::persistence::{protect_metadata, protect_storage};
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 #[cfg(feature = "app")]
@@ -34,7 +34,10 @@ impl SettingsWriterGuard {
         );
         protect_metadata(&lock_path, &metadata, 0o600)?;
         match file.try_lock() {
-            Ok(()) => Ok(Self { settings_path: settings_path.to_path_buf(), _file: file }),
+            Ok(()) => Ok(Self {
+                settings_path: settings_path.to_path_buf(),
+                _file: file,
+            }),
             Err(TryLockError::WouldBlock) => Err(anyhow::anyhow!(
                 "Rice は既に起動しています。先に起動したウィンドウを使用してください。"
             )),

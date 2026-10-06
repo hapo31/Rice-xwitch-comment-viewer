@@ -1,3 +1,7 @@
+import { z } from "zod";
+
+const ipv6Address = z.ipv6();
+
 export function isValidTwitchChannelLogin(value: string): boolean {
   const channel = value.trim();
   return (
@@ -65,33 +69,9 @@ export function isValidBouyomiHost(value: string): boolean {
     return false;
   }
 
+  // Host policy above is application-specific; IPv6 grammar belongs to Zod.
   if (host.includes(":")) {
-    const lastColon = host.lastIndexOf(":");
-    const ipv4Tail = host.slice(lastColon + 1);
-    const ipv4Octets = ipv4Tail.split(".");
-    if (
-      ipv4Tail.includes(".") &&
-      (ipv4Octets.length !== 4 ||
-        ipv4Octets.some((octet) => !/^\d+$/.test(octet) || Number(octet) > 255))
-    ) {
-      return false;
-    }
-
-    const normalizedHost = ipv4Tail.includes(".")
-      ? `${host.slice(0, lastColon + 1)}${((Number(ipv4Octets[0]) << 8) | Number(ipv4Octets[1])).toString(16)}:${((Number(ipv4Octets[2]) << 8) | Number(ipv4Octets[3])).toString(16)}`
-      : host;
-
-    const sections = normalizedHost.split("::");
-    if (sections.length > 2) {
-      return false;
-    }
-
-    const labels = sections.flatMap((section) => (section ? section.split(":") : []));
-    if (!labels.every((label) => /^[0-9a-fA-F]{1,4}$/.test(label))) {
-      return false;
-    }
-
-    return sections.length === 2 ? labels.length < 8 : labels.length === 8;
+    return ipv6Address.safeParse(host).success;
   }
 
   return host

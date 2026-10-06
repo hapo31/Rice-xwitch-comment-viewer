@@ -17,7 +17,10 @@ pub(crate) mod commands;
 mod dedupe;
 mod error;
 mod eventsub;
+mod http;
 mod model;
+#[cfg(feature = "app")]
+pub(crate) use http::TwitchHttp;
 mod normalization;
 mod oauth;
 #[cfg(feature = "app")]
@@ -25,6 +28,7 @@ mod runtime;
 #[cfg(feature = "app")]
 mod subscription;
 
+#[cfg(feature = "app")]
 pub use auth_state::TwitchAuthState;
 #[cfg(all(test, feature = "app"))]
 pub(crate) use auth_store::{AuthCredentialStore, AuthLoadResult};

@@ -3,10 +3,12 @@ use super::formatter::{SpeechFormatDecision, SpeechFormatter};
 use super::outcome::{self, BlockedReason, SkippedReason, SpeechQueueOutcome};
 #[cfg(test)]
 use super::FailureCode;
-use super::{SpeechControl, SpeechFailure, SpeechRequest};
-use crate::app_events::SpeechQueueItemStatus;
+use super::SpeechQueueItemStatus;
+#[cfg(any(feature = "app", test))]
+use super::SpeechQueuePhase;
 #[cfg(test)]
-use crate::app_events::SpeechStatus;
+use super::SpeechStatus;
+use super::{SpeechControl, SpeechFailure, SpeechRequest};
 use crate::settings::SpeechSettings;
 use crate::twitch::ChatMessage;
 use std::collections::{HashMap, VecDeque};
@@ -104,6 +106,58 @@ pub(crate) enum SpeechQueueFailureTransition {
 }
 
 impl SpeechQueueState {
+    #[cfg(any(feature = "app", test))]
+    pub(crate) fn snapshot(&self, warning: Option<String>) -> super::SpeechQueueSnapshot {
+        let items = self
+            .in_flight
+            .iter()
+            .chain(self.pending.iter())
+            .chain(self.history.iter().rev())
+            .take(DEFAULT_QUEUE_LIMIT + DEFAULT_HISTORY_LIMIT)
+            .map(|item| super::SpeechQueueItemSnapshot {
+                id: item.id.clone(),
+                source_message_id: item.source_message_id.clone(),
+                user_display_name: item.user_display_name.clone(),
+                text: item.text.clone(),
+                status: item.status.clone(),
+                outcome: item.outcome.clone(),
+            })
+            .collect();
+        let queued_count = self
+            .in_flight
+            .iter()
+            .chain(self.pending.iter())
+            .filter(|item| {
+                matches!(
+                    item.status,
+                    SpeechQueueItemStatus::Queued
+                        | SpeechQueueItemStatus::Speaking
+                        | SpeechQueueItemStatus::Error
+                )
+            })
+            .count();
+        let phase = if self.paused {
+            SpeechQueuePhase::Paused
+        } else if self.in_flight.is_some() {
+            SpeechQueuePhase::Speaking
+        } else if self.pending.is_empty()
+            && self
+                .history
+                .iter()
+                .any(|item| item.status == SpeechQueueItemStatus::Error)
+        {
+            SpeechQueuePhase::Error
+        } else {
+            SpeechQueuePhase::Idle
+        };
+        super::SpeechQueueSnapshot {
+            queued_count,
+            items,
+            phase,
+            warning,
+        }
+    }
+
     pub(super) fn begin_control(&mut self) {
         self.controls_in_progress = self.controls_in_progress.saturating_add(1);
     }

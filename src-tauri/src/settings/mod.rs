@@ -1,299 +1,29 @@
 #[cfg(feature = "app")]
 use crate::app_events::{emit_app_log, AppLogLevel};
-use crate::launcher::{
-    apply_launcher_edits, validate_launcher_resources, LauncherSettings, LauncherSettingsPatch,
-};
-use crate::resource_limits::{
-    check_bytes, read_bounded, serialize_bounded, BoundedReadError, SizeLimitExceeded,
-    MAX_SETTINGS_JSON_BYTES,
-};
-use crate::speech::SpeechQueueState;
-use crate::twitch::TwitchAuthState;
 #[cfg(feature = "app")]
-use crate::twitch::{TwitchAuthStore, TwitchConnectionOwner};
-use crate::SharedSettings;
-use serde::{Deserialize, Serialize};
+use crate::application::AppState;
+use crate::launcher::{apply_launcher_edits, validate_launcher_resources};
+#[cfg(test)]
+pub(super) use crate::resource_limits::MAX_SETTINGS_JSON_BYTES;
 use std::collections::HashSet;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-#[cfg(feature = "app")]
-use tauri::Manager;
 
+mod model;
+mod persistence;
 mod schema;
 pub(crate) mod validation;
 mod writer;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[cfg_attr(test, ts(optional_fields))]
-pub struct AppSettings {
-    pub twitch: TwitchSettings,
-    pub speech: SpeechSettings,
-    #[serde(default)]
-    pub launcher: LauncherSettings,
-    #[serde(default)]
-    pub window: WindowSettings,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[cfg_attr(test, ts(optional_fields))]
-pub struct WindowSettings {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub position: Option<WindowPosition>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[cfg_attr(test, ts(optional_fields))]
-pub struct WindowPosition {
-    pub x: i32,
-    pub y: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[cfg_attr(test, ts(optional_fields))]
-pub struct TwitchSettings {
-    pub channel_login: String,
-    pub auto_connect: bool,
-    #[serde(default = "default_confirm_before_stop_chat")]
-    pub confirm_before_stop_chat: bool,
-    #[serde(default = "default_live_chat_announcements")]
-    pub live_chat_announcements: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[cfg_attr(test, ts(optional_fields))]
-pub struct SpeechSettings {
-    pub adapter: SpeechAdapterKind,
-    #[serde(default = "default_bouyomi_host")]
-    pub bouyomi_host: String,
-    pub bouyomi_port: u16,
-    /// Opt-in request only. Native consent is never persisted in settings.
-    #[serde(default)]
-    pub bouyomi_remote_mode: bool,
-    #[serde(default = "default_bouyomi_speed")]
-    pub bouyomi_speed: i16,
-    #[serde(default = "default_bouyomi_tone")]
-    pub bouyomi_tone: i16,
-    #[serde(default = "default_bouyomi_volume")]
-    pub bouyomi_volume: i16,
-    #[serde(default = "default_bouyomi_voice")]
-    pub bouyomi_voice: i16,
-    pub read_user_name: bool,
-    #[serde(default = "default_auto_speak")]
-    pub auto_speak: bool,
-    pub max_comment_length: u16,
-    pub repeat_suppression_seconds: u16,
-    #[serde(default)]
-    pub blocked_users: Vec<String>,
-    #[serde(default)]
-    pub blocked_words: Vec<String>,
-    #[serde(default = "default_url_handling")]
-    pub url_handling: UrlHandling,
-    #[serde(default = "default_read_emotes")]
-    pub read_emotes: bool,
-    #[serde(default = "default_connection_success_speech_enabled")]
-    pub connection_success_speech_enabled: bool,
-    #[serde(default)]
-    pub connection_success_speech_text: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(test, derive(ts_rs::TS))]
-pub enum SpeechAdapterKind {
-    Bouyomi,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(test, derive(ts_rs::TS))]
-pub enum UrlHandling {
-    Replace,
-    Read,
-    Block,
-}
-
-impl Default for UrlHandling {
-    fn default() -> Self {
-        default_url_handling()
-    }
-}
-
-fn default_auto_speak() -> bool {
-    true
-}
-
-fn default_confirm_before_stop_chat() -> bool {
-    true
-}
-
-fn default_live_chat_announcements() -> bool {
-    true
-}
-
-fn default_url_handling() -> UrlHandling {
-    UrlHandling::Replace
-}
-
-fn default_read_emotes() -> bool {
-    false
-}
-
-fn default_connection_success_speech_enabled() -> bool {
-    true
-}
-
-fn default_bouyomi_speed() -> i16 {
-    -1
-}
-
-fn default_bouyomi_tone() -> i16 {
-    -1
-}
-
-fn default_bouyomi_volume() -> i16 {
-    -1
-}
-
-fn default_bouyomi_voice() -> i16 {
-    0
-}
-
-fn default_bouyomi_host() -> String {
-    std::env::var("RICE_BOUYOMI_HOST")
-        .ok()
-        .and_then(|host| crate::speech::bouyomi::validate_bouyomi_host(&host).ok())
-        .unwrap_or_else(|| "127.0.0.1".to_string())
-}
-
-pub(crate) fn default_twitch_client_id() -> String {
-    option_env!("RICE_TWITCH_CLIENT_ID")
-        .unwrap_or("")
-        .trim()
-        .to_string()
-}
-
-#[derive(Default)]
-pub struct AppState {
-    pub settings: SharedSettings<AppSettings>,
-    /// Serializes disk transactions while keeping the published settings mutex short-lived.
-    pub settings_transaction: SharedSettings<()>,
-    /// Shared launcher adapters and bounded worker pool, used by every command.
-    pub launcher_runtime: crate::launcher::LauncherRuntime,
-    pub settings_recovery_notice: SharedSettings<Option<SettingsRecoveryNotice>>,
-    #[cfg(feature = "app")]
-    pub twitch_auth: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,
-    #[cfg(not(feature = "app"))]
-    pub twitch_auth: SharedSettings<TwitchAuthState>,
-    pub speech_queue: std::sync::Arc<std::sync::Mutex<SpeechQueueState>>,
-    /// Shared selection, ordering and clock for every speech operation.
-    pub speech_runtime: crate::speech::runtime::SpeechRuntime,
-    #[cfg(feature = "app")]
-    pub twitch_connection: SharedSettings<TwitchConnectionOwner>,
-    #[cfg(feature = "app")]
-    pub twitch_auth_store: TwitchAuthStore,
-}
-
-impl Default for AppSettings {
-    fn default() -> Self {
-        Self {
-            twitch: TwitchSettings {
-                channel_login: String::new(),
-                auto_connect: false,
-                confirm_before_stop_chat: true,
-                live_chat_announcements: true,
-            },
-            speech: SpeechSettings {
-                adapter: SpeechAdapterKind::Bouyomi,
-                bouyomi_host: default_bouyomi_host(),
-                bouyomi_port: 50001,
-                bouyomi_remote_mode: false,
-                bouyomi_speed: -1,
-                bouyomi_tone: -1,
-                bouyomi_volume: -1,
-                bouyomi_voice: 0,
-                read_user_name: true,
-                auto_speak: true,
-                max_comment_length: 120,
-                repeat_suppression_seconds: 2,
-                blocked_users: Vec::new(),
-                blocked_words: Vec::new(),
-                url_handling: UrlHandling::Replace,
-                read_emotes: false,
-                connection_success_speech_enabled: true,
-                connection_success_speech_text: String::new(),
-            },
-            launcher: LauncherSettings::default(),
-            window: WindowSettings::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SettingsPatch {
-    pub twitch: Option<TwitchSettingsPatch>,
-    pub speech: Option<SpeechSettingsPatch>,
-    pub launcher: Option<LauncherSettingsPatch>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TwitchSettingsPatch {
-    pub channel_login: Option<String>,
-    pub auto_connect: Option<bool>,
-    pub confirm_before_stop_chat: Option<bool>,
-    pub live_chat_announcements: Option<bool>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SpeechSettingsPatch {
-    pub adapter: Option<SpeechAdapterKind>,
-    pub bouyomi_host: Option<String>,
-    pub bouyomi_port: Option<u16>,
-    pub bouyomi_remote_mode: Option<bool>,
-    pub bouyomi_speed: Option<i16>,
-    pub bouyomi_tone: Option<i16>,
-    pub bouyomi_volume: Option<i16>,
-    pub bouyomi_voice: Option<i16>,
-    pub read_user_name: Option<bool>,
-    pub auto_speak: Option<bool>,
-    pub max_comment_length: Option<u16>,
-    pub repeat_suppression_seconds: Option<u16>,
-    pub blocked_users: Option<Vec<String>>,
-    pub blocked_words: Option<Vec<String>>,
-    pub url_handling: Option<UrlHandling>,
-    pub read_emotes: Option<bool>,
-    pub connection_success_speech_enabled: Option<bool>,
-    pub connection_success_speech_text: Option<String>,
-}
-
-pub struct SettingsStore;
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(test, derive(ts_rs::TS))]
-#[cfg_attr(test, ts(optional_fields))]
-pub struct SettingsRecoveryNotice {
-    pub message: String,
-}
-
-#[derive(Debug)]
-pub struct LoadedSettings {
-    pub settings: AppSettings,
-    pub recovery_notice: Option<SettingsRecoveryNotice>,
-}
+#[cfg(feature = "app")]
+pub(crate) use model::default_twitch_client_id;
+pub use model::{
+    AppSettings, SettingsPatch, SpeechAdapterKind, SpeechSettings, UrlHandling, WindowPosition,
+};
+#[cfg(all(test, unix))]
+use persistence::validate_owner;
+#[cfg(test)]
+use persistence::{backup_path, protect_existing_file, write_temp_file, SaveFault};
+#[cfg(any(feature = "app", test))]
+pub use persistence::{SettingsRecoveryNotice, SettingsStore};
 
 fn validate_repeat_suppression_seconds(seconds: u16) -> Result<(), String> {
     if seconds <= 30 {
@@ -335,420 +65,6 @@ fn parse_settings_request(
     })
 }
 
-#[derive(Debug, thiserror::Error)]
-enum SettingsContentError {
-    #[error("設定ファイルが正しいUTF-8ではありません。")]
-    Encoding(#[source] std::string::FromUtf8Error),
-    #[error(transparent)]
-    TooLarge(SizeLimitExceeded),
-    #[error("{0}")]
-    Document(String),
-}
-
-fn read_settings_text(path: &Path) -> anyhow::Result<Result<String, SettingsContentError>> {
-    match read_bounded(path, MAX_SETTINGS_JSON_BYTES) {
-        Ok(text) => Ok(Ok(text)),
-        Err(BoundedReadError::TooLarge(error)) => Ok(Err(SettingsContentError::TooLarge(error))),
-        Err(BoundedReadError::Encoding(error)) => Ok(Err(SettingsContentError::Encoding(error))),
-        // IO/permission failures are not evidence of corrupt content. Fail closed.
-        Err(BoundedReadError::Io(error)) => Err(error.into()),
-    }
-}
-
-impl SettingsStore {
-    #[cfg(feature = "app")]
-    pub fn load<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyhow::Result<LoadedSettings> {
-        let path = settings_path(app)?;
-        writer::initialize(app, &path)?;
-        Self::load_from_path(&path)
-    }
-
-    fn load_from_path(path: &Path) -> anyhow::Result<LoadedSettings> {
-        protect_storage(path)?;
-        protect_existing_file(&backup_path(path))?;
-        if !path.exists() {
-            let settings = AppSettings::default();
-            Self::save_to_path(path, &settings)?;
-            return Ok(LoadedSettings {
-                settings,
-                recovery_notice: None,
-            });
-        }
-
-        let loaded = read_settings_text(path)?
-            .and_then(|text| schema::decode(&text).map_err(SettingsContentError::Document));
-        match loaded {
-            Ok(decoded) => {
-                if decoded.needs_resave {
-                    Self::save_to_path(path, &decoded.settings)?;
-                }
-                Ok(LoadedSettings {
-                    settings: decoded.settings,
-                    // Ordinary optional/invalid-field fallback is silent by owner policy.
-                    // Only an unsupported version needs the safe recovery instruction.
-                    recovery_notice: decoded.unsupported_version.then(|| SettingsRecoveryNotice {
-                        message: schema::READ_ONLY_MESSAGE.into(),
-                    }),
-                })
-            }
-            Err(reason) => Self::recover_from_invalid_primary(path, &reason.to_string()),
-        }
-    }
-
-    #[cfg(feature = "app")]
-    pub fn save<R: tauri::Runtime>(
-        app: &tauri::AppHandle<R>,
-        settings: &AppSettings,
-    ) -> anyhow::Result<()> {
-        let path = settings_path(app)?;
-        writer::require_owned(app, &path)?;
-        Self::save_to_path(&path, settings)
-    }
-
-    fn save_to_path(path: &Path, settings: &AppSettings) -> anyhow::Result<()> {
-        Self::save_to_path_with_fault(path, settings, SaveFault::None)
-    }
-
-    fn save_to_path_with_fault(
-        path: &Path,
-        settings: &AppSettings,
-        fault: SaveFault,
-    ) -> anyhow::Result<()> {
-        validation::validate_settings(settings)?;
-        validate_launcher_resources(&settings.launcher.items).map_err(anyhow::Error::msg)?;
-        let bytes = serialize_bounded(
-            &schema::PersistedSettings::new(settings),
-            MAX_SETTINGS_JSON_BYTES,
-            "設定JSON",
-        )?;
-        let text = std::str::from_utf8(&bytes)?;
-        Self::save_text_to_path(path, text, fault)
-    }
-
-    fn save_text_to_path(path: &Path, text: &str, fault: SaveFault) -> anyhow::Result<()> {
-        check_bytes(text.len(), MAX_SETTINGS_JSON_BYTES, "設定JSON")?;
-        protect_storage(path)?;
-        protect_existing_file(&backup_path(path))?;
-
-        // Check before creating temporary files or rotating backup. This same
-        // guard covers Settings, Launcher and best-effort window/exit saves,
-        // including a future document installed after this process loaded.
-        let previous = if path.exists() {
-            let previous = read_bounded(path, MAX_SETTINGS_JSON_BYTES)?;
-            let decoded = schema::decode(&previous).map_err(|error| {
-                anyhow::anyhow!("既存の設定をバックアップできませんでした: {error}")
-            })?;
-            if decoded.read_only {
-                return Err(schema::ReadOnlySettings.into());
-            }
-            Some(previous)
-        } else {
-            None
-        };
-        let mut temporary = write_temp_file(path, text.as_bytes(), fault)?;
-        if let Some(previous) = previous {
-            let backup_fault = if fault == SaveFault::BackupWrite {
-                SaveFault::TempWrite
-            } else {
-                SaveFault::None
-            };
-            atomic_write(&backup_path(path), previous.as_bytes(), backup_fault)?;
-        }
-        replace_file(&mut temporary, path, fault)?;
-        sync_parent_directory(path)
-    }
-
-    fn recover_from_invalid_primary(
-        path: &Path,
-        primary_reason: &str,
-    ) -> anyhow::Result<LoadedSettings> {
-        let corrupted_primary = quarantine_file(path)?;
-        let backup = backup_path(path);
-
-        if backup.exists() {
-            let backup_reason = match read_settings_text(&backup)? {
-                Ok(backup_text) => match schema::decode(&backup_text) {
-                    Ok(decoded) => {
-                        atomic_write(path, backup_text.as_bytes(), SaveFault::None)?;
-                        if decoded.needs_resave {
-                            Self::save_to_path(path, &decoded.settings)?;
-                        }
-                        let message = format!(
-                            "設定ファイルの内容が無効（{primary_reason}）だったため、バックアップから復旧しました。退避先: {}",
-                            corrupted_primary.display()
-                        );
-                        return Ok(LoadedSettings {
-                            settings: decoded.settings,
-                            recovery_notice: Some(SettingsRecoveryNotice {
-                                message: if decoded.read_only {
-                                    format!("{message} {}", schema::READ_ONLY_MESSAGE)
-                                } else {
-                                    message
-                                },
-                            }),
-                        });
-                    }
-                    Err(reason) => SettingsContentError::Document(reason),
-                },
-                Err(reason) => reason,
-            };
-            let corrupted_backup = quarantine_file(&backup)?;
-            let settings = AppSettings::default();
-            Self::save_to_path(path, &settings)?;
-            return Ok(LoadedSettings {
-                settings,
-                recovery_notice: Some(SettingsRecoveryNotice {
-                    message: format!(
-                        "設定ファイルとバックアップの内容が無効だったため、既定値で起動しました。原因: {primary_reason} / {backup_reason} 退避先: {}, {}",
-                        corrupted_primary.display(),
-                        corrupted_backup.display()
-                    ),
-                }),
-            });
-        }
-
-        let settings = AppSettings::default();
-        Self::save_to_path(path, &settings)?;
-        Ok(LoadedSettings {
-            settings,
-            recovery_notice: Some(SettingsRecoveryNotice {
-                message: format!(
-                    "設定ファイルの内容が無効（{primary_reason}）だったため、既定値で起動しました。退避先: {}",
-                    corrupted_primary.display()
-                ),
-            }),
-        })
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SaveFault {
-    None,
-    TempWrite,
-    BackupWrite,
-    Replace,
-}
-
-fn backup_path(path: &Path) -> PathBuf {
-    path.with_file_name(format!(
-        "{}.bak",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("settings.json")
-    ))
-}
-
-fn quarantine_file(path: &Path) -> anyhow::Result<PathBuf> {
-    protect_existing_file(path)?;
-    let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S%3f");
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("settings.json");
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("設定ファイルの親フォルダを取得できません。"))?;
-
-    for suffix in 0..1000_u16 {
-        let candidate = parent.join(format!("{file_name}.corrupt-{timestamp}-{suffix}"));
-        if !candidate.exists() {
-            fs::rename(path, &candidate)?;
-            sync_parent_directory(path)?;
-            return Ok(candidate);
-        }
-    }
-
-    Err(anyhow::anyhow!(
-        "破損した設定ファイルの退避先を作成できません。"
-    ))
-}
-
-fn atomic_write(path: &Path, contents: &[u8], fault: SaveFault) -> anyhow::Result<()> {
-    check_bytes(contents.len(), MAX_SETTINGS_JSON_BYTES, "設定JSON")?;
-    protect_storage(path)?;
-    let mut temporary = write_temp_file(path, contents, fault)?;
-    replace_file(&mut temporary, path, fault)?;
-    sync_parent_directory(path)
-}
-
-fn write_temp_file(
-    path: &Path,
-    contents: &[u8],
-    fault: SaveFault,
-) -> anyhow::Result<tempfile::TempPath> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("設定ファイルの親フォルダを取得できません。"))?;
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("settings.json");
-    // Delegate random naming and cleanup, retaining our creation policy. In
-    // particular Windows files must not keep FILE_ATTRIBUTE_TEMPORARY after
-    // the existing write-through atomic replacement.
-    let mut temporary = tempfile::Builder::new()
-        .prefix(&format!(".{file_name}."))
-        .suffix(".tmp")
-        .make_in(parent, |temporary_path| {
-            let mut options = OpenOptions::new();
-            options.write(true).create_new(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-            }
-            options.open(temporary_path)
-        })?;
-    protect_existing_file(temporary.path())?;
-    if fault == SaveFault::TempWrite {
-        return Err(io::Error::new(io::ErrorKind::StorageFull, "fault injected: disk full").into());
-    }
-    temporary.write_all(contents)?;
-    temporary.as_file().sync_all()?;
-    // Close the file handle before Windows replacement, while retaining cleanup
-    // ownership for any error in backup creation or replacement.
-    Ok(temporary.into_temp_path())
-}
-
-fn replace_file(
-    source: &mut tempfile::TempPath,
-    destination: &Path,
-    fault: SaveFault,
-) -> anyhow::Result<()> {
-    protect_existing_file(source)?;
-    protect_existing_file(destination)?;
-    if fault == SaveFault::Replace {
-        return Err(anyhow::anyhow!("fault injected: atomic replace failed"));
-    }
-
-    atomic_replace(source, destination)?;
-    source.disable_cleanup(true);
-    protect_existing_file(destination)?;
-    Ok(())
-}
-
-/// Only the application-specific directory is hardened. Never chmod shared
-/// ancestors such as HOME, /tmp, or the platform's app-data root.
-fn protect_storage(path: &Path) -> anyhow::Result<()> {
-    let parent = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("設定専用フォルダーを取得できません。"))?;
-    match fs::symlink_metadata(parent) {
-        Ok(metadata) => {
-            if !metadata.is_dir() || metadata.file_type().is_symlink() {
-                return Err(anyhow::anyhow!(
-                    "設定フォルダーにリンクや通常以外の種類は使用できません。"
-                ));
-            }
-            protect_metadata(parent, &metadata, 0o700)?;
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            let mut builder = fs::DirBuilder::new();
-            builder.recursive(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::DirBuilderExt;
-                builder.mode(0o700);
-            }
-            builder.create(parent)?;
-            protect_metadata(parent, &fs::symlink_metadata(parent)?, 0o700)?;
-        }
-        Err(error) => return Err(error.into()),
-    }
-    protect_existing_file(path)
-}
-
-fn protect_existing_file(path: &Path) -> anyhow::Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) => {
-            if !metadata.is_file() || metadata.file_type().is_symlink() {
-                return Err(anyhow::anyhow!("設定ファイルにリンクや通常以外の種類は使用できません。設定の保存場所を確認してください。"));
-            }
-            protect_metadata(path, &metadata, 0o600)
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.into()),
-    }
-}
-
-#[cfg(unix)]
-fn validate_owner(metadata: &fs::Metadata, expected: u32) -> anyhow::Result<()> {
-    use std::os::unix::fs::MetadataExt;
-    if metadata.uid() != expected || (metadata.is_file() && metadata.nlink() != 1) {
-        return Err(anyhow::anyhow!("設定の所有者が現在のユーザーと異なるか、複数のリンクがあります。所有者と保存場所を確認してください。"));
-    }
-    Ok(())
-}
-
-fn protect_metadata(path: &Path, metadata: &fs::Metadata, mode: u32) -> anyhow::Result<()> {
-    if metadata.file_type().is_symlink() {
-        return Err(anyhow::anyhow!("設定の保存先にリンクは使用できません。"));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        // geteuid has no pointer arguments or failure mode.
-        validate_owner(metadata, unsafe { libc::geteuid() })?;
-        fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(|error| {
-            anyhow::anyhow!("設定のアクセス権を安全に変更できません。所有者と保存場所を確認してください: {error}")
-        })?;
-    }
-    #[cfg(not(unix))]
-    let _ = (path, metadata, mode);
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn atomic_replace(source: &Path, destination: &Path) -> io::Result<()> {
-    fs::rename(source, destination)
-}
-
-#[cfg(target_os = "windows")]
-fn atomic_replace(source: &Path, destination: &Path) -> io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{
-        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-    };
-
-    let source = source
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
-    let destination = destination
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
-    let result = unsafe {
-        MoveFileExW(
-            source.as_ptr(),
-            destination.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if result == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg(unix)]
-fn sync_parent_directory(path: &Path) -> anyhow::Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("設定ファイルの親フォルダを取得できません。"))?;
-    File::open(parent)?.sync_all()?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn sync_parent_directory(_path: &Path) -> anyhow::Result<()> {
-    Ok(())
-}
-
 #[cfg(feature = "app")]
 #[tauri::command]
 pub fn settings_get(state: tauri::State<'_, AppState>) -> Result<AppSettings, String> {
@@ -781,8 +97,8 @@ pub(crate) fn update_settings_transaction(
 }
 
 pub(crate) fn update_shared_settings_transaction<E: From<String>>(
-    settings: &SharedSettings<AppSettings>,
-    transaction: &SharedSettings<()>,
+    settings: &crate::SharedSettings<AppSettings>,
+    transaction: &crate::SharedSettings<()>,
     update: impl FnOnce(&mut AppSettings) -> Result<(), E>,
     save: impl FnOnce(&AppSettings) -> Result<(), E>,
 ) -> Result<(AppSettings, AppSettings), E> {
@@ -790,8 +106,8 @@ pub(crate) fn update_shared_settings_transaction<E: From<String>>(
 }
 
 fn update_shared_settings_transaction_with_publish<E: From<String>>(
-    settings: &SharedSettings<AppSettings>,
-    transaction: &SharedSettings<()>,
+    settings: &crate::SharedSettings<AppSettings>,
+    transaction: &crate::SharedSettings<()>,
     update: impl FnOnce(&mut AppSettings) -> Result<(), E>,
     save: impl FnOnce(&AppSettings) -> Result<(), E>,
     before_publish: impl FnOnce(&AppSettings, &AppSettings),
@@ -927,7 +243,7 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
             settings.speech.adapter = adapter;
         }
         if let Some(host) = speech.bouyomi_host {
-            settings.speech.bouyomi_host = crate::speech::bouyomi::validate_bouyomi_host(&host)?;
+            settings.speech.bouyomi_host = crate::speech::endpoint::validate_bouyomi_host(&host)?;
         }
         if let Some(port) = speech.bouyomi_port {
             if port == 0 {
@@ -1039,15 +355,9 @@ fn validate_range(value: i16, min: i16, max: i16, label: &str) -> Result<i16, St
     }
 }
 
-#[cfg(feature = "app")]
-fn settings_path<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-) -> anyhow::Result<std::path::PathBuf> {
-    Ok(app.path().app_data_dir()?.join("settings.json"))
-}
-
 #[cfg(test)]
 mod tests {
+    use super::persistence::{protect_storage, write_temp_file};
     use super::{
         apply_patch, backup_path, update_settings_transaction, AppSettings, SaveFault,
         SettingsPatch, SettingsStore, WindowPosition,
@@ -1060,33 +370,41 @@ mod tests {
     static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     #[test]
-    fn slow_settings_transaction_does_not_hold_the_published_settings_lock() {
+    fn slow_settings_save_does_not_hold_published_lock_and_hook_precedes_publish() {
         let settings = std::sync::Arc::new(std::sync::Mutex::new(AppSettings::default()));
         let transaction = std::sync::Arc::new(std::sync::Mutex::new(()));
         let (entered_sender, entered_receiver) = std::sync::mpsc::channel();
         let (continue_sender, continue_receiver) = std::sync::mpsc::channel();
         let worker_settings = settings.clone();
         let worker_transaction = transaction.clone();
+        let hook_settings = settings.clone();
         let worker = std::thread::spawn(move || {
-            super::update_shared_settings_transaction(
+            super::update_shared_settings_transaction_with_publish(
                 &worker_settings,
                 &worker_transaction,
                 |candidate| {
-                    entered_sender.send(()).unwrap();
-                    continue_receiver.recv().unwrap();
                     candidate.twitch.channel_login = "next-channel".into();
                     Ok::<(), String>(())
                 },
-                |_| Ok::<(), String>(()),
+                |_| {
+                    entered_sender.send(()).unwrap();
+                    continue_receiver.recv().unwrap();
+                    Ok::<(), String>(())
+                },
+                |previous, candidate| {
+                    assert!(hook_settings.try_lock().is_err());
+                    assert!(previous.twitch.channel_login.is_empty());
+                    assert_eq!(candidate.twitch.channel_login, "next-channel");
+                },
             )
         });
 
         entered_receiver
             .recv_timeout(std::time::Duration::from_secs(2))
-            .expect("transaction reached slow candidate work");
+            .expect("save reached slow candidate work");
         let visible = settings
             .try_lock()
-            .expect("published settings lock is available during candidate work");
+            .expect("published settings lock stays available during save");
         assert!(visible.twitch.channel_login.is_empty());
         drop(visible);
 
@@ -1097,115 +415,6 @@ mod tests {
         assert_eq!(
             settings.lock().unwrap().twitch.channel_login,
             "next-channel"
-        );
-    }
-
-    #[test]
-    fn concurrent_settings_transactions_publish_in_order_without_lost_updates() {
-        let settings = std::sync::Arc::new(std::sync::Mutex::new(AppSettings::default()));
-        let transaction = std::sync::Arc::new(std::sync::Mutex::new(()));
-        let (first_entered_sender, first_entered_receiver) = std::sync::mpsc::channel();
-        let (continue_first_sender, continue_first_receiver) = std::sync::mpsc::channel();
-        let first_settings = settings.clone();
-        let first_transaction = transaction.clone();
-        let first = std::thread::spawn(move || {
-            super::update_shared_settings_transaction(
-                &first_settings,
-                &first_transaction,
-                |candidate| {
-                    first_entered_sender.send(()).unwrap();
-                    continue_first_receiver.recv().unwrap();
-                    candidate.twitch.channel_login = "first".into();
-                    Ok::<(), String>(())
-                },
-                |_| Ok::<(), String>(()),
-            )
-        });
-        first_entered_receiver
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .expect("first transaction entered candidate work");
-
-        let (second_entered_sender, second_entered_receiver) = std::sync::mpsc::channel();
-        let second_settings = settings.clone();
-        let second_transaction = transaction.clone();
-        let second = std::thread::spawn(move || {
-            super::update_shared_settings_transaction(
-                &second_settings,
-                &second_transaction,
-                |candidate| {
-                    second_entered_sender.send(()).unwrap();
-                    candidate.speech.bouyomi_port = 50_002;
-                    Ok::<(), String>(())
-                },
-                |_| Ok::<(), String>(()),
-            )
-        });
-        assert!(second_entered_receiver
-            .recv_timeout(std::time::Duration::from_millis(50))
-            .is_err());
-
-        continue_first_sender.send(()).unwrap();
-        first.join().unwrap().unwrap();
-        second_entered_receiver
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .expect("second transaction starts after the first commits");
-        second.join().unwrap().unwrap();
-
-        let settings = settings.lock().unwrap();
-        assert_eq!(settings.twitch.channel_login, "first");
-        assert_eq!(settings.speech.bouyomi_port, 50_002);
-    }
-
-    #[test]
-    fn publication_side_effect_runs_under_the_settings_lock_before_new_state_is_visible() {
-        let settings = std::sync::Mutex::new(AppSettings::default());
-        let transaction = std::sync::Mutex::new(());
-        let revoked = std::cell::Cell::new(false);
-        super::update_shared_settings_transaction_with_publish(
-            &settings,
-            &transaction,
-            |candidate| {
-                candidate.speech.bouyomi_port = 50002;
-                Ok::<(), String>(())
-            },
-            |_| {
-                assert!(!revoked.get());
-                Ok::<(), String>(())
-            },
-            |previous, candidate| {
-                assert_eq!(previous.speech.bouyomi_port, 50001);
-                assert_eq!(candidate.speech.bouyomi_port, 50002);
-                assert!(matches!(
-                    settings.try_lock(),
-                    Err(std::sync::TryLockError::WouldBlock)
-                ));
-                revoked.set(true);
-            },
-        )
-        .unwrap();
-        assert!(revoked.get());
-        assert_eq!(settings.lock().unwrap().speech.bouyomi_port, 50002);
-    }
-
-    #[test]
-    fn failed_shared_settings_persistence_does_not_publish_candidate_state() {
-        let settings = std::sync::Mutex::new(AppSettings::default());
-        let transaction = std::sync::Mutex::new(());
-        let before = settings.lock().unwrap().clone();
-        let result = super::update_shared_settings_transaction(
-            &settings,
-            &transaction,
-            |candidate| {
-                candidate.twitch.channel_login = "unsaved".into();
-                Ok::<(), String>(())
-            },
-            |_| Err::<(), String>("fixture persistence failure".into()),
-        );
-
-        assert_eq!(result.unwrap_err(), "fixture persistence failure");
-        assert_eq!(
-            settings.lock().unwrap().twitch.channel_login,
-            before.twitch.channel_login
         );
     }
 
@@ -1260,16 +469,20 @@ mod tests {
             assert_eq!(loaded.settings.launcher.items.len(), 200);
             let elapsed = start.elapsed();
             let peak = crate::resource_limits::allocation::peak_delta(baseline);
-            println!("Launcher budget: items=200 icons=4194304 JSON={} elapsed_ms={} incremental_rust_heap={peak}", fs::metadata(&path).unwrap().len(), elapsed.as_millis());
+            println!(
+                "Launcher budget: items=200 icons=4194304 JSON={} elapsed_ms={} incremental_rust_heap={peak}",
+                fs::metadata(&path).unwrap().len(),
+                elapsed.as_millis()
+            );
             assert!(
                 elapsed < std::time::Duration::from_secs(5),
                 "maximum transaction/backup/load budget: {elapsed:?}"
             );
             let budget_mib = if json_bytes.is_some() { 40 } else { 32 };
             assert!(
-            peak <= budget_mib * 1024 * 1024,
-            "Rust-owned incremental live heap, including conservative realloc coexistence: {peak}"
-        );
+                peak <= budget_mib * 1024 * 1024,
+                "Rust-owned incremental live heap, including conservative realloc coexistence: {peak}"
+            );
             cleanup(&path);
         }
     }
@@ -1469,6 +682,82 @@ mod tests {
                     == super::MAX_SETTINGS_JSON_BYTES as u64 + 1));
             cleanup(&path);
         }
+    }
+
+    #[test]
+    fn invalid_utf8_primary_recovers_backup_and_preserves_original_bytes() {
+        let path = settings_path_for_test("utf8-backup");
+        let invalid = b"{\"private\":\"\xff\xfe\"}";
+        fs::write(&path, invalid).unwrap();
+        let backup = serde_json::to_vec(&super::schema::PersistedSettings::new(
+            &settings_with_channel("recovered"),
+        ))
+        .unwrap();
+        fs::write(backup_path(&path), &backup).unwrap();
+        assert!(matches!(
+            super::persistence::read_settings_text(&path).unwrap(),
+            Err(super::persistence::SettingsContentError::Encoding(_))
+        ));
+        let loaded = SettingsStore::load_from_path(&path).unwrap();
+        assert_eq!(loaded.settings.twitch.channel_login, "recovered");
+        let notice = loaded.recovery_notice.unwrap().message;
+        assert!(notice.contains("UTF-8") && notice.contains("バックアップから復旧"));
+        assert!(!notice.contains("private"));
+        assert_eq!(fs::read(&path).unwrap(), backup);
+        assert_eq!(quarantined_bytes(&path), vec![invalid.to_vec()]);
+        cleanup(&path);
+    }
+
+    fn quarantined_bytes(path: &std::path::Path) -> Vec<Vec<u8>> {
+        let mut bytes: Vec<_> = fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"))
+            .map(|entry| fs::read(entry.path()).unwrap())
+            .collect();
+        bytes.sort();
+        bytes
+    }
+
+    #[test]
+    fn invalid_utf8_backup_and_broken_primary_recover_defaults_and_preserve_both() {
+        for primary in [b"{\"twitch\":".as_slice(), b"\xff\x80".as_slice()] {
+            let path = settings_path_for_test("utf8-defaults");
+            let backup = b"\xfe\xff";
+            fs::write(&path, primary).unwrap();
+            fs::write(backup_path(&path), backup).unwrap();
+            let loaded = SettingsStore::load_from_path(&path).unwrap();
+            assert_eq!(loaded.settings.twitch.channel_login, "");
+            let notice = loaded.recovery_notice.unwrap().message;
+            assert!(notice.contains("UTF-8") && notice.contains("既定値"));
+            let mut originals = vec![primary.to_vec(), backup.to_vec()];
+            originals.sort();
+            assert_eq!(quarantined_bytes(&path), originals);
+            super::schema::decode(&fs::read_to_string(&path).unwrap()).unwrap();
+            cleanup(&path);
+        }
+    }
+
+    #[test]
+    fn invalid_utf8_recovery_keeps_a_future_backup_read_only() {
+        let path = settings_path_for_test("utf8-future-backup");
+        let future = br#"{"schemaVersion":999,"futureField":"keep exactly"}"#;
+        fs::write(&path, b"\xff").unwrap();
+        fs::write(backup_path(&path), future).unwrap();
+        let loaded = SettingsStore::load_from_path(&path).unwrap();
+        assert!(loaded
+            .recovery_notice
+            .unwrap()
+            .message
+            .contains(super::schema::READ_ONLY_MESSAGE));
+        assert!(SettingsStore::save_to_path(&path, &loaded.settings)
+            .unwrap_err()
+            .downcast_ref::<super::schema::ReadOnlySettings>()
+            .is_some());
+        assert_eq!(fs::read(&path).unwrap(), future);
+        assert_eq!(fs::read(backup_path(&path)).unwrap(), future);
+        assert_eq!(quarantined_bytes(&path), vec![vec![0xff]]);
+        cleanup(&path);
     }
 
     pub(super) fn settings_path_for_test(name: &str) -> PathBuf {
@@ -1734,13 +1023,13 @@ mod tests {
     }
 
     #[test]
-    fn temporary_guards_clean_up_every_save_failure_without_publishing_memory() {
+    fn temporary_guards_clean_up_save_failures_and_leave_memory_unchanged() {
         for (label, fault) in [
             ("temp", SaveFault::TempWrite),
             ("backup", SaveFault::BackupWrite),
             ("replace", SaveFault::Replace),
         ] {
-            let path = settings_path_for_test(&format!("guard-{label}"));
+            let path = settings_path_for_test(&format!("temp-guard-{label}"));
             SettingsStore::save_to_path(&path, &settings_with_channel("older")).unwrap();
             let mut memory = settings_with_channel("current");
             SettingsStore::save_to_path(&path, &memory).unwrap();
@@ -1796,24 +1085,28 @@ mod tests {
     }
 
     fn assert_no_temporary_files(path: &std::path::Path) {
-        let leftover: Vec<_> = fs::read_dir(path.parent().unwrap())
+        let leftovers: Vec<_> = fs::read_dir(path.parent().unwrap())
             .unwrap()
-            .map(|entry| entry.unwrap().path())
+            .map(Result::unwrap)
+            .map(|entry| entry.path())
             .filter(|entry| {
                 entry
                     .extension()
                     .is_some_and(|extension| extension == "tmp")
             })
             .collect();
-        assert!(leftover.is_empty(), "temporary files leaked: {leftover:?}");
+        assert!(
+            leftovers.is_empty(),
+            "temporary files leaked: {leftovers:?}"
+        );
     }
 
     #[test]
-    fn temporary_guard_is_in_the_settings_directory_and_cleans_up_on_unwind() {
-        let path = settings_path_for_test("guard-unwind");
-        super::protect_storage(&path).unwrap();
+    fn temporary_guard_cleans_up_after_unwind() {
+        let path = settings_path_for_test("temp-guard-unwind");
+        protect_storage(&path).unwrap();
         let result = std::panic::catch_unwind(|| {
-            let temporary = super::write_temp_file(&path, b"private", SaveFault::None).unwrap();
+            let temporary = write_temp_file(&path, b"private", SaveFault::None).unwrap();
             assert_eq!(temporary.parent(), path.parent());
             assert_eq!(fs::read(&temporary).unwrap(), b"private");
             panic!("fault injected after temporary file preparation");
@@ -1852,128 +1145,6 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(backup_path(&path)).expect("read backup"))
                 .expect("backup must be complete JSON");
         assert_eq!(backup.twitch.channel_login, "previous");
-        cleanup(&path);
-    }
-
-    #[test]
-    fn invalid_utf8_primary_recovers_backup_and_preserves_original_bytes() {
-        let path = settings_path_for_test("utf8-backup");
-        let invalid = b"{\"private\":\"\xff\xfe\"}";
-        fs::write(&path, invalid).unwrap();
-        let backup = serde_json::to_vec(&super::schema::PersistedSettings::new(
-            &settings_with_channel("recovered"),
-        ))
-        .unwrap();
-        fs::write(backup_path(&path), &backup).unwrap();
-        assert!(matches!(
-            super::read_settings_text(&path).unwrap(),
-            Err(super::SettingsContentError::Encoding(_))
-        ));
-        let loaded = SettingsStore::load_from_path(&path).unwrap();
-        assert_eq!(loaded.settings.twitch.channel_login, "recovered");
-        let notice = loaded.recovery_notice.unwrap().message;
-        assert!(notice.contains("UTF-8") && notice.contains("バックアップから復旧"));
-        assert!(!notice.contains("private"));
-        assert_eq!(fs::read(&path).unwrap(), backup);
-        assert_eq!(quarantined_bytes(&path), vec![invalid.to_vec()]);
-        cleanup(&path);
-    }
-
-    fn quarantined_bytes(path: &std::path::Path) -> Vec<Vec<u8>> {
-        let mut bytes: Vec<_> = fs::read_dir(path.parent().unwrap())
-            .unwrap()
-            .map(Result::unwrap)
-            .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"))
-            .map(|entry| fs::read(entry.path()).unwrap())
-            .collect();
-        bytes.sort();
-        bytes
-    }
-
-    #[test]
-    fn invalid_utf8_backup_and_broken_primary_recover_defaults_and_preserve_both() {
-        for primary in [b"{\"twitch\":".as_slice(), b"\xff\x80".as_slice()] {
-            let path = settings_path_for_test("utf8-defaults");
-            let backup = b"\xfe\xff";
-            fs::write(&path, primary).unwrap();
-            fs::write(backup_path(&path), backup).unwrap();
-            let loaded = SettingsStore::load_from_path(&path).unwrap();
-            assert_eq!(loaded.settings.twitch.channel_login, "");
-            let notice = loaded.recovery_notice.unwrap().message;
-            assert!(notice.contains("UTF-8") && notice.contains("既定値"));
-            let mut originals = vec![primary.to_vec(), backup.to_vec()];
-            originals.sort();
-            assert_eq!(quarantined_bytes(&path), originals);
-            super::schema::decode(&fs::read_to_string(&path).unwrap()).unwrap();
-            cleanup(&path);
-        }
-    }
-
-    #[test]
-    fn invalid_utf8_recovery_keeps_a_future_backup_read_only() {
-        let path = settings_path_for_test("utf8-future-backup");
-        let future = br#"{"schemaVersion":999,"futureField":"keep exactly"}"#;
-        fs::write(&path, b"\xff").unwrap();
-        fs::write(backup_path(&path), future).unwrap();
-        let loaded = SettingsStore::load_from_path(&path).unwrap();
-        assert!(loaded
-            .recovery_notice
-            .unwrap()
-            .message
-            .contains(super::schema::READ_ONLY_MESSAGE));
-        assert!(SettingsStore::save_to_path(&path, &loaded.settings)
-            .unwrap_err()
-            .downcast_ref::<super::schema::ReadOnlySettings>()
-            .is_some());
-        assert_eq!(fs::read(&path).unwrap(), future);
-        assert_eq!(fs::read(backup_path(&path)).unwrap(), future);
-        assert_eq!(quarantined_bytes(&path), vec![vec![0xff]]);
-        cleanup(&path);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn permission_denied_is_an_io_error_and_does_not_quarantine_or_overwrite() {
-        use std::os::unix::fs::PermissionsExt;
-        // Root bypasses these filesystem permissions. CI and the local test
-        // container run this test as an unprivileged user.
-        if unsafe { libc::geteuid() } == 0 {
-            return;
-        }
-        let path = settings_path_for_test("read-permission");
-        let original = b"{\"schemaVersion\":1}";
-        fs::write(&path, original).unwrap();
-        fs::write(backup_path(&path), b"backup").unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o0)).unwrap();
-        let error = super::read_settings_text(&path).unwrap_err();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
-        assert_eq!(
-            error.downcast_ref::<std::io::Error>().unwrap().kind(),
-            std::io::ErrorKind::PermissionDenied
-        );
-        assert_eq!(fs::read(&path).unwrap(), original);
-        assert_eq!(fs::read(backup_path(&path)).unwrap(), b"backup");
-        assert!(quarantined_bytes(&path).is_empty());
-
-        // The full loader tightens its own directory permissions. Deny access
-        // at an ancestor to exercise a real IO failure before content recovery.
-        let parent = path.parent().unwrap();
-        let nested = parent.join("nested");
-        fs::create_dir(&nested).unwrap();
-        let nested_path = nested.join("settings.json");
-        fs::write(&nested_path, original).unwrap();
-        fs::write(backup_path(&nested_path), b"backup").unwrap();
-        fs::set_permissions(parent, fs::Permissions::from_mode(0o0)).unwrap();
-        let result = SettingsStore::load_from_path(&nested_path);
-        fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).unwrap();
-        let error = result.expect_err("unreadable ancestor must stop the loader");
-        assert_eq!(
-            error.downcast_ref::<std::io::Error>().unwrap().kind(),
-            std::io::ErrorKind::PermissionDenied
-        );
-        assert_eq!(fs::read(&nested_path).unwrap(), original);
-        assert_eq!(fs::read(backup_path(&nested_path)).unwrap(), b"backup");
-        assert!(quarantined_bytes(&nested_path).is_empty());
         cleanup(&path);
     }
 
