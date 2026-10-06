@@ -4,7 +4,7 @@
 
 2026-10-06 着手計画: #225のIssue記載と既存確認dialog・ExitProtectionProvider・AppShell回帰を調べ、native dialogとheadless primitiveのWebView/React上の挙動を比較する。共通dialog境界へ2種類の確認を移し、focus復帰先消失・複数確認・非同期保存/終了中・OS close requestの境界を回帰化する。frontend関連DOM test、typecheck、format/lint、buildを実行し、docs/TODO.mdを更新する。
 
-2026-10-06 Issue #225: 共通Radix Dialogへ移行し、未保存確認/終了確認のTab循環・背景抑止・Escapeを本番primitiveで保証する。保存中はキャンセル可能なまま表示を更新し、終了処理中のEscape取消を防ぐ。発火元消失時はAppShellへ復帰し、遷移先見出しのfocusは上書きしない。native dialogを比較した実Chromiumで端のTabのfocus流出を再現し採用を見直した。親レビューで保存ボタンdisabled時のfocus流出も実ブラウザで発見し、キャンセルへ移す回帰を加えた。検証結果と最終CIはPR #270で管理する。Windows WebView実機は未実施。
+2026-10-06 Issue #225: 共通Radix Dialogへ移行し、未保存確認/終了確認のTab循環・背景抑止・Escapeを本番primitiveで保証する。保存中はキャンセル可能なまま表示を更新し、終了処理中のEscape取消を防ぐ。発火元消失時はAppShellへ復帰し、遷移先見出しのfocusは上書きしない。native dialogを比較した実Chromiumで端のTabのfocus流出を再現し採用を見直した。親レビューで保存ボタンdisabled時のfocus流出も実ブラウザで発見し、キャンセルへ移す回帰を加えた。最新reviewed main 3fda153統合後のfrontend全476件、build/typecheck、lint/formatが成功。実Chromium153のAppShellでTab/Shift+Tab・背景操作・Escape/focus復帰・保存待ち/遅延完了・繰り返しOS closeを確認した。production JS gzipは198.44 kB。最終CIはPR #270で管理する。Windows WebView実機は未実施。
 
 - [x] Issue #209: Twitch接続taskの開始前にgeneration・connection handle・Connecting状態を確定する。mutex共有のconnection ownerでgeneration予約・登録・stop/cancelを順序付け、古い予約の登録拒否、Connecting公開後のstart gate、即時lookup・登録前stop/新接続・登録失敗をdeterministicに検証する。
 
