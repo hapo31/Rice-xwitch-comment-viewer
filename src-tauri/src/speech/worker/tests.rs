@@ -182,6 +182,7 @@ struct Harness {
     events: Arc<FakeEvents>,
 }
 
+mod active_session;
 mod scenarios;
 fn queued(id: &str) -> SpeechQueueItem {
     SpeechQueueItem {
