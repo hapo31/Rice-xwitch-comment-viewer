@@ -240,7 +240,7 @@ export function subscribeDomainEvents({
             )
               return;
           }
-          const message: ChatMessage = { ...event, kind: "user", status: "queued" };
+          const message: ChatMessage = { ...event, kind: "user", status: "received" };
           dispatchDomainAction(stores, { type: "chat.message", message });
         }),
       () => bridge.subscribeSpeechStatusEvents(speech),

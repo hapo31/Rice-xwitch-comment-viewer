@@ -8,6 +8,7 @@
   {"kind":"skipped","reasonCode":"userSkip","message":"利用者がスキップしました。","retryable":false,"recoveryAction":"none","occurredAtMs":1790000000000},
   {"kind":"skipped","reasonCode":"removed","message":"利用者が個別に削除しました。","retryable":false,"recoveryAction":"none","occurredAtMs":1790000000000},
   {"kind":"skipped","reasonCode":"cleared","message":"利用者がキューをクリアしました。","retryable":false,"recoveryAction":"none","occurredAtMs":1790000000000},
+  {"kind":"skipped","reasonCode":"autoSpeakDisabled","message":"自動読み上げが OFF のため読み上げ対象外です。","retryable":false,"recoveryAction":"none","occurredAtMs":1790000000000},
   {"kind":"error","reasonCode":"configuration","message":"読み上げ先の接続設定が無効です。","retryable":false,"recoveryAction":"diagnoseSpeech","occurredAtMs":1790000000000},
   {"kind":"error","reasonCode":"connectionRefused","message":"読み上げ先に接続できません。起動とTCP受付を確認してください。","retryable":true,"recoveryAction":"diagnoseSpeech","occurredAtMs":1790000000000},
   {"kind":"error","reasonCode":"connectTimeout","message":"読み上げ先への接続がタイムアウトしました。","retryable":true,"recoveryAction":"diagnoseSpeech","occurredAtMs":1790000000000},

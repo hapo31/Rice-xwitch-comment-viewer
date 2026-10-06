@@ -63,6 +63,8 @@ pub(super) enum SubscriptionRequestError {
     Unauthorized,
     #[error("{0}")]
     AuthRequired(String),
+    #[error("The Twitch EventSub connection belongs to an older authentication session.")]
+    ObsoleteConnection,
     #[error(transparent)]
     Retryable(#[from] anyhow::Error),
     #[error(transparent)]
@@ -76,8 +78,11 @@ pub(super) enum EventSubTerminalError {
     AuthRequired { message: String },
     #[error("{message}")]
     Permanent { message: String },
+    #[error("The Twitch EventSub connection belongs to an older authentication session.")]
+    ObsoleteConnection,
 }
 
+#[cfg(test)]
 pub(super) fn is_definitive_auth_failure(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<TwitchApiError>()

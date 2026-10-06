@@ -1,10 +1,11 @@
 import {
   AlertCircle,
   CheckCircle2,
+  Circle,
   CircleDashed,
   CircleOff,
-  Volume2,
   type LucideIcon,
+  Volume2,
 } from "lucide-react";
 import type { ChatDisplayState, QueueDisplayState, SpeechStatus } from "../types";
 
@@ -26,6 +27,7 @@ export function getQueueStatusPresentation(status: QueueDisplayState): StatusPre
 }
 
 export function getChatStatusPresentation(status: ChatDisplayState): StatusPresentation {
+  if (status === "received") return { icon: Circle, label: "受信済み", className: "text-zinc-400" };
   return getQueueStatusPresentation(status);
 }
 

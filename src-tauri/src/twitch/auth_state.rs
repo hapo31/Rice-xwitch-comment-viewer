@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Default, Clone)]
 pub struct TwitchAuthState {
     pub(super) generation: u64,
+    /// Changes whenever installed credentials are replaced or removed.
+    /// Unlike `generation`, token refresh does not invalidate a connection.
+    pub(super) credential_revision: u64,
     pub(super) pending: Option<PendingDeviceAuth>,
     pub(super) token: Option<TwitchToken>,
     pub(super) profile: Option<TwitchUserProfile>,
@@ -155,15 +158,20 @@ pub(super) struct OAuthErrorResponse {
 #[derive(Debug, Clone)]
 pub(super) struct EventSubConnectionParams {
     pub(super) generation: u64,
+    pub(super) auth_generation: u64,
     pub(super) broadcaster_user_id: String,
     pub(super) broadcaster_login: String,
+    pub(super) client_id: String,
     pub(super) user_id: String,
 }
 
 #[cfg(feature = "app")]
 #[derive(Debug, Clone)]
 pub(super) struct EventSubAuthCredentials {
+    pub(super) generation: u64,
+    pub(super) credential_revision: u64,
     pub(super) client_id: String,
+    pub(super) user_id: String,
     pub(super) access_token: String,
     pub(super) refresh_token: String,
 }
@@ -203,6 +211,7 @@ impl TwitchAuthState {
         ensure_required_twitch_scopes(&scopes)?;
         Ok(Self {
             generation: 0,
+            credential_revision: 0,
             pending: None,
             token: Some(TwitchToken {
                 access_token: stored.access_token,
@@ -251,7 +260,10 @@ impl TwitchAuthState {
         ensure_required_twitch_scopes(&profile.scopes)?;
 
         Ok(EventSubAuthCredentials {
+            generation: self.generation,
+            credential_revision: self.credential_revision,
             client_id,
+            user_id: profile.user_id.clone(),
             access_token: token.access_token.clone(),
             refresh_token: token.refresh_token.clone(),
         })
@@ -275,7 +287,20 @@ impl TwitchAuthState {
             expires_in: token.expires_in,
         });
         self.profile = Some(profile);
+        self.credential_revision = self.credential_revision.wrapping_add(1);
         Ok(token.access_token)
+    }
+
+    pub(super) fn credentials_match(
+        &self,
+        revision: u64,
+        access_token: &str,
+        refresh_token: &str,
+    ) -> bool {
+        self.credential_revision == revision
+            && self.token.as_ref().is_some_and(|token| {
+                token.access_token == access_token && token.refresh_token == refresh_token
+            })
     }
 }
 

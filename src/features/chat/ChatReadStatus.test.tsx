@@ -92,6 +92,7 @@ describe("ChatRow read status", () => {
   });
 
   it.each([
+    ["received", "受信済み"],
     ["queued", "待機"],
     ["spoken", "完了"],
     ["skipped", "スキップ"],
