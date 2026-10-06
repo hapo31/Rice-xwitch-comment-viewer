@@ -694,7 +694,9 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #219: 解除中はUI操作世代付きの要求として認証状態と分離し、削除失敗後はbackendの現在profileを照合する。後発操作・Auth revision変更後の古い解除/調停応答を拒否する。実AppShellで失敗後再試行、認証保持/消失、後発event、再取得失敗とcontrollerの後発loginを回帰化した。追加レビューで、解除成功eventがcommand応答より先だと古いprofileが残ることを再現し、revision検証済みのAuth disconnectedをprofile/promptと同時反映する。最終検証・CIはPR #264に記録する。
 
-- [ ] Issue #234: frontend IPv6構文を既存validatorへ委譲し、host policyを分離してRustと共通fixtureで正常/不正入力・byte境界を検証する。
+- [x] Issue #234: frontend IPv6構文を既存validatorへ委譲し、host policyを分離してRustと共通fixtureで正常/不正入力・byte境界を検証する。
+
+2026-10-06 Issue #234: 手書きIPv6 group/IPv4 tail変換を除去し、既存Zod ipv6へ委譲した。共通settings fixtureを圧縮・埋込IPv4・先頭ゼロ・zone ID・DNS/IPv4・raw253 UTF-8 bytes境界へ拡張し、frontend検証103件、build/typecheck、lint/format、diff検査が成功。Rustとの共通fixture照合と最終CIはPR #278で管理する。実接続先の認可policyは変更しない。
 
 ## Issue #222: 検証済みPNGと設定transaction
 
