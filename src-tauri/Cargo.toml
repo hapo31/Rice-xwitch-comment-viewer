@@ -25,6 +25,7 @@ tauri = { version = "2.12.1", features = [], optional = true }
 tauri-plugin-dialog = { version = "2.8.1", optional = true }
 tauri-plugin-single-instance = { version = "=2.5.2", optional = true }
 thiserror = "2.0"
+tempfile = "=3.27.0"
 tokio = { version = "1.41", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 keyring = { version = "3.6", default-features = false }
 chrono = { version = "0.4", features = ["serde"] }
