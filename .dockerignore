@@ -18,6 +18,7 @@
 !tsconfig.json
 !vite.config.ts
 !scripts/
+!scripts/config-parsers.mjs
 !scripts/verify-twitch-client-id.mjs
 !scripts/verify-release-build-inputs.mjs
 !scripts/record-build-materials.mjs

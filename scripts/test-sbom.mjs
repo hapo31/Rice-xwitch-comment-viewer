@@ -12,11 +12,11 @@ const hash = (value) => createHash("sha256").update(value).digest("hex");
 const dep = (version, dependencies = {}) => ({ version, path: `/node/${version}`, dependencies });
 const npmTree = { dependencies: { runtime: dep("1.0.0", { shared: dep("2.0.0") }), "@scope/core": dep("4.0.0") }, devDependencies: { builder: dep("3.0.0", { shared: dep("2.0.0") }) } };
 const edge = (pkg, kind = null) => ({ pkg, dep_kinds: [{ kind }] });
-const cargo = { packages: [{ id: "root", name: "rice", version: "0.2.3" }, { id: "runtime", name: "lib", version: "1.0.0" }, { id: "build", name: "builder", version: "2.0.0" }], resolve: { root: "root", nodes: [{ id: "root", deps: [edge("runtime"), edge("build", "build")] }, { id: "runtime", deps: [] }, { id: "build", deps: [] }] } };
-const lockfiles = { npm: "npm lock", cargo: "cargo lock" };
+const cargo = { packages: [{ id: "root", name: "rice", version: "0.2.3" }, { id: "runtime", name: "lib", version: "1.0.0", source: "registry+https://github.com/rust-lang/crates.io-index" }, { id: "build", name: "builder", version: "2.0.0" }], resolve: { root: "root", nodes: [{ id: "root", deps: [edge("runtime"), edge("build", "build")] }, { id: "runtime", deps: [] }, { id: "build", deps: [] }] } };
+const lockfiles = { npm: "npm lock", cargo: `version = 4\n\n[[package]]\nname = "lib"\nversion = "1.0.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "${hash("registry crate")}"\n\n[[package]]\nname = "builder"\nversion = "2.0.0"\n` };
 const commit = "a".repeat(40);
 const materials = { schemaVersion: 1, commit, sourceDateEpoch: 1780000000, lockfiles: { npm: hash(lockfiles.npm), cargo: hash(lockfiles.cargo) }, inputs: { rustImage: `rust:1@sha256:${hash("rust")}`, nodeImage: `node:22@sha256:${hash("node")}` }, osPackages: ["zip\t3.0"], tools: { rust: "1.89.0" }, windowsBuildMaterials: [{ path: "sdk/header.h", sha256: hash("header") }], artifacts: [{ name: "Rice.exe", sha256: hash("exe") }, { name: "Rice.zip", sha256: hash("zip") }] };
-const args = () => ({ materials: structuredClone(materials), expectedCommit: commit, manifest: { name: "rice", version: "0.2.3" }, npmTree, cargo, lockfiles, artifactHashes: { "Rice.exe": hash("exe"), "Rice.zip": hash("zip") } });
+const args = () => ({ materials: structuredClone(materials), expectedCommit: commit, manifest: { name: "rice", version: "0.2.3" }, npmTree, cargo: structuredClone(cargo), lockfiles: { ...lockfiles }, artifactHashes: { "Rice.exe": hash("exe"), "Rice.zip": hash("zip") } });
 
 test("PackageURL builder/parser round-trips npm scoped, Cargo and Debian coordinates", () => {
   for (const [type, name, version, namespace, expected] of [
@@ -59,6 +59,7 @@ test("CycloneDX model preserves exact provenance, dependency graph and stable se
   assert.ok(bom.components.some((component) => component.name === "sdk/header.h" && component.scope === "excluded"));
   assert.ok(bom.components.some((component) => component.purl === "pkg:deb/debian/zip@3.0" && component.scope === "excluded"));
   assert.ok(bom.components.some((component) => component.purl === "pkg:npm/%40scope/core@4.0.0"));
+  assert.ok(bom.components.some((component) => component.purl === "pkg:cargo/lib@1.0.0" && component.hashes?.[0]?.content === hash("registry crate")));
   const refs = new Set([bom.metadata.component["bom-ref"], ...bom.components.map((component) => component["bom-ref"])]);
   for (const dependency of bom.dependencies) {
     assert.ok(refs.has(dependency.ref));
@@ -83,6 +84,19 @@ test("wrong source, altered lockfile or artifact and missing build inventory fai
   for (const mutate of [(input) => input.expectedCommit = "b".repeat(40), (input) => input.lockfiles = { ...lockfiles, npm: "changed" }, (input) => input.artifactHashes["Rice.exe"] = hash("tampered"), (input) => input.materials.osPackages = []]) {
     const input = args(); mutate(input); await assert.rejects(createSbom(input));
   }
+});
+
+test("malformed Cargo lockfiles and invalid registry checksums fail closed", async () => {
+  const invalidToml = args();
+  invalidToml.lockfiles.cargo = "[[package]\nname = \"lib\"";
+  invalidToml.materials.lockfiles.cargo = hash(invalidToml.lockfiles.cargo);
+  await assert.rejects(createSbom(invalidToml));
+
+  const invalidChecksum = args();
+  invalidChecksum.lockfiles.cargo = invalidChecksum.lockfiles.cargo.replace(hash("registry crate"), `${"0".repeat(63)}x`);
+  invalidChecksum.materials.lockfiles.cargo = hash(invalidChecksum.lockfiles.cargo);
+  invalidChecksum.cargo.packages[1].source = "registry+https://github.com/rust-lang/crates.io-index";
+  await assert.rejects(createSbom(invalidChecksum), /Invalid Cargo registry checksum/);
 });
 
 test("native compiler hash belongs to the NSIS tool, not a fictitious extra component", async () => {

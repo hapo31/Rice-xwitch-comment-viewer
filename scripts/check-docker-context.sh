@@ -19,6 +19,7 @@ expected_exceptions=(
   '!tsconfig.json'
   '!vite.config.ts'
   '!scripts/'
+  '!scripts/config-parsers.mjs'
   '!scripts/verify-twitch-client-id.mjs'
   '!scripts/verify-release-build-inputs.mjs'
   '!scripts/record-build-materials.mjs'
@@ -48,6 +49,7 @@ expected_copy_sources=(
   package.json
   pnpm-lock.yaml
   postcss.config.js
+  scripts/config-parsers.mjs
   scripts/nsis-toolchain-probe.nsi
   scripts/record-build-materials.mjs
   scripts/verify-project-license.mjs
@@ -139,6 +141,7 @@ manifest_files=(
   build/release-inputs.json
   scripts/verify-release-build-inputs.mjs
   scripts/record-build-materials.mjs
+  scripts/config-parsers.mjs
   scripts/verify-project-license.mjs
   scripts/verify-tauri-versions.mjs
   package.json

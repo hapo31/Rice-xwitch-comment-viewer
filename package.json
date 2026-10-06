@@ -23,6 +23,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "1.2.0",
     "@tanstack/react-virtual": "^3.13.25",
     "@tauri-apps/api": "2.12.1",
     "@tauri-apps/plugin-dialog": "^2.8.1",
@@ -52,9 +53,11 @@
     "jsdom": "27.4.0",
     "packageurl-js": "2.0.1",
     "postcss": "^8.5.28",
+    "smol-toml": "1.9.0",
     "tailwindcss": "4.3.3",
     "typescript": "^5.6.3",
     "vite": "^8.0.16",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "yaml": "2.9.1"
   }
 }

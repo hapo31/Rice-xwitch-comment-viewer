@@ -2,10 +2,11 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseToml } from "./config-parsers.mjs";
 import { Enums, Models, Serialize, Spec } from "@cyclonedx/cyclonedx-library";
 import { packagePurl } from "./sbom-purl.mjs";
 import { cargoInventory, npmInventory } from "./sbom-inventory.mjs";
-import { collectSbomProvenance, checksum } from "./sbom-provenance.mjs";
+import { collectSbomProvenance, checksum, digest } from "./sbom-provenance.mjs";
 import { validateCycloneDx15 } from "./sbom-validation.mjs";
 
 export const generatorVersion = "2.0.0";
@@ -45,11 +46,13 @@ function provenanceComponent(item) {
 }
 
 function cargoLockChecksums(lockfile) {
+  const cargoLock = parseToml(lockfile.toString(), "Cargo.lock");
+  if (!Array.isArray(cargoLock.package)) throw new Error("Cargo.lock must contain a package list");
   const checksums = new Map();
-  for (const section of lockfile.toString().split("[[package]]").slice(1)) {
-    const name = section.match(/^name = "([^"]+)"/m)?.[1], version = section.match(/^version = "([^"]+)"/m)?.[1];
-    const hash = section.match(/^checksum = "([a-f0-9]{64})"/m)?.[1];
-    if (hash) checksums.set(`${name}@${version}`, hash);
+  for (const item of cargoLock.package) {
+    if (typeof item?.name !== "string" || typeof item?.version !== "string") throw new Error("Invalid Cargo.lock package entry");
+    if (item.checksum !== undefined && !digest(item.checksum)) throw new Error(`Invalid Cargo registry checksum: ${item.name}`);
+    if (item.checksum) checksums.set(`${item.name}@${item.version}`, item.checksum);
   }
   return checksums;
 }
