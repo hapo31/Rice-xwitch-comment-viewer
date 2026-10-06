@@ -107,7 +107,9 @@
 
 ## 現在の進捗サマリ
 
-Issue #209では、接続taskをspawnしてからhandle登録・Connecting通知を行っていたため、即時lookup失敗のErrorをConnectingが後から上書きし、登録失敗時にtaskがdetachする競合を解消した。oneshot開始gateで登録・Connecting通知後にlookupを開始し、TwitchConnectionHandleのDropが所有taskをabortする。追補では予約・登録・cancelを同じmutex保護のTwitchConnectionOwnerへ集約し、古い予約の登録拒否を登録直前 barrier でstop／新接続の両順序から検証する。即時 lookup 成功／失敗はmulti-thread runtime上でconnect return前のlookup開始を同期し、Connectingとterminal statusの順を確認する。reviewed main `c868999` までを統合し、追加差分はfrontendと文書の変更でRustのTwitch接続ownerに重ならないことを確認した。Rust 1.90 all-features Twitch tests 100件、strict all-target clippy、fmt check、diff checkが成功した。最終CIと親レビューはPR #252で確認する。
+Issue #209では、接続taskをspawnしてからhandle登録・Connecting通知を行っていたため、即時lookup失敗のErrorをConnectingが後から上書きし、登録失敗時にtaskがdetachする競合を解消した。oneshot開始gateで登録・Connecting通知後にlookupを開始し、TwitchConnectionHandleのDropが所有taskをabortする。追補では予約・登録・cancelを同じmutex保護のTwitchConnectionOwnerへ集約し、古い予約の登録拒否を登録直前 barrier でstop／新接続の両順序から検証する。即時 lookup 成功／失敗はmulti-thread runtime上でconnect return前のlookup開始を同期し、Connectingとterminal statusの順を確認する。reviewed main `c868999` までを統合し、追加差分はfrontendと文書の変更でRustのTwitch接続ownerに重ならないことを確認した。Rust 1.90 all-features Twitch tests 100件、strict all-target clippy、fmt check、diff checkが成功した。親レビューで登録前stop/新接続・開始gate・Drop取消を確認した。reviewed main 928f1f6のspeech session制御を統合し、最終CIはPR #252で確認する。
+
+Issue #220: 再生中itemのadapter所有権を保持し、設定変更後も制御と完了確認を同じ宛先へ送る。後続itemから新しい設定を使う。
 
 Issue #219: 認証解除の要求を認証状態から分離し、失敗後に再試行できる調停を追加した。PR #264で最終検証を確認する。
 
@@ -638,6 +640,12 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] source-map-js の影響版を修正版へ統一し、既存監査・frozen install・frontend gates を通す。監査例外は追加しない。
 
 2026-10-06 Issue #261: @tailwindcss/node 4.3.3 の許容範囲 ^1.2.1 内で source-map-js を1.2.2へ統一し、未使用の1.2.1 entryを除去した。他の依存とpackage.jsonは変更しない。frozen offline install、frontend全429件、production build成功。pnpm auditはhigh/critical 0件で対象GHSAが消え、既存moderate 5件のみ。全CIの結果は PR #262 に記録する。
+
+## Issue #220: 再生中 session と制御先の一致
+
+- [x] 設定上の宛先と再生中sessionを区別し、Pause/Resume/Skip/Clear・完了確認を同じadapterへ送る。A再生中のB設定保存と後続itemの選択をfakeで検証する。
+
+2026-10-06 Issue #220: fake adapter A/Bで4種類の制御、送信完了待ちとの競合、制御失敗時の状態維持、後続itemのB選択を検証した。no-default全224件・app構成speech112件・strict Clippy・frontend build・format/diff検査成功。実棒読みちゃんの手動確認は未実施。最終headのCIはPR #265で確認する。
 
 ## Issue #219: 認証解除失敗後の再試行
 
