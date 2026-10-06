@@ -3,12 +3,12 @@ use super::formatter::{SpeechFormatDecision, SpeechFormatter};
 use super::outcome::{self, BlockedReason, SkippedReason, SpeechQueueOutcome};
 #[cfg(test)]
 use super::FailureCode;
+use super::SpeechQueueItemStatus;
 #[cfg(any(feature = "app", test))]
 use super::SpeechQueuePhase;
-use super::{SpeechControl, SpeechFailure, SpeechRequest};
-use crate::app_events::SpeechQueueItemStatus;
 #[cfg(test)]
-use crate::app_events::SpeechStatus;
+use super::SpeechStatus;
+use super::{SpeechControl, SpeechFailure, SpeechRequest};
 use crate::settings::SpeechSettings;
 use crate::twitch::ChatMessage;
 use std::collections::{HashMap, VecDeque};

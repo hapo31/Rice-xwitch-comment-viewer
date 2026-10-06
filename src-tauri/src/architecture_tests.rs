@@ -13,6 +13,7 @@ fn backend_layers_keep_settings_and_speech_dependencies_inward() {
     let speech_module = include_str!("speech/mod.rs");
     let speech_events = include_str!("speech/events.rs");
     let speech_worker = include_str!("speech/worker.rs");
+    let speech_queue = include_str!("speech/queue.rs");
     let speech_domain_types = include_str!("speech/types.rs");
 
     assert!(!settings_model.contains("tauri::"));
@@ -33,6 +34,9 @@ fn backend_layers_keep_settings_and_speech_dependencies_inward() {
     assert!(speech_worker.contains("SpeechLogLevel"));
     assert!(!speech_worker.contains("AppLogLevel"));
     assert!(!speech_worker.contains("app_events::"));
+    assert!(speech_queue.contains("use super::SpeechQueueItemStatus;"));
+    assert!(speech_queue.contains("use super::SpeechStatus;"));
+    assert!(!speech_queue.contains("app_events"));
     assert!(!speech_module.contains("SpeechQueueUpdatedEvent {"));
     assert!(!speech_module.contains("SpeechQueueItemEvent {"));
     assert!(!speech_events.contains("SpeechQueueUpdatedEvent {"));
