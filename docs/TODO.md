@@ -442,6 +442,7 @@ Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態
 - [x] Issue #2: Chat 行へ読み上げ状態を表示し、キュー更新時に `sourceMessageId` で状態を同期する。
 - [x] Issue #1: Activity Bar から Logs view を開ける導線を追加し、リンク名・現在地表現を回帰テストする。
 - [x] `main` 向け PR で frontend/Rust の unit test と lint を並列実行する read-only GitHub Actions workflow を追加する。
+- [ ] Issue #228: YAML/TOMLを共通parser境界へ集約し、構文差に耐えるpolicy検査と未知形状・権限拡大・未承認advisory拒否を回帰化する。Node/CI/Dockerの検証順を保つ。
 - [x] PR 作成時と手動 dispatch 時だけ dev build を実行し、結果を job summary へ出す workflow を追加する。
 - [x] devcontainer bootstrap 検証は `.devcontainer/**` または workflow 自体を変更したときだけ実行する。
 - [x] 単独管理の方針ではrequired status checksのrepository設定を必須にせず、PRレビュー時にCIを確認する（2026-09-08所有者判断）。
