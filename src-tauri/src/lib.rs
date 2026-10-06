@@ -157,6 +157,7 @@ fn app_builder_with_state(state: AppState) -> tauri::Builder<tauri::Wry> {
             twitch_disconnect
         ])
         .setup(|app| {
+            app.manage(twitch::TwitchHttp::new()?);
             let state = app.state::<AppState>();
             let loaded_settings = settings::SettingsStore::load(app.handle())?;
             restore_main_window_position(app.handle(), &loaded_settings.settings);

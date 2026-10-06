@@ -17,7 +17,10 @@ pub(crate) mod commands;
 mod dedupe;
 mod error;
 mod eventsub;
+mod http;
 mod model;
+#[cfg(feature = "app")]
+pub(crate) use http::TwitchHttp;
 mod normalization;
 mod oauth;
 #[cfg(feature = "app")]

@@ -209,6 +209,18 @@ Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既
 
 - [x] Issue #96: pnpm/Cargoの監査・期限付き例外validator・定期scan・dependency更新PR・release SBOMを導入する。
 
+- [x] Issue #229: dependency inventoryとRice固有provenanceを分離し、CycloneDX公式model/serializer・schema validatorと標準Package URL parser/builderを使ってSBOMを生成する。依存graph・exact commit/lockfile/artifact照合・再現可能なsort・Rice propertiesを保持し、npm scoped/Cargo/Debian PURL round-tripとCycloneDX 1.5 schemaをテストする。追加のpeer/dev dependencyとNode互換性を記録する。
+
+2026-10-06 Issue #229 着手計画: SBOM generator、release artifact verifier、dependency-security設計と既存テスト/Node 22 release入力を確認する。inventory・provenanceとCycloneDX変換を切り分け、公式libraryとPackageURLの対応版/peer dependenciesを確認して固定する。手組みPURL/CycloneDX objectを標準modelへ置換し、installed graph fixtureでexact source/artifact情報・dependency edge・sortを保つ。標準PURLのnpm scoped/Cargo/Debian round-trip、公式CycloneDX 1.5 schemaの正例/不正例、release verifierの不正SBOM拒否を追加し、Node 22で関連policyテストを実行する。
+
+2026-10-06 Issue #229 調査・実装: CycloneDX JavaScript Library 10.3.0 (Node >=20.18.0) のmodel/serializer/公式JsonValidatorと `packageurl-js` 2.0.1を採用し、schema validatorの任意peer `ajv` 8.20.0・`ajv-formats` 3.0.1・`ajv-formats-draft2019` 1.6.1をexact pinする。依存inventory、Rice provenance、標準PURL構築、schema検証を別moduleへ分離し、release artifact verifierもasyncで同じ公式schema validationを必須にした。Node 22.22.0でSBOM単体のPURL round-trip/CycloneDX schema testとinstalled npm/Cargo graphが通過した。最終policy、diff、workflow全体の確認を継続する。
+
+2026-10-06 Issue #229 reviewed main統合: #228の共通TOML parser (`scripts/config-parsers.mjs`) をCargo.lock読み込みにも適用し、lock entryとregistry checksumをfail-closedに検証する。Cargo parser fixtureを正規TOMLにし、malformed TOML・checksum不正・registry crateのSHA-256保持を回帰化した。reviewed `origin/main` `27e8599` の#228 parser/CI/設計更新を統合した。SBOM/PURL/schema、artifact verifier、parser、release workflow policyとlicense testsは通過。実installed npm/Cargo graphでも10件全て成功した。
+
+2026-10-06 Issue #229 親レビュー: schema validator導入でWindows artifact smokeとtrusted publisherにもnpm依存が必要になったため、各検証前へfrozen/ignore-scripts installを追加した。publisherはsourceではなくtrustedのmanifest/lockだけを使い、依存install欠落・実行順・不正directory・script実行・skipをworkflow policy回帰で拒否する。Node22の関連71件（installed graph含む）と、独立checkoutで依存不足を再現→frozen install後の両verifier import成功を確認した。
+
+2026-10-06 Issue #229 完了: CycloneDX JavaScript Library 10.3.0と `packageurl-js` 2.0.1で正式model/serializerとPURL構築/parseを行う。inventory・provenance・standard model・schema validationは別moduleで、release verifierもofficial CycloneDX 1.5 validatorを使う。exact commit/lockfile/artifact、scope・dependency edge・hash・Rice propertiesとstable sortを維持し、Cargo registry lock hashをshared TOML parser経由で読む。Node 22.22.0のfrozen install、SBOM/artifact/parser/policy/license関連test、installed graph schema integration、license/workflow checksと`git diff --check`が成功した。追加dev dependenciesとJSON-validation peer dependenciesをexact pinし、Node >=20.18.0の要件が固定release Node 22.22.0を満たすことを文書化した。PR #273 の最終CIと親レビューを待つ。
+
 2026-10-05: Issue #96でPR/main/weekly/releaseの共通advisory gate、期限/owner/根拠を必須とする例外validator、Dependabot、artifact digestとexact commitへ結び付けたCycloneDX 1.5 SBOMを追加した。policy/SBOMのunit10件と実installed graphのintegration1件を確認。RustSec DB ef6173cbc5c50ec8166f9a5b28f07834144373ee（1290 advisory）でRust警告7件、npm High1件をblockingとして検出した。gateが正常に失敗することを確認しており、clean auditではない。新規releaseの実配布は未実施。
 
 - [x] Issue #93: release build の base image / Debian snapshot / toolchain を固定し、時刻と build material を記録・検証する。SDK/CRT feed と NSIS/PE metadata の非決定性は material inventory と文書で明示する。
@@ -698,6 +710,10 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #219: 解除中はUI操作世代付きの要求として認証状態と分離し、削除失敗後はbackendの現在profileを照合する。後発操作・Auth revision変更後の古い解除/調停応答を拒否する。実AppShellで失敗後再試行、認証保持/消失、後発event、再取得失敗とcontrollerの後発loginを回帰化した。追加レビューで、解除成功eventがcommand応答より先だと古いprofileが残ることを再現し、revision検証済みのAuth disconnectedをprofile/promptと同時反映する。最終検証・CIはPR #264に記録する。
 
+- [x] Issue #234: frontend IPv6構文を既存validatorへ委譲し、host policyを分離してRustと共通fixtureで正常/不正入力・byte境界を検証する。
+
+2026-10-06 Issue #234: 手書きIPv6 group/IPv4 tail変換を除去し、既存Zod ipv6へ委譲した。共通settings fixtureを圧縮・埋込IPv4・先頭ゼロ・zone ID・DNS/IPv4・raw253 UTF-8 bytes境界へ拡張し、frontend検証103件、build/typecheck、lint/format、diff検査が成功。Rustとの共通fixture照合と最終CIはPR #278で管理する。実接続先の認可policyは変更しない。
+
 ## Issue #222: 検証済みPNGと設定transaction
 
 - [x] 未検証wireと検証済みPNGを型で分け、clone・metadata編集・quota検査の再decodeを避ける。settings update、Launcher update、window saveを共通transaction mutexで直列化し、高コスト検証/保存を公開settings lockから分離する。decode回数、200件保存、多数icon検証中もspeech enqueueがsettings lockを取得できること、schema拒否と保存失敗時の非変更を検証する。
@@ -713,3 +729,7 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 2026-10-06 Issue #223: immutableなstore snapshotとselectorをReact公式helperへ別々に渡し、Object.is既定と任意比較関数を全domain hookで使えるようにした。通常/StrictModeの派生object・array、selector変更、store変更と購読解除、同一storeの無関係更新、Provider隔離と1eventあたりの通知/描画をDOM6件で回帰化した。frontend全462件（78 files）、build/typecheck、format、lint、diff検査成功。production JS gzip増加0.28 kB。Jotaiへの全domain移行と比べ、既存reducer・generation/revision・replayを保持する小さな境界変更を選んだ。最終headのCI・マージはPR #268で確認する。Windows実アプリの手動描画確認は未実施。
 
 2026-10-06 Issue #231: tempfileの乱数名生成とRAII cleanupを採用し、Windows write-throughを含む既存atomic_replaceと同期・権限検査を保持した。write/backup/replace失敗時のprimary/backup/メモリと残留temp、unwind後cleanupを回帰化。Rust settings47件、strict all-target/all-feature Clippy、frontend build、fmt/diff検査が成功。最終CIはPR #275で管理する。実機での電源断検証は未実施。
+
+- [x] Issue #232: Twitch transportがreqwest Clientを共有し、timeout/TLSと要求ごとの認証header、pool再利用・期限・credential切替・失敗分類を検証する。service/fake transportと認証更新順序を維持する。
+
+2026-10-06 Issue #232: TwitchHttpをapp setupで一度構築し、runtime cloneを通じ全OAuth・Helix・EventSub HTTP要求にpoolを共有する。ローカルHTTP fixtureで7要求/cloneのTCP接続1本、全6操作の期限、token/client切替、poll・認証・購読失敗分類を追加。実装head 2f67990の全16 CI（Rust all-feature/no-default・strict Clippy・Windows・frontend）とfrontend build/fmt/diff検査成功。ローカルの重複再buildはCI成功後に停止した。実Twitchログインは未実施。
