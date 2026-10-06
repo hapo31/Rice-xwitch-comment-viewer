@@ -105,6 +105,8 @@
 
 ## 現在の進捗サマリ
 
+Issue #218: 起動時認証復元より後発の手動ログインを優先する世代予約を追加した。PR #263で最終CIを確認する。
+
 Issue #216: 設定初期化に読込状態・世代・更新番号を導入し、古い読込による保存結果の巻き戻りを防いだ。対象23件の回帰成功、最終 CI は PR #259 で追跡する。
 
 Issue #261: 共通CIを止めた source-map-js advisoryを修正版へのlockfile統一で解消した。最終CIはPR #262で確認する。
@@ -617,6 +619,12 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] 初期 snapshot 復元中の未判定コメントを上限付きで保留し、復元した接続 identity/generation と照合して順序・重複排除を保って反映する。旧世代・別channelの拒否、snapshot 失敗・cleanup・保留上限を回帰化する。
 
 2026-10-06 Issue #217: Twitch status snapshot の適用前に届く generation 付きコメントを最大200件保留し、snapshot 適用後に現行 generation・broadcaster user ID・login が一致するものだけを受信順に反映する。保留中と直近受信の message ID を重複排除し、snapshot 失敗・subscription cleanup では保留を破棄する。domain replay と AppShell/Tauri bridge の DOM 回帰で現行コメント、旧generation、別channel、失敗、cleanup、重複、上限を検証した。review済み `origin/main` `49fd2f7`（#216設定初期化を含む）統合後のfrontend全445件、typecheck、lint、format check、production buildが成功した。最終PR/CI確認と親レビューは未完了。
+## Issue #218: 起動時認証復元と手動操作の優先順位
+
+- [x] 起動開始時の認証操作を予約し、遅い snapshot/auth 復元が後発の手動 start/poll を無効化しない。実 AppShell と認証世代の逆順完了を回帰化する。
+
+2026-10-06 Issue #218: 起動effectで予約した世代をsnapshot復元後も使い、後発手動操作から世代を奪わない。Auth snapshotは手動開始後には反映せず、古いstored auth取得後にvalidate commandを追加起動しない。実AppShellのStrictMode、snapshot対start/poll、stored auth/validateの遅い成功・失敗7件を回帰化した。最終検証とCIはPR #263で追跡する。
+
 
 ## Issue #216: 設定初期化の競合防止
 
