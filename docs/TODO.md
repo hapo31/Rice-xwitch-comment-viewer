@@ -209,6 +209,18 @@ Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既
 
 - [x] Issue #96: pnpm/Cargoの監査・期限付き例外validator・定期scan・dependency更新PR・release SBOMを導入する。
 
+- [x] Issue #229: dependency inventoryとRice固有provenanceを分離し、CycloneDX公式model/serializer・schema validatorと標準Package URL parser/builderを使ってSBOMを生成する。依存graph・exact commit/lockfile/artifact照合・再現可能なsort・Rice propertiesを保持し、npm scoped/Cargo/Debian PURL round-tripとCycloneDX 1.5 schemaをテストする。追加のpeer/dev dependencyとNode互換性を記録する。
+
+2026-10-06 Issue #229 着手計画: SBOM generator、release artifact verifier、dependency-security設計と既存テスト/Node 22 release入力を確認する。inventory・provenanceとCycloneDX変換を切り分け、公式libraryとPackageURLの対応版/peer dependenciesを確認して固定する。手組みPURL/CycloneDX objectを標準modelへ置換し、installed graph fixtureでexact source/artifact情報・dependency edge・sortを保つ。標準PURLのnpm scoped/Cargo/Debian round-trip、公式CycloneDX 1.5 schemaの正例/不正例、release verifierの不正SBOM拒否を追加し、Node 22で関連policyテストを実行する。
+
+2026-10-06 Issue #229 調査・実装: CycloneDX JavaScript Library 10.3.0 (Node >=20.18.0) のmodel/serializer/公式JsonValidatorと `packageurl-js` 2.0.1を採用し、schema validatorの任意peer `ajv` 8.20.0・`ajv-formats` 3.0.1・`ajv-formats-draft2019` 1.6.1をexact pinする。依存inventory、Rice provenance、標準PURL構築、schema検証を別moduleへ分離し、release artifact verifierもasyncで同じ公式schema validationを必須にした。Node 22.22.0でSBOM単体のPURL round-trip/CycloneDX schema testとinstalled npm/Cargo graphが通過した。最終policy、diff、workflow全体の確認を継続する。
+
+2026-10-06 Issue #229 reviewed main統合: #228の共通TOML parser (`scripts/config-parsers.mjs`) をCargo.lock読み込みにも適用し、lock entryとregistry checksumをfail-closedに検証する。Cargo parser fixtureを正規TOMLにし、malformed TOML・checksum不正・registry crateのSHA-256保持を回帰化した。reviewed `origin/main` `27e8599` の#228 parser/CI/設計更新を統合した。SBOM/PURL/schema、artifact verifier、parser、release workflow policyとlicense testsは通過。実installed npm/Cargo graphでも10件全て成功した。
+
+2026-10-06 Issue #229 親レビュー: schema validator導入でWindows artifact smokeとtrusted publisherにもnpm依存が必要になったため、各検証前へfrozen/ignore-scripts installを追加した。publisherはsourceではなくtrustedのmanifest/lockだけを使い、依存install欠落・実行順・不正directory・script実行・skipをworkflow policy回帰で拒否する。Node22の関連71件（installed graph含む）と、独立checkoutで依存不足を再現→frozen install後の両verifier import成功を確認した。
+
+2026-10-06 Issue #229 完了: CycloneDX JavaScript Library 10.3.0と `packageurl-js` 2.0.1で正式model/serializerとPURL構築/parseを行う。inventory・provenance・standard model・schema validationは別moduleで、release verifierもofficial CycloneDX 1.5 validatorを使う。exact commit/lockfile/artifact、scope・dependency edge・hash・Rice propertiesとstable sortを維持し、Cargo registry lock hashをshared TOML parser経由で読む。Node 22.22.0のfrozen install、SBOM/artifact/parser/policy/license関連test、installed graph schema integration、license/workflow checksと`git diff --check`が成功した。追加dev dependenciesとJSON-validation peer dependenciesをexact pinし、Node >=20.18.0の要件が固定release Node 22.22.0を満たすことを文書化した。PR #273 の最終CIと親レビューを待つ。
+
 2026-10-05: Issue #96でPR/main/weekly/releaseの共通advisory gate、期限/owner/根拠を必須とする例外validator、Dependabot、artifact digestとexact commitへ結び付けたCycloneDX 1.5 SBOMを追加した。policy/SBOMのunit10件と実installed graphのintegration1件を確認。RustSec DB ef6173cbc5c50ec8166f9a5b28f07834144373ee（1290 advisory）でRust警告7件、npm High1件をblockingとして検出した。gateが正常に失敗することを確認しており、clean auditではない。新規releaseの実配布は未実施。
 
 - [x] Issue #93: release build の base image / Debian snapshot / toolchain を固定し、時刻と build material を記録・検証する。SDK/CRT feed と NSIS/PE metadata の非決定性は material inventory と文書で明示する。

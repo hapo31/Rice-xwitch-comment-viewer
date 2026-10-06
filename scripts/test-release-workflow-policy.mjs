@@ -67,3 +67,22 @@ test("publication write access, environment approval and smoke ordering stay con
     assert.throws(() => validateReleaseWorkflows(build, publish));
   }
 });
+
+test("SBOM verifier jobs prepare trusted frozen dependencies before loading the validator", () => {
+  for (const target of ["smoke", "publish"]) {
+    for (const mutate of [
+      (steps, index) => steps.splice(index, 1),
+      (steps, index) => { steps[index]["working-directory"] = "source"; },
+      (steps, index) => { steps[index].run = steps[index].run.replace(" --ignore-scripts", ""); },
+      (steps, index) => { steps[index].if = "false"; },
+      (steps, index) => { steps.push(...steps.splice(index, 1)); },
+    ]) {
+      const [build, publish] = load();
+      const steps = target === "smoke" ? build.jobs["windows-smoke"].steps : publish.jobs.release.steps;
+      const index = steps.findIndex((step) => step.run?.includes("corepack pnpm install"));
+      assert.ok(index >= 0);
+      mutate(steps, index);
+      assert.throws(() => validateReleaseWorkflows(build, publish), /SBOM verifier dependencies/);
+    }
+  }
+});
