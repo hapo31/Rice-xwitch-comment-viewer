@@ -56,14 +56,19 @@ pub(crate) fn full_quota_items() -> Vec<LauncherItem> {
         item.group_id = Some("😀".repeat(MAX_GROUP_CHARS));
         item.background_color = Some("#1a2B3c".into());
         item.target = format!("C:\\{}-{index}.exe", "a".repeat(630));
-        item.icon_data_url = Some(format!(
-            "{LAUNCHER_ICON_DATA_URL_PREFIX}{}",
-            BASE64_STANDARD.encode(padded_png_with_seed(
-                first_encoded / 4 * 3,
-                MAX_ICON_DIMENSION,
-                index as u32
-            ))
-        ));
+        if index < MAX_LAUNCHER_ITEMS - 1 {
+            item.icon_data_url = Some(
+                normalize_launcher_icon_data_url(Some(format!(
+                    "{LAUNCHER_ICON_DATA_URL_PREFIX}{}",
+                    BASE64_STANDARD.encode(padded_png_with_seed(
+                        first_encoded / 4 * 3,
+                        MAX_ICON_DIMENSION,
+                        index as u32
+                    ))
+                )))
+                .expect("validated fixture icon"),
+            );
+        }
         items.push(item);
     }
     let used: usize = items[..MAX_LAUNCHER_ITEMS - 1]
@@ -72,14 +77,17 @@ pub(crate) fn full_quota_items() -> Vec<LauncherItem> {
         .sum();
     let last_encoded = MAX_TOTAL_ICON_BYTES - used - LAUNCHER_ICON_DATA_URL_PREFIX.len();
     assert_eq!(last_encoded % 4, 0);
-    items.last_mut().unwrap().icon_data_url = Some(format!(
-        "{LAUNCHER_ICON_DATA_URL_PREFIX}{}",
-        BASE64_STANDARD.encode(padded_png_with_seed(
-            last_encoded / 4 * 3,
-            MAX_ICON_DIMENSION,
-            199
-        ))
-    ));
+    items.last_mut().unwrap().icon_data_url = Some(
+        normalize_launcher_icon_data_url(Some(format!(
+            "{LAUNCHER_ICON_DATA_URL_PREFIX}{}",
+            BASE64_STANDARD.encode(padded_png_with_seed(
+                last_encoded / 4 * 3,
+                MAX_ICON_DIMENSION,
+                199
+            ))
+        )))
+        .expect("validated last fixture icon"),
+    );
     assert_eq!(
         items
             .iter()
@@ -87,6 +95,17 @@ pub(crate) fn full_quota_items() -> Vec<LauncherItem> {
             .sum::<usize>(),
         MAX_TOTAL_ICON_BYTES
     );
+    items
+}
+
+pub(crate) fn over_quota_icon_items() -> Vec<LauncherItem> {
+    let mut items = full_quota_items();
+    let at_limit = format!(
+        "{LAUNCHER_ICON_DATA_URL_PREFIX}{}",
+        BASE64_STANDARD.encode(padded_png(MAX_ICON_FILE_BYTES, MAX_ICON_DIMENSION))
+    );
+    items[0].icon_data_url =
+        Some(normalize_launcher_icon_data_url(Some(at_limit)).expect("valid maximum icon"));
     items
 }
 
@@ -222,10 +241,13 @@ fn png_encoded_file_pixels_and_combined_quota_have_explicit_boundaries() {
     let old_size =
         (above[0].icon_data_url.as_ref().unwrap().len() - LAUNCHER_ICON_DATA_URL_PREFIX.len()) / 4
             * 3;
-    above[0].icon_data_url = Some(format!(
-        "{LAUNCHER_ICON_DATA_URL_PREFIX}{}",
-        BASE64_STANDARD.encode(padded_png(old_size + 3, MAX_ICON_DIMENSION))
-    ));
+    above[0].icon_data_url = Some(
+        normalize_launcher_icon_data_url(Some(format!(
+            "{LAUNCHER_ICON_DATA_URL_PREFIX}{}",
+            BASE64_STANDARD.encode(padded_png(old_size + 3, MAX_ICON_DIMENSION))
+        )))
+        .expect("valid oversized aggregate icon"),
+    );
     assert!(validate_launcher_resources(&above)
         .unwrap_err()
         .contains("合計"));
@@ -234,10 +256,37 @@ fn png_encoded_file_pixels_and_combined_quota_have_explicit_boundaries() {
         .contains("200"));
     let existing = &items[..199];
     let mut addition = item(999);
-    addition.icon_data_url = Some(at_limit);
+    addition.icon_data_url =
+        Some(normalize_launcher_icon_data_url(Some(at_limit)).expect("valid boundary icon"));
     assert!(merge_new_launcher_items(existing, vec![addition])
         .unwrap_err()
         .contains("合計"));
+}
+
+#[test]
+fn validated_icon_clones_and_quota_validation_do_not_decode_png_again() {
+    reset_icon_png_decode_count();
+    let items = full_quota_items();
+    assert_eq!(icon_png_decode_count(), MAX_LAUNCHER_ITEMS);
+
+    let cloned = items.clone();
+    validate_launcher_resources(&cloned).unwrap();
+    serde_json::to_vec(&cloned).unwrap();
+    let edits = cloned
+        .iter()
+        .map(|item| LauncherItemEdit {
+            id: item.id.clone(),
+            display_name: "renamed".into(),
+            background_color: item.background_color.clone(),
+            group_id: item.group_id.clone(),
+            order: item.order,
+        })
+        .collect();
+    let renamed = apply_launcher_edits(&cloned, edits).unwrap();
+    assert_eq!(renamed.len(), MAX_LAUNCHER_ITEMS);
+    assert!(renamed.iter().all(|item| item.display_name == "renamed"));
+
+    assert_eq!(icon_png_decode_count(), MAX_LAUNCHER_ITEMS);
 }
 
 #[tokio::test]

@@ -689,6 +689,12 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #219: 解除中はUI操作世代付きの要求として認証状態と分離し、削除失敗後はbackendの現在profileを照合する。後発操作・Auth revision変更後の古い解除/調停応答を拒否する。実AppShellで失敗後再試行、認証保持/消失、後発event、再取得失敗とcontrollerの後発loginを回帰化した。追加レビューで、解除成功eventがcommand応答より先だと古いprofileが残ることを再現し、revision検証済みのAuth disconnectedをprofile/promptと同時反映する。最終検証・CIはPR #264に記録する。
 
+## Issue #222: 検証済みPNGと設定transaction
+
+- [x] 未検証wireと検証済みPNGを型で分け、clone・metadata編集・quota検査の再decodeを避ける。settings update、Launcher update、window saveを共通transaction mutexで直列化し、高コスト検証/保存を公開settings lockから分離する。decode回数、200件保存、多数icon検証中もspeech enqueueがsettings lockを取得できること、schema拒否と保存失敗時の非変更を検証する。
+
+2026-10-06: `ValidatedLauncherIconDataUrl`を導入し、未信頼JSONと抽出アイコンの境界でPNGを完全検証する。domain cloneは`Arc<str>`を共有し、200件のclone/quota validation/serializeでPNG decoderが再度呼ばれないこと、同一targetから変化した抽出PNGが再検証されることを回帰化した。settings update、Launcher repository、window position saveを共有transaction gateへ移し、候補検証・永続化中に公開settings lockが空いてspeech enqueueの読み取りを妨げないこと、transactionの直列化、保存失敗時の未publishを検証した。親レビューでendpoint許可の失効を短い公開lock内へ戻し、新state公開と原子的にした。200 iconの保存barrier中の実queue enqueueと公開前副作用の排他を追加。検証済み型はRust内部に限定し、wire bindingは従来のoptional stringと完全一致する。reviewed main 3fda153統合後のRust 1.90全328件、strict all-target/all-features Clippy、frontend build/typecheck、fmt、wire contractが成功した。sandbox上のno-default全体実行はTCP bindがPermissionDeniedとなる既存speech fake-server test 11件で失敗したが、TCPを含む全app suiteは指定dev containerで通過した。
+
 2026-10-06 Issue #224: DOM測定cleanupと逆符号のoffset加算を除去し、commit/scroll時のVirtualItemからanchorを保存して同じhelperで復元する。ref測定後に座標cacheを更新することで可変行高の追加差分も反映した。修正前は実ChatViewで上端-8pxが52pxとなる失敗を再現。対象7件（実DOM5件とhelper2件）、frontend全461件、build/typecheck、format/lint、diff検査成功。新着件数と先頭への復帰を維持し、実WebViewのpixel手動検証は未実施。
 
 ## Issue #223: 派生selectorのsnapshot契約

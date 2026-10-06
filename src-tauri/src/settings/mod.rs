@@ -189,6 +189,8 @@ pub(crate) fn default_twitch_client_id() -> String {
 #[derive(Default)]
 pub struct AppState {
     pub settings: SharedSettings<AppSettings>,
+    /// Serializes disk transactions while keeping the published settings mutex short-lived.
+    pub settings_transaction: SharedSettings<()>,
     /// Shared launcher adapters and bounded worker pool, used by every command.
     pub launcher_runtime: crate::launcher::LauncherRuntime,
     pub settings_recovery_notice: SharedSettings<Option<SettingsRecoveryNotice>>,
@@ -779,6 +781,7 @@ pub fn settings_take_recovery_notice(
         .map(|mut notice| notice.take())
 }
 
+#[cfg(test)]
 pub(crate) fn update_settings_transaction(
     settings: &mut AppSettings,
     update: impl FnOnce(&mut AppSettings) -> Result<(), String>,
@@ -787,17 +790,59 @@ pub(crate) fn update_settings_transaction(
     update_settings_transaction_with_error(settings, update, save)
 }
 
+pub(crate) fn update_shared_settings_transaction<E: From<String>>(
+    settings: &SharedSettings<AppSettings>,
+    transaction: &SharedSettings<()>,
+    update: impl FnOnce(&mut AppSettings) -> Result<(), E>,
+    save: impl FnOnce(&AppSettings) -> Result<(), E>,
+) -> Result<(AppSettings, AppSettings), E> {
+    update_shared_settings_transaction_with_publish(settings, transaction, update, save, |_, _| {})
+}
+
+fn update_shared_settings_transaction_with_publish<E: From<String>>(
+    settings: &SharedSettings<AppSettings>,
+    transaction: &SharedSettings<()>,
+    update: impl FnOnce(&mut AppSettings) -> Result<(), E>,
+    save: impl FnOnce(&AppSettings) -> Result<(), E>,
+    before_publish: impl FnOnce(&AppSettings, &AppSettings),
+) -> Result<(AppSettings, AppSettings), E> {
+    let _transaction = transaction
+        .lock()
+        .map_err(|error| E::from(error.to_string()))?;
+    let previous = settings
+        .lock()
+        .map_err(|error| E::from(error.to_string()))?
+        .clone();
+    let mut candidate = previous.clone();
+    apply_settings_candidate(&mut candidate, update)?;
+    save(&candidate)?;
+    let mut published = settings
+        .lock()
+        .map_err(|error| E::from(error.to_string()))?;
+    // Endpoint consent invalidation must be atomic with publishing new settings.
+    before_publish(&previous, &candidate);
+    *published = candidate.clone();
+    Ok((previous, candidate))
+}
+
 fn update_settings_transaction_with_error<E: From<String>>(
     settings: &mut AppSettings,
     update: impl FnOnce(&mut AppSettings) -> Result<(), E>,
     save: impl FnOnce(&AppSettings) -> Result<(), E>,
 ) -> Result<(), E> {
     let mut candidate = settings.clone();
-    update(&mut candidate)?;
-    validate_launcher_resources(&candidate.launcher.items).map_err(E::from)?;
+    apply_settings_candidate(&mut candidate, update)?;
     save(&candidate)?;
     *settings = candidate;
     Ok(())
+}
+
+fn apply_settings_candidate<E: From<String>>(
+    candidate: &mut AppSettings,
+    update: impl FnOnce(&mut AppSettings) -> Result<(), E>,
+) -> Result<(), E> {
+    update(candidate)?;
+    validate_launcher_resources(&candidate.launcher.items).map_err(E::from)
 }
 
 #[cfg(feature = "app")]
@@ -808,39 +853,46 @@ pub fn settings_update(
     request: tauri::ipc::Request<'_>,
 ) -> Result<AppSettings, validation::ValidationError> {
     let patch = parse_settings_request(crate::resource_limits::request_json(&request)?)?;
-    let mut settings = state.settings.lock().map_err(|error| error.to_string())?;
-    let previous_endpoint = (
-        settings.speech.bouyomi_host.clone(),
-        settings.speech.bouyomi_port,
-        settings.speech.bouyomi_remote_mode,
-    );
-    apply_validated_settings_patch(&mut settings, patch, |candidate| {
-        SettingsStore::save(&app, candidate).map_err(|error| {
-            if error.is::<schema::ReadOnlySettings>() {
-                return validation::ValidationError::new(
+    validation::validate_patch(&patch)?;
+    let (_, settings) = update_shared_settings_transaction_with_publish(
+        &state.settings,
+        &state.settings_transaction,
+        |candidate| {
+            apply_patch(candidate, patch)?;
+            validation::validate_settings(candidate)
+        },
+        |candidate| {
+            SettingsStore::save(&app, candidate).map_err(|error| {
+                if error.is::<schema::ReadOnlySettings>() {
+                    return validation::ValidationError::new(
+                        "settings",
+                        "unsupportedSchema",
+                        schema::READ_ONLY_MESSAGE,
+                    );
+                }
+                validation::ValidationError::new(
                     "settings",
-                    "unsupportedSchema",
-                    schema::READ_ONLY_MESSAGE,
-                );
+                    "persistenceFailed",
+                    "設定を保存できませんでした。保存先の空き容量・権限を確認してください。",
+                )
+            })
+        },
+        |previous, candidate| {
+            if (
+                previous.speech.bouyomi_host.as_str(),
+                previous.speech.bouyomi_port,
+                previous.speech.bouyomi_remote_mode,
+            ) != (
+                candidate.speech.bouyomi_host.as_str(),
+                candidate.speech.bouyomi_port,
+                candidate.speech.bouyomi_remote_mode,
+            ) {
+                state.speech_runtime.destination_policy().revoke();
             }
-            validation::ValidationError::new(
-                "settings",
-                "persistenceFailed",
-                "設定を保存できませんでした。保存先の空き容量・権限を確認してください。",
-            )
-        })
-    })?;
-    if previous_endpoint
-        != (
-            settings.speech.bouyomi_host.clone(),
-            settings.speech.bouyomi_port,
-            settings.speech.bouyomi_remote_mode,
-        )
-    {
-        state.speech_runtime.destination_policy().revoke();
-    }
+        },
+    )?;
     emit_app_log(&app, AppLogLevel::Info, "設定を保存しました。");
-    Ok(settings.clone())
+    Ok(settings)
 }
 
 fn apply_validated_settings_patch(
@@ -1016,6 +1068,156 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn slow_settings_transaction_does_not_hold_the_published_settings_lock() {
+        let settings = std::sync::Arc::new(std::sync::Mutex::new(AppSettings::default()));
+        let transaction = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let (entered_sender, entered_receiver) = std::sync::mpsc::channel();
+        let (continue_sender, continue_receiver) = std::sync::mpsc::channel();
+        let worker_settings = settings.clone();
+        let worker_transaction = transaction.clone();
+        let worker = std::thread::spawn(move || {
+            super::update_shared_settings_transaction(
+                &worker_settings,
+                &worker_transaction,
+                |candidate| {
+                    entered_sender.send(()).unwrap();
+                    continue_receiver.recv().unwrap();
+                    candidate.twitch.channel_login = "next-channel".into();
+                    Ok::<(), String>(())
+                },
+                |_| Ok::<(), String>(()),
+            )
+        });
+
+        entered_receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("transaction reached slow candidate work");
+        let visible = settings
+            .try_lock()
+            .expect("published settings lock is available during candidate work");
+        assert!(visible.twitch.channel_login.is_empty());
+        drop(visible);
+
+        continue_sender.send(()).unwrap();
+        let (previous, current) = worker.join().unwrap().unwrap();
+        assert!(previous.twitch.channel_login.is_empty());
+        assert_eq!(current.twitch.channel_login, "next-channel");
+        assert_eq!(
+            settings.lock().unwrap().twitch.channel_login,
+            "next-channel"
+        );
+    }
+
+    #[test]
+    fn concurrent_settings_transactions_publish_in_order_without_lost_updates() {
+        let settings = std::sync::Arc::new(std::sync::Mutex::new(AppSettings::default()));
+        let transaction = std::sync::Arc::new(std::sync::Mutex::new(()));
+        let (first_entered_sender, first_entered_receiver) = std::sync::mpsc::channel();
+        let (continue_first_sender, continue_first_receiver) = std::sync::mpsc::channel();
+        let first_settings = settings.clone();
+        let first_transaction = transaction.clone();
+        let first = std::thread::spawn(move || {
+            super::update_shared_settings_transaction(
+                &first_settings,
+                &first_transaction,
+                |candidate| {
+                    first_entered_sender.send(()).unwrap();
+                    continue_first_receiver.recv().unwrap();
+                    candidate.twitch.channel_login = "first".into();
+                    Ok::<(), String>(())
+                },
+                |_| Ok::<(), String>(()),
+            )
+        });
+        first_entered_receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("first transaction entered candidate work");
+
+        let (second_entered_sender, second_entered_receiver) = std::sync::mpsc::channel();
+        let second_settings = settings.clone();
+        let second_transaction = transaction.clone();
+        let second = std::thread::spawn(move || {
+            super::update_shared_settings_transaction(
+                &second_settings,
+                &second_transaction,
+                |candidate| {
+                    second_entered_sender.send(()).unwrap();
+                    candidate.speech.bouyomi_port = 50_002;
+                    Ok::<(), String>(())
+                },
+                |_| Ok::<(), String>(()),
+            )
+        });
+        assert!(second_entered_receiver
+            .recv_timeout(std::time::Duration::from_millis(50))
+            .is_err());
+
+        continue_first_sender.send(()).unwrap();
+        first.join().unwrap().unwrap();
+        second_entered_receiver
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("second transaction starts after the first commits");
+        second.join().unwrap().unwrap();
+
+        let settings = settings.lock().unwrap();
+        assert_eq!(settings.twitch.channel_login, "first");
+        assert_eq!(settings.speech.bouyomi_port, 50_002);
+    }
+
+    #[test]
+    fn publication_side_effect_runs_under_the_settings_lock_before_new_state_is_visible() {
+        let settings = std::sync::Mutex::new(AppSettings::default());
+        let transaction = std::sync::Mutex::new(());
+        let revoked = std::cell::Cell::new(false);
+        super::update_shared_settings_transaction_with_publish(
+            &settings,
+            &transaction,
+            |candidate| {
+                candidate.speech.bouyomi_port = 50002;
+                Ok::<(), String>(())
+            },
+            |_| {
+                assert!(!revoked.get());
+                Ok::<(), String>(())
+            },
+            |previous, candidate| {
+                assert_eq!(previous.speech.bouyomi_port, 50001);
+                assert_eq!(candidate.speech.bouyomi_port, 50002);
+                assert!(matches!(
+                    settings.try_lock(),
+                    Err(std::sync::TryLockError::WouldBlock)
+                ));
+                revoked.set(true);
+            },
+        )
+        .unwrap();
+        assert!(revoked.get());
+        assert_eq!(settings.lock().unwrap().speech.bouyomi_port, 50002);
+    }
+
+    #[test]
+    fn failed_shared_settings_persistence_does_not_publish_candidate_state() {
+        let settings = std::sync::Mutex::new(AppSettings::default());
+        let transaction = std::sync::Mutex::new(());
+        let before = settings.lock().unwrap().clone();
+        let result = super::update_shared_settings_transaction(
+            &settings,
+            &transaction,
+            |candidate| {
+                candidate.twitch.channel_login = "unsaved".into();
+                Ok::<(), String>(())
+            },
+            |_| Err::<(), String>("fixture persistence failure".into()),
+        );
+
+        assert_eq!(result.unwrap_err(), "fixture persistence failure");
+        assert_eq!(
+            settings.lock().unwrap().twitch.channel_login,
+            before.twitch.channel_login
+        );
+    }
 
     #[test]
     fn maximum_launcher_roundtrip_stays_within_time_and_rust_heap_budget() {
@@ -1203,8 +1405,7 @@ mod tests {
         SettingsStore::save_to_path(&path, &settings).unwrap();
         let primary = fs::read(&path).unwrap();
         let backup = fs::read(backup_path(&path)).unwrap();
-        let mut items = crate::launcher::bounds_tests::full_quota_items();
-        items[0].icon_data_url.as_mut().unwrap().push_str("AAAA");
+        let items = crate::launcher::bounds_tests::over_quota_icon_items();
         for launcher_failure in [true, false] {
             let result = update_settings_transaction(
                 &mut settings,
