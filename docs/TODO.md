@@ -91,7 +91,9 @@
 
 ## 現在の進捗サマリ
 
-- [ ] Issue #214: コメントの受信と読み上げ受付を区別し、自動読み上げ OFF の対象外結果を backend の型付き outcome として通知・保持する。ON/OFF 切替、event の前後順、snapshot 復元を契約テストで確認する。
+- [x] Issue #214: コメントの受信と読み上げ受付を区別し、自動読み上げ OFF の対象外結果を backend の型付き outcome として通知・保持する。ON/OFF 切替、event の前後順、snapshot 復元を契約テストで確認する。
+
+2026-10-06 Issue #214: backend の OFF 早期 return を理由付き skipped history の保存・通知に変更し、frontend の初期表示を received とした。message/queue の到着順、snapshot、現在の設定が受信時と逆の場合を実 AppShell で検証し、関連48件・frontend全420件が成功した。設定 snapshot の ON/OFF 判定、非 enqueue と履歴200件上限を含む no-default Rust 読み上げ107件、Rust由来の wire 型生成、typecheck/format/lint/build が成功した。PR #257 で app feature と最終 head の CI・統合結果を記録する。
 
 Issue #199 は system timeline の中立モデルと型付き購読境界、source 別 transition 契約を実装した。初期 snapshot の認証/speech 通知、連続重複と復旧後の再通知、購読終了後の無視、不正 callback の型エラーを検証した。独立レビューで認証/接続の状態集合をさらに限定し、案内文を含む認証の重複抑制を維持した。最終 CI 結果と統合状況は PR #239 に記録する。
 

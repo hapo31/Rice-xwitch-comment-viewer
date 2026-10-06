@@ -181,6 +181,8 @@ Tauri Rust
 
 ## 読み上げキュー
 
+コメント受信時の設定 snapshot が自動読み上げ OFF の場合は、pending に入れず `skipped` / `autoSpeakDisabled` の結果を履歴に保持し、通常の queue event と snapshot で通知する。履歴上限200件、待機数に含めないこと、連投抑制時刻を更新しないことを維持する。ON/OFF の切替が後から起きても既存結果を変更・再 enqueue しない。frontend は現在の設定から受付を推測せず、結果受信前を「受信済み」、受付後だけ「待機」と表示する。
+
 初期キュー仕様:
 
 - FIFO
