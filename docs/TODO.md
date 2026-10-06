@@ -297,6 +297,8 @@ Issue #194 の親レビュー追補で、連投抑制秒の空欄/空白を拒�
 
 通常 devcontainer には lock 済みの GitHub CLI feature を追加し、Codex の認証情報・履歴・セッションを `rice-codex-home` named volume に永続化した。
 
+Phase 5 進捗サマリ追記（2026-10-06）: Issue #233 で Windows/macOS の Twitch activation URL 起動を Tauri Opener の Rust API へ委譲し、Linux/WSL は公式 `open::commands` が返す候補を終了状態まで待って試し、旧wslviewを最後の互換fallbackとして保持する局所 adapter を残した。実デスクトップの起動確認は環境依存で残る。
+
 ## Phase 0: プロジェクト作成
 
 - [x] Issue #202: Settings 既定値を UI feature 非依存の共通 model factory に集約し、preview の leaf patch を現在値へ累積適用する。可変値の非共有、異 section/同 section field の連続保存、再読込を回帰検証する。
@@ -623,6 +625,8 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] Rust: Launcher の拡張子、重複、順序、予約種別、旧設定互換テストを追加する。
 - [x] Rust: 設定JSONの原子的保存、disk full/replace failure、構文・設定値が不正な本体/backup復旧テストを追加する。
 - [x] Issue #231: 保存用一時fileをRAII guardで所有し、同一directory・権限/ACL・sync・schema/backup・writer lockを保持してwrite/backup/replace失敗時のcleanupを検証する。
+- [x] Issue #233: 検証済みの Twitch activation URL を既存の Rust command から Tauri 公式 Opener の Rust API へ渡す。Linux/WSLは公式 `open::commands` の候補を逐次実行し、非zero終了時だけ次を試す。renderer自動リンク処理を無効にして汎用権限を与えず、許可URL・拒否URL・起動失敗案内を回帰検証する。
+- [ ] Issue #233: Windows/macOS/Linux/WSL の実デスクトップ既定ブラウザ起動を手動確認する（現在の Linux container に desktop session がない）。
 - [x] Rust: Issue #157 の旧設定互換、座標のJSON保存、画面外位置の復元抑止をテストする。
 - [x] TypeScript: store reducer テストを追加する。
 - [x] TypeScript: キュー行の状態表示テストを追加する。
@@ -730,6 +734,15 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] React公式selector helperとJotai移行を比較し、派生object/arrayの安定性・比較関数・Provider隔離・通知と描画回数をDOMで検証する。既存generation/revision/queue同期を維持する。
 
 2026-10-06 Issue #223: immutableなstore snapshotとselectorをReact公式helperへ別々に渡し、Object.is既定と任意比較関数を全domain hookで使えるようにした。通常/StrictModeの派生object・array、selector変更、store変更と購読解除、同一storeの無関係更新、Provider隔離と1eventあたりの通知/描画をDOM6件で回帰化した。frontend全462件（78 files）、build/typecheck、format、lint、diff検査成功。production JS gzip増加0.28 kB。Jotaiへの全domain移行と比べ、既存reducer・generation/revision・replayを保持する小さな境界変更を選んだ。最終headのCI・マージはPR #268で確認する。Windows実アプリの手動描画確認は未実施。
+
+## Issue #233: Twitch URL の外部ブラウザ起動
+
+- [x] 現行 allowlist・Tauri/Rust互換性・公式 Opener API と Windows/macOS/Linux/WSL の起動経路を調査する。
+- [x] 既存 Rust command 内だけを外部URL起動経路にする。Windows/macOS は Opener Rust API、Linux/WSL は `open::commands` の候補を終了状態まで待つ adapter を使い、renderer 権限・URL allowlist・日本語復旧案内を保つ。
+- [x] 受理/拒否URLと起動失敗案内を回帰化し、Cargo lock と security policy を確認する。
+- [ ] Windows/macOS/Linux/WSL の実デスクトップ既定ブラウザ起動を手動確認する（現在の環境は Linux container で desktop session がない）。
+
+2026-10-06 Issue #233: `app_open_external_url` は Twitch activation URL を検証してから外部ブラウザ起動へ渡す。Windows/macOS は公式 `tauri-plugin-opener` 2.7.0 の Rust API、Linux/WSL は同 plugin が使う `open` 5.4.4 の `open::commands` で候補生成し、各プロセスの終了状態を待って非zero時だけ次候補を試す。OS判定と一般的なコマンド候補生成はライブラリへ委譲し、公式候補がすべて失敗した後の旧wslviewだけを互換fallbackとして保持した。Opener の自動JSリンク処理は無効、renderer capability は変更せずOpener URL/path権限も追加していない。allowlist、拒否前に起動関数を呼ばないこと、日本語失敗案内、fake executable による候補順・成功停止・全失敗詳細を回帰検証した。公式 plugin の Tauri 2.12.1 / release Rust 1.90.0 互換性を確認。初期実装のcargo checkとfocused testに加え、親が本番検証・エラー変換とadapterをlock済み依存へ直接linkしたharnessで2test（隔離process内の先頭成功、途中fallback、wslview成功、全失敗の4scenario）成功。各childのPATH変更は親のtest processへ漏らさない。fmt/diffも成功。統合後のapp/no-default・Clippy・Windowsを含む最終CI結果はPR #277で管理する。実Windows/macOS/Linux/WSL desktopの手動確認は未実施。
 
 2026-10-06 Issue #231: tempfileの乱数名生成とRAII cleanupを採用し、Windows write-throughを含む既存atomic_replaceと同期・権限検査を保持した。write/backup/replace失敗時のprimary/backup/メモリと残留temp、unwind後cleanupを回帰化。Rust settings47件、strict all-target/all-feature Clippy、frontend build、fmt/diff検査が成功。最終CIはPR #275で管理する。実機での電源断検証は未実施。
 
