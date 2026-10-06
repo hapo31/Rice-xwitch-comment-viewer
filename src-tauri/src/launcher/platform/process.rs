@@ -397,7 +397,8 @@ mod tests {
         let command = command("printf out; printf err >&2");
         #[cfg(windows)]
         let command = command("[Console]::Out.Write('out'); [Console]::Error.Write('err')");
-        let output = run_bounded(command, Duration::from_secs(2), 32, 32)
+        // Allow PowerShell cold startup; the stalled-child tests exercise short deadlines.
+        let output = run_bounded(command, Duration::from_secs(5), 32, 32)
             .await
             .unwrap();
         assert!(output.status.success());
