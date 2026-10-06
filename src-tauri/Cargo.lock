@@ -3156,6 +3156,7 @@ dependencies = [
  "futures-util",
  "keyring",
  "libc",
+ "open",
  "png 0.17.16",
  "reqwest 0.12.28",
  "serde",

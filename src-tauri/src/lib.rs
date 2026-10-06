@@ -1,4 +1,6 @@
 mod app_events;
+#[cfg(target_os = "linux")]
+mod external_url;
 mod launcher;
 mod resource_limits;
 mod settings;
@@ -42,7 +44,7 @@ use speech::{
 use std::sync::Mutex;
 #[cfg(feature = "app")]
 use tauri::{Manager, PhysicalPosition, WindowEvent};
-#[cfg(feature = "app")]
+#[cfg(all(feature = "app", not(target_os = "linux")))]
 use tauri_plugin_opener::OpenerExt;
 #[cfg(feature = "app")]
 use twitch::commands::{
@@ -59,10 +61,24 @@ fn app_exit(app: tauri::AppHandle) {
 
 #[cfg(feature = "app")]
 #[tauri::command]
-fn app_open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+fn app_open_external_url(_app: tauri::AppHandle, url: String) -> Result<(), String> {
     open_validated_external_url(&url, |url| {
-        app.opener().open_url(url.to_string(), None::<String>)
+        #[cfg(target_os = "linux")]
+        {
+            external_url::open_system_url(url.as_str())
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            open_system_url(&_app, url.as_str())
+        }
     })
+}
+
+#[cfg(all(feature = "app", not(target_os = "linux")))]
+fn open_system_url(app: &tauri::AppHandle, url: &str) -> anyhow::Result<()> {
+    app.opener()
+        .open_url(url.to_string(), None::<String>)
+        .map_err(Into::into)
 }
 
 #[cfg(feature = "app")]
@@ -125,7 +141,11 @@ fn app_builder_with_state(state: AppState) -> tauri::Builder<tauri::Wry> {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             single_instance::request_activation(app);
         }))
-        .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .manage(single_instance::PendingActivation::default())
         .manage(state)
@@ -418,6 +438,23 @@ mod tests {
 
         assert_eq!(result, Err("許可されていない外部URLです。".to_string()));
         assert!(!opener_called);
+    }
+
+    #[test]
+    fn opens_the_validated_twitch_activation_url() {
+        let mut opened_url = None;
+
+        let result =
+            open_validated_external_url("https://www.twitch.tv/activate?device-code=123", |url| {
+                opened_url = Some(url.to_string());
+                Ok::<(), std::convert::Infallible>(())
+            });
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(
+            opened_url.as_deref(),
+            Some("https://www.twitch.tv/activate?device-code=123")
+        );
     }
 
     #[test]
