@@ -144,6 +144,7 @@ pub struct ChatMessage {
     pub fragments: Vec<MessageFragment>,
     pub badges: Vec<Badge>,
     pub received_at: chrono::DateTime<chrono::Utc>,
+    pub connection_generation: Option<u64>,
 }
 
 pub struct SpeechRequest {
@@ -156,6 +157,8 @@ pub struct SpeechRequest {
 MVPの`SpeechRequest`は本文と追跡IDだけを持つ。項目単位の`voice/speed/tone/volume` overrideは未対応のためモデルに公開せず、JSONで指定された未知の項目もdeserialize時に拒否する。声質はアダプタ設定からのみ取得する（Issue #81）。将来overrideを追加する際は型、許容範囲、優先順位とpacket契約を同時に実装する。
 
 `ChatMessage.received_at` はアプリ内部で常に `DateTime<Utc>` とする。Tauri event では serde の camelCase 規約により `receivedAt` として、UTC の RFC 3339（末尾 `Z`、小数秒は nanosecond 精度まで保持）を送る。frontend は bridge 受信時にこの契約を検証し、`UtcTimestamp` として store へ渡す。欠落・空文字・タイムゾーンなし・非文字列を含む不正値、および JavaScript の `Date` / `Intl` が表現できない leap second は backend で WebSocket frame を取り出した時刻へフォールバックして warning log を残し、frontend の境界でも受信時刻を使って防御する。Chat view は保存値を変えず利用者のローカルタイムゾーンで表示し、表示不能な値では `--:--:--` を表示する。
+
+EventSub 正規化時に、受信元 connection の generation を `ChatMessage` へ一度だけ付与する。同じ domain message を UI event と読み上げ enqueue の両方へ渡し、serializer 側で clone に後付けしない。production runtime は現在の connection handle を保持する mutex の下で generation を照合し、UI 配信と speech enqueue を行う。停止または接続交換は同じ mutex を通るため、無効化済み旧世代の遅延 callback はどちらの経路にも配送されない。
 
 ## Tauri command/event案
 

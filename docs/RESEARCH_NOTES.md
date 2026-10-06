@@ -1,5 +1,13 @@
 # 調査メモ
 
+## 2026-10-06
+
+### Issue #207: 接続世代を共有 delivery boundary で検証
+
+- Issue #207: EventSub 正規化時点で domain `ChatMessage` に generation を一度付け、callback と serializer が別 generation を渡さない形にした。親レビューで fake が独自 predicate を持ち `None` を受け入れる点が見つかったため、production runtime と fake の両方が `dispatch_chat_message` を通し、active generation がない場合も両sinkへ配送しないようにした。
+- 接続所有の `twitch_connection` mutex は stop/replacement が現在 handle を無効化する境界でもある。production runtime は lock を保持したまま共有 boundary を呼び、同じ message を UI emit と speech enqueue に渡す。回帰は正常配送時に両sinkの内容と generation が同一であること、同一 channel の世代交換時に旧世代の遅延通知を両方で拒否すること、別 channel の配送、停止後の拒否、重複排除とsink順序を確認する。
+- main `2802a4a`、`98bfd81`、`6bdb52c`、`6916a44`、`0d72925`、`493c57f` を統合。#208 の終端 EventSub status 通知、service test recorder、handover revocation fake regression を保持した。#201 の wire-contract DTO 属性後も generation field を保ち、strict app-feature all-target Clippy を警告抑制なしで実行した。`chat_delivery.rs` のTauri非依存共有関数 test と frontend 414件、format/lint/typecheck/build も成功した。no-default Clippy は通常実行で成功し、strict `-D warnings` は既存のfeature非依存 dead_code 375件で失敗する。no-default 対象unit testも成功した。最新 main `ffc391a` を統合した。調査メモと TODO の同時追記による競合は両方の記録を保持して解消し、#212 の型付き認証復元を保持した。最終 app-feature runtime 回帰と CI・統合結果は PR #248 に記録する。実 Twitch 通信は未実施。
+
 ## 2026-10-06 Issue #203: domain state と旧互換実装の統合
 
 - 親レビューで旧 AppState reducer 専用テストから queue status 5種/system row保持、200件上限とclear snapshot後のskipped反映、Launcher更新時の他設定保持という4つの実契約を選び、`createDomainStores` と `dispatchDomainAction` を通す回帰へ移した。Settings更新は1件目の失敗前に2件目と `waitForIdle` を登録し、1件目reject後も2件目settleまでidleがresolveしないことを検証した。
