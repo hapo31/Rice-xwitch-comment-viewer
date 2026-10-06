@@ -148,8 +148,10 @@ async fn real_links_validate_target_arguments_workdir_permissions_and_partial_su
     assert_eq!(resolved.metadata.arguments, args);
     assert_eq!(resolved.metadata.icon_source, executable.to_string_lossy());
     let settings = Mutex::new(AppSettings::default());
+    let transaction = Mutex::new(());
     let repository = AppSettingsRepository {
         settings: &settings,
+        transaction: &transaction,
         persist: |_: &AppSettings| -> Result<(), String> { panic!("launch must not save") },
     };
     let runtime = LauncherRuntime::default();

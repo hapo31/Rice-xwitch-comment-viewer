@@ -12,6 +12,7 @@ use tokio::sync::{oneshot, Semaphore};
 #[derive(Default)]
 struct FakeRepository {
     settings: Mutex<AppSettings>,
+    transaction: Mutex<()>,
     saved: Mutex<Vec<AppSettings>>,
     fail_save: AtomicBool,
     fail_read: AtomicBool,
@@ -29,6 +30,7 @@ impl SettingsRepository for FakeRepository {
     ) -> Result<Vec<LauncherItem>, String> {
         AppSettingsRepository {
             settings: &self.settings,
+            transaction: &self.transaction,
             persist: |candidate: &AppSettings| {
                 if self.fail_save.load(Ordering::SeqCst) {
                     return Err("保存失敗fixture".into());

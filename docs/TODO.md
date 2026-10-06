@@ -643,4 +643,6 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 ## Issue #222: 検証済みPNGと設定transaction
 
-- [ ] 未検証wireと検証済みiconを型で分け、同一bytesの再decodeを避ける。保存transactionの排他を保持し、高コスト検証/保存をsettings公開lockから分離してdecode回数・enqueue競合を検証する。
+- [x] 未検証wireと検証済みPNGを型で分け、clone・metadata編集・quota検査の再decodeを避ける。settings update、Launcher update、window saveを共通transaction mutexで直列化し、高コスト検証/保存を公開settings lockから分離する。decode回数、200件保存、多数icon検証中もspeech enqueueがsettings lockを取得できること、schema拒否と保存失敗時の非変更を検証する。
+
+2026-10-06: `ValidatedLauncherIconDataUrl`を導入し、未信頼JSONと抽出アイコンの境界でPNGを完全検証する。domain cloneは`Arc<str>`を共有し、200件のclone/quota validation/serializeでPNG decoderが再度呼ばれないこと、同一targetから変化した抽出PNGが再検証されることを回帰化した。settings update、Launcher repository、window position saveを共有transaction gateへ移し、候補検証・永続化中に公開settings lockが空いてspeech enqueueの読み取りを妨げないこと、transactionの直列化、保存失敗時の未publishを検証した。Rust 1.90 app-feature全314件、strict all-target app Clippy、fmt、wire contract generationが成功した。sandbox上のno-default全体実行はTCP bindがPermissionDeniedとなる既存speech fake-server test 11件で失敗したが、TCPを含む全app suiteは指定dev containerで通過した。
