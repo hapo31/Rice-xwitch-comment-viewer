@@ -607,3 +607,7 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 2026-10-06 Issue #213: 保存待ちキャンセル後の app_exit と reset 済み blocker の proceed 例外を実 AppShell で再現し、保存後の操作を現在の token と blocker location key で照合する。取り消した保存そのものは完了してよいが、旧終了・遷移の副作用は実行しない。保存済みになった新しい確認要求も続行/キャンセルを明示選択できる。
 
 2026-10-06 Issue #213 統合確認: reviewed main 493c57f の wire schema を取り込み、本番 AppShell と保存継続の DOM 33件、format/lint/typecheck/build が成功した。最終 head の CI とマージは PR #254 に記録する。
+
+## Issue #218: 起動時認証復元と手動操作の優先順位
+
+- [ ] 起動開始時の認証操作を予約し、遅い snapshot/auth 復元が後発の手動 start/poll を無効化しない。実 AppShell と認証世代の逆順完了を回帰化する。
