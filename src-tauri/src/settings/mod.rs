@@ -9,7 +9,7 @@ use crate::resource_limits::{
 use crate::speech::SpeechQueueState;
 use crate::twitch::TwitchAuthState;
 #[cfg(feature = "app")]
-use crate::twitch::{TwitchAuthStore, TwitchConnectionHandle};
+use crate::twitch::{TwitchAuthStore, TwitchConnectionOwner};
 use crate::SharedSettings;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -199,7 +199,7 @@ pub struct AppState {
     /// Shared selection, ordering and clock for every speech operation.
     pub speech_runtime: crate::speech::runtime::SpeechRuntime,
     #[cfg(feature = "app")]
-    pub twitch_connection: SharedSettings<Option<TwitchConnectionHandle>>,
+    pub twitch_connection: SharedSettings<TwitchConnectionOwner>,
     #[cfg(feature = "app")]
     pub twitch_auth_store: TwitchAuthStore,
 }

@@ -1,5 +1,7 @@
 # 実装 TODO
 
+- [x] Issue #209: Twitch接続taskの開始前にgeneration・connection handle・Connecting状態を確定する。mutex共有のconnection ownerでgeneration予約・登録・stop/cancelを順序付け、古い予約の登録拒否、Connecting公開後のstart gate、即時lookup・登録前stop/新接続・登録失敗をdeterministicに検証する。
+
 - [x] Issue #206: Twitch の validate と EventSub refresh を共通の credential service/revision で管理する。成功・失敗・scope 不足・永続化結果を同一 credential revision と照合し、別generation/client/userの再ログインと古い購読が交差しても新しい認証を流用・解除しない。同一auth session内のrefresh token rotationは安全に再購読し、deferred fake transportで各競合順序を回帰化する。
 
 2026-10-06 実装進捗: 共通 credential revision と credential-update lock を導入し、validate と EventSub の refresh・scope 判定・rotation・保存を共通 helper へ集約した。古い success/error/revocation/scope failure と遅延 save/clear は generation・revision・token identity が一致する場合だけ適用する。deferred fake で validate 対 EventSub refresh、refresh 対 refresh、revision 変更後の invalid_grant・遅延成功、同一 generation 内の古い保存、保存中の revision 変更を固定した。architecture と Twitch ingestion の設計メモも更新した。`cargo fmt --check`・`git diff --check` は成功し、公式 Debian DBus package を `/tmp` の sysroot に置いた環境で `cargo test --lib twitch:: --no-default-features` は20件成功した。no-default featureでは `service_tests` が有効にならないため、deferred regressionの実行結果はCIで確認する。no-default clippy は既存のno-app dead-code warningsを許容して完了したが、strict clippy とGitHub CIは未確認。
@@ -107,6 +109,8 @@
 
 - [x] Issue #211: speech の queue・formatter/URL・commands・runtime/event mapper を責務別 module へ分離し、明示 import と最小公開境界に整理する。既存回帰と no-default/DTO 契約を維持し、URL 検出 crate の比較と互換処理の範囲を記録する。
 
+Issue #209では、接続taskをspawnしてからhandle登録・Connecting通知を行っていたため、即時lookup失敗のErrorをConnectingが後から上書きし、登録失敗時にtaskがdetachする競合を解消した。oneshot開始gateで登録・Connecting通知後にlookupを開始し、TwitchConnectionHandleのDropが所有taskをabortする。追補では予約・登録・cancelを同じmutex保護のTwitchConnectionOwnerへ集約し、古い予約の登録拒否を登録直前 barrier でstop／新接続の両順序から検証する。即時 lookup 成功／失敗はmulti-thread runtime上でconnect return前のlookup開始を同期し、Connectingとterminal statusの順を確認する。reviewed main `c868999` までを統合し、追加差分はfrontendと文書の変更でRustのTwitch接続ownerに重ならないことを確認した。Rust 1.90 all-features Twitch tests 100件、strict all-target clippy、fmt check、diff checkが成功した。親レビューで登録前stop/新接続・開始gate・Drop取消を確認した。reviewed main 928f1f6のspeech session制御を統合し、最終CIはPR #252で確認する。
+
 Issue #220: 再生中itemのadapter所有権を保持し、設定変更後も制御と完了確認を同じ宛先へ送る。後続itemから新しい設定を使う。
 
 Issue #219: 認証解除の要求を認証状態から分離し、失敗後に再試行できる調停を追加した。PR #264で最終検証を確認する。
@@ -117,7 +121,7 @@ Issue #216: 設定初期化に読込状態・世代・更新番号を導入し�
 
 Issue #261: 共通CIを止めた source-map-js advisoryを修正版へのlockfile統一で解消した。最終CIはPR #262で確認する。
 
-2026-10-06 Issue #211: queue model/遷移を `queue.rs`、formatter/URL を `formatter.rs`、queue Tauri commands を `queue_commands.rs`、event snapshot/mapper を `events.rs` へ分離し、speech 回帰は `tests.rs` へ移した。`mod.rs` は共通型と境界の組立へ縮小。LinkFinder を候補抽出に使い、候補がない場合は旧 parser の全体走査、角括弧付き IPv6 は追加走査で互換性を保つ。厳格な http/https/www、authority/port、ASCII・メール境界、日本語隣接の条件は formatter 側に維持した。reviewed main `928f1f6` の #220 active playback session ownership と #216/#218/#219/#261 の reviewed 更新を統合。他Issue branchは含めていない。統合後のRust 1.90 all-targets/all-features 312件は成功。no-default は 223件成功し、既存の5秒 launcher performance regression は全 suite 実行で7.04秒、serial実行で5.29秒と閾値を超えたため隔離して再実行し4.54秒で成功した。残りの no-default 223件、app-feature strict all-target Clippy、fmt check、diff check も成功。
+2026-10-06 Issue #211: queue model/遷移を `queue.rs`、formatter/URL を `formatter.rs`、queue Tauri commands を `queue_commands.rs`、event snapshot/mapper を `events.rs` へ分離し、speech 回帰は `tests.rs` へ移した。`mod.rs` は共通型と境界の組立へ縮小。LinkFinder を候補抽出に使い、候補がない場合は旧 parser の全体走査、角括弧付き IPv6 は追加走査で互換性を保つ。厳格な http/https/www、authority/port、ASCII・メール境界、日本語隣接の条件は formatter 側に維持した。reviewed main `2a06b79` の #220 active playback session ownership と #209 Twitch task ownership、および #216/#218/#219/#261 の reviewed 更新を統合。他Issue branchは含めていない。統合後のRust 1.90 all-targets/all-features 312件は成功。no-default は 223件成功し、既存の5秒 launcher performance regression は全 suite 実行で7.04秒、serial実行で5.29秒と閾値を超えたため隔離して再実行し4.54秒で成功した。残りの no-default 223件、app-feature strict all-target Clippy、fmt check、diff check も成功。#209 統合後はTwitch関連回帰を追加検証する。
 
 - [x] Issue #215: live 通知を ID・severity・correlation を持つ未通知 queue として扱い、command error・同文の別発生・同時障害の欠落を防ぐ。状態/event/log の同一障害は重複を抑え、実 DOM の配送・クリア・再通知を検証する。
 
