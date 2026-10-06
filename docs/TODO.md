@@ -618,7 +618,7 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 - [x] 初期 snapshot 復元中の未判定コメントを上限付きで保留し、復元した接続 identity/generation と照合して順序・重複排除を保って反映する。旧世代・別channelの拒否、snapshot 失敗・cleanup・保留上限を回帰化する。
 
-2026-10-06 Issue #217: Twitch status snapshot の適用前に届く generation 付きコメントを最大200件保留し、snapshot 適用後に現行 generation・broadcaster user ID・login が一致するものだけを受信順に反映する。保留中と直近受信の message ID を重複排除し、snapshot 失敗・subscription cleanup では保留を破棄する。domain replay と AppShell/Tauri bridge の DOM 回帰で現行コメント、旧generation、別channel、失敗、cleanup、重複、上限を検証した。review済み `origin/main` `49fd2f7`（#216設定初期化を含む）統合後のfrontend全445件、typecheck、lint、format check、production buildが成功した。最終PR/CI確認と親レビューは未完了。
+2026-10-06 Issue #217: Twitch status snapshot の適用前に届く generation 付きコメントを最大200件保留し、snapshot 適用後に現行 generation・broadcaster user ID・login が一致するものだけを受信順に反映する。保留中と直近受信の message ID を重複排除し、snapshot 失敗・subscription cleanup では保留を破棄する。domain replay と AppShell/Tauri bridge の DOM 回帰で現行コメント、旧generation、別channel、失敗、cleanup、重複、上限を検証した。review済み `origin/main` `28b901f`（#216設定初期化、#218起動認証意図を含む）統合後のfrontend全452件、typecheck、lint、format check、production buildが成功した。最終PR/CI確認と親レビューは未完了。
 ## Issue #218: 起動時認証復元と手動操作の優先順位
 
 - [x] 起動開始時の認証操作を予約し、遅い snapshot/auth 復元が後発の手動 start/poll を無効化しない。実 AppShell と認証世代の逆順完了を回帰化する。
