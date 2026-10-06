@@ -107,7 +107,7 @@
 
 ## 現在の進捗サマリ
 
-- [x] Issue #211: speech の queue・formatter/URL・commands・runtime/event mapper を責務別 module へ分離し、明示 import と最小公開境界に整理する。既存回帰と no-default/DTO 契約を維持し、URL 検出 crate の比較と互換処理の範囲を記録する。
+Issue #217: snapshot復元中のコメントを上限200件で保留し、接続世代・チャンネルを照合して受信順に反映する。live statusが先着する順序も回帰化した。
 
 Issue #209では、接続taskをspawnしてからhandle登録・Connecting通知を行っていたため、即時lookup失敗のErrorをConnectingが後から上書きし、登録失敗時にtaskがdetachする競合を解消した。oneshot開始gateで登録・Connecting通知後にlookupを開始し、TwitchConnectionHandleのDropが所有taskをabortする。追補では予約・登録・cancelを同じmutex保護のTwitchConnectionOwnerへ集約し、古い予約の登録拒否を登録直前 barrier でstop／新接続の両順序から検証する。即時 lookup 成功／失敗はmulti-thread runtime上でconnect return前のlookup開始を同期し、Connectingとterminal statusの順を確認する。reviewed main `c868999` までを統合し、追加差分はfrontendと文書の変更でRustのTwitch接続ownerに重ならないことを確認した。Rust 1.90 all-features Twitch tests 100件、strict all-target clippy、fmt check、diff checkが成功した。親レビューで登録前stop/新接続・開始gate・Drop取消を確認した。reviewed main 928f1f6のspeech session制御を統合し、最終CIはPR #252で確認する。
 
@@ -120,6 +120,8 @@ Issue #218: 起動時認証復元より後発の手動ログインを優先す�
 Issue #216: 設定初期化に読込状態・世代・更新番号を導入し、古い読込による保存結果の巻き戻りを防いだ。対象23件の回帰成功、最終 CI は PR #259 で追跡する。
 
 Issue #261: 共通CIを止めた source-map-js advisoryを修正版へのlockfile統一で解消した。最終CIはPR #262で確認する。
+
+- [x] Issue #211: speech の queue・formatter/URL・commands・runtime/event mapper を責務別 module へ分離し、明示 import と最小公開境界に整理する。既存回帰と no-default/DTO 契約を維持し、URL 検出 crate の比較と互換処理の範囲を記録する。
 
 2026-10-06 Issue #211: queue model/遷移を `queue.rs`、formatter/URL を `formatter.rs`、queue Tauri commands を `queue_commands.rs`、event snapshot/mapper を `events.rs` へ分離し、speech 回帰は `tests.rs` へ移した。`mod.rs` は共通型と境界の組立へ縮小。LinkFinderを比較したが、複数形式混在を含む互換性を保つには独自走査が依然必要なため、formatter内の単一走査を保持した。厳格な http/https/www、authority/port、ASCII・メール境界、日本語隣接の条件は formatter 側に維持した。reviewed main `2a06b79` の #220 active playback session ownership と #209 Twitch task ownership、および #216/#218/#219/#261 の reviewed 更新を統合。他Issue branchは含めていない。統合後のRust 1.90 all-targets/all-features 312件は成功。no-default は 223件成功し、既存の5秒 launcher performance regression は全 suite 実行で7.04秒、serial実行で5.29秒と閾値を超えたため隔離して再実行し4.54秒で成功した。no-default は最新 main 統合後も223件（性能予算テストのみfilter）成功し、app-feature Twitch tests 100件、strict all-target Clippy、fmt check、diff check も最新 main 統合後に成功した。launcher 性能テストは個別のno-default実行で引き続き成功した。#209 統合後はTwitch関連回帰を追加検証する。
 
@@ -626,6 +628,11 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #213 統合確認: reviewed main 493c57f の wire schema を取り込み、本番 AppShell と保存継続の DOM 33件、format/lint/typecheck/build が成功した。最終 head の CI とマージは PR #254 に記録する。
 
+## Issue #217: 初期復元中のコメント保留
+
+- [x] 初期 snapshot 復元中の未判定コメントを上限付きで保留し、復元した接続 identity/generation と照合して順序・重複排除を保って反映する。旧世代・別channelの拒否、snapshot 失敗・cleanup・保留上限を回帰化する。
+
+2026-10-06 Issue #217: 起動時 app event snapshot の完了前に届いた generation 付きコメントを、live status で接続identityが先に判明した場合も含め最大200件保留する。snapshot適用後に現行generation・broadcaster user ID・loginが一致するものだけを受信順に反映し、保留中と直近のmessage IDを重複排除する。snapshot失敗・subscription cleanupでは保留を破棄する。親レビューで見つかった「first → live connected(G7) → second → snapshot完了」の順序逆転を、復元中の全generation付きコメントを保留することで修正し、[second, first]を期待する回帰を追加した。queue snapshotとの状態同期も追試で確認した。review済み `origin/main` `c868999`（#216設定初期化、#218起動認証意図、#219認証解除復旧を含む）統合後のfrontend全463件、typecheck、lint、format check、production buildが成功した。親レビューで現行接続との照合・到着順・queue状態同期を確認し、reviewed main 2a06b79を統合した。最終headのCI・マージはPR #260で確認する。
 ## Issue #218: 起動時認証復元と手動操作の優先順位
 
 - [x] 起動開始時の認証操作を予約し、遅い snapshot/auth 復元が後発の手動 start/poll を無効化しない。実 AppShell と認証世代の逆順完了を回帰化する。
@@ -658,3 +665,5 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 2026-10-06 Issue #219: 解除中はUI操作世代付きの要求として認証状態と分離し、削除失敗後はbackendの現在profileを照合する。後発操作・Auth revision変更後の古い解除/調停応答を拒否する。実AppShellで失敗後再試行、認証保持/消失、後発event、再取得失敗とcontrollerの後発loginを回帰化した。追加レビューで、解除成功eventがcommand応答より先だと古いprofileが残ることを再現し、revision検証済みのAuth disconnectedをprofile/promptと同時反映する。最終検証・CIはPR #264に記録する。
 
 2026-10-06 Issue #211 親レビュー: linkifyのcandidateがあると互換走査を省く実装で、通常URLと `https://example.com(note)` の混在時に後者だけ置換しないことを本番formatter回帰で再現した。既存規則にはASCII境界・authority・括弧の独自検証が依然必要なため、依存導入と二重走査を取り止め、formatter module内の単一走査を保持する判断と公式資料をspeech設計へ記録した。混在回帰を追加し、最終検証はPR #255で確認する。
+
+2026-10-06 Issue #211 最終レビュー検証: URL混在回帰を含むapp speech全112件とstrict all-target Clippy、fmt/diff検査が成功。queue/formatter/commands/eventsの移動はimport・可視性・format以外の本体を保持していることを差分照合した。reviewed main 7a59928の起動chat bufferも統合した。最終headの全CIはPR #255に記録する。
