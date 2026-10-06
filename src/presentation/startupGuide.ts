@@ -1,4 +1,4 @@
-import type { AppState } from "../stores/appStore";
+import type { AppState } from "../stores/appState";
 import type { UtcTimestamp } from "../time";
 import { isSpeechReady, speechQueuePhaseLabels } from "./speech";
 

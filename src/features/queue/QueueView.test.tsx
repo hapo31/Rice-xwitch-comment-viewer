@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { initialAppState } from "../../stores/appState";
 import { QueueView } from "./QueueView";
-import { initialAppState } from "../../stores/appStore";
 
 describe("QueueView", () => {
   it("offers separate pending-speech and history dismiss controls, including blocked items", () => {

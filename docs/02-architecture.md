@@ -28,7 +28,7 @@ domain store が状態の唯一のsourceであり、React Context はdomain単�
 
 Device Code認証の結果、status、prompt、profile、通知/error副作用は`authFlowTransition`の小さな純粋モデルで一緒に決める。`AuthOperationController`は世代付きの操作開始/完了、手動操作による古い応答の無効化、単一pollの排他、provider破棄時のinvalidateを担う。AppShell effectはprompt/status lifecycleに沿ってpoll timerを開始・cleanupし、timerはschedule時の世代とprompt情報を照合してからpollまたは期限切れを要求する。世代が変わった後、異なるpromptになった後、手動認証操作中は期限切れtimerも状態や通知を更新しない。期限切れはauth flowへ通知する。XStateの[`invoke`](https://stately.ai/docs/invoke)と[遅延遷移](https://stately.ai/docs/delayed-transitions)はpromise完了による遷移とstate退出時のtimer解除を提供するが、この認証には追加actor/runtime依存と移行費用がある。promise actor退出後の結果破棄も実行中のTauri commandを止める保証ではなく、backend generation保護は別途必要である。そのため、現在の操作競合と短いDevice Code timerは明示reducer/controllerで管理し、XStateは導入しない。
 
-旧 `AppState/appReducer` は presentation/test compatibility facade として残し、runtime の更新経路には使用しない。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
+旧 `appReducer` と専用テストは除去し、`appState.ts` は画面用の合成 read model と action 契約だけを保持する。状態更新は本番 domain store が担当し、`dispatchDomainAction` は action を各 store へ振り分ける。ログ表示IDとbackend replay IDの区別・重複排除は `logsStore` に集約し、bridge の副作用も受理されたログに限定する。設定更新は `createSettingsMutationOrchestrator` だけで直列化し、失敗後の待機済み更新と全処理の完了待ちを同じ経路で検証する。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
 
 ## データフロー
 

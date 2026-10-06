@@ -3,8 +3,8 @@ import { useState } from "react";
 import { SpeechOutcomeDetails } from "../../components/SpeechOutcomeDetails";
 import { getQueueStatusPresentation, queueStatusLabel } from "../../presentation/chat";
 import { countIncompleteQueueItems, selectQueueItemsForDisplay } from "../../presentation/queue";
-import type { AppState } from "../../stores/appStore";
 import { routeHeadingId } from "../../routeAccessibility";
+import type { AppState } from "../../stores/appState";
 import type { QueueDisplayState, QueueItem } from "../../types";
 
 type QueueViewState = Pick<AppState, "queueItems" | "speechQueuePhase">;
