@@ -33,7 +33,6 @@ pub(crate) use auth_store::{AuthLoadNotice, AuthLoadReason, TwitchAuthStore};
 #[cfg(all(feature = "app", test))]
 pub(crate) use chat_service::TwitchConnectionHandle;
 #[cfg(feature = "app")]
-#[cfg(feature = "app")]
 pub(crate) use chat_service::TwitchConnectionOwner;
 pub use model::*;
 use std::time::Duration;
