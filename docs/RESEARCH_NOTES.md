@@ -1,5 +1,24 @@
 # 調査メモ
 
+## 2026-10-06 TypeScript 7: main統合と生成wire型
+
+- PR #226へmain `65160429`を統合し、manifest・lockfile・進捗文書の競合を解消した。Radix、React Hook Form、use-sync-external-store、Zod、CycloneDX/Ajv、YAML/TOML parserなどmainで追加された依存と、source-map-js 1.2.2を含む安全性修正を保持した。アプリ・Rust・生成bindingsはmainと同一である。
+- `src/tauri/wireParity.ts`が`bindings/wire.ts`を参照するため、従来の`rootDir: "./src"`ではTypeScript 7がTS6059を返した。`rootDir: "."`へ変更し、`include: ["src"]`とimport先の生成wire型を検査する。strict・副作用import検査・wire双方向型一致検査を維持し、`tsc --listFilesOnly`でも両ファイルの参加を確認した。
+- Node 22.22.0／pnpm 8.11.0で型検査、frontend 80ファイル536テスト、Vite 8.3.2本番build、format/lint、Tauri renderer security・版整合、bootstrap/Docker context guardが成功した。補助policyは88件成功・1件skip（ローカルRust toolchain不在のinstalled graph検査）。依存監査はHigh/Critical 0件、Moderate 2件。
+- 追加のCIレビューで、Dockerのcontext/COPYから`bindings/wire.ts`が欠落していることを確認した。default-denyのままこの1ファイルを許可してCOPYし、context guardの許可リストとmanifestへ追加した。manifestに含まれる入力だけを一時ディレクトリへコピーし、wire型を除くとTS2307が発生すること、復元すると`pnpm build`が成功することを確認した。
+- サブエージェントがmain追加依存の版・integrity・peer解決と生成wire型の検査維持を確認し、新たな不具合なしと報告した。最終headのGitHub CI、Windows nativeとTauri開発build、マージ・後片付けの証跡は[PR #226](https://github.com/hapo31/Rice-xwitch-comment-viewer/pull/226)に記録する。実Twitch／棒読みちゃんの新たな手動接続は未実施。
+
+## 2026-10-05 TypeScript 7 と互換ツールチェーン
+
+- [TypeScript 7正式版](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/)とnpm metadataを照合し、`typescript@7.0.2`を採用した。`tsc`は正式native compilerを起動する。Biome/Vite/Vitestの既存経路にCompiler API直接依存はなく、preview packageやTypeScript 6 API互換aliasは不要。
+- 元の`moduleResolution: Node`でTS5108を再現し、[Bundler解決](https://www.typescriptlang.org/tsconfig/moduleResolution.html)へ移行した。strict・ES2020・既存検査対象を保ち、当初`rootDir: ./src`（2026-10-06の統合で`.`へ変更）、`types: ["vite/client"]`、`noUncheckedSideEffectImports: true`を明示する。[Vite client型](https://vite.dev/guide/features#client-types)でCSS/import.metaを解決する。型検査やside-effect import検査は無効化していない。
+- Vite 8.3.2、React plugin 6.1.2、PostCSS 8.5.29、React Virtual 3.14.13、React Router 6.30.6へ更新した。Vite/Vitest用の`@types/node`22.20.5とTesting Library共通peerの`@testing-library/dom`10.4.2を直接宣言する。main 934f318のReact/DOM/型19.3.0、Vitest5.0.3、Lucide1.49.0、Tauri2.12.1とdialog2.8.1のJS/Rust整合・useRef初期値・DOMテスト修正を保持する。
+- 初期source0341101のReact18/Vitest4構成はNode20/22で検証したが、その後mainにReact19/Vitest5が入ったため最終構成を再検証する。Vitest5はNode22.12以上の対応LTSを要求する。package enginesを明示し、開発コンテナをCI/releaseと同じNode22.22.0 image/digestに揃え、bootstrap guardで両imageの一致を検証する。jsdom27.4.0、jest-dom6.9.1など既に互換性のある固定依存は継続する。
+- サブエージェントの元headレビューで、JS dialog2.8.1とRust2.7.2のminor不一致が指摘された。main統合でRust2.8.1とplugin対応の版guard・回帰検査を取り込み、`verify-tauri-versions.mjs --installed`が成功した。通常frontendのVite buildだけではnative CLIによる版拒否を検出できないため、GitHubのnative/dev buildでも確認する。
+- pnpm8.11.0のlockfileにはTypeScript7のLinux/Windowsを含むOS別optional binaryとintegrityが含まれる。install scriptを無効にしたインストールでnative compilerを実行できる。main統合後もNode22.22.0で型検査・全322件・本番buildが成功した。bootstrap/release input/Docker context guardも成功。source619974dのGitHub CIとWindows実動作も成功した。
+- ユーザーがpushとPR作成を明示承認したため、専用branchをpush済み。[Draft PR #226](https://github.com/hapo31/Rice-xwitch-comment-viewer/pull/226)を作成した。サブエージェント2名の最終差分レビューで追加の互換性不具合なしを確認し、指摘された旧Node20のcomponent test文書も現構成へ合わせた。タグ・Release・mergeは行っていない。
+- 検証source `619974d913d822d4e3a0acc1ac52b1039be736d4` の[品質全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318678398)、[依存監査](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318677901)、[両OS契約](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318677976)、[Windows実動作](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318677950)、[設定権限](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318678015)、[機能構成](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318678131)、[Tauri開発build](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318678219)、[Node22開発コンテナ再buildと検証](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318677905)がすべて成功した。ローカル補助policy68件が成功し、npm監査はHigh/Critical 0件・Moderate 2件。実Twitch/棒読みちゃんの新たな手動接続と配布物の生成・公開は行っていない。この完了記録の追加ではアプリ・依存・build入力を変更していない。
+
 ## 2026-10-06
 
 ### Issue #207: 接続世代を共有 delivery boundary で検証

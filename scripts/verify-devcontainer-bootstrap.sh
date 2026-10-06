@@ -7,11 +7,12 @@ dockerfile=".devcontainer/Dockerfile"
 test -f "${lock_file}"
 test -f "${dockerfile}"
 
-jq -e '
+jq --slurpfile release_inputs build/release-inputs.json -e '
   .schemaVersion == 1
   and (.images.base.reference | type == "string")
   and (.images.base.digest | test("^sha256:[0-9a-f]{64}$"))
-  and (.images.nodeBootstrap.reference | test("node:20\\.19\\.4-bookworm-slim$"))
+  and (.images.nodeBootstrap.reference == ("docker.io/library/" + ($release_inputs[0].nodeImage | split("@")[0])))
+  and (.images.nodeBootstrap.digest == ($release_inputs[0].nodeImage | split("@")[1]))
   and (.images.nodeBootstrap.digest | test("^sha256:[0-9a-f]{64}$"))
   and (.images.rustBootstrap.reference | test("rust:1\\.90\\.0-bookworm$"))
   and (.images.rustBootstrap.digest | test("^sha256:[0-9a-f]{64}$"))
@@ -26,10 +27,11 @@ jq -e '
 
 base_digest="$(jq -r '.images.base.digest' "${lock_file}")"
 node_digest="$(jq -r '.images.nodeBootstrap.digest' "${lock_file}")"
+node_reference="$(jq -r '.images.nodeBootstrap.reference' "${lock_file}")"
 rust_digest="$(jq -r '.images.rustBootstrap.digest' "${lock_file}")"
 
 grep -F -- "mcr.microsoft.com/devcontainers/base:bookworm@${base_digest}" "${dockerfile}" >/dev/null
-grep -F -- "node:20.19.4-bookworm-slim@${node_digest}" "${dockerfile}" >/dev/null
+grep -F -- "${node_reference#docker.io/library/}@${node_digest}" "${dockerfile}" >/dev/null
 grep -F -- "rust:1.90.0-bookworm@${rust_digest}" "${dockerfile}" >/dev/null
 test "$(jq -r .toolchains.rust.version "${lock_file}")" = "$(jq -r .rustVersion build/release-inputs.json)"
 ! rg -n '@openai/codex@latest|CODEX_NPM_PACKAGE|"version": "latest"' .devcontainer

@@ -125,6 +125,7 @@ COPY scripts/config-parsers.mjs ./scripts/config-parsers.mjs
 RUN pnpm install --frozen-lockfile
 
 COPY index.html postcss.config.js tailwind.config.js tsconfig.json vite.config.ts ./
+COPY bindings/wire.ts ./bindings/wire.ts
 COPY src ./src
 COPY src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/build.rs src-tauri/tauri.conf.json ./src-tauri/
 COPY src-tauri/capabilities ./src-tauri/capabilities

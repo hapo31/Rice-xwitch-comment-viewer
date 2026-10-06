@@ -4,7 +4,7 @@
 
 `.devcontainer/devcontainer.json` is the normal development profile. It does not mount host SSH keys or Git configuration, the Docker socket, or host networking. Codex state is retained in the local Docker named volume `rice-codex-home` at `/home/vscode/.codex`, so a Rebuild keeps Codex authentication, history, and sessions. The volume is local to the Docker environment; it is not committed to Git or sent in the Docker build context.
 
-Node 20.19.4, pnpm 8.11.0, Codex CLI 0.98.0, Rust 1.90.0, and the base images are fixed in [`bootstrap-lock.json`](./bootstrap-lock.json). The Dockerfile downloads the two npm tarballs during the image build, checks their SHA-512 integrity, and installs them with lifecycle scripts disabled. Rust, rustfmt, and clippy are copied from the fixed Rust image. Thus these tools are installed before any profile can mount host credentials or Docker access.
+Node 22.22.0, pnpm 8.11.0, Codex CLI 0.98.0, Rust 1.90.0, and the base images are fixed in [`bootstrap-lock.json`](./bootstrap-lock.json). Node matches the CI/release image so the TypeScript 7 and Vitest 5 toolchain runs in the same supported environment. The Dockerfile downloads the two npm tarballs during the image build, checks their SHA-512 integrity, and installs them with lifecycle scripts disabled. Rust, rustfmt, and clippy are copied from the fixed Rust image. Thus these tools are installed before any profile can mount host credentials or Docker access.
 
 GitHub CLI is installed through the pinned [`github-cli` Feature](./devcontainer-lock.json).
 

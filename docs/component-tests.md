@@ -26,4 +26,4 @@ Windows Launcherの追加と一斉起動の部分失敗、非Windowsの操作無
 
 ## 検証の境界
 
-jsdom 27.4.0を固定し、Node 20.19/22.12以上で動く構成にする。releaseで固定したNode 22.22.0も対象とする。ResizeObserverは仮想リストが描画可能な固定viewportを返す。これはブラウザ/WebViewのpixel、実レイアウト、スクリーンリーダーの発話、Windows shellやTauri ACLの実動作の証明ではない。それらはWindows smoke（#91）と実機確認で検証する。DOM mockへ実環境の秘密情報を入れない。
+jsdom 27.4.0を固定し、Vitest 5に合わせてNodeの対応範囲はpackage.jsonのenginesに従う。開発コンテナ・CI・releaseではNode 22.22.0に揃える。ResizeObserverは仮想リストが描画可能な固定viewportを返す。これはブラウザ/WebViewのpixel、実レイアウト、スクリーンリーダーの発話、Windows shellやTauri ACLの実動作の証明ではない。それらはWindows smoke（#91）と実機確認で検証する。DOM mockへ実環境の秘密情報を入れない。
