@@ -13,16 +13,14 @@ mod schema;
 pub(crate) mod validation;
 mod writer;
 
+#[cfg(feature = "app")]
 pub(crate) use model::default_twitch_client_id;
-pub use model::{
-    AppSettings, SettingsPatch, SpeechAdapterKind, SpeechSettings, SpeechSettingsPatch,
-    TwitchSettings, TwitchSettingsPatch, UrlHandling, WindowPosition, WindowSettings,
-};
+pub use model::{AppSettings, SettingsPatch, SpeechAdapterKind, SpeechSettings, UrlHandling, WindowPosition};
 #[cfg(all(test, unix))]
 use persistence::validate_owner;
 #[cfg(test)]
 use persistence::{backup_path, protect_existing_file, write_temp_file, SaveFault};
-pub use persistence::{LoadedSettings, SettingsRecoveryNotice, SettingsStore};
+pub use persistence::{SettingsRecoveryNotice, SettingsStore};
 
 fn validate_repeat_suppression_seconds(seconds: u16) -> Result<(), String> {
     if seconds <= 30 {

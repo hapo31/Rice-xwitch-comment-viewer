@@ -2,6 +2,7 @@ pub mod bouyomi;
 pub mod endpoint;
 mod types;
 pub use types::{SpeechAdapterHealth, SpeechQueueItemStatus, SpeechQueuePhase, SpeechStatus};
+pub(crate) use types::{SpeechLogLevel, SpeechQueueItemSnapshot, SpeechQueueSnapshot};
 #[cfg(feature = "app")]
 pub mod commands;
 pub(crate) mod destination;
@@ -16,8 +17,6 @@ pub use failure::{FailureCode, SpeechFailure};
 use outcome::{BlockedReason, SkippedReason, SpeechQueueOutcome};
 pub type SpeechFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 
-#[cfg(any(feature = "app", test))]
-use crate::app_events::SpeechQueueItemEvent;
 #[cfg(feature = "app")]
 use crate::app_events::{
     emit_app_log, emit_speech_adapter_health, emit_speech_queue_updated, emit_speech_status,
@@ -1061,7 +1060,12 @@ impl worker::SpeechQueueEvents for TauriSpeechQueueEvents {
     fn health(&self, health: crate::speech::SpeechAdapterHealth, message: Option<String>) {
         emit_speech_adapter_health(&self.0, health, message);
     }
-    fn log(&self, level: AppLogLevel, message: String) {
+    fn log(&self, level: SpeechLogLevel, message: String) {
+        let level = match level {
+            SpeechLogLevel::Info => AppLogLevel::Info,
+            SpeechLogLevel::Warning => AppLogLevel::Warning,
+            SpeechLogLevel::Error => AppLogLevel::Error,
+        };
         emit_app_log(&self.0, level, message);
     }
 }
@@ -1099,75 +1103,60 @@ fn emit_queue_snapshot(
     queue: &SpeechQueueState,
     warning: Option<String>,
 ) {
-    let payload = queue_event_snapshot(queue, warning);
-    emit_speech_queue_updated(
-        app,
-        payload.queued_count,
-        payload.items,
-        payload.phase,
-        payload.warning,
-    );
+    let payload = crate::app_events::speech_queue_updated_event(queue.snapshot(warning));
+    emit_speech_queue_updated(app, payload);
 }
 
-#[cfg(any(feature = "app", test))]
-fn queue_event_snapshot(
-    queue: &SpeechQueueState,
-    warning: Option<String>,
-) -> crate::app_events::SpeechQueueUpdatedEvent {
-    let items = queue
-        .in_flight
-        .iter()
-        .chain(queue.pending.iter())
-        .chain(queue.history.iter().rev())
-        .take(DEFAULT_QUEUE_LIMIT + DEFAULT_HISTORY_LIMIT)
-        .map(to_queue_event_item)
-        .collect::<Vec<_>>();
-    let queued_count = queue
-        .in_flight
-        .iter()
-        .chain(queue.pending.iter())
-        .filter(|item| {
-            matches!(
-                item.status,
-                SpeechQueueItemStatus::Queued
-                    | SpeechQueueItemStatus::Speaking
-                    | SpeechQueueItemStatus::Error
-            )
-        })
-        .count();
-    let phase = if queue.paused {
-        SpeechQueuePhase::Paused
-    } else if queue.in_flight.is_some() {
-        SpeechQueuePhase::Speaking
-    } else if queue.pending.is_empty()
-        && queue
-            .history
+impl SpeechQueueState {
+    pub(crate) fn snapshot(&self, warning: Option<String>) -> SpeechQueueSnapshot {
+        let items = self
+            .in_flight
             .iter()
-            .any(|item| item.status == SpeechQueueItemStatus::Error)
-    {
-        SpeechQueuePhase::Error
-    } else {
-        SpeechQueuePhase::Idle
-    };
-    crate::app_events::SpeechQueueUpdatedEvent {
-        revision: 0,
-        queued_count,
-        items,
-        phase,
-        warning,
-        occurred_at_ms: chrono::Utc::now().timestamp_millis().max(0) as u64,
-    }
-}
-
-#[cfg(any(feature = "app", test))]
-fn to_queue_event_item(item: &SpeechQueueItem) -> SpeechQueueItemEvent {
-    SpeechQueueItemEvent {
-        id: item.id.clone(),
-        source_message_id: item.source_message_id.clone(),
-        user_display_name: item.user_display_name.clone(),
-        text: item.text.clone(),
-        status: item.status.clone(),
-        outcome: item.outcome.clone(),
+            .chain(self.pending.iter())
+            .chain(self.history.iter().rev())
+            .take(DEFAULT_QUEUE_LIMIT + DEFAULT_HISTORY_LIMIT)
+            .map(|item| SpeechQueueItemSnapshot {
+                id: item.id.clone(),
+                source_message_id: item.source_message_id.clone(),
+                user_display_name: item.user_display_name.clone(),
+                text: item.text.clone(),
+                status: item.status.clone(),
+                outcome: item.outcome.clone(),
+            })
+            .collect::<Vec<_>>();
+        let queued_count = self
+            .in_flight
+            .iter()
+            .chain(self.pending.iter())
+            .filter(|item| {
+                matches!(
+                    item.status,
+                    SpeechQueueItemStatus::Queued
+                        | SpeechQueueItemStatus::Speaking
+                        | SpeechQueueItemStatus::Error
+                )
+            })
+            .count();
+        let phase = if self.paused {
+            SpeechQueuePhase::Paused
+        } else if self.in_flight.is_some() {
+            SpeechQueuePhase::Speaking
+        } else if self.pending.is_empty()
+            && self
+                .history
+                .iter()
+                .any(|item| item.status == SpeechQueueItemStatus::Error)
+        {
+            SpeechQueuePhase::Error
+        } else {
+            SpeechQueuePhase::Idle
+        };
+        SpeechQueueSnapshot {
+            queued_count,
+            items,
+            phase,
+            warning,
+        }
     }
 }
 
@@ -1776,12 +1765,12 @@ mod tests {
             .history
             .push_back(history_item("failed", SpeechQueueItemStatus::Error));
         assert_eq!(
-            queue_event_snapshot(&queue, None).phase,
+            queue.snapshot(None).phase,
             SpeechQueuePhase::Error
         );
         queue.pending.push_back(queued_item("later"));
         assert_eq!(
-            queue_event_snapshot(&queue, None).phase,
+            queue.snapshot(None).phase,
             SpeechQueuePhase::Idle
         );
         assert_eq!(
@@ -1789,12 +1778,12 @@ mod tests {
             "later"
         );
         assert_eq!(
-            queue_event_snapshot(&queue, None).phase,
+            queue.snapshot(None).phase,
             SpeechQueuePhase::Speaking
         );
         queue.paused = true;
         assert_eq!(
-            queue_event_snapshot(&queue, None).phase,
+            queue.snapshot(None).phase,
             SpeechQueuePhase::Paused
         );
     }
@@ -2450,12 +2439,12 @@ mod tests {
         queue.pending.push_back(queued_item("sending"));
         queue.pending.push_back(queued_item("waiting"));
         queue.begin_next_request().unwrap();
-        let snapshot = queue_event_snapshot(&queue, None);
+        let snapshot = queue.snapshot(None);
         assert_eq!(snapshot.queued_count, 2);
         assert_eq!(snapshot.phase, SpeechQueuePhase::Speaking);
         assert_eq!(snapshot.items[0].id, "sending");
         queue.clear_pending();
-        let snapshot = queue_event_snapshot(&queue, None);
+        let snapshot = queue.snapshot(None);
         assert_eq!(snapshot.queued_count, 0);
         assert!(snapshot
             .items

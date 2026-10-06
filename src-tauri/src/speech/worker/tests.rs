@@ -1,10 +1,10 @@
 use super::*;
-use crate::app_events::{SpeechQueueItemStatus, SpeechQueuePhase, SpeechQueueUpdatedEvent};
+use crate::app_events::{SpeechQueueItemStatus, SpeechQueuePhase};
 use crate::settings::{AppSettings, SpeechSettings};
 use crate::speech::runtime::{SpeechAdapterFactory, SpeechRuntime};
 use crate::speech::{
-    queue_event_snapshot, FailureCode, SpeechAdapter, SpeechControl, SpeechFuture, SpeechHealth,
-    SpeechQueueDeliveryState, SpeechQueueItem, SpeechRequest, SpeechResult,
+    FailureCode, SpeechAdapter, SpeechControl, SpeechFuture, SpeechHealth, SpeechLogLevel,
+    SpeechQueueDeliveryState, SpeechQueueItem, SpeechQueueSnapshot, SpeechRequest, SpeechResult,
 };
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -153,7 +153,7 @@ impl SpeechClock for FakeClock {
 
 #[derive(Default)]
 struct FakeEvents {
-    snapshots: Mutex<Vec<SpeechQueueUpdatedEvent>>,
+    snapshots: Mutex<Vec<SpeechQueueSnapshot>>,
     health: Mutex<Vec<SpeechAdapterHealth>>,
     logs: Mutex<Vec<String>>,
 }
@@ -162,13 +162,13 @@ impl SpeechQueueEvents for FakeEvents {
         self.snapshots
             .lock()
             .unwrap()
-            .push(queue_event_snapshot(queue, warning));
+            .push(queue.snapshot(warning));
     }
     fn activity(&self, _: SpeechStatus, _: Option<String>) {}
     fn health(&self, health: SpeechAdapterHealth, _: Option<String>) {
         self.health.lock().unwrap().push(health);
     }
-    fn log(&self, _: AppLogLevel, message: String) {
+    fn log(&self, _: SpeechLogLevel, message: String) {
         self.logs.lock().unwrap().push(message);
     }
 }
@@ -531,7 +531,7 @@ async fn completion_wait_releases_the_dispatch_gate_for_control() {
     assert_eq!(queue.pending[0].id, "second");
     assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Spoken);
     assert_eq!(
-        queue_event_snapshot(&queue, None).phase,
+        queue.snapshot(None).phase,
         SpeechQueuePhase::Paused
     );
     assert_eq!(

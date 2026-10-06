@@ -1,6 +1,8 @@
 pub use crate::speech::{
     SpeechAdapterHealth, SpeechQueueItemStatus, SpeechQueuePhase, SpeechStatus,
 };
+#[cfg(any(feature = "app", test))]
+use crate::speech::SpeechQueueSnapshot;
 #[cfg(feature = "app")]
 use crate::twitch::ChatMessage;
 use serde::Serialize;
@@ -496,22 +498,35 @@ pub fn emit_speech_adapter_health<R: Runtime>(
     emit_payload(app, SPEECH_STATUS_EVENT, payload);
 }
 
+#[cfg(any(feature = "app", test))]
+pub(crate) fn speech_queue_updated_event(snapshot: SpeechQueueSnapshot) -> SpeechQueueUpdatedEvent {
+    let items = snapshot
+        .items
+        .into_iter()
+        .map(|item| SpeechQueueItemEvent {
+            id: item.id,
+            source_message_id: item.source_message_id,
+            user_display_name: item.user_display_name,
+            text: item.text,
+            status: item.status,
+            outcome: item.outcome,
+        })
+        .collect();
+    SpeechQueueUpdatedEvent {
+        revision: 0,
+        queued_count: snapshot.queued_count,
+        items,
+        phase: snapshot.phase,
+        warning: snapshot.warning,
+        occurred_at_ms: current_timestamp_ms(),
+    }
+}
+
 #[cfg(feature = "app")]
 pub fn emit_speech_queue_updated<R: Runtime>(
     app: &AppHandle<R>,
-    queued_count: usize,
-    items: Vec<SpeechQueueItemEvent>,
-    phase: SpeechQueuePhase,
-    warning: Option<String>,
+    payload: SpeechQueueUpdatedEvent,
 ) {
-    let payload = SpeechQueueUpdatedEvent {
-        revision: 0,
-        queued_count,
-        items,
-        phase,
-        warning,
-        occurred_at_ms: current_timestamp_ms(),
-    };
     let payload = if let Some(state) = app_event_state(app) {
         state.record_speech_queue(payload)
     } else {
@@ -536,6 +551,45 @@ pub fn app_events_snapshot(state: tauri::State<'_, AppEventState>) -> AppEventsS
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn speech_queue_domain_snapshot_maps_to_the_existing_event_contract() {
+        use crate::speech::outcome::{BlockedReason, OutcomeDetails, RecoveryAction, SpeechQueueOutcome};
+        use crate::speech::SpeechQueueItemSnapshot;
+
+        let payload = speech_queue_updated_event(SpeechQueueSnapshot {
+            queued_count: 2,
+            items: vec![SpeechQueueItemSnapshot {
+                id: "queue-1".into(),
+                source_message_id: Some("chat-1".into()),
+                user_display_name: "viewer".into(),
+                text: "hello".into(),
+                status: SpeechQueueItemStatus::Blocked,
+                outcome: Some(SpeechQueueOutcome::Blocked {
+                    reason_code: BlockedReason::BlockedWord,
+                    details: OutcomeDetails {
+                        message: BlockedReason::BlockedWord.message().into(),
+                        retryable: false,
+                        recovery_action: RecoveryAction::ReviewFilters,
+                        occurred_at_ms: 12,
+                    },
+                }),
+            }],
+            phase: SpeechQueuePhase::Paused,
+            warning: Some("blocked".into()),
+        });
+
+        assert_eq!(payload.revision, 0);
+        assert!(payload.occurred_at_ms > 0);
+        assert_eq!(payload.queued_count, 2);
+        assert_eq!(payload.phase, SpeechQueuePhase::Paused);
+        assert_eq!(payload.warning.as_deref(), Some("blocked"));
+        let serialized = serde_json::to_value(payload).unwrap();
+        assert_eq!(serialized["items"][0]["id"], "queue-1");
+        assert_eq!(serialized["items"][0]["sourceMessageId"], "chat-1");
+        assert_eq!(serialized["items"][0]["status"], "blocked");
+        assert_eq!(serialized["items"][0]["outcome"]["reasonCode"], "blockedWord");
+    }
 
     #[test]
     fn serializes_twitch_status_domain_as_camel_case() {

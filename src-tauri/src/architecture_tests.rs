@@ -10,6 +10,9 @@ fn backend_layers_keep_settings_and_speech_dependencies_inward() {
     let speech_failure = include_str!("speech/failure.rs");
     let speech_types = include_str!("speech/types.rs");
     let app_events = include_str!("app_events/mod.rs");
+    let speech_module = include_str!("speech/mod.rs");
+    let speech_worker = include_str!("speech/worker.rs");
+    let speech_domain_types = include_str!("speech/types.rs");
 
     assert!(!settings_model.contains("tauri::"));
     assert!(!settings_model.contains("settings::persistence"));
@@ -25,4 +28,12 @@ fn backend_layers_keep_settings_and_speech_dependencies_inward() {
     assert!(!speech_failure.contains("app_events"));
     assert!(speech_types.contains("pub enum SpeechStatus"));
     assert!(app_events.contains("pub use crate::speech::{"));
+    assert!(speech_domain_types.contains("pub(crate) enum SpeechLogLevel"));
+    assert!(speech_worker.contains("SpeechLogLevel"));
+    assert!(!speech_worker.contains("AppLogLevel"));
+    assert!(!speech_worker.contains("app_events::"));
+    assert!(!speech_module.contains("SpeechQueueUpdatedEvent {"));
+    assert!(!speech_module.contains("SpeechQueueItemEvent {"));
+    assert!(speech_module.contains("crate::app_events::speech_queue_updated_event("));
+    assert!(app_events.contains("pub(crate) fn speech_queue_updated_event("));
 }

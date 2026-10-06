@@ -51,7 +51,7 @@ fn invariants(queue: &SpeechQueueState) {
         .in_flight
         .as_ref()
         .is_none_or(|item| item.status == SpeechQueueItemStatus::Speaking));
-    let snapshot = queue_event_snapshot(queue, None);
+    let snapshot = queue.snapshot(None);
     assert_eq!(
         snapshot.queued_count,
         queue.pending.len() + usize::from(queue.in_flight.is_some())
@@ -230,7 +230,7 @@ async fn reconnect_does_not_resend_history_until_explicit_manual_retry() {
     {
         let mut queue = h.worker.queue.lock().unwrap();
         assert_eq!(
-            queue_event_snapshot(&queue, None).phase,
+            queue.snapshot(None).phase,
             SpeechQueuePhase::Error
         );
         assert!(!queue.claim_worker());
@@ -452,7 +452,7 @@ async fn pause_before_reservation_prevents_talk_until_explicit_resume() {
         assert_eq!(queue.pending[0].id, "first");
         assert!(!queue.is_processing);
         assert_eq!(
-            queue_event_snapshot(&queue, None).phase,
+            queue.snapshot(None).phase,
             SpeechQueuePhase::Paused
         );
     }
@@ -509,7 +509,7 @@ async fn pause_during_send_is_ordered_before_completion_and_later_requests() {
         assert_eq!(queue.pending[0].id, "second");
         assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Spoken);
         assert_eq!(
-            queue_event_snapshot(&queue, None).phase,
+            queue.snapshot(None).phase,
             SpeechQueuePhase::Paused
         );
         assert_eq!(queue.controls_in_progress, 0);
@@ -876,7 +876,7 @@ fn formatter_blocks_and_disabled_auto_speech_keep_snapshots_consistent() {
         assert!(!outcome.should_spawn && !outcome.should_schedule_cleanup);
         let queue = h.worker.queue.lock().unwrap();
         assert_eq!(
-            queue_event_snapshot(&queue, outcome.warning.clone()).queued_count,
+            queue.snapshot(outcome.warning.clone()).queued_count,
             0
         );
         if kind == "auto-off" {
