@@ -500,6 +500,7 @@ Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離
 
 2026-10-06 Issue #196: `launcher_add`はsettings transactionで実際に追加した`addedCount`と更新後のitemsを返すようにし、Launcher通知は共有stateの件数差分を参照しない。実DomainStoresとLauncherViewを接続し、`flushSync`で共有stateをPromise解決前に更新してから結果を返すDOM回帰を追加した。新規/混在/重複通知と同一targetの並行結果独立性を確認する。Frontend全gate（format/lint/typecheck/test 324件/build）とsecurity/license policyが成功。Rust toolchainがこの実行環境にないためRust回帰のローカル実行は未確認。親レビューで追加した実store更新順序のDOM回帰2件も成功。Rustを含む最終CI結果はPR #237に記録する。
 - [x] Issue #68: Launcher のアイコン抽出を timeout/kill/reap 付きの上限制御 worker へ移し、設定 lock 外で実行して競合する設定変更を merge する。抽出失敗は汎用アイコンと bounded Logs へフォールバックする。
+- [ ] Issue #230: Tokio process を使う共通 bounded runner へ Launcher icon 抽出と capture helper を集約し、5秒 timeout、stdout/stderr 上限と drain、kill/reap、Windows 非表示起動、job/permit 制限を維持する。同期 IconExtractor 境界と process feature の変更範囲を明記し、正常・大量出力・timeout・終了失敗・cancel を同じ runner で検証する。
 - [x] Issue #18: Launcher の削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応させる。
 - [x] Issue #24: チャット・ログ・状態更新時にも Launcher の DnD listener を再登録せず、mount 中の購読を維持し、最新 handler と遅延登録後の cleanup をテストする。
 - [x] Settings 画面から Login 画面を分離し、認証専用の画面として整理する。
