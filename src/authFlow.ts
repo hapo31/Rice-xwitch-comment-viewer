@@ -21,9 +21,8 @@ export type AuthFlowEvent =
   | { type: "validate.valid"; profile: TwitchUserProfile }
   | { type: "validate.invalid"; error: unknown }
   | { type: "prompt.failed"; error: unknown }
-  | { type: "disconnect.started" }
   | { type: "disconnect.succeeded" }
-  | { type: "disconnect.failed"; error: unknown }
+  | { type: "disconnect.reconciled"; profile?: TwitchUserProfile }
   | { type: "poll.authorized"; profile: TwitchUserProfile }
   | { type: "poll.started" }
   | { type: "poll.waiting"; interval: number; message: string }
@@ -76,14 +75,15 @@ export function authFlowTransition(state: AuthFlowState, event: AuthFlowEvent): 
         state: { status: "error", prompt: state.prompt, profile: state.profile },
         effects: [{ type: "failure", error: event.error }],
       };
-    case "disconnect.started":
-      return { state: { ...state, status: "disconnecting" }, effects: [] };
     case "disconnect.succeeded":
       return { state: { status: "unauthenticated" }, effects: [] };
-    case "disconnect.failed":
+    case "disconnect.reconciled":
       return {
-        state: { ...state, status: "error" },
-        effects: [{ type: "failure", error: event.error }],
+        state: {
+          status: event.profile ? "authenticated" : "unauthenticated",
+          profile: event.profile,
+        },
+        effects: [],
       };
     case "prompt.started":
       return { state: { status: "unauthenticated", prompt: event.prompt }, effects: [] };

@@ -1,5 +1,5 @@
 import { type AuthFlowEvent, type AuthFlowState, authFlowTransition } from "../authFlow";
-import { AuthOperationController } from "../authOperation";
+import { type AuthOperationName, AuthOperationController } from "../authOperation";
 import { getDeviceAuthRemainingSeconds } from "../features/auth/deviceAuthExpiry";
 import type { SystemTimelineEvent } from "../models/systemTimeline";
 import { presentError } from "../presentation/errors";
@@ -31,6 +31,7 @@ export interface TwitchControllerDependencies {
   dispatch: (action: Exclude<AppAction, { type: "twitch.connectionStatus" }>) => void;
   getAuthPrompt: () => TwitchDeviceAuthStart | undefined;
   getAuthStatus: () => AuthStatus;
+  getAuthRevision: () => number;
   getAuthProfile: () => TwitchUserProfile | undefined;
   getChannelLogin: () => string | undefined;
   getConfirmBeforeStopChat: () => boolean;
@@ -54,6 +55,14 @@ export interface TwitchControllerDependencies {
 }
 
 export function createTwitchController(deps: TwitchControllerDependencies) {
+  let pendingDisconnect: number | undefined;
+  function beginOperation(name: Exclude<AuthOperationName, "poll">) {
+    if (pendingDisconnect !== undefined) {
+      deps.dispatch({ type: "twitch.disconnectFinished", generation: pendingDisconnect });
+      pendingDisconnect = undefined;
+    }
+    return deps.operations.begin(name);
+  }
   function transitionAuth(event: AuthFlowEvent, quietWaiting = false) {
     const current: AuthFlowState = {
       status: deps.getAuthStatus(),
@@ -88,7 +97,7 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
     return transition.state;
   }
 
-  async function restore(operation = deps.operations.begin("restore")) {
+  async function restore(operation = beginOperation("restore")) {
     if (!deps.operations.isCurrent(operation)) return;
     transitionAuth({ type: "restore.started" });
     try {
@@ -118,7 +127,7 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
   }
 
   async function startAuth() {
-    const operation = deps.operations.begin("start");
+    const operation = beginOperation("start");
     transitionAuth({ type: "prompt.requested" });
     try {
       const prompt = await twitchStartAuth();
@@ -161,7 +170,7 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
   }
 
   async function validateAuth(): Promise<boolean> {
-    const operation = deps.operations.begin("validate");
+    const operation = beginOperation("validate");
     transitionAuth({ type: "validate.started" });
     try {
       const result = await twitchValidateAuth();
@@ -213,16 +222,35 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
 
   async function disconnect() {
     if (!window.confirm("Twitch 連携を解除しますか？")) return;
-    const operation = deps.operations.begin("disconnect");
-    transitionAuth({ type: "disconnect.started" });
+    const operation = beginOperation("disconnect");
+    const revision = deps.getAuthRevision();
+    const canReconcile = () =>
+      deps.operations.isCurrent(operation) && deps.getAuthRevision() === revision;
+    pendingDisconnect = operation;
+    deps.dispatch({ type: "twitch.disconnectStarted", generation: operation });
     try {
       await twitchDisconnect();
-      if (!deps.operations.isCurrent(operation)) return;
-      transitionAuth({ type: "disconnect.succeeded" });
+      if (canReconcile()) transitionAuth({ type: "disconnect.succeeded" });
     } catch (error) {
       if (!deps.operations.isCurrent(operation)) return;
-      transitionAuth({ type: "disconnect.failed", error });
+      deps.reportError(error, "auth", ["auth"]);
+      if (!canReconcile()) return;
+      try {
+        const profile = await twitchGetStoredAuth();
+        if (canReconcile()) transitionAuth({ type: "disconnect.reconciled", profile });
+      } catch (reconciliationError) {
+        if (canReconcile()) {
+          deps.reportTechnicalError(presentError(reconciliationError, "auth").details);
+          deps.reportSystemMessage(
+            "Twitch 認証の現在の状態を確認できませんでした。認証解除または有効性確認を再試行してください。",
+          );
+        }
+      }
     } finally {
+      if (deps.operations.isCurrent(operation)) {
+        deps.dispatch({ type: "twitch.disconnectFinished", generation: operation });
+        pendingDisconnect = undefined;
+      }
       deps.operations.finishOperation(operation);
     }
   }

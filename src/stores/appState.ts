@@ -19,6 +19,7 @@ import type { LogsState } from "./logsStore";
 /** Read-only composite view shape; mutations are owned by the domain stores. */
 export interface AppState {
   twitchAuthStatus: AuthStatus;
+  twitchDisconnectRequest?: number;
   twitchConnectionStatus: TwitchChatConnectionStatus;
   twitchAuthPrompt?: TwitchDeviceAuthStart;
   twitchProfile?: TwitchUserProfile;
@@ -36,6 +37,8 @@ export interface AppState {
 
 /** Transitional action contract translated once by domainOrchestration. */
 export type AppAction =
+  | { type: "twitch.disconnectStarted"; generation: number }
+  | { type: "twitch.disconnectFinished"; generation: number }
   | { type: "settings.loaded"; settings: AppSettings }
   | { type: "twitch.authStatus"; status: AuthStatus; revision?: number }
   | {
