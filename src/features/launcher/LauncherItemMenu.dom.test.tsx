@@ -6,7 +6,7 @@ import { createDomainStores, DomainProvider } from "../../stores/domainStores";
 import type { LauncherItem } from "../../types";
 import { LauncherView } from "./LauncherView";
 
-function mountMenu(remove = async () => undefined, launch = vi.fn()) {
+function mountMenu(remove: () => Promise<void> = async () => undefined, launch = vi.fn()) {
   function Harness() {
     const [items, setItems] = useState<LauncherItem[]>([
       { id: "first", displayName: "First", target: "C:\\first.exe", kind: "application", order: 0 },
