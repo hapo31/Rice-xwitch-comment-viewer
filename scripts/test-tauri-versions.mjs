@@ -7,6 +7,16 @@ import { fileURLToPath } from "node:url";
 import { verifyTauriVersions } from "./verify-tauri-versions.mjs";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 test("Rust lock and exact reviewed JS inputs agree", () => assert.equal(verifyTauriVersions(root), "2.12.1"));
+test("pnpm lock comments and quoted scalar values preserve the Tauri policy", (t) => {
+  const fixture = mkdtempSync(join(tmpdir(), "rice-tauri-yaml-"));
+  t.after(() => rmSync(fixture, { recursive: true, force: true }));
+  mkdirSync(join(fixture, "src-tauri"));
+  writeFileSync(join(fixture, "package.json"), readFileSync(join(root, "package.json")));
+  writeFileSync(join(fixture, "src-tauri/Cargo.lock"), readFileSync(join(root, "src-tauri/Cargo.lock")));
+  const lock = readFileSync(join(root, "pnpm-lock.yaml"), "utf8").replace("specifier: ^2.8.1", 'specifier: "^2.8.1" # same range');
+  writeFileSync(join(fixture, "pnpm-lock.yaml"), `${lock}\n# parser must ignore explanatory comments\n`);
+  assert.equal(verifyTauriVersions(fixture), "2.12.1");
+});
 for (const [name, edit] of [
   ["old API minor", pkg => pkg.dependencies["@tauri-apps/api"] = "2.11.0"],
   ["old CLI minor", pkg => pkg.devDependencies["@tauri-apps/cli"] = "2.11.2"],
@@ -90,4 +100,12 @@ test("rejects a stale installed plugin even when both locked minors agree", t =>
     writeFileSync(join(fixture, "node_modules", name, "package.json"), JSON.stringify({ version }));
   }
   assert.throws(() => verifyTauriVersions(fixture, { installed: true }), /Installed Tauri package.*plugin-dialog/);
+});
+
+for (const suffix of ["-unreviewed", "garbage"]) test(`rejects malformed plugin lock suffix ${suffix}`, t => {
+  const fixture = pluginFixture(t);
+  const path = join(fixture, "pnpm-lock.yaml");
+  const source = readFileSync(path, "utf8");
+  writeFileSync(path, source.replace(/('@tauri-apps\/plugin-dialog':\n    specifier: [^\n]+\n    version: )(\d+\.\d+\.\d+)/, (_, prefix, version) => `${prefix}${version}${suffix}`));
+  assert.throws(() => verifyTauriVersions(fixture), /Missing locked JS Tauri plugin/);
 });

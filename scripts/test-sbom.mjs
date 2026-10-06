@@ -9,7 +9,7 @@ const dep = (version, dependencies = {}) => ({ version, path: `/node/${version}`
 const npmTree = { dependencies: { runtime: dep("1.0.0", { shared: dep("2.0.0") }) }, devDependencies: { builder: dep("3.0.0", { shared: dep("2.0.0") }) } };
 const edge = (pkg, kind = null) => ({ pkg, dep_kinds: [{ kind }] });
 const cargo = { packages: [{ id: "root", name: "rice", version: "0.2.3" }, { id: "runtime", name: "lib", version: "1.0.0" }, { id: "build", name: "builder", version: "2.0.0" }], resolve: { root: "root", nodes: [{ id: "root", deps: [edge("runtime"), edge("build", "build")] }, { id: "runtime", deps: [] }, { id: "build", deps: [] }] } };
-const lockfiles = { npm: "npm lock", cargo: "cargo lock" };
+const lockfiles = { npm: "npm lock", cargo: 'version = 4\n\n[[package]]\nname = "lib"\nversion = "1.0.0"\n\n[[package]]\nname = "builder"\nversion = "2.0.0"\n' };
 const commit = "a".repeat(40);
 const materials = { schemaVersion: 1, commit, sourceDateEpoch: 1780000000, lockfiles: { npm: hash(lockfiles.npm), cargo: hash(lockfiles.cargo) }, inputs: { rustImage: `rust:1@sha256:${hash("rust")}`, nodeImage: `node:22@sha256:${hash("node")}` }, osPackages: ["zip\t3.0"], tools: { rust: "1.89.0" }, windowsBuildMaterials: [{ path: "sdk/header.h", sha256: hash("header") }], artifacts: [{ name: "Rice.exe", sha256: hash("exe") }, { name: "Rice.zip", sha256: hash("zip") }] };
 const args = () => ({ materials: structuredClone(materials), expectedCommit: commit, manifest: { name: "rice", version: "0.2.3" }, npmTree, cargo, lockfiles, artifactHashes: { "Rice.exe": hash("exe"), "Rice.zip": hash("zip") } });

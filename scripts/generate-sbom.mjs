@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseToml } from "./config-parsers.mjs";
 
 export const generatorVersion = "1.0.0";
 const property = (name, value) => ({ name: `rice:${name}`, value: String(value) });
@@ -72,11 +73,13 @@ export function createSbom({ materials, manifest, npmTree, cargo, lockfiles, art
   for (const ref of npm.roots) rootEdges.add(ref);
   const rust = cargoInventory(cargo);
   const rustRefs = new Map(cargo.packages.map((pkg) => [pkg.id, packageRef("cargo", pkg.name, pkg.version)]));
+  const cargoLock = parseToml(lockfiles.cargo.toString(), "Cargo.lock");
+  if (!Array.isArray(cargoLock.package)) throw new Error("Cargo.lock must contain a package list");
   const lockChecksums = new Map();
-  for (const section of lockfiles.cargo.toString().split("[[package]]").slice(1)) {
-    const name = section.match(/^name = "([^"]+)"/m)?.[1], version = section.match(/^version = "([^"]+)"/m)?.[1];
-    const hash = section.match(/^checksum = "([a-f0-9]{64})"/m)?.[1];
-    if (hash) lockChecksums.set(`${name}@${version}`, hash);
+  for (const item of cargoLock.package) {
+    if (typeof item?.name !== "string" || typeof item?.version !== "string") throw new Error("Invalid Cargo.lock package entry");
+    if (item.checksum !== undefined && !digest(item.checksum)) throw new Error(`Invalid Cargo registry checksum: ${item.name}`);
+    if (item.checksum) lockChecksums.set(`${item.name}@${item.version}`, item.checksum);
   }
   for (const pkg of cargo.packages) {
     if (pkg.id === cargo.resolve.root) continue;

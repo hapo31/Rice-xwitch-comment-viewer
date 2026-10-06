@@ -99,7 +99,7 @@ it.each(["exit", "navigate"] as const)(
     await waitFor(() => expect(calls).toBe(2));
     expect(router.state.location.pathname).toBe("/settings");
     expect(tauriMock.invoke).not.toHaveBeenCalledWith("app_exit");
-    expect(screen.getByRole("button", { name: "保存して続ける" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存しています…" })).toBeDisabled();
     await act(async () => second.resolve(settingsWithPort(50003)));
     if (kind === "exit")
       await waitFor(() => expect(tauriMock.invoke).toHaveBeenCalledWith("app_exit"));

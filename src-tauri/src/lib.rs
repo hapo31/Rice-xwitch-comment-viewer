@@ -285,17 +285,20 @@ fn persist_main_window_position(app: &tauri::AppHandle) {
         return;
     };
     let state = app.state::<AppState>();
-    let Ok(mut settings) = state.settings.lock() else {
+    let Ok(_transaction) = state.settings_transaction.lock() else {
         return;
     };
-
-    let mut candidate = settings.clone();
+    let Ok(mut candidate) = state.settings.lock().map(|settings| settings.clone()) else {
+        return;
+    };
     candidate.window.position = Some(WindowPosition {
         x: position.x,
         y: position.y,
     });
     if SettingsStore::save(app, &candidate).is_ok() {
-        *settings = candidate;
+        if let Ok(mut settings) = state.settings.lock() {
+            *settings = candidate;
+        }
     }
 }
 

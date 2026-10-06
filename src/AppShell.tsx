@@ -427,7 +427,7 @@ const AppShellLayout = memo(function AppShellLayout({
 }) {
   const displayScale = useDisplayScale();
   return (
-    <div className={APP_SHELL_CLASS_NAME}>
+    <div className={APP_SHELL_CLASS_NAME} data-modal-focus-fallback tabIndex={-1}>
       <CloseAwareTitleBar
         scale={displayScale.scale}
         scaleMode={displayScale.mode}
