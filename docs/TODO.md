@@ -105,6 +105,8 @@
 
 ## 現在の進捗サマリ
 
+Issue #216: 設定初期化に読込状態・世代・更新番号を導入し、古い読込による保存結果の巻き戻りを防いだ。対象23件の回帰成功、最終 CI は PR #259 で追跡する。
+
 Issue #261: 共通CIを止めた source-map-js advisoryを修正版へのlockfile統一で解消した。最終CIはPR #262で確認する。
 
 - [x] Issue #215: live 通知を ID・severity・correlation を持つ未通知 queue として扱い、command error・同文の別発生・同時障害の欠落を防ぐ。状態/event/log の同一障害は重複を抑え、実 DOM の配送・クリア・再通知を検証する。
@@ -615,6 +617,12 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] 初期 snapshot 復元中の未判定コメントを上限付きで保留し、復元した接続 identity/generation と照合して順序・重複排除を保って反映する。旧世代・別channelの拒否、snapshot 失敗・cleanup・保留上限を回帰化する。
 
 2026-10-06 Issue #217: Twitch status snapshot の適用前に届く generation 付きコメントを最大200件保留し、snapshot 適用後に現行 generation・broadcaster user ID・login が一致するものだけを受信順に反映する。保留中と直近受信の message ID を重複排除し、snapshot 失敗・subscription cleanup では保留を破棄する。domain replay と AppShell/Tauri bridge の DOM 回帰で現行コメント、旧generation、別channel、失敗、cleanup、重複、上限を検証した。frontend 全434件、typecheck、lint、format check、production build が成功した。review済み `origin/main` `cca1f32` を統合済み。最終PR/CI確認と親レビューは未完了。
+
+## Issue #216: 設定初期化の競合防止
+
+- [x] 設定初期化の loading/ready/error と取得世代を明示し、遅い取得応答が新しい保存結果を上書きしない共通境界を設ける。初期値表示と保存可否を区別し、読込失敗後の再試行・逆順完了・StrictMode・unmount を回帰化する。
+
+2026-10-06 Issue #216: 設定読込・直列保存を SettingsController へまとめ、load generation / store publication revision / effect lifetime で応答を照合する。Settings/Filter は読込中に既定値フォームを編集させず、失敗時に明示再試行を出す。接続用の二重 settingsSnapshot をなくし、store を正本にした。StrictMode の一回限りの復旧通知は load 間で共有し、現在の load が一度だけ通知する。読込対保存（成功/失敗）、同 lifetime の取得逆順、StrictMode、unmount、Launcher 更新を含む対象23件と typecheck が成功。最終 frontend 全体、CI と統合結果は PR #259 に記録する。
 
 ## Issue #261: dependency audit の共通 blocker
 

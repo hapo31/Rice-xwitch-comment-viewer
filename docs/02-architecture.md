@@ -28,7 +28,7 @@ domain store が状態の唯一のsourceであり、React Context はdomain単�
 
 Device Code認証の結果、status、prompt、profile、通知/error副作用は`authFlowTransition`の小さな純粋モデルで一緒に決める。`AuthOperationController`は世代付きの操作開始/完了、手動操作による古い応答の無効化、単一pollの排他、provider破棄時のinvalidateを担う。AppShell effectはprompt/status lifecycleに沿ってpoll timerを開始・cleanupし、timerはschedule時の世代とprompt情報を照合してからpollまたは期限切れを要求する。世代が変わった後、異なるpromptになった後、手動認証操作中は期限切れtimerも状態や通知を更新しない。期限切れはauth flowへ通知する。XStateの[`invoke`](https://stately.ai/docs/invoke)と[遅延遷移](https://stately.ai/docs/delayed-transitions)はpromise完了による遷移とstate退出時のtimer解除を提供するが、この認証には追加actor/runtime依存と移行費用がある。promise actor退出後の結果破棄も実行中のTauri commandを止める保証ではなく、backend generation保護は別途必要である。そのため、現在の操作競合と短いDevice Code timerは明示reducer/controllerで管理し、XStateは導入しない。
 
-旧 `appReducer` と専用テストは除去し、`appState.ts` は画面用の合成 read model と action 契約だけを保持する。状態更新は本番 domain store が担当し、`dispatchDomainAction` は action を各 store へ振り分ける。ログ表示IDとbackend replay IDの区別・重複排除は `logsStore` に集約し、bridge の副作用も受理されたログに限定する。設定更新は `createSettingsMutationOrchestrator` だけで直列化し、失敗後の待機済み更新と全処理の完了待ちを同じ経路で検証する。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
+旧 `appReducer` と専用テストは除去し、`appState.ts` は画面用の合成 read model と action 契約だけを保持する。状態更新は本番 domain store が担当し、`dispatchDomainAction` は action を各 store へ振り分ける。ログ表示IDとbackend replay IDの区別・重複排除は `logsStore` に集約し、bridge の副作用も受理されたログに限定する。`SettingsController` は設定 read と直列 write の publication ownership を制御し、初期化状態と世代、store revision で古い応答を除外する。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
 
 `ExitProtectionProvider` は保存 I/O と保存後の終了・画面遷移の寿命を分ける。継続は要求ごとの token と blocker の location key に結び付け、キャンセル・破棄・新しい終了要求・unmount 後の古い成功を無視する。同じ要求の保存中は追加保存を受け付けない。別の確認中に旧保存が完了しても現在の操作を自動承認せず、保存済みの確認から続行またはキャンセルできる。
 
@@ -284,3 +284,12 @@ system Chat の状態通知は中立モデル `models/systemTimeline.ts` の `Sy
 - config path: `directories` またはTauri API
 - keyring: `keyring`
 - Windows拡張: `windows` crate
+
+
+## frontend 設定初期化
+
+設定の正本は settings store とし、publication revision、初期化の loading/ready/error、load generation を保持する。SettingsController は read と直列 write の publication を同じ境界で制御し、read 開始後に保存や Launcher 更新で revision が進んだ場合、古い read の成功・失敗を UI へ適用しない。後から開始した read と effect cleanup/再開も世代と lifetime で区別する。接続 command は別 ref の snapshot を保持せず store の最新設定を読む。
+
+Settings/Filter は ready 前の既定値を編集可能な設定として提示せず、loading 表示または error と再試行を出す。起動/再試行の進捗と結果は system Chat にも残す。StrictMode の effect 再実行では一度だけ取り出せる復旧通知を同じ controller の read 間で共有し、受理された read だけが一度通知する。unmount 後の read/write 応答は通知・store 更新を行わず、旧 lifetime の未実行 write は開始しない。
+
+参照: [React StrictMode の effect 再実行](https://react.dev/reference/react/StrictMode#fixing-bugs-found-by-re-running-effects-in-development)。
