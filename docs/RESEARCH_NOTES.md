@@ -5,6 +5,7 @@
 - PR #226へmain `65160429`を統合し、manifest・lockfile・進捗文書の競合を解消した。Radix、React Hook Form、use-sync-external-store、Zod、CycloneDX/Ajv、YAML/TOML parserなどmainで追加された依存と、source-map-js 1.2.2を含む安全性修正を保持した。アプリ・Rust・生成bindingsはmainと同一である。
 - `src/tauri/wireParity.ts`が`bindings/wire.ts`を参照するため、従来の`rootDir: "./src"`ではTypeScript 7がTS6059を返した。`rootDir: "."`へ変更し、`include: ["src"]`とimport先の生成wire型を検査する。strict・副作用import検査・wire双方向型一致検査を維持し、`tsc --listFilesOnly`でも両ファイルの参加を確認した。
 - Node 22.22.0／pnpm 8.11.0で型検査、frontend 80ファイル536テスト、Vite 8.3.2本番build、format/lint、Tauri renderer security・版整合、bootstrap/Docker context guardが成功した。補助policyは88件成功・1件skip（ローカルRust toolchain不在のinstalled graph検査）。依存監査はHigh/Critical 0件、Moderate 2件。
+- 追加のCIレビューで、Dockerのcontext/COPYから`bindings/wire.ts`が欠落していることを確認した。default-denyのままこの1ファイルを許可してCOPYし、context guardの許可リストとmanifestへ追加した。manifestに含まれる入力だけを一時ディレクトリへコピーし、wire型を除くとTS2307が発生すること、復元すると`pnpm build`が成功することを確認した。
 - サブエージェントがmain追加依存の版・integrity・peer解決と生成wire型の検査維持を確認し、新たな不具合なしと報告した。最終headのGitHub CI、Windows nativeとTauri開発build、マージ・後片付けの証跡は[PR #226](https://github.com/hapo31/Rice-xwitch-comment-viewer/pull/226)に記録する。実Twitch／棒読みちゃんの新たな手動接続は未実施。
 
 ## 2026-10-05 TypeScript 7 と互換ツールチェーン

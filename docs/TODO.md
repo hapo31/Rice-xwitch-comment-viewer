@@ -113,7 +113,7 @@
 
 ## 現在の進捗サマリ
 
-2026-10-06 TypeScript 7移行: TypeScript 7.0.2、Vite 8.3.2と関連依存を更新し、Bundler解決・vite/client・副作用import検査を明示した。main 65160429の追加機能・依存・安全性修正を保持して競合を解消し、生成wire型を含めるためrootDirをプロジェクトルートへ修正した。Node 22.22.0で型検査・frontend全536件・本番build・format/lint/securityが成功し、サブエージェントの依存・型設定レビューでも問題なし。開発コンテナのNode image/digestをCI/releaseに揃えた。最終headのCI・native/dev build・マージ結果と後片付けは[PR #226](https://github.com/hapo31/Rice-xwitch-comment-viewer/pull/226)で管理する。詳細はRESEARCH_NOTES.mdを参照。
+2026-10-06 TypeScript 7移行: TypeScript 7.0.2、Vite 8.3.2と関連依存を更新し、Bundler解決・vite/client・副作用import検査を明示した。main 65160429の追加機能・依存・安全性修正を保持して競合を解消し、生成wire型を含めるためrootDirをプロジェクトルートへ修正した。Node 22.22.0で型検査・frontend全536件・本番build・format/lint/securityが成功し、サブエージェントの依存・型設定レビューでも問題なし。開発コンテナのNode image/digestをCI/releaseに揃え、Docker配布buildの生成wire型欠落も修正した。最終headのCI・native/dev build・マージ結果と後片付けは[PR #226](https://github.com/hapo31/Rice-xwitch-comment-viewer/pull/226)で管理する。詳細はRESEARCH_NOTES.mdを参照。
 
 Issue #223: React公式selector helperで派生object/arrayのsnapshot契約と任意の比較関数を保証した。既存5 domainとProvider隔離を維持し、frontend全462件成功。最終CIはPR #268に記録する。
 
@@ -302,6 +302,8 @@ Issue #194 の親レビュー追補で、連投抑制秒の空欄/空白を拒�
 Phase 5 進捗サマリ追記（2026-10-06）: Issue #233 で Windows/macOS の Twitch activation URL 起動を Tauri Opener の Rust API へ委譲し、Linux/WSL は公式 `open::commands` が返す候補を終了状態まで待って試し、旧wslviewを最後の互換fallbackとして保持する局所 adapter を残した。実デスクトップの起動確認は環境依存で残る。
 
 ## Phase 0: プロジェクト作成
+
+- [x] PR #226: Docker配布buildのcontext/COPYへ生成wire型を含めた。許可された入力だけを隔離コピーし、wire型なしのTS2307と修正後のfrontend build成功を確認した。default-denyと秘密情報の除外を維持する。
 
 - [x] PR #226のmain 65160429との競合を解消し、追加依存・security修正を保持してTypeScript 7で再検証する。生成wire型のTS6059をrootDirの修正で解消し、型検査・全536テスト・buildとサブエージェントレビューが成功した。最終head CI・マージ・後片付けの結果はPR #226に記録する。
 

@@ -25,6 +25,8 @@
 !scripts/verify-project-license.mjs
 !scripts/verify-tauri-versions.mjs
 !scripts/nsis-toolchain-probe.nsi
+!bindings/
+!bindings/wire.ts
 !src/
 !src/**
 !src-tauri/

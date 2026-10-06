@@ -26,6 +26,8 @@ expected_exceptions=(
   '!scripts/verify-project-license.mjs'
   '!scripts/verify-tauri-versions.mjs'
   '!scripts/nsis-toolchain-probe.nsi'
+  '!bindings/'
+  '!bindings/wire.ts'
   '!src/'
   '!src/**'
   '!src-tauri/'
@@ -44,6 +46,7 @@ expected_exceptions=(
 expected_copy_sources=(
   Dockerfile
   LICENSE
+  bindings/wire.ts
   build/release-inputs.json
   index.html
   package.json
@@ -138,6 +141,7 @@ fi
 manifest_files=(
   LICENSE
   Dockerfile
+  bindings/wire.ts
   build/release-inputs.json
   scripts/verify-release-build-inputs.mjs
   scripts/record-build-materials.mjs
