@@ -285,7 +285,7 @@ Issue #194 の親レビュー追補で、連投抑制秒の空欄/空白を拒�
 
 通常 devcontainer には lock 済みの GitHub CLI feature を追加し、Codex の認証情報・履歴・セッションを `rice-codex-home` named volume に永続化した。
 
-Phase 5 進捗サマリ追記（2026-10-06）: Issue #233 で Windows/macOS の Twitch activation URL 起動を Tauri Opener の Rust API へ委譲し、Linux/WSL は公式 `open::commands` が返す候補を終了状態まで待って試す局所 adapter を残した。実デスクトップの起動確認は環境依存で残る。
+Phase 5 進捗サマリ追記（2026-10-06）: Issue #233 で Windows/macOS の Twitch activation URL 起動を Tauri Opener の Rust API へ委譲し、Linux/WSL は公式 `open::commands` が返す候補を終了状態まで待って試し、旧wslviewを最後の互換fallbackとして保持する局所 adapter を残した。実デスクトップの起動確認は環境依存で残る。
 
 ## Phase 0: プロジェクト作成
 
@@ -719,6 +719,6 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] 受理/拒否URLと起動失敗案内を回帰化し、Cargo lock と security policy を確認する。
 - [ ] Windows/macOS/Linux/WSL の実デスクトップ既定ブラウザ起動を手動確認する（現在の環境は Linux container で desktop session がない）。
 
-2026-10-06 Issue #233: `app_open_external_url` は Twitch activation URL を検証してから外部ブラウザ起動へ渡す。Windows/macOS は公式 `tauri-plugin-opener` 2.7.0 の Rust API、Linux/WSL は同 plugin が使う `open` 5.4.4 の `open::commands` で候補生成し、各プロセスの終了状態を待って非zero時だけ次候補を試す。従来の自前OS判定・コマンド候補列挙は削除した。Opener の自動JSリンク処理は無効、renderer capability は変更せずOpener URL/path権限も追加していない。allowlist、拒否前に起動関数を呼ばないこと、日本語失敗案内、fake executable による候補順・成功停止・全失敗詳細を回帰検証した。公式 plugin の Tauri 2.12.1 / release Rust 1.90.0 互換性を確認。`cargo check --locked --all-targets --all-features`、`cargo fmt --check` と opener focused test 成功。no-default 全体 suite は 228件成功・11件が既存 Bouyomi mock server の TCP bind `PermissionDenied` で失敗（sandbox制約）。default app test のリンクは環境に GTK/WebKit system libraries がなく未実施。実 Windows/macOS/Linux/WSL desktop の手動確認と最終 CI は未実施。
+2026-10-06 Issue #233: `app_open_external_url` は Twitch activation URL を検証してから外部ブラウザ起動へ渡す。Windows/macOS は公式 `tauri-plugin-opener` 2.7.0 の Rust API、Linux/WSL は同 plugin が使う `open` 5.4.4 の `open::commands` で候補生成し、各プロセスの終了状態を待って非zero時だけ次候補を試す。OS判定と一般的なコマンド候補生成はライブラリへ委譲し、公式候補がすべて失敗した後の旧wslviewだけを互換fallbackとして保持した。Opener の自動JSリンク処理は無効、renderer capability は変更せずOpener URL/path権限も追加していない。allowlist、拒否前に起動関数を呼ばないこと、日本語失敗案内、fake executable による候補順・成功停止・全失敗詳細を回帰検証した。公式 plugin の Tauri 2.12.1 / release Rust 1.90.0 互換性を確認。初期実装のcargo checkとfocused testに加え、親が本番検証・エラー変換とadapterをlock済み依存へ直接linkしたharnessで2test（隔離process内の先頭成功、途中fallback、wslview成功、全失敗の4scenario）成功。各childのPATH変更は親のtest processへ漏らさない。fmt/diffも成功。統合後のapp/no-default・Clippy・Windowsを含む最終CI結果はPR #277で管理する。実Windows/macOS/Linux/WSL desktopの手動確認は未実施。
 
 2026-10-06 Issue #231: tempfileの乱数名生成とRAII cleanupを採用し、Windows write-throughを含む既存atomic_replaceと同期・権限検査を保持した。write/backup/replace失敗時のprimary/backup/メモリと残留temp、unwind後cleanupを回帰化。Rust settings47件、strict all-target/all-feature Clippy、frontend build、fmt/diff検査が成功。最終CIはPR #275で管理する。実機での電源断検証は未実施。
