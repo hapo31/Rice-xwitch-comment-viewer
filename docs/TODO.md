@@ -105,6 +105,8 @@
 
 ## 現在の進捗サマリ
 
+Issue #221: 不正UTF-8の設定を内容破損として退避・復旧し、真のIO障害と区別した。将来版backupの保持と復旧noticeを継続する。
+
 Issue #218: 起動時認証復元より後発の手動ログインを優先する世代予約を追加した。PR #263で最終CIを確認する。
 
 Issue #216: 設定初期化に読込状態・世代・更新番号を導入し、古い読込による保存結果の巻き戻りを防いだ。対象23件の回帰成功、最終 CI は PR #259 で追跡する。
@@ -635,4 +637,6 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 ## Issue #221: 不正UTF-8設定からの復旧
 
-- [ ] IO障害とencoding/サイズ/JSON/schema破損を区別し、元bytesの退避・backup/既定値復旧・notice・将来schema保護をfileテストで確認する。
+- [x] IO障害とencoding/サイズ/JSON/schema破損を区別し、元bytesの退避・backup/既定値復旧・notice・将来schema保護をfileテストで確認する。
+
+2026-10-06 Issue #221: bounded readをIO/encoding/sizeの型付きエラーとし、JSON/schema破損と併せて復旧対象を明示した。不正UTF-8 primary＋正常backup、構文/encoding双方破損、元bytes退避、将来版backupのread-only、非特権ユーザーでのfile/ancestor権限拒否を回帰化。no-default全225件・strict Clippy・frontend build・format/diff検査成功。復旧noticeは既存のLogs/system Chat経路を使う。Windows実ファイルでの手動復旧確認は未実施。最終CIはPR #266に記録する。
