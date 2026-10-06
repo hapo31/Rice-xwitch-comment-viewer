@@ -209,25 +209,17 @@ fn app_builder_with_state(state: AppState) -> tauri::Builder<tauri::Wry> {
                     "保存済みの Twitch 認証情報を復元しました。/validate を実行して確認します。",
                 );
             }
-            if let Some(warning) = restored_auth.storage_warning {
-                emit_app_log(app.handle(), AppLogLevel::Warning, warning.clone());
-                if !has_restored_auth && warning.contains("Twitch 認証に必要な権限がありません")
-                {
-                    emit_twitch_auth_required(
-                        app.handle(),
-                        TwitchAuthRequiredReason::MissingRequiredScope,
-                        warning,
-                    );
+            if let Some(notice) = restored_auth.notice {
+                let (status, reason) = restored_auth_status(has_restored_auth, &notice);
+                emit_app_log(app.handle(), AppLogLevel::Warning, notice.message.clone());
+                if let Some(reason) = reason {
+                    emit_twitch_auth_required(app.handle(), reason, notice.message);
                 } else {
                     emit_twitch_status(
                         app.handle(),
                         TwitchStatusDomain::Auth,
-                        if has_restored_auth {
-                            TwitchStatus::Validating
-                        } else {
-                            TwitchStatus::AuthRequired
-                        },
-                        Some(warning),
+                        status,
+                        Some(notice.message),
                     );
                 }
             }
@@ -239,6 +231,21 @@ fn app_builder_with_state(state: AppState) -> tauri::Builder<tauri::Wry> {
                 persist_main_window_position(window.app_handle());
             }
         })
+}
+
+#[cfg(feature = "app")]
+fn restored_auth_status(
+    has_restored_auth: bool,
+    notice: &twitch::AuthLoadNotice,
+) -> (TwitchStatus, Option<TwitchAuthRequiredReason>) {
+    match (has_restored_auth, notice.reason) {
+        (true, _) => (TwitchStatus::Validating, None),
+        (false, twitch::AuthLoadReason::MissingRequiredScope) => (
+            TwitchStatus::AuthRequired,
+            Some(TwitchAuthRequiredReason::MissingRequiredScope),
+        ),
+        (false, _) => (TwitchStatus::AuthRequired, None),
+    }
 }
 
 #[cfg(feature = "app")]
@@ -485,5 +492,37 @@ mod tests {
             1920,
             1080,
         ));
+    }
+}
+
+#[cfg(all(test, feature = "app"))]
+#[test]
+fn auth_restore_notification_uses_reason_even_when_display_text_changes() {
+    use twitch::{AuthLoadNotice, AuthLoadReason};
+    for message in [
+        "文言を変更しました。",
+        "Twitch 認証に必要な権限がありません",
+    ] {
+        for reason in [
+            AuthLoadReason::MissingRequiredScope,
+            AuthLoadReason::StoreUnavailable,
+            AuthLoadReason::CorruptData,
+            AuthLoadReason::LegacyMigrated,
+            AuthLoadReason::LegacyCleanupFailed,
+        ] {
+            let notice = AuthLoadNotice {
+                reason,
+                message: message.into(),
+            };
+            let (status, required_reason) = restored_auth_status(false, &notice);
+            assert!(matches!(status, TwitchStatus::AuthRequired));
+            assert_eq!(
+                required_reason.is_some(),
+                reason == AuthLoadReason::MissingRequiredScope
+            );
+            let (status, required_reason) = restored_auth_status(true, &notice);
+            assert!(matches!(status, TwitchStatus::Validating));
+            assert!(required_reason.is_none());
+        }
     }
 }

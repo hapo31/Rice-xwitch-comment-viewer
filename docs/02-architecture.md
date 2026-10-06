@@ -34,6 +34,8 @@ Device Code認証の結果、status、prompt、profile、通知/error副作用�
 
 旧 `appReducer` と専用テストは除去し、`appState.ts` は画面用の合成 read model と action 契約だけを保持する。状態更新は本番 domain store が担当し、`dispatchDomainAction` は action を各 store へ振り分ける。ログ表示IDとbackend replay IDの区別・重複排除は `logsStore` に集約し、bridge の副作用も受理されたログに限定する。設定更新は `createSettingsMutationOrchestrator` だけで直列化し、失敗後の待機済み更新と全処理の完了待ちを同じ経路で検証する。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
 
+`ExitProtectionProvider` は保存 I/O と保存後の終了・画面遷移の寿命を分ける。継続は要求ごとの token と blocker の location key に結び付け、キャンセル・破棄・新しい終了要求・unmount 後の古い成功を無視する。同じ要求の保存中は追加保存を受け付けない。別の確認中に旧保存が完了しても現在の操作を自動承認せず、保存済みの確認から続行またはキャンセルできる。
+
 ## データフロー
 
 ```text
@@ -156,6 +158,7 @@ pub struct ChatMessage {
     pub fragments: Vec<MessageFragment>,
     pub badges: Vec<Badge>,
     pub received_at: chrono::DateTime<chrono::Utc>,
+    pub connection_generation: Option<u64>,
 }
 
 pub struct SpeechRequest {
@@ -168,6 +171,8 @@ pub struct SpeechRequest {
 MVPの`SpeechRequest`は本文と追跡IDだけを持つ。項目単位の`voice/speed/tone/volume` overrideは未対応のためモデルに公開せず、JSONで指定された未知の項目もdeserialize時に拒否する。声質はアダプタ設定からのみ取得する（Issue #81）。将来overrideを追加する際は型、許容範囲、優先順位とpacket契約を同時に実装する。
 
 `ChatMessage.received_at` はアプリ内部で常に `DateTime<Utc>` とする。Tauri event では serde の camelCase 規約により `receivedAt` として、UTC の RFC 3339（末尾 `Z`、小数秒は nanosecond 精度まで保持）を送る。frontend は bridge 受信時にこの契約を検証し、`UtcTimestamp` として store へ渡す。欠落・空文字・タイムゾーンなし・非文字列を含む不正値、および JavaScript の `Date` / `Intl` が表現できない leap second は backend で WebSocket frame を取り出した時刻へフォールバックして warning log を残し、frontend の境界でも受信時刻を使って防御する。Chat view は保存値を変えず利用者のローカルタイムゾーンで表示し、表示不能な値では `--:--:--` を表示する。
+
+EventSub 正規化時に、受信元 connection の generation を `ChatMessage` へ一度だけ付与する。同じ domain message を UI event と読み上げ enqueue の両方へ渡し、serializer 側で clone に後付けしない。production runtime は現在の connection handle を保持する mutex の下で generation を照合し、UI 配信と speech enqueue を行う。停止または接続交換は同じ mutex を通るため、無効化済み旧世代の遅延 callback はどちらの経路にも配送されない。
 
 ## Tauri command/event案
 

@@ -68,7 +68,7 @@ impl AuthCredentialStore for MemoryStore {
     fn load(&self) -> AuthLoadResult {
         AuthLoadResult {
             auth: self.saved.lock().unwrap().clone(),
-            storage_warning: None,
+            notice: None,
         }
     }
     fn save(&self, auth: &TwitchAuthState) -> anyhow::Result<Option<String>> {
@@ -329,8 +329,7 @@ impl EventSubRuntime for Runtime {
     fn log(&self, level: AppLogLevel, message: impl Into<String>) {
         self.auth_log(level, message);
     }
-    fn chat(&self, mut message: ChatMessage, generation: u64) {
-        message.connection_generation = Some(generation);
+    fn chat(&self, message: ChatMessage) {
         self.chats.lock().unwrap().push(message);
     }
     fn received_at(&self) -> DateTime<Utc> {

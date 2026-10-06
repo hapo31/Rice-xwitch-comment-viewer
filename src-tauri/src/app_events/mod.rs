@@ -441,12 +441,7 @@ pub fn emit_twitch_auth_required<R: Runtime>(
 }
 
 #[cfg(feature = "app")]
-pub fn emit_twitch_chat_message<R: Runtime>(
-    app: &AppHandle<R>,
-    mut message: ChatMessage,
-    connection_generation: u64,
-) {
-    message.connection_generation = Some(connection_generation);
+pub fn emit_twitch_chat_message<R: Runtime>(app: &AppHandle<R>, message: ChatMessage) {
     emit_payload(app, TWITCH_CHAT_MESSAGE_EVENT, message);
 }
 

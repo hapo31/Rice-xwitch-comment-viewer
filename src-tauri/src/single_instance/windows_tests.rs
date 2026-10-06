@@ -22,7 +22,7 @@ impl AuthCredentialStore for NoCredentials {
     fn load(&self) -> AuthLoadResult {
         AuthLoadResult {
             auth: None,
-            storage_warning: None,
+            notice: None,
         }
     }
     fn save(&self, _: &TwitchAuthState) -> anyhow::Result<Option<String>> {

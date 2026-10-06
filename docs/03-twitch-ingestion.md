@@ -50,6 +50,7 @@ Device Code Flowの利点:
 - keyring保存に失敗した場合は OS を問わずログイン状態をメモリ上で継続する。ただし access token と refresh token の平文ファイルや設定JSONは作成せず、UIへ「今回の起動中だけ有効」「再起動後は再ログインが必要」と警告する。
 - 旧版の Linux fallback `~/.rice/twitch-auth.json` を検出した場合は、keyringが利用できる時だけ移行して削除する。移行できない場合は安全のため token を読み込まず、ファイル削除、Twitch の「設定と接続」でのアクセス取り消し、再ログインを案内する。
 - 起動時はkeyringを優先してOAuth状態を復元する。保存済み認証を復元しただけでは認証済みとして扱わず、Login画面の有効性確認と同じく `/validate` を実行する。access tokenの検証に失敗した場合はrefresh tokenで更新を試み、成功時は保存済みrefresh tokenを即時差し替えてから認証済み状態へ遷移する。確認の開始・成功・失敗は system チャットへ表示する。
+- 保存済み認証の復元結果は、scope 不足・保存先障害・破損・旧 store 移行・旧ファイル削除失敗を型付き reason と表示文に分ける。起動時の AuthRequired reason は型から決め、表示文の部分一致では分類しない。破損 JSON の parser error に含まれ得る token 値は通知へ出さず、固定メッセージへ変換する。復元できた認証は移行・削除の警告があっても Validating のまま検証へ進める。
 - LinuxではSecret Service API対応ストアを優先する。Secret Serviceが利用できない環境でも認証フローは許可するが、永続化はしない。kernel keyutils、平文ローカルファイル、設定JSONへは退避しない。
 
 Client ID:
@@ -76,7 +77,7 @@ Twitch EventSub WebSocketでは、最初に `session_welcome` が届き、その
 - 通知は少なくとも一回配送のため、`metadata.message_id` または `event.message_id` で重複排除する。
 - WebSocket切断中の通知は再送されないため、再接続は指数バックオフしつつ最初の数回は短い間隔にする。
 - backoff は通常接続では `session_welcome` と購読成功後、Twitch 指定の handover では新しい `session_welcome` 後に「確立済み」と記録する。handover 開始時には旧 session の確立時刻を失効させ、新しい welcome 前の接続失敗で旧 session の安定実績を使って reset しない。ただし確立直後の切断で待機時間が毎回最短に戻る retry storm を避けるため、30 秒以上安定していた session の次の障害時にだけ失敗回数を reset する。確立前・30 秒未満の失敗は従来の 2 / 5 / 10 / 30 秒バックオフを継続する。
-- 設定JSONのチャンネルは「次回接続する希望値」であり、現在の接続先ではない。接続開始ごとに単調増加する generation を割り当て、購読成功後の broadcaster user ID/login を実接続 identity として status に載せる。chat にも同じ generation を付与し、frontend は generation と identity が一致する通知だけを表示する。
+- 設定JSONのチャンネルは「次回接続する希望値」であり、現在の接続先ではない。接続開始ごとに単調増加する generation を割り当て、購読成功後の broadcaster user ID/login を実接続 identity として status に載せる。EventSub 正規化時に同じ generation を `ChatMessage` へ付与し、同一 domain message を UI と speech へ渡す。現在の接続 handle と一致しない旧世代の遅延通知は、両方へ配送する直前の共通境界で拒否する。frontend も generation と identity が一致する通知だけを表示する。
 - 再接続、停止、設定保存が並行した場合も、backend の状態 replay と frontend store は現在値より古い generation の status を破棄する。接続中に設定値だけを変更しても実接続 identity は変更せず、再接続が成功した時点で更新する。
 
 ## 正規化
