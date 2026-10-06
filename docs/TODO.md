@@ -106,9 +106,18 @@
 ## 現在の進捗サマリ
 
 - [x] Issue #211: speech の queue・formatter/URL・commands・runtime/event mapper を責務別 module へ分離し、明示 import と最小公開境界に整理する。既存回帰と no-default/DTO 契約を維持し、URL 検出 crate の比較と互換処理の範囲を記録する。
+
+Issue #220: 再生中itemのadapter所有権を保持し、設定変更後も制御と完了確認を同じ宛先へ送る。後続itemから新しい設定を使う。
+
+Issue #219: 認証解除の要求を認証状態から分離し、失敗後に再試行できる調停を追加した。PR #264で最終検証を確認する。
+
+Issue #218: 起動時認証復元より後発の手動ログインを優先する世代予約を追加した。PR #263で最終CIを確認する。
+
+Issue #216: 設定初期化に読込状態・世代・更新番号を導入し、古い読込による保存結果の巻き戻りを防いだ。対象23件の回帰成功、最終 CI は PR #259 で追跡する。
+
 Issue #261: 共通CIを止めた source-map-js advisoryを修正版へのlockfile統一で解消した。最終CIはPR #262で確認する。
 
-2026-10-06 Issue #211: queue model/遷移を `queue.rs`、formatter/URL を `formatter.rs`、queue Tauri commands を `queue_commands.rs`、event snapshot/mapper を `events.rs` へ分離し、speech 回帰は `tests.rs` へ移した。`mod.rs` は共通型と境界の組立へ縮小。LinkFinder を候補抽出に使い、候補がない場合は旧 parser の全体走査、角括弧付き IPv6 は追加走査で互換性を保つ。厳格な http/https/www、authority/port、ASCII・メール境界、日本語隣接の条件は formatter 側に維持した。reviewed main `cca1f32` の #261 lockfile/docs 更新だけを統合。他Issue branchは含めていない。Rust 1.90 all-targets/no-default 221件、all-targets/all-features 309件、app-feature strict all-target Clippy、fmt check、diff check、frozen offline frontend install/build が成功した。
+2026-10-06 Issue #211: queue model/遷移を `queue.rs`、formatter/URL を `formatter.rs`、queue Tauri commands を `queue_commands.rs`、event snapshot/mapper を `events.rs` へ分離し、speech 回帰は `tests.rs` へ移した。`mod.rs` は共通型と境界の組立へ縮小。LinkFinder を候補抽出に使い、候補がない場合は旧 parser の全体走査、角括弧付き IPv6 は追加走査で互換性を保つ。厳格な http/https/www、authority/port、ASCII・メール境界、日本語隣接の条件は formatter 側に維持した。reviewed main `928f1f6` の #220 active playback session ownership と #216/#218/#219/#261 の reviewed 更新を統合。他Issue branchは含めていない。Rust 1.90 all-targets/no-default 221件、all-targets/all-features 309件、app-feature strict all-target Clippy、fmt check、diff check、frozen offline frontend install/build が成功した。#220 統合後は追加検証を実行する。
 
 - [x] Issue #215: live 通知を ID・severity・correlation を持つ未通知 queue として扱い、command error・同文の別発生・同時障害の欠落を防ぐ。状態/event/log の同一障害は重複を抑え、実 DOM の配送・クリア・再通知を検証する。
 
@@ -613,8 +622,33 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #213 統合確認: reviewed main 493c57f の wire schema を取り込み、本番 AppShell と保存継続の DOM 33件、format/lint/typecheck/build が成功した。最終 head の CI とマージは PR #254 に記録する。
 
+## Issue #218: 起動時認証復元と手動操作の優先順位
+
+- [x] 起動開始時の認証操作を予約し、遅い snapshot/auth 復元が後発の手動 start/poll を無効化しない。実 AppShell と認証世代の逆順完了を回帰化する。
+
+2026-10-06 Issue #218: 起動effectで予約した世代をsnapshot復元後も使い、後発手動操作から世代を奪わない。Auth snapshotは手動開始後には反映せず、古いstored auth取得後にvalidate commandを追加起動しない。実AppShellのStrictMode、snapshot対start/poll、stored auth/validateの遅い成功・失敗7件を回帰化した。最終検証とCIはPR #263で追跡する。
+
+
+## Issue #216: 設定初期化の競合防止
+
+- [x] 設定初期化の loading/ready/error と取得世代を明示し、遅い取得応答が新しい保存結果を上書きしない共通境界を設ける。初期値表示と保存可否を区別し、読込失敗後の再試行・逆順完了・StrictMode・unmount を回帰化する。
+
+2026-10-06 Issue #216: 設定読込・直列保存を SettingsController へまとめ、load generation / store publication revision / effect lifetime で応答を照合する。Settings/Filter は読込中に既定値フォームを編集させず、失敗時に明示再試行を出す。接続用の二重 settingsSnapshot をなくし、store を正本にした。StrictMode の一回限りの復旧通知は load 間で共有し、現在の load が一度だけ通知する。読込対保存（成功/失敗）、同 lifetime の取得逆順、StrictMode、unmount、Launcher 更新を含む対象23件と typecheck が成功。最終 frontend 全体、CI と統合結果は PR #259 に記録する。
+
 ## Issue #261: dependency audit の共通 blocker
 
 - [x] source-map-js の影響版を修正版へ統一し、既存監査・frozen install・frontend gates を通す。監査例外は追加しない。
 
 2026-10-06 Issue #261: @tailwindcss/node 4.3.3 の許容範囲 ^1.2.1 内で source-map-js を1.2.2へ統一し、未使用の1.2.1 entryを除去した。他の依存とpackage.jsonは変更しない。frozen offline install、frontend全429件、production build成功。pnpm auditはhigh/critical 0件で対象GHSAが消え、既存moderate 5件のみ。全CIの結果は PR #262 に記録する。
+
+## Issue #220: 再生中 session と制御先の一致
+
+- [x] 設定上の宛先と再生中sessionを区別し、Pause/Resume/Skip/Clear・完了確認を同じadapterへ送る。A再生中のB設定保存と後続itemの選択をfakeで検証する。
+
+2026-10-06 Issue #220: fake adapter A/Bで4種類の制御、送信完了待ちとの競合、制御失敗時の状態維持、後続itemのB選択を検証した。no-default全224件・app構成speech112件・strict Clippy・frontend build・format/diff検査成功。実棒読みちゃんの手動確認は未実施。最終headのCIはPR #265で確認する。
+
+## Issue #219: 認証解除失敗後の再試行
+
+- [x] 解除中の表示と認証正本を調停し、削除失敗後に現行認証と操作性を維持する。keyring失敗後の再試行と後発認証/eventとの競合を回帰化する。
+
+2026-10-06 Issue #219: 解除中はUI操作世代付きの要求として認証状態と分離し、削除失敗後はbackendの現在profileを照合する。後発操作・Auth revision変更後の古い解除/調停応答を拒否する。実AppShellで失敗後再試行、認証保持/消失、後発event、再取得失敗とcontrollerの後発loginを回帰化した。追加レビューで、解除成功eventがcommand応答より先だと古いprofileが残ることを再現し、revision検証済みのAuth disconnectedをprofile/promptと同時反映する。最終検証・CIはPR #264に記録する。
