@@ -224,6 +224,7 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
         dispatch,
         getAuthPrompt: () => stores.connection.getState().twitchAuthPrompt,
         getAuthStatus: () => stores.connection.getState().twitchAuthStatus,
+        getAuthRevision: () => stores.connection.getState().authRevision,
         getAuthProfile: () => stores.connection.getState().twitchProfile,
         getChannelLogin: () => stores.settings.getState().settings?.twitch.channelLogin,
         getConfirmBeforeStopChat: () =>
