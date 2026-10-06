@@ -68,7 +68,7 @@ impl AuthCredentialStore for MemoryStore {
     fn load(&self) -> AuthLoadResult {
         AuthLoadResult {
             auth: self.saved.lock().unwrap().clone(),
-            storage_warning: None,
+            notice: None,
         }
     }
     fn save(&self, auth: &TwitchAuthState) -> anyhow::Result<Option<String>> {
