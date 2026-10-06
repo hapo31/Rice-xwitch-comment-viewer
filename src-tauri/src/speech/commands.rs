@@ -201,8 +201,8 @@ async fn control_from_settings(
 ) -> Result<(), String> {
     super::begin_queue_control(app)
         .map_err(|error| report_failure(app, SpeechFailure::unknown(error)))?;
-    let adapter = match selected(state) {
-        Ok(adapter) => adapter,
+    let session = match state.speech_runtime.lock_control(|| selected(state)).await {
+        Ok(session) => session,
         Err(mut failure) => {
             let _ = super::cancel_queue_control(app);
             failure.user_message = format!(
@@ -212,7 +212,6 @@ async fn control_from_settings(
             return Err(report_failure(app, failure));
         }
     };
-    let session = adapter.lock().await;
     match session.control(command).await {
         Ok(()) => match apply_local(app) {
             Ok(()) => Ok(()),

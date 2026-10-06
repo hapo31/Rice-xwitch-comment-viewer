@@ -93,17 +93,18 @@ impl SpeechQueueWorker {
             let submitted = match &selected {
                 Ok(adapter) => {
                     let session = adapter.session_after_dispatch_lock(dispatch_guard);
-                    session.speak(request.clone()).await
+                    session.speak_for_queue(request.clone()).await
                 }
                 Err(failure) => {
                     drop(dispatch_guard);
                     Err(failure.clone())
                 }
             };
-            let result = match (submitted, selected) {
-                (Ok(_), Ok(adapter)) => Ok(adapter.wait_for_completion().await),
-                (Err(failure), _) => Err(failure),
-                (Ok(_), Err(_)) => unreachable!("submission requires a selected adapter"),
+            // Retain the owner through control reconciliation and local outcome
+            // application, not merely through the remote completion query.
+            let result = match &submitted {
+                Ok(playback) => Ok(playback.wait_for_completion().await),
+                Err(failure) => Err(failure.clone()),
             };
             if let Err(error) = self.wait_for_control().await {
                 self.events.log(AppLogLevel::Error, error);
