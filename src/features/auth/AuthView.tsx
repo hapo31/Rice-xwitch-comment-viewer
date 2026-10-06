@@ -1,12 +1,12 @@
 import { CheckCircle2, Link2, LoaderCircle, LogOut, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
+import { FieldError } from "../../components/SettingsFormControls";
 import { focusIndicatorClass } from "../../presentation/focus";
 import { routeHeadingId } from "../../routeAccessibility";
-import type { AppState } from "../../stores/appStore";
+import type { AppState } from "../../stores/appState";
 import type { AppSettingsPatch } from "../../types";
 import { isValidTwitchChannelLogin } from "../../validation";
 import { defaultTwitchSettings } from "../settings/defaults";
-import { FieldError } from "../../components/SettingsFormControls";
 import { formatDeviceAuthRemainingTime, getDeviceAuthRemainingSeconds } from "./deviceAuthExpiry";
 
 type AuthViewState = Pick<

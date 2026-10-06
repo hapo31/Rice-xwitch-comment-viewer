@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AppNotification } from "../types";
-import { initialLogsState, logsReducer, warningNotifications, type LogsState } from "./logsStore";
+import { initialLogsState, type LogsState, logsReducer, warningNotifications } from "./logsStore";
 
 function add(
   state: LogsState,
@@ -86,5 +86,43 @@ describe("production notification retention", () => {
     expect(logsReducer(newWarning, { type: "logs.cleared" }).notifications).toBe(
       newWarning.notifications,
     );
+  });
+});
+
+describe("production log identity", () => {
+  it("deduplicates replayed backend event IDs while preserving distinct ID collisions", () => {
+    const replay = {
+      id: "event-1",
+      level: "warning" as const,
+      message: "接続が切れました",
+      occurredAtMs: 1,
+    };
+    const once = logsReducer(initialLogsState, { type: "log.added", log: replay });
+    expect(logsReducer(once, { type: "log.added", log: replay })).toBe(once);
+
+    const generated = {
+      level: "warning" as const,
+      message: "接続が切れました",
+      occurredAtMs: 2,
+    };
+    const collision = logsReducer(
+      logsReducer(initialLogsState, { type: "log.added", log: generated }),
+      { type: "log.added", log: { ...generated, id: "2-warning-接続が切れました" } },
+    );
+    expect(collision.logs).toHaveLength(2);
+    expect(collision.logs.map((entry) => entry.id)).toEqual([
+      "2-warning-接続が切れました-1",
+      "2-warning-接続が切れました",
+    ]);
+  });
+
+  it("assigns unique display IDs to repeated ID-less logs", () => {
+    const log = { level: "warning" as const, message: "同じ記録", occurredAtMs: 10 };
+    const once = logsReducer(initialLogsState, { type: "log.added", log });
+    const twice = logsReducer(once, { type: "log.added", log });
+    expect(twice.logs.map((entry) => entry.id)).toEqual([
+      "10-warning-同じ記録-1",
+      "10-warning-同じ記録",
+    ]);
   });
 });

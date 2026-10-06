@@ -162,7 +162,7 @@ impl AuthCredentialStore for DelayedCredentialStore {
     fn load(&self) -> AuthLoadResult {
         AuthLoadResult {
             auth: None,
-            storage_warning: None,
+            notice: None,
         }
     }
 
@@ -714,7 +714,7 @@ fn chat_fixture_with_timestamp(timestamp: Option<serde_json::Value>) -> EventSub
 fn parses_channel_chat_message_fixture() {
     let fixture = include_str!("fixtures/channel_chat_message.json");
     let envelope = serde_json::from_str::<EventSubEnvelope>(fixture).unwrap();
-    let normalized = normalize_chat_message(envelope, utc_timestamp("2026-08-15T12:34:56.789Z"))
+    let normalized = normalize_chat_message(envelope, utc_timestamp("2026-08-15T12:34:56.789Z"), 0)
         .unwrap()
         .unwrap();
     assert!(normalized.timestamp_warning.is_none());
@@ -734,6 +734,26 @@ fn parses_channel_chat_message_fixture() {
     assert_eq!(
         message.received_at,
         utc_timestamp("2023-11-06T18:11:47.492253549Z")
+    );
+}
+
+#[test]
+fn normalized_chat_message_owns_the_connection_generation_before_serialization() {
+    let envelope = serde_json::from_str::<EventSubEnvelope>(include_str!(
+        "fixtures/channel_chat_message.json"
+    ))
+    .unwrap();
+    let normalized =
+        normalize_chat_message(envelope, utc_timestamp("2026-08-15T12:34:56.789Z"), 42)
+            .unwrap()
+            .unwrap();
+
+    assert_eq!(normalized.message.connection_generation, Some(42));
+    assert!(normalized.message.belongs_to_connection_generation(42));
+    assert!(!normalized.message.belongs_to_connection_generation(43));
+    assert_eq!(
+        serde_json::to_value(&normalized.message).unwrap()["connectionGeneration"],
+        serde_json::json!(42)
     );
 }
 
@@ -789,6 +809,7 @@ fn normalizes_offset_timestamp_to_utc_and_serializes_the_tauri_field_contract() 
             "2026-08-15T21:34:56.789123456+09:00"
         ))),
         utc_timestamp("2026-08-15T00:00:00Z"),
+        0,
     )
     .unwrap()
     .unwrap();
@@ -822,9 +843,10 @@ fn falls_back_to_websocket_receive_time_for_unsupported_timestamps() {
     ];
 
     for (case_name, timestamp) in cases {
-        let normalized = normalize_chat_message(chat_fixture_with_timestamp(timestamp), fallback)
-            .unwrap()
-            .unwrap();
+        let normalized =
+            normalize_chat_message(chat_fixture_with_timestamp(timestamp), fallback, 0)
+                .unwrap()
+                .unwrap();
 
         assert_eq!(normalized.message.received_at, fallback, "{case_name}");
         assert!(
@@ -1346,8 +1368,9 @@ fn migrates_existing_legacy_auth_after_secure_store_recovers() {
 
     assert_eq!(restored.auth.unwrap().profile().unwrap().login, "viewer");
     assert!(restored
-        .storage_warning
+        .notice
         .unwrap()
+        .message
         .contains("移行し、平文ファイルを削除"));
     assert_eq!(
         secure.secret.borrow().as_deref(),
@@ -1372,7 +1395,7 @@ fn warns_when_secure_store_cannot_be_read_and_no_legacy_auth_exists() {
     let restored = storage.load();
 
     assert!(restored.auth.is_none());
-    let warning = restored.storage_warning.unwrap();
+    let warning = restored.notice.unwrap().message;
     assert!(warning.contains("資格情報ストアから Twitch 認証情報を読み込めません"));
     assert!(warning.contains("fake secure-store read failure"));
     assert!(warning.contains("資格情報ストアを確認"));
@@ -1395,7 +1418,7 @@ fn leaves_legacy_auth_unread_when_migration_is_rejected() {
     let restored = storage.load();
 
     assert!(restored.auth.is_none());
-    let warning = restored.storage_warning.unwrap();
+    let warning = restored.notice.unwrap().message;
     assert!(warning.contains("安全のため読み込まず"));
     assert!(warning.contains("ファイルを削除"));
     assert!(warning.contains("アクセスを取り消し"));
@@ -1432,4 +1455,138 @@ fn logout_clears_secure_and_legacy_auth_state() {
 
     assert!(secure.secret.borrow().is_none());
     assert!(legacy.secret.borrow().is_none());
+}
+
+#[cfg(feature = "app")]
+#[test]
+fn auth_restore_classifies_scope_and_corruption_without_exposing_secret_input() {
+    use super::auth_store::AuthLoadReason;
+    let mut missing: serde_json::Value = serde_json::from_str(&stored_auth_secret()).unwrap();
+    missing["scopes"] = serde_json::json!([]);
+    missing["profile"]["scopes"] = serde_json::json!([]);
+    let mut invalid: serde_json::Value = serde_json::from_str(&stored_auth_secret()).unwrap();
+    // Serde's original type error includes this value. It must not reach notices.
+    invalid["expiresIn"] = "secret-token-must-stay-private".into();
+    for (secret, reason) in [
+        (missing.to_string(), AuthLoadReason::MissingRequiredScope),
+        (invalid.to_string(), AuthLoadReason::CorruptData),
+        (
+            "broken-json-secret-token-must-stay-private".into(),
+            AuthLoadReason::CorruptData,
+        ),
+    ] {
+        for legacy_source in [false, true] {
+            let secure = if legacy_source {
+                FakeAuthSecretStore::default()
+            } else {
+                FakeAuthSecretStore::with_secret(secret.clone())
+            };
+            let legacy = if legacy_source {
+                FakeAuthSecretStore::with_secret(secret.clone())
+            } else {
+                FakeAuthSecretStore::default()
+            };
+            let restored = AuthStorage {
+                secure: &secure,
+                legacy: &legacy,
+            }
+            .load();
+            assert!(restored.auth.is_none());
+            let notice = restored.notice.unwrap();
+            assert_eq!(notice.reason, reason);
+            assert!(!notice.message.contains("secret-token-must-stay-private"));
+            assert!(!notice.message.contains("access-token"));
+            assert!(!notice.message.contains("refresh-token"));
+            assert_eq!(*secure.save_calls.borrow(), 0);
+            let original = if legacy_source { &legacy } else { &secure };
+            assert_eq!(original.secret.borrow().as_deref(), Some(secret.as_str()));
+        }
+    }
+}
+
+#[cfg(feature = "app")]
+#[test]
+fn auth_restore_preserves_typed_storage_migration_and_cleanup_results() {
+    use super::auth_store::AuthLoadReason;
+    for has_secure_secret in [false, true] {
+        let secure = if has_secure_secret {
+            FakeAuthSecretStore::with_secret(stored_auth_secret())
+        } else {
+            FakeAuthSecretStore::default()
+        };
+        let legacy = FakeAuthSecretStore {
+            fail_clear: true,
+            ..FakeAuthSecretStore::with_secret(stored_auth_secret())
+        };
+        let restored = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        }
+        .load();
+        assert!(restored.auth.is_some());
+        assert_eq!(
+            restored.notice.unwrap().reason,
+            AuthLoadReason::LegacyCleanupFailed
+        );
+        assert!(secure.secret.borrow().is_some());
+        assert!(legacy.secret.borrow().is_some());
+    }
+    for fail_load in [false, true] {
+        let secure = FakeAuthSecretStore {
+            fail_load,
+            fail_save: true,
+            ..FakeAuthSecretStore::default()
+        };
+        let legacy = FakeAuthSecretStore::with_secret(stored_auth_secret());
+        let restored = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        }
+        .load();
+        assert!(restored.auth.is_none());
+        assert_eq!(
+            restored.notice.unwrap().reason,
+            AuthLoadReason::StoreUnavailable
+        );
+        assert!(legacy.secret.borrow().is_some());
+        assert_eq!(*legacy.save_calls.borrow(), 0);
+    }
+    let secure = FakeAuthSecretStore::default();
+    let legacy = FakeAuthSecretStore::with_secret(stored_auth_secret());
+    let restored = AuthStorage {
+        secure: &secure,
+        legacy: &legacy,
+    }
+    .load();
+    assert!(restored.auth.is_some());
+    assert_eq!(
+        restored.notice.unwrap().reason,
+        AuthLoadReason::LegacyMigrated
+    );
+}
+
+#[cfg(feature = "app")]
+#[test]
+fn auth_restore_keeps_scope_reason_when_secure_store_is_also_unavailable() {
+    use super::auth_store::AuthLoadReason;
+    let mut secret: serde_json::Value = serde_json::from_str(&stored_auth_secret()).unwrap();
+    secret["scopes"] = serde_json::json!([]);
+    secret["profile"]["scopes"] = serde_json::json!([]);
+    let secure = FakeAuthSecretStore {
+        fail_load: true,
+        ..FakeAuthSecretStore::default()
+    };
+    let legacy = FakeAuthSecretStore::with_secret(secret.to_string());
+    let restored = AuthStorage {
+        secure: &secure,
+        legacy: &legacy,
+    }
+    .load();
+    assert!(restored.auth.is_none());
+    assert_eq!(
+        restored.notice.unwrap().reason,
+        AuthLoadReason::MissingRequiredScope
+    );
+    assert!(legacy.secret.borrow().is_some());
+    assert_eq!(*secure.save_calls.borrow(), 0);
 }

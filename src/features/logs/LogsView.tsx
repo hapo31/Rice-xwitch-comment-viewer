@@ -1,9 +1,9 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRef } from "react";
 import { formatLogTime } from "../../presentation/logs";
-import type { AppState } from "../../stores/appStore";
-import type { AppLogLevel } from "../../types";
 import { routeHeadingId } from "../../routeAccessibility";
+import type { AppState } from "../../stores/appState";
+import type { AppLogLevel } from "../../types";
 
 type LogsViewState = Pick<AppState, "logs">;
 

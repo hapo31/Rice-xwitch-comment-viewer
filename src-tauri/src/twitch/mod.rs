@@ -8,6 +8,8 @@ mod auth_service;
 mod auth_state;
 #[cfg(feature = "app")]
 mod auth_store;
+#[cfg(any(feature = "app", test))]
+mod chat_delivery;
 #[cfg(feature = "app")]
 mod chat_service;
 #[cfg(feature = "app")]
@@ -24,10 +26,10 @@ mod runtime;
 mod subscription;
 
 pub use auth_state::TwitchAuthState;
-#[cfg(feature = "app")]
-pub(crate) use auth_store::TwitchAuthStore;
 #[cfg(all(test, feature = "app"))]
 pub(crate) use auth_store::{AuthCredentialStore, AuthLoadResult};
+#[cfg(feature = "app")]
+pub(crate) use auth_store::{AuthLoadNotice, AuthLoadReason, TwitchAuthStore};
 #[cfg(feature = "app")]
 pub use chat_service::TwitchConnectionHandle;
 pub use model::*;

@@ -50,6 +50,9 @@ export function ExitProtectionProvider({
   const [, setUnsavedChangesVersion] = useState(0);
   const [closeRequested, setCloseRequested] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const closingRef = useRef(false);
+  const saveContinuation = useRef<symbol | undefined>(undefined);
+  const [isSavingContinuation, setIsSavingContinuation] = useState(false);
   const hasActiveChat = hasActiveTwitchChat(connectionStatus);
   const hasPendingSpeech = hasPendingSpeechWork(queue.phase, queue.items);
   const activeUnsavedChange = [...unsavedChanges.current.values()].find((change) => change.isDirty);
@@ -61,6 +64,10 @@ export function ExitProtectionProvider({
   );
   closeConfirmationRequiredRef.current = exitConfirmationRequired;
   const blocker = useBlocker(Boolean(activeUnsavedChange));
+  const confirmationChange = useRef<UnsavedChange | undefined>(undefined);
+  if (!closeRequested && blocker.state !== "blocked") confirmationChange.current = undefined;
+  else if (activeUnsavedChange) confirmationChange.current = activeUnsavedChange;
+  const requestedChange = confirmationChange.current;
 
   const registry = useMemo(
     () => ({
@@ -77,6 +84,8 @@ export function ExitProtectionProvider({
   );
 
   const completeWindowClose = useCallback(async () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
     setCloseRequested(false);
     setIsClosing(true);
     const results = await Promise.allSettled([
@@ -92,18 +101,64 @@ export function ExitProtectionProvider({
     try {
       await appExit();
     } catch (error) {
+      closingRef.current = false;
       setIsClosing(false);
       reportError(error, "exit");
     }
   }, [hasActiveChat, hasPendingSpeech, reportError, stores]);
 
+  const currentRequest = useRef({ closeRequested, blocker, completeWindowClose });
+  currentRequest.current = { closeRequested, blocker, completeWindowClose };
+  const cancelSaveContinuation = useCallback(() => {
+    saveContinuation.current = undefined;
+    setIsSavingContinuation(false);
+  }, []);
+  const requestCloseConfirmation = useCallback(() => {
+    if (closingRef.current || currentRequest.current.closeRequested) return;
+    cancelSaveContinuation();
+    setCloseRequested(true);
+  }, [cancelSaveContinuation]);
+
+  useEffect(
+    () => () => {
+      // Saving can finish after this provider unmounts; it must not navigate/exit.
+      saveContinuation.current = undefined;
+    },
+    [],
+  );
+
+  async function saveAndContinue() {
+    if (!requestedChange || saveContinuation.current) return;
+    const operation = Symbol("save continuation");
+    const requestedClose = closeRequested;
+    const requestedLocation = blocker.location?.key;
+    saveContinuation.current = operation;
+    setIsSavingContinuation(true);
+    try {
+      const saved = !requestedChange.isDirty || (await requestedChange.save());
+      if (saveContinuation.current !== operation || !saved) return;
+      const current = currentRequest.current;
+      if (
+        current.closeRequested !== requestedClose ||
+        current.blocker.location?.key !== requestedLocation
+      )
+        return;
+      if (requestedClose) void current.completeWindowClose();
+      else if (current.blocker.state === "blocked") current.blocker.proceed();
+    } catch (error) {
+      if (saveContinuation.current === operation) reportError(error, "exit");
+    } finally {
+      if (saveContinuation.current === operation) cancelSaveContinuation();
+    }
+  }
+
   const requestWindowClose = useCallback(() => {
     if (exitConfirmationRequired) {
-      setCloseRequested(true);
+      requestCloseConfirmation();
       return;
     }
     void completeWindowClose();
-  }, [completeWindowClose, exitConfirmationRequired]);
+  }, [completeWindowClose, exitConfirmationRequired, requestCloseConfirmation]);
   const controller = useMemo(() => ({ requestWindowClose }), [requestWindowClose]);
 
   useEffect(() => {
@@ -112,7 +167,7 @@ export function ExitProtectionProvider({
       [
         () =>
           getCurrentWindow().onCloseRequested(
-            createNativeCloseHandler(closeConfirmationRequiredRef, () => setCloseRequested(true)),
+            createNativeCloseHandler(closeConfirmationRequiredRef, requestCloseConfirmation),
           ),
       ],
       () =>
@@ -127,7 +182,7 @@ export function ExitProtectionProvider({
           },
         }),
     );
-  }, [stores]);
+  }, [stores, requestCloseConfirmation]);
 
   useEffect(() => {
     const preventUnload = (event: BeforeUnloadEvent) => {
@@ -143,30 +198,31 @@ export function ExitProtectionProvider({
     <UnsavedChangesContext.Provider value={registry}>
       <ExitControllerContext.Provider value={controller}>
         {children}
-        {(blocker.state === "blocked" || closeRequested) && activeUnsavedChange && (
+        {(blocker.state === "blocked" || closeRequested) && requestedChange && (
           <UnsavedChangesDialog
+            hasUnsavedChanges={Boolean(activeUnsavedChange)}
+            saveDisabled={isSavingContinuation}
             onCancel={() => {
+              cancelSaveContinuation();
               if (blocker.state === "blocked") blocker.reset();
               setCloseRequested(false);
             }}
             onDiscard={() => {
-              activeUnsavedChange.discard();
+              cancelSaveContinuation();
+              requestedChange.discard();
               if (closeRequested) void completeWindowClose();
               else if (blocker.state === "blocked") blocker.proceed();
             }}
-            onSave={() => {
-              void activeUnsavedChange.save().then((saved) => {
-                if (!saved) return;
-                if (closeRequested) void completeWindowClose();
-                else if (blocker.state === "blocked") blocker.proceed();
-              });
-            }}
+            onSave={() => void saveAndContinue()}
           />
         )}
-        {closeRequested && !activeUnsavedChange && (
+        {closeRequested && !requestedChange && (
           <ActiveOperationsExitDialog
             isClosing={isClosing}
-            onCancel={() => setCloseRequested(false)}
+            onCancel={() => {
+              cancelSaveContinuation();
+              setCloseRequested(false);
+            }}
             onConfirm={() => void completeWindowClose()}
           />
         )}
