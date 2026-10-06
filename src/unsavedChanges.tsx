@@ -59,11 +59,13 @@ export function UnsavedChangesDialog({
   onDiscard,
   onCancel,
   saveDisabled = false,
+  hasUnsavedChanges = true,
 }: {
   onSave: () => void;
   onDiscard: () => void;
   onCancel: () => void;
   saveDisabled?: boolean;
+  hasUnsavedChanges?: boolean;
 }) {
   return (
     <div
@@ -78,10 +80,12 @@ export function UnsavedChangesDialog({
         className="w-full max-w-md border border-zinc-700 bg-zinc-900 p-5 shadow-xl"
       >
         <h2 id="unsaved-changes-title" className="text-base font-semibold text-zinc-100">
-          未保存の変更があります
+          {hasUnsavedChanges ? "未保存の変更があります" : "移動または終了しますか？"}
         </h2>
         <p id="unsaved-changes-description" className="mt-2 text-sm text-zinc-400">
-          保存してから移動または終了しますか？
+          {hasUnsavedChanges
+            ? "保存してから移動または終了しますか？"
+            : "変更は保存されました。操作を続けるか確認してください。"}
         </p>
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button
@@ -92,20 +96,22 @@ export function UnsavedChangesDialog({
           >
             キャンセル
           </button>
-          <button
-            type="button"
-            onClick={onDiscard}
-            className="border border-rose-500/70 px-3 py-2 text-sm text-rose-300 hover:bg-rose-500/10"
-          >
-            破棄して続ける
-          </button>
+          {hasUnsavedChanges && (
+            <button
+              type="button"
+              onClick={onDiscard}
+              className="border border-rose-500/70 px-3 py-2 text-sm text-rose-300 hover:bg-rose-500/10"
+            >
+              破棄して続ける
+            </button>
+          )}
           <button
             type="button"
             onClick={onSave}
             disabled={saveDisabled}
             className="border border-sky-500 bg-sky-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-sky-400 disabled:cursor-not-allowed disabled:border-zinc-700 disabled:bg-zinc-800 disabled:text-zinc-500"
           >
-            保存して続ける
+            {hasUnsavedChanges ? "保存して続ける" : "続ける"}
           </button>
         </div>
       </section>

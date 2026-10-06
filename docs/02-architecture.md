@@ -30,6 +30,8 @@ Device Code認証の結果、status、prompt、profile、通知/error副作用�
 
 旧 `appReducer` と専用テストは除去し、`appState.ts` は画面用の合成 read model と action 契約だけを保持する。状態更新は本番 domain store が担当し、`dispatchDomainAction` は action を各 store へ振り分ける。ログ表示IDとbackend replay IDの区別・重複排除は `logsStore` に集約し、bridge の副作用も受理されたログに限定する。設定更新は `createSettingsMutationOrchestrator` だけで直列化し、失敗後の待機済み更新と全処理の完了待ちを同じ経路で検証する。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
 
+`ExitProtectionProvider` は保存 I/O と保存後の終了・画面遷移の寿命を分ける。継続は要求ごとの token と blocker の location key に結び付け、キャンセル・破棄・新しい終了要求・unmount 後の古い成功を無視する。同じ要求の保存中は追加保存を受け付けない。別の確認中に旧保存が完了しても現在の操作を自動承認せず、保存済みの確認から続行またはキャンセルできる。
+
 ## データフロー
 
 ```text
