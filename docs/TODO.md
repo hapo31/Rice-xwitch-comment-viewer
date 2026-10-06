@@ -615,3 +615,7 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] source-map-js の影響版を修正版へ統一し、既存監査・frozen install・frontend gates を通す。監査例外は追加しない。
 
 2026-10-06 Issue #261: @tailwindcss/node 4.3.3 の許容範囲 ^1.2.1 内で source-map-js を1.2.2へ統一し、未使用の1.2.1 entryを除去した。他の依存とpackage.jsonは変更しない。frozen offline install、frontend全429件、production build成功。pnpm auditはhigh/critical 0件で対象GHSAが消え、既存moderate 5件のみ。全CIの結果は PR #262 に記録する。
+
+## Issue #219: 認証解除失敗後の再試行
+
+- [ ] 解除中の表示と認証正本を調停し、削除失敗後に現行認証と操作性を維持する。keyring失敗後の再試行と後発認証/eventとの競合を回帰化する。
