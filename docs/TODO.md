@@ -107,7 +107,11 @@
 
 ## 現在の進捗サマリ
 
+Issue #223: React公式selector helperで派生object/arrayのsnapshot契約と任意の比較関数を保証した。既存5 domainとProvider隔離を維持し、frontend全462件成功。最終CIはPR #268に記録する。
+
 Issue #217: snapshot復元中のコメントを上限200件で保留し、接続世代・チャンネルを照合して受信順に反映する。live statusが先着する順序も回帰化した。
+
+Issue #221: 不正UTF-8の設定を内容破損として退避・復旧し、真のIO障害と区別した。将来版backupの保持と復旧noticeを継続する。
 
 Issue #209では、接続taskをspawnしてからhandle登録・Connecting通知を行っていたため、即時lookup失敗のErrorをConnectingが後から上書きし、登録失敗時にtaskがdetachする競合を解消した。oneshot開始gateで登録・Connecting通知後にlookupを開始し、TwitchConnectionHandleのDropが所有taskをabortする。追補では予約・登録・cancelを同じmutex保護のTwitchConnectionOwnerへ集約し、古い予約の登録拒否を登録直前 barrier でstop／新接続の両順序から検証する。即時 lookup 成功／失敗はmulti-thread runtime上でconnect return前のlookup開始を同期し、Connectingとterminal statusの順を確認する。reviewed main `c868999` までを統合し、追加差分はfrontendと文書の変更でRustのTwitch接続ownerに重ならないことを確認した。Rust 1.90 all-features Twitch tests 100件、strict all-target clippy、fmt check、diff checkが成功した。親レビューで登録前stop/新接続・開始gate・Drop取消を確認した。reviewed main 928f1f6のspeech session制御を統合し、最終CIはPR #252で確認する。
 
@@ -120,6 +124,14 @@ Issue #218: 起動時認証復元より後発の手動ログインを優先す�
 Issue #216: 設定初期化に読込状態・世代・更新番号を導入し、古い読込による保存結果の巻き戻りを防いだ。対象23件の回帰成功、最終 CI は PR #259 で追跡する。
 
 Issue #261: 共通CIを止めた source-map-js advisoryを修正版へのlockfile統一で解消した。最終CIはPR #262で確認する。
+
+- [x] Issue #211: speech の queue・formatter/URL・commands・runtime/event mapper を責務別 module へ分離し、明示 import と最小公開境界に整理する。既存回帰と no-default/DTO 契約を維持し、URL 検出 crate の比較と互換処理の範囲を記録する。
+
+2026-10-06 Issue #211: queue model/遷移を `queue.rs`、formatter/URL を `formatter.rs`、queue Tauri commands を `queue_commands.rs`、event snapshot/mapper を `events.rs` へ分離し、speech 回帰は `tests.rs` へ移した。`mod.rs` は共通型と境界の組立へ縮小。LinkFinderを比較したが、複数形式混在を含む互換性を保つには独自走査が依然必要なため、formatter内の単一走査を保持した。厳格な http/https/www、authority/port、ASCII・メール境界、日本語隣接の条件は formatter 側に維持した。reviewed main `2a06b79` の #220 active playback session ownership と #209 Twitch task ownership、および #216/#218/#219/#261 の reviewed 更新を統合。他Issue branchは含めていない。統合後のRust 1.90 all-targets/all-features 312件は成功。no-default は 223件成功し、既存の5秒 launcher performance regression は全 suite 実行で7.04秒、serial実行で5.29秒と閾値を超えたため隔離して再実行し4.54秒で成功した。no-default は最新 main 統合後も223件（性能予算テストのみfilter）成功し、app-feature Twitch tests 100件、strict all-target Clippy、fmt check、diff check も最新 main 統合後に成功した。launcher 性能テストは個別のno-default実行で引き続き成功した。#209 統合後はTwitch関連回帰を追加検証する。
+
+2026-10-06 Issue #211 親レビュー: linkifyのcandidateがあると互換走査を省く実装で、通常URLと `https://example.com(note)` の混在時に後者だけ置換しないことを本番formatter回帰で再現した。既存規則にはASCII境界・authority・括弧の独自検証が依然必要なため、依存導入と二重走査を取り止め、formatter module内の単一走査を保持する判断と公式資料をspeech設計へ記録した。混在回帰を追加し、最終検証はPR #255で確認する。
+
+2026-10-06 Issue #211 最終レビュー検証: URL混在回帰を含むapp speech全112件とstrict all-target Clippy、fmt/diff検査が成功。queue/formatter/commands/eventsの移動はimport・可視性・format以外の本体を保持していることを差分照合した。reviewed main 0ea7681までの起動chat buffer・設定復旧・selector helperも統合した。最終headの全CIはPR #255に記録する。
 
 - [x] Issue #215: live 通知を ID・severity・correlation を持つ未通知 queue として扱い、command error・同文の別発生・同時障害の欠落を防ぐ。状態/event/log の同一障害は重複を抑え、実 DOM の配送・クリア・再通知を検証する。
 
@@ -249,13 +261,15 @@ Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既
 2026-09-08: ローカル worktree の整理を完了。Issue #29/#31/#33 は main 反映済み、#42/#43 は既存 PR #164/#163 に保持。詳細は調査メモを参照。
 
 
+Issue #224: 本番ChatViewのanchorをVirtualItem座標と共通helperへ統一した。部分行・複数prepend・可変/後発行高・履歴上限・追従と新着件数の実DOM検査が成功。最終CIはPR #269で確認する。
+
 | Phase | 状態 | メモ |
 | --- | --- | --- |
 | Phase 0: プロジェクト作成 | 完了 | `app_events` の配信基盤と frontend 購読を接続し、`settings.json` の生成/読込、原子的保存、破損時のbackup/既定値復旧を確認した。Issue #50 で UI 倍率を名前付き radio group にし、現在の選択状態と表示倍率を支援技術へ公開した。Issue #49 で route ごとの document title 更新と、PUSH 遷移後の画面見出しへのフォーカス移動を追加した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。Issue #202 で既定値 factory を UI feature 非依存の settings model に集約し、browser preview の連続 patch と入力配列の snapshot を保持し、接続診断にも保存済み host/port を反映するようにした。frontend unit 301 件、typecheck、format check が成功した。 |
 | Phase 1: 棒読みちゃん連携 | 実装済み、自動検証済み、手動確認待ち | TCP 読み上げ、制御、接続診断、Settings 画面は実装済み。接続先は host/port を構造化し、IPv4・DNS・IPv6を共通の接続経路で扱う。接続確認は設定に応じて確認読み上げまたは無音の状態取得を行う。Issue #84 で接続エラーの復旧導線を Settings の［診断］へ統一し、backend から画面名を除去した。Issue #148 で起動後の自動復旧プローブを無音の状態取得だけに限定し、下流の音声合成アプリが未起動の間に読み上げ要求を送らないようにした。`cargo test` と `pnpm build` は成功。実機の棒読みちゃんでの確認が必要。 |
 | Phase 2: Twitch 認証 | 実装中 | Device Code Flow、`/validate`、refresh、keyring、session-only 保存失敗処理、旧 Linux 平文ファイルの移行/削除、Login 画面、起動時の保存済み認証の自動検証は実装済み。Issue #4 で認証とチャット接続の状態イベントに domain を追加し、表示文言に依存せず独立更新するようにした。Device Code の絶対期限に基づく残り時間と期限切れ時の再発行導線、Issue #30 の必須 `user:read:chat` scope 検証と不足時の再ログイン案内も実装済み。Client ID は UI/設定JSONに出さずビルド時既定値を使う。実 Twitch 環境での確認が必要。 |
 | Phase 3: EventSub チャット受信 | 実装中 | WebSocket 接続、`channel.chat.message` 購読、正規化、再接続をまたぐ期限付き重複排除、開始/停止 UI、フロントエンド反映、再購読時の最新 access token 取得と 401 時の一度だけの refresh/retry（Issue #23）、更新後 access token の `/validate` に基づく scope 再検証（Issue #30）を実装。Issue #9 で Twitch 指定の `reconnect_url` への接続と旧 socket の受信を並行し、新しい welcome 後にのみ切り替え、失敗時は25秒の猶予後に通常再接続へ移行するようにした。Issue #74 で `receivedAt` を Rust から TypeScript まで UTC RFC 3339 に統一し、非文字列を含む不正 timestamp と leap second の frame 取得時刻 fallback、ローカル時刻表示をテストした。Issue #83 で設定値と世代付き実接続 identity を分離し、遅延 status/chat による表示巻き戻りを防止した。Issue #207 で正規化済みの同一 `ChatMessage` を UI/speech へ渡し、停止・交換後の旧世代を backend 境界で拒否する。Rust feature matrix のdefault/no-default testとPR qualityのRust test/clippy/formatが成功した。実 Twitch 環境での手動確認が必要。 |
-| Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | `SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。Issue #63 で最大文字数をユーザー名 prefix・省略記号を含む最終読み上げ文へ適用し、Issue #34 で連投抑制の 0 秒を無効、1〜30 秒を指定間隔として実行時にも厳密に適用した。Issue #57 で失敗済み項目をエラー履歴へ隔離し、明示的な手動再試行のみで retry budget を復元するようにした。Issue #78 で正規化後に本文が空のチャットを理由付きで Blocked にした。Issue #52 で待機中の読み上げ制御と履歴 dismiss を分離し、blocked を含む履歴を個別・一括で削除可能にした。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
+| Phase 4: 読み上げキュー統合 | 実装済み、自動検証済み、手動確認待ち | Issue #211 で queue model/transition、formatter/URL、queue Tauri commands、event snapshot mapper を責務別 module へ分離し、`mod.rs` の大規模テストを `tests.rs` へ移した。LinkFinderとの比較結果を設計に記録し、互換性のためformatter内の単一URL走査を保持する。reviewed main統合後のRust all-targets/all-features 312件、no-default 223件（既存性能予算テストを個別実行で確認）、app-feature strict Clippyを確認した。`SpeechFormatter`、FIFO `SpeechQueue`、EventSub チャットから棒読みちゃんへの自動読み上げ、Queue 画面を実装。Issue #63 で最大文字数をユーザー名 prefix・省略記号を含む最終読み上げ文へ適用し、Issue #34 で連投抑制の 0 秒を無効、1〜30 秒を指定間隔として実行時にも厳密に適用した。Issue #57 で失敗済み項目をエラー履歴へ隔離し、明示的な手動再試行のみで retry budget を復元するようにした。Issue #78 で正規化後に本文が空のチャットを理由付きで Blocked にした。Issue #52 で待機中の読み上げ制御と履歴 dismiss を分離し、blocked を含む履歴を個別・一括で削除可能にした。`cargo test`、`pnpm test`、`pnpm build` は成功。実 Twitch + 棒読みちゃん環境での統合確認が必要。 |
 | Phase 5: 配信運用向け仕上げ | 実装中 | Launcher、dev ビルド識別、設定破損時の復旧通知、設定更新 transaction、用途別のエージェント作業ルール、ルート README と MIT License を実装。Issue #100 で Windows 利用者向け README を導入・検証・初回設定・障害復旧・データ保存まで拡充し、実在する route／操作名／Release asset 規則を確認するレビュー項目を追加した。Issue #1 で Activity Bar から Logs を開ける導線とナビゲーション回帰テストを追加した。Issue #2 で読み上げキューの `sourceMessageId` を Chat 行へ同期し、全終端状態を視覚・支援技術の両方で確認できる表示にした。Issue #3 で非同期の Tauri 購読を cleanup-safe な共通 helper へ統一し、遅延解決・部分失敗でもリスナーを残さないようにした。 Issue #12 で設定更新を leaf patch と直列処理に統一し、保存直後の接続も保存済みチャンネルを使うようにした。Issue #5 で変更のない保存ボタンを DOM から除外してフォーカス順とアクセシビリティツリーに残らないようにし、Issue #6 で NG 入力欄と声質スライダーのラベル・現在値を支援技術へ公開、Issue #7 で入力エラーを対象フィールドと関連付け、棒読みちゃんホスト空欄と保存不能理由を明示した。Issue #14 で通知を構造化して成功通知を Logs / system Chat に分離し、警告の重複を排除した。Issue #15 で通常文字を `zinc-400` に統一し、コントラストと低コントラスト文字の再導入を検査した。Issue #16 で接続・認証・読み上げの状態変化を単一の live region へ集約し、重複通知を抑制した。Issue #17 で配信中の Space / S / Cmd/Ctrl+, ショートカットを入力中・IME・キーリピートを妨げない共通 hook として実装した。Issue #18 で Launcher 削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応した。Issue #21 で接続・認証・復旧を重複抑止付きの system Chat timeline へ集約した。Issue #24 で Launcher の DnD listener を mount 中の単一購読とし、最新の追加 handler を ref 経由で参照するようにした。Issue #26 で最小幅 900px の Chat レイアウトを 100/125/150% に対応させた。Issue #28 で未保存変更を画面遷移・履歴戻る・終了時に共通確認するようにした。Issue #193 で Filter / Settings は保存値と世代付き編集patchを分離し、同値再読込・無関係更新・保存後の元値への追加入力をDOM回帰で確認した。接続先変更時だけ endpoint 許可メッセージを失効する。親レビューは commit 1f5df204 で完了し、最終CIとmergeはPR #235で管理する。 Issue #194 で React Hook Form 7 の FormProvider / Controller を Settings と Filter へ導入し、共通の draft 同期と field patch model を抽出。保存対象 field だけを pending に追跡し、同期外部値・保存中の追加入力・失敗・破棄・診断・native endpoint 許可の回帰を追加した。 Issue #27 で接続中または待機中の読み上げがある終了要求も保護し、承認後はチャット受信停止とキュークリアの完了を待って終了するようにした。 Issue #29 で EventSub の HTTP status/OAuth code/revocation reason を型付きで保持し、401/403 は認証復旧、400 等の永続障害は停止、timeout/5xx は再接続として分岐した。Issue #35 で Chat・Queue・Logs を読み取り用 ARIA table とし、列見出し、論理行位置・総行数、Queue 操作対象を支援技術へ公開した。Issue #36 で Chat 新着を重複なく集約したライブ通知と停止設定を追加した。Issue #37 で Chat 行の Twitch バッジを短縮ラベルと支援技術向け名称で表示した。Issue #39 で NG ルールの 200 件上限を frontend/backend ともに明示検証し、ASCII 大小文字を区別しない重複を除外した。Settings / Filter の設定群には統一した見出しを追加し、Issue #41 で同一内容の連続ログにも一意な表示 ID を割り当て、Issue #45 で Speech/Queue の内部状態値を日本語表示へ集約し、Queue 状態アイコンを支援技術から隠した。Issue #53 で Chat を遡っている場合の仮想スクロール可視アンカー保持と新着へ戻る導線を追加した。Issue #54 で Logs を仮想化し日時 formatter を再利用するようにした。Issue #31 で React の chat、queue、connection、settings、logs を独立 external store と selector に分離し、Chat event で無関係な画面を再 render しない計測テストと auth/event/settings orchestration テストを追加した。Issue #51 で keyboard focus indicator と forced-colors fallback を追加した。Issue #94 で tag push build を read-only にし、default branch の publish workflow、tag provenance、`main` 到達可能性と version の再検証へ公開境界を分離した。release-rice は 3 manifest と tag の version を共通 script で照合し、StatusBar の動的 build info は source 更新対象から除外した。devcontainer bootstrap を固定・build 時検証へ移し、SSH agent/Docker/host network を明示 profile に分離した。Windows 実機確認と詳細な運用エラー整理は継続。 |
 | Phase 6: VOICEROID2 実験アダプタ | 未着手 | MVP 後に Windows 専用の実験アダプタとして追加する。 |
 
@@ -546,6 +560,7 @@ Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離
 - [x] 配信者向け文言を「読み上げ」へ統一する。
 - [x] Chat view のチャットリストを仮想スクロール化する。
 - [x] Issue #53: Chat を遡っている間も prepend 後の可視アンカーを維持し、新着件数から先頭へ戻れるようにする。
+- [x] Issue #224: 本番ChatViewのanchor取得・復元をVirtualItemの座標源と共通helperへ統一し、部分行・複数prepend・可変行高・履歴上限・最上部追従を実virtualizerで検証する。
 - [x] Queue view を読み上げ待ち・エラー・フィルターによる読み飛ばしだけに絞り、Chat view と同じ新着順にする。
 - [x] 起動時の仮チャットを設定状態に応じた system 操作案内へ置き換える。
 - [x] 配信中に判断しやすい日本語エラー文言を整理する（Issue #46: 操作別の原因・復旧案内と Logs の技術詳細）。
@@ -652,6 +667,12 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #261: @tailwindcss/node 4.3.3 の許容範囲 ^1.2.1 内で source-map-js を1.2.2へ統一し、未使用の1.2.1 entryを除去した。他の依存とpackage.jsonは変更しない。frozen offline install、frontend全429件、production build成功。pnpm auditはhigh/critical 0件で対象GHSAが消え、既存moderate 5件のみ。全CIの結果は PR #262 に記録する。
 
+## Issue #221: 不正UTF-8設定からの復旧
+
+- [x] IO障害とencoding/サイズ/JSON/schema破損を区別し、元bytesの退避・backup/既定値復旧・notice・将来schema保護をfileテストで確認する。
+
+2026-10-06 Issue #221: bounded readをIO/encoding/sizeの型付きエラーとし、JSON/schema破損と併せて復旧対象を明示した。不正UTF-8 primary＋正常backup、構文/encoding双方破損、元bytes退避、将来版backupのread-only、非特権ユーザーでのfile/ancestor権限拒否を回帰化。no-default全225件・strict Clippy・frontend build・format/diff検査成功。復旧noticeは既存のLogs/system Chat経路を使う。Windows実ファイルでの手動復旧確認は未実施。最終CIはPR #266に記録する。
+
 ## Issue #220: 再生中 session と制御先の一致
 
 - [x] 設定上の宛先と再生中sessionを区別し、Pause/Resume/Skip/Clear・完了確認を同じadapterへ送る。A再生中のB設定保存と後続itemの選択をfakeで検証する。
@@ -663,3 +684,11 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] 解除中の表示と認証正本を調停し、削除失敗後に現行認証と操作性を維持する。keyring失敗後の再試行と後発認証/eventとの競合を回帰化する。
 
 2026-10-06 Issue #219: 解除中はUI操作世代付きの要求として認証状態と分離し、削除失敗後はbackendの現在profileを照合する。後発操作・Auth revision変更後の古い解除/調停応答を拒否する。実AppShellで失敗後再試行、認証保持/消失、後発event、再取得失敗とcontrollerの後発loginを回帰化した。追加レビューで、解除成功eventがcommand応答より先だと古いprofileが残ることを再現し、revision検証済みのAuth disconnectedをprofile/promptと同時反映する。最終検証・CIはPR #264に記録する。
+
+2026-10-06 Issue #224: DOM測定cleanupと逆符号のoffset加算を除去し、commit/scroll時のVirtualItemからanchorを保存して同じhelperで復元する。ref測定後に座標cacheを更新することで可変行高の追加差分も反映した。修正前は実ChatViewで上端-8pxが52pxとなる失敗を再現。対象7件（実DOM5件とhelper2件）、frontend全461件、build/typecheck、format/lint、diff検査成功。新着件数と先頭への復帰を維持し、実WebViewのpixel手動検証は未実施。
+
+## Issue #223: 派生selectorのsnapshot契約
+
+- [x] React公式selector helperとJotai移行を比較し、派生object/arrayの安定性・比較関数・Provider隔離・通知と描画回数をDOMで検証する。既存generation/revision/queue同期を維持する。
+
+2026-10-06 Issue #223: immutableなstore snapshotとselectorをReact公式helperへ別々に渡し、Object.is既定と任意比較関数を全domain hookで使えるようにした。通常/StrictModeの派生object・array、selector変更、store変更と購読解除、同一storeの無関係更新、Provider隔離と1eventあたりの通知/描画をDOM6件で回帰化した。frontend全462件（78 files）、build/typecheck、format、lint、diff検査成功。production JS gzip増加0.28 kB。Jotaiへの全domain移行と比べ、既存reducer・generation/revision・replayを保持する小さな境界変更を選んだ。最終headのCI・マージはPR #268で確認する。Windows実アプリの手動描画確認は未実施。

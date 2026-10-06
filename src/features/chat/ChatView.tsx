@@ -13,7 +13,12 @@ import { formatLocalChatTime, utcNow } from "../../time";
 import type { ChatMessage, UserChatMessage } from "../../types";
 import { ChatBadges } from "./ChatBadges";
 import { CHAT_GRID_TEMPLATE } from "./chatLayout";
-import { getPrependedMessageCount } from "./scrollAnchor";
+import {
+  getPrependedMessageCount,
+  getRestoredScrollOffset,
+  getVisibleChatAnchor,
+  type ChatScrollAnchor,
+} from "./scrollAnchor";
 
 type ChatViewState = Pick<
   AppState,
@@ -44,7 +49,7 @@ export function ChatView({
   ];
   const scrollParentRef = useRef<HTMLElement | null>(null);
   const previousMessagesRef = useRef(messages);
-  const scrollAnchorRef = useRef<{ messageId: string; offset: number } | undefined>(undefined);
+  const scrollAnchorRef = useRef<ChatScrollAnchor | undefined>(undefined);
   const isAtTopRef = useRef(true);
   const liveAnnouncementController = useRef<ChatLiveAnnouncementController | undefined>(undefined);
   const hasInitializedLiveAnnouncements = useRef(false);
@@ -125,51 +130,41 @@ export function ChatView({
     getItemKey: (index) => messages[index]?.id ?? index,
   });
 
-  useLayoutEffect(() => {
-    const previousMessages = previousMessagesRef.current;
-    const prependedMessageCount = getPrependedMessageCount(previousMessages, messages);
-    const scrollParent = scrollParentRef.current;
+  const captureScrollAnchor = () => {
+    const parent = scrollParentRef.current;
+    if (!parent) return;
+    isAtTopRef.current = parent.scrollTop <= 1;
+    // Capture the committed virtual coordinates, never updated DOM in cleanup.
+    const row = rowVirtualizer.getVirtualItemForOffset(parent.scrollTop);
+    scrollAnchorRef.current =
+      isAtTopRef.current || !row
+        ? undefined
+        : getVisibleChatAnchor(messages, [row], parent.scrollTop);
+  };
 
-    if (prependedMessageCount > 0 && scrollParent) {
+  useLayoutEffect(() => {
+    const prependedMessageCount = getPrependedMessageCount(previousMessagesRef.current, messages);
+    if (prependedMessageCount > 0) {
       if (isAtTopRef.current) {
         rowVirtualizer.scrollToOffset(0);
       } else {
         setUnseenMessageCount((count) => count + prependedMessageCount);
-
+        // Ref measurements may have changed since render; refresh VirtualItem coordinates.
+        rowVirtualizer.getVirtualItems();
         const anchor = scrollAnchorRef.current;
-        const anchorIndex =
-          anchor && messages.findIndex((message) => message.id === anchor.messageId);
-        if (anchor && anchorIndex !== undefined && anchorIndex >= 0) {
-          rowVirtualizer.scrollToIndex(anchorIndex, { align: "start" });
-          scrollParent.scrollTop += anchor.offset;
-        }
+        const offset =
+          anchor &&
+          getRestoredScrollOffset(
+            anchor,
+            messages,
+            (index) => rowVirtualizer.getOffsetForIndex(index, "start")?.[0],
+          );
+        if (offset !== undefined) rowVirtualizer.scrollToOffset(offset);
       }
     }
-
     previousMessagesRef.current = messages;
-
-    return () => {
-      const parent = scrollParentRef.current;
-      if (!parent || parent.scrollTop <= 1) {
-        isAtTopRef.current = true;
-        scrollAnchorRef.current = undefined;
-        return;
-      }
-
-      isAtTopRef.current = false;
-      const parentTop = parent.getBoundingClientRect().top;
-      const anchorRow = Array.from(
-        parent.querySelectorAll<HTMLElement>("[data-chat-message-id]"),
-      ).find((row) => row.getBoundingClientRect().bottom > parentTop);
-
-      scrollAnchorRef.current = anchorRow?.dataset.chatMessageId
-        ? {
-            messageId: anchorRow.dataset.chatMessageId,
-            offset: anchorRow.getBoundingClientRect().top - parentTop,
-          }
-        : undefined;
-    };
-  }, [messages, rowVirtualizer]);
+    captureScrollAnchor();
+  });
 
   const handleScroll = () => {
     const scrollParent = scrollParentRef.current;
@@ -177,13 +172,15 @@ export function ChatView({
       return;
     }
 
-    isAtTopRef.current = scrollParent.scrollTop <= 1;
+    captureScrollAnchor();
     if (isAtTopRef.current) {
       setUnseenMessageCount(0);
     }
   };
 
   const returnToLatest = () => {
+    isAtTopRef.current = true;
+    scrollAnchorRef.current = undefined;
     rowVirtualizer.scrollToOffset(0);
     setUnseenMessageCount(0);
   };
@@ -244,6 +241,7 @@ export function ChatView({
         aria-live="off"
         aria-relevant="additions text"
         onScroll={handleScroll}
+        style={{ overflowAnchor: "none" }}
         className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
       >
         {unseenMessageCount > 0 && (
