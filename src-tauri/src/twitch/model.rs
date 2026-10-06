@@ -22,6 +22,13 @@ pub struct ChatMessage {
     pub connection_generation: Option<u64>,
 }
 
+impl ChatMessage {
+    #[cfg(any(feature = "app", test))]
+    pub(super) fn belongs_to_connection_generation(&self, generation: u64) -> bool {
+        self.connection_generation == Some(generation)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(test, derive(ts_rs::TS))]

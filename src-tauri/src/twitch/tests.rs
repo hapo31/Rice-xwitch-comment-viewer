@@ -714,7 +714,7 @@ fn chat_fixture_with_timestamp(timestamp: Option<serde_json::Value>) -> EventSub
 fn parses_channel_chat_message_fixture() {
     let fixture = include_str!("fixtures/channel_chat_message.json");
     let envelope = serde_json::from_str::<EventSubEnvelope>(fixture).unwrap();
-    let normalized = normalize_chat_message(envelope, utc_timestamp("2026-08-15T12:34:56.789Z"))
+    let normalized = normalize_chat_message(envelope, utc_timestamp("2026-08-15T12:34:56.789Z"), 0)
         .unwrap()
         .unwrap();
     assert!(normalized.timestamp_warning.is_none());
@@ -734,6 +734,26 @@ fn parses_channel_chat_message_fixture() {
     assert_eq!(
         message.received_at,
         utc_timestamp("2023-11-06T18:11:47.492253549Z")
+    );
+}
+
+#[test]
+fn normalized_chat_message_owns_the_connection_generation_before_serialization() {
+    let envelope = serde_json::from_str::<EventSubEnvelope>(include_str!(
+        "fixtures/channel_chat_message.json"
+    ))
+    .unwrap();
+    let normalized =
+        normalize_chat_message(envelope, utc_timestamp("2026-08-15T12:34:56.789Z"), 42)
+            .unwrap()
+            .unwrap();
+
+    assert_eq!(normalized.message.connection_generation, Some(42));
+    assert!(normalized.message.belongs_to_connection_generation(42));
+    assert!(!normalized.message.belongs_to_connection_generation(43));
+    assert_eq!(
+        serde_json::to_value(&normalized.message).unwrap()["connectionGeneration"],
+        serde_json::json!(42)
     );
 }
 
@@ -789,6 +809,7 @@ fn normalizes_offset_timestamp_to_utc_and_serializes_the_tauri_field_contract() 
             "2026-08-15T21:34:56.789123456+09:00"
         ))),
         utc_timestamp("2026-08-15T00:00:00Z"),
+        0,
     )
     .unwrap()
     .unwrap();
@@ -822,9 +843,10 @@ fn falls_back_to_websocket_receive_time_for_unsupported_timestamps() {
     ];
 
     for (case_name, timestamp) in cases {
-        let normalized = normalize_chat_message(chat_fixture_with_timestamp(timestamp), fallback)
-            .unwrap()
-            .unwrap();
+        let normalized =
+            normalize_chat_message(chat_fixture_with_timestamp(timestamp), fallback, 0)
+                .unwrap()
+                .unwrap();
 
         assert_eq!(normalized.message.received_at, fallback, "{case_name}");
         assert!(

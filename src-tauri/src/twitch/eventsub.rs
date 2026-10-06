@@ -88,7 +88,7 @@ pub(super) trait EventSubRuntime: Sync {
     fn chat_status(&self, status: TwitchStatus, message: Option<String>, generation: u64);
     fn connected(&self, params: &EventSubConnectionParams, message: String);
     fn log(&self, level: AppLogLevel, message: impl Into<String>);
-    fn chat(&self, message: ChatMessage, connection_generation: u64);
+    fn chat(&self, message: ChatMessage);
     fn received_at(&self) -> DateTime<Utc> {
         Utc::now()
     }
@@ -432,14 +432,16 @@ pub(super) async fn process_eventsub_frame<R: EventSubRuntime>(
                     Ok(EventSubFrameAction::Reconnect(reconnect_url))
                 }
                 "notification" => {
-                    if let Some(normalized) = normalize_chat_message(envelope, frame_received_at)? {
+                    if let Some(normalized) =
+                        normalize_chat_message(envelope, frame_received_at, connection_generation)?
+                    {
                         if let Some(warning) = normalized.timestamp_warning {
                             app.log(AppLogLevel::Warning, warning);
                         }
                         let message = normalized.message;
                         let dedupe_id = message.id.clone();
                         if seen_message_ids.insert_at(dedupe_id, app.monotonic_now()) {
-                            app.chat(message, connection_generation);
+                            app.chat(message);
                         }
                     }
                     Ok(EventSubFrameAction::Activity)

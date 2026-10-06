@@ -1660,7 +1660,23 @@ mod tests {
         assert_eq!(
             queue.repeat_suppression_scope,
             Some(RepeatSuppressionScope {
-                channel_id: next_session_message.channel_id,
+                channel_id: next_session_message.channel_id.clone(),
+                connection_generation: Some(2),
+            })
+        );
+
+        queue.record_user_enqueue(next_session_message.user_id.clone(), now);
+        let mut other_channel_message = next_session_message.clone();
+        other_channel_message.id = "other-channel".to_string();
+        other_channel_message.channel_id = "other-channel-id".to_string();
+        assert!(
+            suppress_repeated_message(&mut queue, &settings, &other_channel_message, now).is_none()
+        );
+        assert!(queue.last_user_enqueue.is_empty());
+        assert_eq!(
+            queue.repeat_suppression_scope,
+            Some(RepeatSuppressionScope {
+                channel_id: "other-channel-id".to_string(),
                 connection_generation: Some(2),
             })
         );
