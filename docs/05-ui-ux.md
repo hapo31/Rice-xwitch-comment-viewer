@@ -174,6 +174,12 @@ Issue #85の結果詳細は、outcomeを持つuser行の状態ラベルをキー
 - `blocked`: ルールで除外
 - `error`: 読み上げ失敗
 
+### Launcher の項目メニュー
+
+`LauncherItemMenu` が [Radix Dropdown Menu](https://www.radix-ui.com/primitives/docs/components/dropdown-menu) の開閉・外側操作・roving focus・循環移動・Escapeを使い、LauncherViewは起動/登録/削除に限定する。親のopen ID、trigger Map、document listenerと汎用key parserは持たない。非modal menuはTab/Shift+Tabでtriggerから自然なdocument順へ離脱する。Radix既定はTabを消費するため、この2キーだけcaptureで閉じてnative移動を許可し、閉じる際のfocus復帰を抑える。削除成功で発火元が消えた場合は画面見出しへ移す。
+
+#225 の確認dialogと同じRadix系列を選び、focus scope・dismissable layerなどを共有する。native dialogはmodal向け、popover単体はmenu keyboard操作を提供しないため、menuでは専用primitiveを使用する。Portalは画面端/タイルのoverflowを避け、衝突補正をライブラリへ委ねる。実DOMで通常キー操作・busy・削除後focusを検証し、Windows WebView上のpixel配置は別の手動確認とする。
+
 ## キーボード操作
 
 ### 未保存変更
