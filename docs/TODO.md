@@ -640,3 +640,7 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] 解除中の表示と認証正本を調停し、削除失敗後に現行認証と操作性を維持する。keyring失敗後の再試行と後発認証/eventとの競合を回帰化する。
 
 2026-10-06 Issue #219: 解除中はUI操作世代付きの要求として認証状態と分離し、削除失敗後はbackendの現在profileを照合する。後発操作・Auth revision変更後の古い解除/調停応答を拒否する。実AppShellで失敗後再試行、認証保持/消失、後発event、再取得失敗とcontrollerの後発loginを回帰化した。追加レビューで、解除成功eventがcommand応答より先だと古いprofileが残ることを再現し、revision検証済みのAuth disconnectedをprofile/promptと同時反映する。最終検証・CIはPR #264に記録する。
+
+## Issue #222: 検証済みPNGと設定transaction
+
+- [ ] 未検証wireと検証済みiconを型で分け、同一bytesの再decodeを避ける。保存transactionの排他を保持し、高コスト検証/保存をsettings公開lockから分離してdecode回数・enqueue競合を検証する。
