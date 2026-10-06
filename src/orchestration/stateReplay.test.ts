@@ -257,6 +257,43 @@ describe("backend state replay", () => {
     ]);
     cleanup();
   });
+  it("keeps arrival order when live connection status resolves before the snapshot", async () => {
+    const h = setup();
+    const cleanup = h.start();
+    await tick();
+    h.listeners.chat!(chatMessage("first"));
+    h.listeners.twitch!(connectedChatStatus());
+    h.listeners.chat!(chatMessage("second"));
+    h.events.resolve({
+      revision: 5,
+      logs: [],
+      emitErrors: [],
+      twitchStatuses: [connectedChatStatus()],
+    });
+    h.speech.resolve(speechSnapshot());
+    await tick();
+    expect(h.stores.chat.getState().messages.map((message) => message.id)).toEqual([
+      "second",
+      "first",
+    ]);
+    cleanup();
+  });
+  it("applies the restored queue outcome to buffered chat", async () => {
+    const h = setup();
+    const cleanup = h.start();
+    await tick();
+    h.listeners.chat!(chatMessage("chat1"));
+    h.events.resolve({
+      revision: 5,
+      logs: [],
+      emitErrors: [],
+      twitchStatuses: [connectedChatStatus()],
+    });
+    h.speech.resolve(speechSnapshot());
+    await tick();
+    expect(h.stores.chat.getState().messages[0]).toMatchObject({ kind: "user", status: "queued" });
+    cleanup();
+  });
   it("rechecks buffered messages against the restored generation and channel identity", async () => {
     const h = setup();
     const cleanup = h.start();

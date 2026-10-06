@@ -217,6 +217,11 @@ export function subscribeDomainEvents({
     const message: ChatMessage = { ...event, kind: "user", status: "received" };
     dispatchDomainAction(stores, { type: "chat.message", message });
   };
+  const bufferChatMessage = (event: TwitchChatMessageEvent) => {
+    if (!rememberChatMessageId(event.id)) return;
+    if (bufferedChatMessages.length === MAX_BUFFERED_CHAT_MESSAGES) bufferedChatMessages.shift();
+    bufferedChatMessages.push(event);
+  };
   const restoreBufferedChatMessages = () => {
     if (disposed) return;
     const connection = stores.connection.getState();
@@ -306,15 +311,16 @@ export function subscribeDomainEvents({
           if (disposed) return;
           const connection = stores.connection.getState();
           if (event.connectionGeneration !== undefined) {
-            if (chatMessageMatchesConnection(event, connection)) {
-              if (rememberChatMessageId(event.id)) addChatMessage(event);
+            const matchesConnection = chatMessageMatchesConnection(event, connection);
+            if (
+              restorationPending &&
+              (matchesConnection || isUnresolvedChatMessage(event, connection))
+            ) {
+              bufferChatMessage(event);
               return;
             }
-            if (restorationPending && isUnresolvedChatMessage(event, connection)) {
-              if (!rememberChatMessageId(event.id)) return;
-              if (bufferedChatMessages.length === MAX_BUFFERED_CHAT_MESSAGES)
-                bufferedChatMessages.shift();
-              bufferedChatMessages.push(event);
+            if (matchesConnection) {
+              if (rememberChatMessageId(event.id)) addChatMessage(event);
               return;
             }
             return;
