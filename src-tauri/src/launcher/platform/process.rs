@@ -470,6 +470,32 @@ mod tests {
         assert!(matches!(readers.stderr, ReaderState::Taken));
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn interrupted_partial_join_preserves_completion_through_cleanup_timeout() {
+        let (stdout_writer, stdout) = duplex(8);
+        let (mut stderr_writer, stderr) = duplex(8);
+        drop(stdout_writer);
+        let mut readers = ReaderTasks {
+            stdout: ReaderState::Pending(tokio::spawn(read_bounded(stdout, 8))),
+            stderr: ReaderState::Pending(tokio::spawn(read_bounded(stderr, 8))),
+        };
+
+        // Unlike a child still running, this polls the join before cancellation:
+        // stdout reaches EOF while the other pipe remains open indefinitely.
+        assert!(tokio::time::timeout(Duration::from_millis(1), readers.join())
+            .await
+            .is_err());
+        assert!(matches!(readers.stdout, ReaderState::Complete(Ok(Ok(_)))));
+        assert!(matches!(readers.stderr, ReaderState::Pending(_)));
+
+        let started = tokio::time::Instant::now();
+        assert!(!finish_readers_after_termination(&mut readers).await);
+        assert!(started.elapsed() >= TERMINATED_PIPE_DRAIN_TIMEOUT);
+        assert!(matches!(readers.stdout, ReaderState::Taken));
+        assert!(matches!(readers.stderr, ReaderState::Taken));
+        assert!(stderr_writer.write_all(b"x").await.is_err());
+    }
+
     #[tokio::test]
     async fn timeout_kills_and_reaps_child() {
         #[cfg(unix)]
