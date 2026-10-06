@@ -51,7 +51,7 @@ impl TwitchConnectionOwner {
         self.connection = Some(connection);
         Ok(())
     }
-    pub(crate) fn cancel(&mut self) -> ChatCancellation {
+    pub(super) fn cancel(&mut self) -> ChatCancellation {
         self.advance_generation();
         let stopped = self.connection.take();
         if let Some(handle) = stopped.as_ref() {
@@ -70,11 +70,13 @@ impl TwitchConnectionOwner {
     pub(crate) fn active_generation(&self) -> Option<u64> {
         self.connection.as_ref().map(|handle| handle.generation)
     }
+    #[cfg(test)]
     pub(crate) fn active_abort_handle(&self) -> Option<tokio::task::AbortHandle> {
         self.connection
             .as_ref()
             .map(|handle| handle.task.abort_handle())
     }
+    #[cfg(test)]
     pub(crate) fn generation(&self) -> u64 {
         self.generation
     }

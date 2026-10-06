@@ -1078,10 +1078,10 @@ async fn chat_service_stop_invalidates_a_connection_paused_before_registration()
     assert_eq!(runtime.connection.lock().unwrap().generation(), 2);
     assert_eq!(runtime.connection.lock().unwrap().active_generation(), None);
     assert!(runtime.http.lookup_calls.lock().unwrap().is_empty());
-    assert_eq!(
-        *runtime.statuses.lock().unwrap(),
+    assert!(matches!(
+        runtime.statuses.lock().unwrap().as_slice(),
         [TwitchStatus::Disconnected]
-    );
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1125,10 +1125,10 @@ async fn chat_service_new_connection_supersedes_a_paused_registration() {
     assert!(runtime.connection_is_current(2));
     assert!(!active_abort.is_finished());
     assert_eq!(*runtime.http.lookup_calls.lock().unwrap(), ["new"]);
-    assert_eq!(
-        *runtime.statuses.lock().unwrap(),
+    assert!(matches!(
+        runtime.statuses.lock().unwrap().as_slice(),
         [TwitchStatus::Connecting]
-    );
+    ));
 
     TwitchChatService::new(runtime.clone()).stop().unwrap();
     assert!(active_abort.is_finished());
