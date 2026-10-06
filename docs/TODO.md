@@ -10,6 +10,8 @@
 
 2026-10-06 第3レビュー・最新main統合: refresh後に返したaccess tokenと、その送信失敗を照合するcredential snapshotが一対であることを確認する。deferred実購読テストで初回401待機中の別Login、refresh/validate応答中の別Login、同一auth session内のtoken rotationを区別し、古いgenerationの処理が最新tokenで旧user/client条件を送信せず、新しい認証をclear/AuthRequiredにしないことを検証した。StaleCredentialResponse経路もgeneration/client/userを一致させてから最新tokenを採用する。最新 `origin/main` `0d72925`（#194 Settings/Filterのfrontend・依存変更のみ）を専用branchへ統合し、Rust 1.90 app-feature Twitch tests 88件、strict all-target app Clippy、fmt check、diff checkが成功した。
 
+2026-10-06 追加レビュー対応: auth generation変更により subscription が ObsoleteConnection で終了しても Chat generation が同じ場合、supervisorがConnecting等のsnapshotを残したまま taskを終了する問題を修正した。ObsoleteConnection終了時はparamsのChat generationにDisconnectedを記録するため、同じChat generationのみ終了状態になり、AppEventStateがより新しいChat generationのsnapshotを保護する。production AppEventState recorderを使ったsupervisor回帰で、現行Chat generationと新しいChat generationの双方を確認した。reviewed `origin/main` `1743979` のwire contract generationを含む変更を統合し、`bindings/wire.ts` と `src-tauri/src/wire_contracts.rs` をmainと完全一致で保持した。wire contract generation回帰とTwitch app-feature 89件も成功した。#212のレビュー済み変更を追加統合後に再検証する。
+
 2026-10-06 着手計画: auth_service.rs と subscription.rs の認証更新/失効経路、および auth_state.rs・auth_store.rs の generation と永続化境界を調査する。revision を含む共通 service に refresh/validate/rotation/clear/save の判定を集約し、validate 対 EventSub、refresh 対 refresh、scope 不足、遅延保存を deferred fake で検証する。Rust の Twitch 関連回帰、fmt、clippy を実行し、設計文書と実装の整合を確認する。
 
 - [x] Issue #195: AppShellの認証・接続・speech・Launcher・終了保護をcontroller/providerへ分離し、各画面がdomain selector/actionを直接利用する。巨大な旧AppStateの再構成とMainView経由のcallback転送をなくし、無関係な画面の再renderを計測回帰で保証する。認証の遷移は既存のgeneration/poll排他と手動優先を保ち、XState invoke/delayと小さなreducerを比較して判断する。
@@ -104,7 +106,7 @@
 
 ## 現在の進捗サマリ
 
-2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、subscription token identity/logout orderingと別Login generationの隔離を回帰化した。EventSubConnectionParamsは接続generationと認証generation/client/user identityを区別して保持し、旧接続をobsoleteとして再試行せず終了する。latest `origin/main` `0d72925` までの#205/#208/#194統合変更をレビューし、#194由来のSettings/Filter frontend変更とRust認証service境界に競合がないことを確認した。Rust fmt、diff check、app-feature Twitch tests 88件、strict app-feature all-target clippyが成功した。PR #243のCIと親再レビュー後に最終完了状態を反映する。
+2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、subscription token identity/logout orderingと別Login generationの隔離を回帰化した。EventSubConnectionParamsは接続generationと認証generation/client/user identityを区別して保持し、旧接続をobsoleteとして再試行せず終了する。追加レビューで、auth generationのみ変更された際に現行Chat generationのsnapshotがConnectingのまま残る問題を修正し、AppEventState recorderで同一Chat generationはDisconnectedに、新しいChat generationは維持されることを回帰化した。reviewed `origin/main` `17439796` のwire contract generation等を統合した後、Rust fmt、diff check、app-feature Twitch tests 89件、wire-contract check 1件が成功した。#212の認証復元型付けもreviewed mainへ入ったため、統合後のstrict app-feature all-target clippyと関連テストを再実行して親レビューを待つ。
 
 Issue #199 は system timeline の中立モデルと型付き購読境界、source 別 transition 契約を実装した。初期 snapshot の認証/speech 通知、連続重複と復旧後の再通知、購読終了後の無視、不正 callback の型エラーを検証した。独立レビューで認証/接続の状態集合をさらに限定し、案内文を含む認証の重複抑制を維持した。最終 CI 結果と統合状況は PR #239 に記録する。
 
