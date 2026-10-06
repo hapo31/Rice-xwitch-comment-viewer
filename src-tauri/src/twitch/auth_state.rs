@@ -202,7 +202,7 @@ impl TwitchAuthState {
         self.profile.clone()
     }
 
-    pub(super) fn restore(stored: StoredTwitchAuth) -> anyhow::Result<Self> {
+    pub(super) fn restore(stored: StoredTwitchAuth) -> Result<Self, MissingRequiredTwitchScopes> {
         let mut profile = stored.profile;
         if profile.client_id.trim().is_empty() {
             profile.client_id = stored.client_id.clone();
@@ -312,7 +312,15 @@ pub(super) fn token_scopes(scopes: Vec<String>, profile: &TwitchUserProfile) -> 
     }
 }
 
-pub(super) fn ensure_required_twitch_scopes(scopes: &[String]) -> anyhow::Result<()> {
+#[derive(Debug, thiserror::Error)]
+#[error("Twitch 認証に必要な権限がありません: {names}。Login から再ログインし、{names} を許可してください。")]
+pub(super) struct MissingRequiredTwitchScopes {
+    names: String,
+}
+
+pub(super) fn ensure_required_twitch_scopes(
+    scopes: &[String],
+) -> Result<(), MissingRequiredTwitchScopes> {
     let missing_scopes = REQUIRED_TWITCH_SCOPES
         .iter()
         .filter(|required_scope| !scopes.iter().any(|scope| scope == **required_scope))
@@ -323,9 +331,7 @@ pub(super) fn ensure_required_twitch_scopes(scopes: &[String]) -> anyhow::Result
         return Ok(());
     }
 
-    Err(anyhow::anyhow!(
-        "Twitch 認証に必要な権限がありません: {}。Login から再ログインし、{} を許可してください。",
-        missing_scopes.join(", "),
-        missing_scopes.join(", "),
-    ))
+    Err(MissingRequiredTwitchScopes {
+        names: missing_scopes.join(", "),
+    })
 }

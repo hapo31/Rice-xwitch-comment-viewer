@@ -106,7 +106,9 @@
 
 ## 現在の進捗サマリ
 
-2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、subscription token identity/logout orderingと別Login generationの隔離を回帰化した。EventSubConnectionParamsは接続generationと認証generation/client/user identityを区別して保持し、旧接続をobsoleteとして再試行せず終了する。追加レビューで、auth generationのみ変更された際に現行Chat generationのsnapshotがConnectingのまま残る問題を修正し、AppEventState recorderで同一Chat generationはDisconnectedに、新しいChat generationは維持されることを回帰化した。reviewed `origin/main` `17439796` のwire contract generation等を統合した後、Rust fmt、diff check、app-feature Twitch tests 89件、wire-contract check 1件が成功した。#212の認証復元型付けもreviewed mainへ入ったため、統合後のstrict app-feature all-target clippyと関連テストを再実行して親レビューを待つ。
+2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、subscription token identity/logout orderingと別Login generationの隔離を回帰化した。EventSubConnectionParamsは接続generationと認証generation/client/user identityを区別して保持し、旧接続をobsoleteとして再試行せず終了する。追加レビューで、auth generationのみ変更された際に現行Chat generationのsnapshotがConnectingのまま残る問題を修正し、AppEventState recorderで同一Chat generationはDisconnectedに、新しいChat generationは維持されることを回帰化した。reviewed main 17439796/fc391a のwire contract generationと認証復元型付けを統合した。Twitch app-feature tests、wire contract check、strict Clippyなどの統合後検証を完了して親レビューを待つ。
+
+2026-10-06 Issue #212: AuthLoadResult に型付き reason と表示文を持つ notice を導入し、composition root の日本語部分一致を除去した。scope 不足は型付き error を復元まで保持し、破損 JSON は入力値を含まない固定文へ変換する。secure/legacy の分類・移行と失敗時保持、文言に依存しない起動時遷移の回帰を追加した。app feature で新規回帰4件と Twitch 回帰84件が成功し、実装 head f52025c の default/no-default・strict clippy・wire 型生成を含む CI も成功した。差分レビュー済み。文書追補後の最終 CI と統合結果は PR #256 に記録する。
 
 Issue #199 は system timeline の中立モデルと型付き購読境界、source 別 transition 契約を実装した。初期 snapshot の認証/speech 通知、連続重複と復旧後の再通知、購読終了後の無視、不正 callback の型エラーを検証した。独立レビューで認証/接続の状態集合をさらに限定し、案内文を含む認証の重複抑制を維持した。最終 CI 結果と統合状況は PR #239 に記録する。
 

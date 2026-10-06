@@ -52,6 +52,7 @@ Device Code Flowの利点:
 - keyring保存に失敗した場合は OS を問わずログイン状態をメモリ上で継続する。ただし access token と refresh token の平文ファイルや設定JSONは作成せず、UIへ「今回の起動中だけ有効」「再起動後は再ログインが必要」と警告する。
 - 旧版の Linux fallback `~/.rice/twitch-auth.json` を検出した場合は、keyringが利用できる時だけ移行して削除する。移行できない場合は安全のため token を読み込まず、ファイル削除、Twitch の「設定と接続」でのアクセス取り消し、再ログインを案内する。
 - 起動時はkeyringを優先してOAuth状態を復元する。保存済み認証を復元しただけでは認証済みとして扱わず、Login画面の有効性確認と同じく `/validate` を実行する。access tokenの検証に失敗した場合はrefresh tokenで更新を試み、成功時は保存済みrefresh tokenを即時差し替えてから認証済み状態へ遷移する。確認の開始・成功・失敗は system チャットへ表示する。
+- 保存済み認証の復元結果は、scope 不足・保存先障害・破損・旧 store 移行・旧ファイル削除失敗を型付き reason と表示文に分ける。起動時の AuthRequired reason は型から決め、表示文の部分一致では分類しない。破損 JSON の parser error に含まれ得る token 値は通知へ出さず、固定メッセージへ変換する。復元できた認証は移行・削除の警告があっても Validating のまま検証へ進める。
 - LinuxではSecret Service API対応ストアを優先する。Secret Serviceが利用できない環境でも認証フローは許可するが、永続化はしない。kernel keyutils、平文ローカルファイル、設定JSONへは退避しない。
 
 Client ID:
