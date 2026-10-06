@@ -7,8 +7,6 @@ import type {
   AppEventsSnapshot,
   AppLogEvent,
   AppNotification,
-  AppSettings,
-  AppSettingsPatch,
   AuthStatus,
   ChatMessage,
   SpeechQueueUpdatedEvent,
@@ -24,6 +22,18 @@ import type {
  */
 export function dispatchDomainAction(stores: DomainStores, action: AppAction): void {
   switch (action.type) {
+    case "twitch.disconnectStarted":
+      stores.connection.dispatch({
+        type: "auth.disconnect.started",
+        generation: action.generation,
+      });
+      break;
+    case "twitch.disconnectFinished":
+      stores.connection.dispatch({
+        type: "auth.disconnect.finished",
+        generation: action.generation,
+      });
+      break;
     case "settings.loaded":
       stores.settings.dispatch({ type: "settings.loaded", settings: action.settings });
       break;
@@ -121,6 +131,7 @@ export interface DomainEventBridge {
 export interface DomainEventSubscriptionOptions {
   stores: DomainStores;
   onRestored?: () => void;
+  shouldRestoreAuth?: () => boolean;
   replaySystemLog?: (message: string) => void;
   bridge: DomainEventBridge;
   reportNotification: (
@@ -128,6 +139,7 @@ export interface DomainEventSubscriptionOptions {
     source: "event" | "log",
     message: string,
     correlationId?: string,
+    announcementDomains?: AppNotification["announcementDomains"],
   ) => void;
   routeSystemTimelineEvent?: (event: SystemTimelineEvent) => void;
   speechRecoveryMessage?: (
@@ -146,6 +158,7 @@ export function subscribeDomainEvents({
   speechRecoveryMessage,
   twitchTimelineEvent,
   onRestored,
+  shouldRestoreAuth,
   replaySystemLog,
 }: DomainEventSubscriptionOptions): () => void {
   let disposed = false;
@@ -193,7 +206,7 @@ export function subscribeDomainEvents({
       });
     }
     if (event.message && (event.status === "authRequired" || event.status === "error"))
-      reportNotification("error", "event", event.message);
+      reportNotification("error", "event", event.message, undefined, [event.domain]);
     const timeline = twitchTimelineEvent?.(event);
     if (timeline) routeSystemTimelineEvent?.(timeline);
   };
@@ -206,7 +219,7 @@ export function subscribeDomainEvents({
       return;
     dispatchDomainAction(stores, { type: "speech.status", ...event });
     if (event.message && (event.status === "disconnected" || event.status === "error")) {
-      reportNotification("error", "event", event.message);
+      reportNotification("error", "event", event.message, undefined, ["speech"]);
       const timeline = speechRecoveryMessage?.(event.message, event.status);
       if (timeline) routeSystemTimelineEvent?.(timeline);
     }
@@ -218,7 +231,7 @@ export function subscribeDomainEvents({
     )
       return;
     dispatchDomainAction(stores, { type: "queue.changed", ...event });
-    if (event.warning) reportNotification("warning", "event", event.warning);
+    if (event.warning) reportNotification("warning", "event", event.warning, undefined, ["queue"]);
   };
   const cleanup = subscribeWithCleanup(
     [
@@ -271,8 +284,9 @@ export function subscribeDomainEvents({
               );
             for (const event of [...events.twitchStatuses].sort(
               (a, b) => (a.revision ?? 0) - (b.revision ?? 0),
-            ))
-              twitch(event);
+            )) {
+              if (event.domain !== "auth" || shouldRestoreAuth?.() !== false) twitch(event);
+            }
             if (events.speechStatus) speech(events.speechStatus);
           }
           if (state) {
@@ -300,37 +314,4 @@ export function subscribeDomainEvents({
 
 export function restoreStartupAuth(dependencies: StartupAuthDependencies) {
   return restoreAndValidateStartupAuth(dependencies);
-}
-
-export interface SettingsMutationDependencies {
-  updateSettings: (patch: AppSettingsPatch) => Promise<AppSettings>;
-  onSettingsLoaded: (settings: AppSettings) => void;
-  onError: (error: unknown) => void;
-}
-
-/** Serialize settings writes and publish only the value accepted by backend. */
-export function createSettingsMutationOrchestrator(dependencies: SettingsMutationDependencies) {
-  let tail = Promise.resolve();
-  return {
-    mutate(patch: Parameters<SettingsMutationDependencies["updateSettings"]>[0]): Promise<boolean> {
-      const operation = tail.then(async () => {
-        try {
-          const settings = await dependencies.updateSettings(patch);
-          dependencies.onSettingsLoaded(settings);
-          return true;
-        } catch (error) {
-          dependencies.onError(error);
-          return false;
-        }
-      });
-      tail = operation.then(
-        () => undefined,
-        () => undefined,
-      );
-      return operation;
-    },
-    waitForIdle(): Promise<void> {
-      return tail;
-    },
-  };
 }

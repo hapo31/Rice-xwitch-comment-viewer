@@ -29,12 +29,9 @@ import {
   createSpeechController,
 } from "./orchestration/domainCommandControllers";
 import { DomainControllerActionsProvider } from "./orchestration/domainControllerContext";
-import {
-  createSettingsMutationOrchestrator,
-  dispatchDomainAction,
-  subscribeDomainEvents,
-} from "./orchestration/domainOrchestration";
+import { dispatchDomainAction, subscribeDomainEvents } from "./orchestration/domainOrchestration";
 import { ExitProtectionProvider, useExitController } from "./orchestration/ExitProtectionProvider";
+import { createSettingsController } from "./orchestration/settingsController";
 import { startSpeechHealthMonitor } from "./orchestration/speechHealthMonitor";
 import { createTwitchController } from "./orchestration/twitchController";
 import { type ErrorOperation, presentError, reportPresentedError } from "./presentation/errors";
@@ -72,7 +69,7 @@ import {
 import { subscribeWithCleanup } from "./tauri/subscriptions";
 import { utcNow } from "./time";
 import type {
-  AppSettings,
+  AppNotification,
   AppSettingsPatch,
   NotificationSeverity,
   NotificationSource,
@@ -101,41 +98,51 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const autoConnectAttempted = useRef(false);
   const settingsMutation = useRef(
-    createSettingsMutationOrchestrator({
+    createSettingsController({
       updateSettings,
-      onSettingsLoaded: (nextSettings) => {
-        settingsSnapshot.current = nextSettings;
-        dispatch({ type: "settings.loaded", settings: nextSettings });
+      loadSettings: getSettings,
+      takeRecoveryNotice: takeSettingsRecoveryNotice,
+      initialGeneration: stores.settings.getState().initialization.generation,
+      getSettingsRevision: () => stores.settings.getState().revision,
+      onSettingsLoaded: (nextSettings) =>
+        dispatch({ type: "settings.loaded", settings: nextSettings }),
+      onInitializationChanged: (initialization) => {
+        stores.settings.dispatch({ type: "initialization.changed", initialization });
+        addSystemChatMessage(
+          initialization.status === "loading"
+            ? "設定を読み込んでいます。"
+            : initialization.status === "ready"
+              ? "設定を読み込みました。"
+              : initialization.message,
+        );
       },
+      onRecoveryNotice: (notice) => {
+        addSystemChatMessage(notice.message);
+        dispatch({
+          type: "log.added",
+          log: { level: "warning", message: notice.message, occurredAtMs: Date.now() },
+        });
+        reportNotification("warning", "system", notice.message);
+      },
+      loadErrorMessage: (error) => presentError(error, "settings").message,
       onError: (error) => reportError(error, "settings"),
     }),
   );
-  const settingsSnapshot = useRef<AppSettings | undefined>(undefined);
   const startupAuthAttempted = useRef(false);
+  const startupAuthGeneration = useRef<number | undefined>(undefined);
   const authOperations = useRef(new AuthOperationController());
   const systemTimelineRouter = useRef(new SystemTimelineRouter());
 
-  useEffect(() => () => authOperations.current.invalidate(), []);
+  useEffect(() => {
+    // Reserve before snapshot IO so later manual actions always keep priority.
+    startupAuthGeneration.current = authOperations.current.begin("restore");
+    return () => authOperations.current.invalidate();
+  }, []);
 
   useEffect(() => {
-    Promise.all([getSettings(), takeSettingsRecoveryNotice()])
-      .then(([settings, recoveryNotice]) => {
-        settingsSnapshot.current = settings;
-        dispatch({ type: "settings.loaded", settings });
-        if (recoveryNotice) {
-          addSystemChatMessage(recoveryNotice.message);
-          dispatch({
-            type: "log.added",
-            log: {
-              level: "warning",
-              message: recoveryNotice.message,
-              occurredAtMs: Date.now(),
-            },
-          });
-          reportNotification("warning", "system", recoveryNotice.message);
-        }
-      })
-      .catch((error) => reportError(error, "settings"));
+    settingsMutation.current.activate();
+    void settingsMutation.current.load();
+    return () => settingsMutation.current.invalidate();
   }, []);
 
   useEffect(() => {
@@ -144,7 +151,8 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
     }
     startupAuthAttempted.current = true;
 
-    void twitchController.restore();
+    const generation = startupAuthGeneration.current;
+    if (generation !== undefined) void twitchController.restore(generation);
   }, [eventsRestored]);
 
   function addSystemChatMessage(text: string) {
@@ -165,16 +173,35 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
     source: NotificationSource,
     message: string,
     correlationId?: string,
+    announcementDomains?: AppNotification["announcementDomains"],
   ) {
     dispatch({
       type: "notification.added",
-      notification: { severity, source, message, occurredAtMs: Date.now(), correlationId },
+      notification: {
+        severity,
+        source,
+        message,
+        occurredAtMs: Date.now(),
+        correlationId,
+        announcementDomains,
+      },
     });
   }
 
-  function reportError(error: unknown, operation: ErrorOperation = "general") {
+  function reportError(
+    error: unknown,
+    operation: ErrorOperation = "general",
+    announcementDomains?: AppNotification["announcementDomains"],
+  ) {
     return reportPresentedError(error, operation, {
-      notify: (message) => reportNotification("error", "command", message),
+      notify: (message) =>
+        reportNotification(
+          "error",
+          "command",
+          message,
+          `command:${crypto.randomUUID()}`,
+          announcementDomains,
+        ),
       log: (message) =>
         dispatch({ type: "log.added", log: { level: "error", message, occurredAtMs: Date.now() } }),
     });
@@ -197,10 +224,9 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
         dispatch,
         getAuthPrompt: () => stores.connection.getState().twitchAuthPrompt,
         getAuthStatus: () => stores.connection.getState().twitchAuthStatus,
+        getAuthRevision: () => stores.connection.getState().authRevision,
         getAuthProfile: () => stores.connection.getState().twitchProfile,
-        getChannelLogin: () =>
-          settingsSnapshot.current?.twitch.channelLogin ??
-          stores.settings.getState().settings?.twitch.channelLogin,
+        getChannelLogin: () => stores.settings.getState().settings?.twitch.channelLogin,
         getConfirmBeforeStopChat: () =>
           stores.settings.getState().settings?.twitch.confirmBeforeStopChat ?? true,
         waitForSettings: () => settingsMutation.current.waitForIdle(),
@@ -265,6 +291,9 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
         reportNotification,
         replaySystemLog: addSystemChatMessage,
         onRestored: () => setEventsRestored(true),
+        shouldRestoreAuth: () =>
+          startupAuthGeneration.current !== undefined &&
+          authOperations.current.isCurrent(startupAuthGeneration.current),
         routeSystemTimelineEvent,
         speechRecoveryMessage: speechRecoveryTimelineEvent,
         twitchTimelineEvent: timelineEventFromTwitchStatus,
@@ -308,6 +337,7 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
   const handleSpeechDiagnostics = commandControllers.speech.diagnostics;
 
   function handleSettingsUpdate(patch: AppSettingsPatch): Promise<boolean> {
+    if (stores.settings.getState().initialization.status !== "ready") return Promise.resolve(false);
     return settingsMutation.current.mutate(patch);
   }
 
@@ -352,6 +382,9 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
       <DomainControllerActionsProvider
         actions={{
           updateSettings: handleSettingsUpdate,
+          reloadSettings: () => {
+            void settingsMutation.current.load();
+          },
           speechHealthCheck: handleSpeechHealthCheck,
           speechDiagnostics: handleSpeechDiagnostics,
           speechTest: handleSpeechTest,

@@ -298,3 +298,20 @@ system Chat の状態通知は中立モデル `models/systemTimeline.ts` の `Sy
 - config path: `directories` またはTauri API
 - keyring: `keyring`
 - Windows拡張: `windows` crate
+
+### 認証解除の要求状態と失敗調停
+
+frontend は認証解除の処理中を connection store の `twitchDisconnectRequest`（UI操作世代）で持ち、認証正本を `disconnecting` へ書き換えない。解除中は Login の解除/検証/確認操作を無効化し、成功・失敗で要求だけを終了する。削除失敗は既存の日本語エラーを通知し、backend の現在のメモリ認証profileを取得して調停する。後発の手動認証操作または Auth event revision があれば、古い解除/取得結果は状態へ適用しない。取得自体が失敗しても現在の認証表示を維持して待機を解き、system Chatに確認・再試行の案内を残す。revision検証済みのbackend Auth disconnectedはprofile/promptも同時に解除し、成功eventがcommand応答より先でも古いログイン表示を残さない。これはbackendのcredential generation/失敗時復元とは独立したUI要求の管理である。
+
+### 起動時の認証操作世代
+
+frontend は effect 開始時に認証復元の世代を予約し、event snapshot 復元の完了後もその世代を使う。後発の手動 start/validate/disconnect は予約を失効させ、古い snapshot の Auth 状態、保存済み認証の取得・検証結果、通知を反映しない。保存済み情報の読込後に失効していれば検証 command も開始しない。live backend event と Chat snapshot の revision/generation 判定は継続する。これは backend credential 保護とは別の UI 操作優先順位であり、StrictMode の cleanup は予約を失効させ、再 setup が新たな予約を作る。
+
+
+## frontend 設定初期化
+
+設定の正本は settings store とし、publication revision、初期化の loading/ready/error、load generation を保持する。SettingsController は read と直列 write の publication を同じ境界で制御し、read 開始後に保存や Launcher 更新で revision が進んだ場合、古い read の成功・失敗を UI へ適用しない。後から開始した read と effect cleanup/再開も世代と lifetime で区別する。接続 command は別 ref の snapshot を保持せず store の最新設定を読む。
+
+Settings/Filter は ready 前の既定値を編集可能な設定として提示せず、loading 表示または error と再試行を出す。起動/再試行の進捗と結果は system Chat にも残す。StrictMode の effect 再実行では一度だけ取り出せる復旧通知を同じ controller の read 間で共有し、受理された read だけが一度通知する。unmount 後の read/write 応答は通知・store 更新を行わず、旧 lifetime の未実行 write は開始しない。
+
+参照: [React StrictMode の effect 再実行](https://react.dev/reference/react/StrictMode#fixing-bugs-found-by-re-running-effects-in-development)。

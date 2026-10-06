@@ -105,6 +105,18 @@
 
 ## 現在の進捗サマリ
 
+Issue #219: 認証解除の要求を認証状態から分離し、失敗後に再試行できる調停を追加した。PR #264で最終検証を確認する。
+
+Issue #218: 起動時認証復元より後発の手動ログインを優先する世代予約を追加した。PR #263で最終CIを確認する。
+
+Issue #216: 設定初期化に読込状態・世代・更新番号を導入し、古い読込による保存結果の巻き戻りを防いだ。対象23件の回帰成功、最終 CI は PR #259 で追跡する。
+
+Issue #261: 共通CIを止めた source-map-js advisoryを修正版へのlockfile統一で解消した。最終CIはPR #262で確認する。
+
+- [x] Issue #215: live 通知を ID・severity・correlation を持つ未通知 queue として扱い、command error・同文の別発生・同時障害の欠落を防ぐ。状態/event/log の同一障害は重複を抑え、実 DOM の配送・クリア・再通知を検証する。
+
+2026-10-06 Issue #215: warning/error を ID・severity・correlation と明示の状態 context で受ける配送 queue に変更した。alert を優先し、同優先度は発生順に読み、同文の別IDには安定した live region の空更新を挟む。状態 summary とその event/log/command は同じ原因をまとめ、同時に起きた別障害や状態が変わらない別IDを残す。明示 clear と unmount では残る通知/timer を片付け、古い既存通知が次の障害を消費しない。frontend 全423件と追加の同一状態・別障害・長時間保持回帰14件、typecheck/format/lint/build が成功。最新 main 統合後の最終検証・CI は PR #258 に記録する。実スクリーンリーダーの発話確認は未実施。
+
 2026-10-06: Issue #206 の認証更新は credential revision と共通更新 lock で統合し、subscription token identity/logout orderingと別Login generationの隔離を回帰化した。EventSubConnectionParamsは接続generationと認証generation/client/user identityを区別して保持し、旧接続をobsoleteとして再試行せず終了する。追加レビューで、auth generationのみ変更された際に現行Chat generationのsnapshotがConnectingのまま残る問題を修正し、AppEventState recorderで同一Chat generationはDisconnectedに、新しいChat generationは維持されることを回帰化した。reviewed main `d0c58b9` までのwire contract、認証復元型付け、共通chat delivery変更を統合した。Rust fmt / diff check、app-feature Twitch tests 95件、strict all-target app Clippy、generated wire contract test 1件が成功した。親レビューで obsolete 終端 snapshot と新世代保護を確認した。実装 head 9fcbab0 の全16 CI が成功し、#214 の reviewed main c58904d を統合した。最終 head の CI と統合結果は PR #243 に記録する。
 
 - [x] Issue #214: コメントの受信と読み上げ受付を区別し、自動読み上げ OFF の対象外結果を backend の型付き outcome として通知・保持する。ON/OFF 切替、event の前後順、snapshot 復元を契約テストで確認する。
@@ -606,4 +618,29 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #213: 保存待ちキャンセル後の app_exit と reset 済み blocker の proceed 例外を実 AppShell で再現し、保存後の操作を現在の token と blocker location key で照合する。取り消した保存そのものは完了してよいが、旧終了・遷移の副作用は実行しない。保存済みになった新しい確認要求も続行/キャンセルを明示選択できる。
 
-2026-10-06 Issue #213 統合確認: reviewed main 493c57f の wire schema を取り込み、本番 AppShell と保存継続の DOM 33件、format/lint/typecheck/build が成功した。最終 head の CI とマージは PR #254 に記録する。9
+2026-10-06 Issue #213 統合確認: reviewed main 493c57f の wire schema を取り込み、本番 AppShell と保存継続の DOM 33件、format/lint/typecheck/build が成功した。最終 head の CI とマージは PR #254 に記録する。
+
+## Issue #218: 起動時認証復元と手動操作の優先順位
+
+- [x] 起動開始時の認証操作を予約し、遅い snapshot/auth 復元が後発の手動 start/poll を無効化しない。実 AppShell と認証世代の逆順完了を回帰化する。
+
+2026-10-06 Issue #218: 起動effectで予約した世代をsnapshot復元後も使い、後発手動操作から世代を奪わない。Auth snapshotは手動開始後には反映せず、古いstored auth取得後にvalidate commandを追加起動しない。実AppShellのStrictMode、snapshot対start/poll、stored auth/validateの遅い成功・失敗7件を回帰化した。最終検証とCIはPR #263で追跡する。
+
+
+## Issue #216: 設定初期化の競合防止
+
+- [x] 設定初期化の loading/ready/error と取得世代を明示し、遅い取得応答が新しい保存結果を上書きしない共通境界を設ける。初期値表示と保存可否を区別し、読込失敗後の再試行・逆順完了・StrictMode・unmount を回帰化する。
+
+2026-10-06 Issue #216: 設定読込・直列保存を SettingsController へまとめ、load generation / store publication revision / effect lifetime で応答を照合する。Settings/Filter は読込中に既定値フォームを編集させず、失敗時に明示再試行を出す。接続用の二重 settingsSnapshot をなくし、store を正本にした。StrictMode の一回限りの復旧通知は load 間で共有し、現在の load が一度だけ通知する。読込対保存（成功/失敗）、同 lifetime の取得逆順、StrictMode、unmount、Launcher 更新を含む対象23件と typecheck が成功。最終 frontend 全体、CI と統合結果は PR #259 に記録する。
+
+## Issue #261: dependency audit の共通 blocker
+
+- [x] source-map-js の影響版を修正版へ統一し、既存監査・frozen install・frontend gates を通す。監査例外は追加しない。
+
+2026-10-06 Issue #261: @tailwindcss/node 4.3.3 の許容範囲 ^1.2.1 内で source-map-js を1.2.2へ統一し、未使用の1.2.1 entryを除去した。他の依存とpackage.jsonは変更しない。frozen offline install、frontend全429件、production build成功。pnpm auditはhigh/critical 0件で対象GHSAが消え、既存moderate 5件のみ。全CIの結果は PR #262 に記録する。
+
+## Issue #219: 認証解除失敗後の再試行
+
+- [x] 解除中の表示と認証正本を調停し、削除失敗後に現行認証と操作性を維持する。keyring失敗後の再試行と後発認証/eventとの競合を回帰化する。
+
+2026-10-06 Issue #219: 解除中はUI操作世代付きの要求として認証状態と分離し、削除失敗後はbackendの現在profileを照合する。後発操作・Auth revision変更後の古い解除/調停応答を拒否する。実AppShellで失敗後再試行、認証保持/消失、後発event、再取得失敗とcontrollerの後発loginを回帰化した。追加レビューで、解除成功eventがcommand応答より先だと古いprofileが残ることを再現し、revision検証済みのAuth disconnectedをprofile/promptと同時反映する。最終検証・CIはPR #264に記録する。
