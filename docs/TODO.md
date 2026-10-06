@@ -706,3 +706,5 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] React公式selector helperとJotai移行を比較し、派生object/arrayの安定性・比較関数・Provider隔離・通知と描画回数をDOMで検証する。既存generation/revision/queue同期を維持する。
 
 2026-10-06 Issue #223: immutableなstore snapshotとselectorをReact公式helperへ別々に渡し、Object.is既定と任意比較関数を全domain hookで使えるようにした。通常/StrictModeの派生object・array、selector変更、store変更と購読解除、同一storeの無関係更新、Provider隔離と1eventあたりの通知/描画をDOM6件で回帰化した。frontend全462件（78 files）、build/typecheck、format、lint、diff検査成功。production JS gzip増加0.28 kB。Jotaiへの全domain移行と比べ、既存reducer・generation/revision・replayを保持する小さな境界変更を選んだ。最終headのCI・マージはPR #268で確認する。Windows実アプリの手動描画確認は未実施。
+
+2026-10-06 Issue #229 親レビュー: schema validator導入でWindows artifact smokeとtrusted publisherにもnpm依存が必要になったため、各検証前へfrozen/ignore-scripts installを追加した。publisherはsourceではなくtrustedのmanifest/lockだけを使い、依存install欠落・実行順・不正directory・script実行・skipをworkflow policy回帰で拒否する。

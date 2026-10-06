@@ -44,6 +44,17 @@ function requireExactNeeds(job, expected, message) {
   requirePolicy(needs.length === expected.length && expected.every((name) => needs.includes(name)), message);
 }
 
+function requireVerifierDependencies(steps, invocation, directory) {
+  const invokeAt = steps.findIndex((step) => typeof step?.run === "string" && invocation.test(step.run));
+  const installAt = steps.findIndex((step) =>
+    step?.if === undefined && step?.["continue-on-error"] !== true &&
+    (step?.["working-directory"] ?? ".") === directory &&
+    typeof step?.run === "string" &&
+    /^\s*corepack pnpm install --frozen-lockfile --ignore-scripts\s*$/m.test(step.run));
+  requirePolicy(installAt >= 0 && invokeAt > installAt, `SBOM verifier dependencies must be installed from ${directory} before verification`);
+  requirePolicy(steps.slice(0, installAt).some((step) => step?.uses?.startsWith("actions/setup-node@")), "SBOM verifier must select a compatible Node version before dependency installation");
+}
+
 export function validateReleaseWorkflows(buildWorkflow, publishWorkflow) {
   requirePolicy(buildWorkflow && typeof buildWorkflow === "object" && buildWorkflow.jobs, "release build workflow must contain jobs");
   requirePolicy(publishWorkflow && typeof publishWorkflow === "object" && publishWorkflow.jobs, "release publisher workflow must contain jobs");
@@ -69,6 +80,7 @@ export function validateReleaseWorkflows(buildWorkflow, publishWorkflow) {
     [/--main-ref\s+refs\/remotes\/origin\/main/, "build workflow must verify the tag target is on origin/main"],
     [/node scripts\/verify-release-artifacts\.mjs release-artifacts --write/, "release must inspect exact artifacts and ZIP integrity before upload"],
   ]) requirePolicy(pattern.test(buildCommands), message);
+  requireVerifierDependencies(smokeSteps, /smoke-windows-artifacts\.ps1/, ".");
   requirePolicy(/\.\/scripts\/smoke-windows-artifacts\.ps1 -Artifacts release-artifacts -Commit \$env:GITHUB_SHA/.test(smokeCommands), "release must execute the installer and portable on Windows");
 
   const publisherTrigger = publishWorkflow.on?.workflow_run;
@@ -84,6 +96,7 @@ export function validateReleaseWorkflows(buildWorkflow, publishWorkflow) {
   const publisherSteps = stepsFor(release, "release");
   const trustedCheckout = publisherSteps.some((step) => typeof step?.uses === "string" && step.uses.startsWith("actions/checkout@") && step.with?.ref === "${{ github.sha }}" && step.with?.path === "trusted");
   requirePolicy(trustedCheckout, "publish workflow must checkout trusted policy from the workflow_run default-branch SHA");
+  requireVerifierDependencies(publisherSteps, /node trusted\/scripts\/verify-windows-smoke\.mjs/, "trusted");
   const commands = runText(publisherSteps);
   const bundleDownload = publisherSteps.some((step) => step?.uses?.startsWith("actions/download-artifact@") && step.with?.name === "rice-windows-${{ github.event.workflow_run.id }}" && step.with?.["run-id"] === "${{ github.event.workflow_run.id }}");
   const smokeDownload = publisherSteps.some((step) => step?.uses?.startsWith("actions/download-artifact@") && step.with?.name === "rice-windows-smoke-${{ github.event.workflow_run.id }}" && step.with?.["run-id"] === "${{ github.event.workflow_run.id }}");
