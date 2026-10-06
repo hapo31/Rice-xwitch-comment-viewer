@@ -45,13 +45,9 @@ jobs:
 
       - name: Test release guards
         run: |
-          node scripts/verify-project-license.mjs
-          node scripts/verify-tauri-versions.mjs
-          node --test scripts/test-tauri-versions.mjs
           node --test scripts/test-checkout-materials.mjs
           node --test scripts/test-tauri-security.mjs
           node --test scripts/test-windows-capabilities.mjs
-          node --test scripts/test-project-license.mjs
           node scripts/test-twitch-client-id.mjs
           bash scripts/test-publish-release.sh
 
@@ -122,6 +118,13 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Verify parsed release metadata
+        run: |
+          node scripts/verify-project-license.mjs
+          node scripts/verify-tauri-versions.mjs
+          node --test scripts/test-config-parsers.mjs scripts/test-release-workflow-policy.mjs
+          node --test scripts/test-tauri-versions.mjs scripts/test-project-license.mjs
 
       - name: Enforce reviewed dependency advisory policy
         run: |

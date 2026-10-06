@@ -462,6 +462,8 @@ Issue #200 は読み上げ outcome の復旧契約と Twitch Auth/Chat の状態
 - [x] Issue #2: Chat 行へ読み上げ状態を表示し、キュー更新時に `sourceMessageId` で状態を同期する。
 - [x] Issue #1: Activity Bar から Logs view を開ける導線を追加し、リンク名・現在地表現を回帰テストする。
 - [x] `main` 向け PR で frontend/Rust の unit test と lint を並列実行する read-only GitHub Actions workflow を追加する。
+- [x] Issue #228: YAML/TOMLを共通parser境界へ集約し、構文差に耐えるpolicy検査と未知形状・権限拡大・未承認advisory拒否を回帰化する。Node/CI/Dockerの検証順を保つ。
+  - 2026-10-06: `yaml` 2.9.1 / `smol-toml` 1.9.0の共通read/parse境界を導入し、YAML重複key拒否とalias 50件上限、TOML/YAML構文エラー・未知policy形状の拒否を固定した。release workflow、Tauri/Cargo lock、license metadata、SBOM checksum、cargo-audit ignoreを構造値で検査する。構文コメント・引用符・順序の同値変更を受理し、contents write拡大、Windows required job欠落、smoke順序違反、未承認advisory除外を回帰化。parserを使うPR/release/audit CIとDocker依存準備を更新。全frontend 463件、対象policy test、release guard、offline frozen install、typecheck/lint/build、Docker contextが成功。PR #272 は親レビューとGitHub CI待ちで、Windows配布smokeは実施していない。
 - [x] PR 作成時と手動 dispatch 時だけ dev build を実行し、結果を job summary へ出す workflow を追加する。
 - [x] devcontainer bootstrap 検証は `.devcontainer/**` または workflow 自体を変更したときだけ実行する。
 - [x] 単独管理の方針ではrequired status checksのrepository設定を必須にせず、PRレビュー時にCIを確認する（2026-09-08所有者判断）。
