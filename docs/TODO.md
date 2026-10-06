@@ -107,6 +107,10 @@
 
 Issue #220: 再生中itemのadapter所有権を保持し、設定変更後も制御と完了確認を同じ宛先へ送る。後続itemから新しい設定を使う。
 
+Issue #219: 認証解除の要求を認証状態から分離し、失敗後に再試行できる調停を追加した。PR #264で最終検証を確認する。
+
+Issue #218: 起動時認証復元より後発の手動ログインを優先する世代予約を追加した。PR #263で最終CIを確認する。
+
 Issue #216: 設定初期化に読込状態・世代・更新番号を導入し、古い読込による保存結果の巻き戻りを防いだ。対象23件の回帰成功、最終 CI は PR #259 で追跡する。
 
 Issue #261: 共通CIを止めた source-map-js advisoryを修正版へのlockfile統一で解消した。最終CIはPR #262で確認する。
@@ -614,6 +618,12 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 
 2026-10-06 Issue #213 統合確認: reviewed main 493c57f の wire schema を取り込み、本番 AppShell と保存継続の DOM 33件、format/lint/typecheck/build が成功した。最終 head の CI とマージは PR #254 に記録する。
 
+## Issue #218: 起動時認証復元と手動操作の優先順位
+
+- [x] 起動開始時の認証操作を予約し、遅い snapshot/auth 復元が後発の手動 start/poll を無効化しない。実 AppShell と認証世代の逆順完了を回帰化する。
+
+2026-10-06 Issue #218: 起動effectで予約した世代をsnapshot復元後も使い、後発手動操作から世代を奪わない。Auth snapshotは手動開始後には反映せず、古いstored auth取得後にvalidate commandを追加起動しない。実AppShellのStrictMode、snapshot対start/poll、stored auth/validateの遅い成功・失敗7件を回帰化した。最終検証とCIはPR #263で追跡する。
+
 
 ## Issue #216: 設定初期化の競合防止
 
@@ -632,3 +642,9 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] 設定上の宛先と再生中sessionを区別し、Pause/Resume/Skip/Clear・完了確認を同じadapterへ送る。A再生中のB設定保存と後続itemの選択をfakeで検証する。
 
 2026-10-06 Issue #220: fake adapter A/Bで4種類の制御、送信完了待ちとの競合、制御失敗時の状態維持、後続itemのB選択を検証した。no-default全224件・app構成speech112件・strict Clippy・frontend build・format/diff検査成功。実棒読みちゃんの手動確認は未実施。最終headのCIはPR #265で確認する。
+
+## Issue #219: 認証解除失敗後の再試行
+
+- [x] 解除中の表示と認証正本を調停し、削除失敗後に現行認証と操作性を維持する。keyring失敗後の再試行と後発認証/eventとの競合を回帰化する。
+
+2026-10-06 Issue #219: 解除中はUI操作世代付きの要求として認証状態と分離し、削除失敗後はbackendの現在profileを照合する。後発操作・Auth revision変更後の古い解除/調停応答を拒否する。実AppShellで失敗後再試行、認証保持/消失、後発event、再取得失敗とcontrollerの後発loginを回帰化した。追加レビューで、解除成功eventがcommand応答より先だと古いprofileが残ることを再現し、revision検証済みのAuth disconnectedをprofile/promptと同時反映する。最終検証・CIはPR #264に記録する。
