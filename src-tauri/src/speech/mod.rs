@@ -666,6 +666,23 @@ fn enqueue_message(
 ) -> QueueEnqueueOutcome {
     let mut outcome = QueueEnqueueOutcome::default();
     if !speech_settings.auto_speak {
+        let id = next_queue_id(queue);
+        push_history(
+            queue,
+            SpeechQueueItem {
+                id,
+                source_message_id: Some(message.id),
+                user_display_name: message.user_display_name,
+                text: message.text,
+                status: SpeechQueueItemStatus::Skipped,
+                retry_count: 0,
+                delivery_state: SpeechQueueDeliveryState::Ready,
+                outcome: Some(SpeechQueueOutcome::skipped(
+                    SkippedReason::AutoSpeakDisabled,
+                    outcome::now_ms(),
+                )),
+            },
+        );
         return outcome;
     }
     if let Some(warning_message) = suppress_repeated_message(queue, speech_settings, &message, now)
@@ -734,9 +751,6 @@ pub fn enqueue_chat_message_for_speech(
     let state = app.state::<AppState>();
     let (formatter, speech_settings) = {
         let settings = state.settings.lock().map_err(|error| error.to_string())?;
-        if !settings.speech.auto_speak {
-            return Ok(());
-        }
         (
             SpeechFormatter::new(SpeechFormatterOptions::from(&settings.speech)),
             settings.speech.clone(),

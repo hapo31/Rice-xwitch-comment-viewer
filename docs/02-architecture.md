@@ -57,7 +57,7 @@ Rust backend
 
 | コンポーネント | 責務 |
 | --- | --- |
-| `TwitchAuthService` | Device Code Flow、トークン更新、`/validate`、認証世代による古い応答の拒否 |
+| `TwitchAuthService` | Device Code Flow、トークン更新、`/validate`、credential revision による古い応答の拒否 |
 | `EventSubClient` | WebSocket接続、welcome/keepalive/reconnect/revocation、購読・重複排除・正規化へのdispatch |
 | `TwitchChatService` | チャンネル入力検証とHelixユーザー取得、接続taskの所有・交換、受信停止と連携解除 |
 | `SpeechQueue` | 優先度、停止/再開/スキップ、連投抑制、バックプレッシャ |
@@ -83,7 +83,7 @@ Rust backend
 
 `twitch/model.rs`は公開chat DTOだけを保持し、既存の`crate::twitch::*`で再exportする。camelCase/optional field omissionとcommand/event payloadは変更しない。`error.rs`はHTTP status/OAuth codeの型付き分類と日本語表示を分け、表示文言が認証解除・retry可否を決めない。`normalization.rs`はEventSub wireとchat正規化を担当し、欠損/不正timestampには呼出元が渡した受信時刻を使う。`dedupe.rs`は接続全体で共有するbounded cacheと明示`Instant`によるTTLを保持する。この2つのpure境界はTauri、keyring、network clientに依存しない。
 
-`auth_state.rs`は認証DTO・世代・scopeの規則、`auth_service.rs`は認証操作、`auth_store.rs`はcredential I/Oの直列化とkeyring/旧Linuxファイルの移行、`oauth.rs`はHTTP wireとOAuth transportを担当する。`chat_service.rs`は接続taskのライフサイクル、`eventsub.rs`はsession/handover/backoff、`subscription.rs`は最新credential取得・401時1回refresh・保存後の再購読を担当する。ファイル移動で保存/削除の世代照合やHTTP deadlineを緩めない。
+`auth_state.rs`は認証DTO・generation・credential revision・scopeの規則、`auth_service.rs`はDevice Codeと共通refresh/validate/rotation/persistence/conditional clear、`auth_store.rs`はcredential I/Oの直列化・認証更新の共有lockとkeyring/旧Linuxファイルの移行、`oauth.rs`はHTTP wireとOAuth transportを担当する。`chat_service.rs`は接続taskのライフサイクル、`eventsub.rs`はsession/handover/backoff、`subscription.rs`は最新credential取得と401後の再購読を担当し、refresh自体はauth serviceへ委譲する。generationは認証操作を、credential revisionは同じgeneration内のtoken rotationを識別する。EventSub connection paramsは接続generationに加えて認証generation・client/user identityを保持し、古い接続が別Login sessionのtokenで再購読しない。別Loginでsubscriptionが終了する時は、まだ現行のChat generationに限ってDisconnected snapshotを記録し、より新しいChat generationはAppEventStateのgeneration判定で維持する。成功・失敗・scope不足・保存・解除の各結果を両方で照合し、共有lockでLogin検証とEventSub refreshを直列化する。
 
 `commands.rs`は既存7 commandの引数/戻り値を維持する薄いadapterで、`runtime.rs`だけがTauriのmanaged state、event送信、speech enqueueと本番transportを接続する。認証serviceには`AuthRuntime`/`DeviceOAuthTransport`、チャットserviceには`ChatRuntime`、EventSubには`EventSubRuntime`、購読には`SubscriptionRuntime`を注入する。`TwitchAuthStore::with_backend`で保存先を差し替えられる。Device Codeのwall clockと通知のreceive/monotonic clockもruntimeから渡し、非同期deadlineはTokio test clockで制御する。serviceはTauri/reqwest/keyringをimportしない。
 
