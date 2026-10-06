@@ -130,6 +130,21 @@ pub(super) async fn run_eventsub_connection_with<R: EventSubRuntime>(
         .await
         {
             if let Some(terminal) = error.downcast_ref::<EventSubTerminalError>() {
+                if matches!(terminal, EventSubTerminalError::ObsoleteConnection) {
+                    // An auth session can change while the Chat connection task
+                    // remains current. End that generation visibly without
+                    // affecting a newer Chat generation or asking the new login
+                    // to authenticate again.
+                    app.chat_status(
+                        TwitchStatus::Disconnected,
+                        Some(
+                            "Twitch 認証が切り替わったため、旧 EventSub 接続を終了しました。"
+                                .into(),
+                        ),
+                        params.generation,
+                    );
+                    break;
+                }
                 // The supervisor owns the terminal Chat transition for both API
                 // errors and revocations. Record it before this task exits.
                 let (status, message) = match terminal {
@@ -140,6 +155,9 @@ pub(super) async fn run_eventsub_connection_with<R: EventSubRuntime>(
                     }
                     EventSubTerminalError::Permanent { message } => {
                         (TwitchStatus::Error, Some(message.clone()))
+                    }
+                    EventSubTerminalError::ObsoleteConnection => {
+                        unreachable!("obsolete EventSub connections are handled above")
                     }
                 };
                 app.chat_status(status, message, params.generation);
