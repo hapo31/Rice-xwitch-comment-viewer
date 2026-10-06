@@ -1,6 +1,7 @@
 //! Injected transports drive the production session, handover and supervisor.
 use super::chat_delivery::dispatch_chat_message;
 use super::*;
+use crate::app_events::{AppEventState, TwitchStatusEvent};
 use futures_util::{Sink, Stream};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -80,6 +81,7 @@ struct Runtime {
     statuses: Mutex<Vec<TwitchStatus>>,
     active_connections: Mutex<Vec<TwitchActiveConnection>>,
     logs: Mutex<Vec<String>>,
+    app_events: AppEventState,
     active_generation: Mutex<ActiveGeneration>,
 }
 struct ActiveGeneration(Option<u64>);
@@ -115,8 +117,19 @@ impl EventSubRuntime for Runtime {
     fn status(&self, _: TwitchStatusDomain, status: TwitchStatus, _: Option<String>) {
         self.statuses.lock().unwrap().push(status);
     }
-    fn chat_status(&self, status: TwitchStatus, _: Option<String>, _: u64) {
-        self.statuses.lock().unwrap().push(status);
+    fn chat_status(&self, status: TwitchStatus, message: Option<String>, generation: u64) {
+        self.statuses.lock().unwrap().push(status.clone());
+        self.app_events
+            .record_test_twitch_status(TwitchStatusEvent {
+                revision: 0,
+                domain: TwitchStatusDomain::Chat,
+                status,
+                reason: None,
+                connection_generation: Some(generation),
+                active_connection: None,
+                message,
+                occurred_at_ms: 1,
+            });
     }
     fn connected(&self, params: &EventSubConnectionParams, _: String) {
         self.statuses.lock().unwrap().push(TwitchStatus::Connected);
@@ -145,8 +158,10 @@ impl EventSubRuntime for Runtime {
 fn params() -> EventSubConnectionParams {
     EventSubConnectionParams {
         generation: 7,
+        auth_generation: 0,
         broadcaster_user_id: "broadcaster".into(),
         broadcaster_login: "streamer".into(),
+        client_id: "client".into(),
         user_id: "reader".into(),
     }
 }
@@ -395,6 +410,83 @@ async fn production_supervisor_retries_transient_error_but_stops_on_terminal_err
 }
 
 #[tokio::test(start_paused = true)]
+async fn obsolete_auth_session_disconnects_only_its_current_chat_generation() {
+    for current_generation in [7, 8] {
+        let runtime = Runtime::default();
+        runtime
+            .app_events
+            .record_test_twitch_status(TwitchStatusEvent {
+                revision: 0,
+                domain: TwitchStatusDomain::Chat,
+                status: if current_generation == 7 {
+                    TwitchStatus::Connecting
+                } else {
+                    TwitchStatus::Connected
+                },
+                reason: None,
+                connection_generation: Some(current_generation),
+                active_connection: (current_generation == 8).then(|| TwitchActiveConnection {
+                    generation: current_generation,
+                    broadcaster_user_id: "current-broadcaster".into(),
+                    broadcaster_login: "current-channel".into(),
+                }),
+                message: Some("existing chat snapshot".into()),
+                occurred_at_ms: 1,
+            });
+        runtime
+            .sockets
+            .lock()
+            .unwrap()
+            .push_back(Ok(FakeSocket::new([welcome("old-session")])));
+        runtime
+            .subscription_errors
+            .lock()
+            .unwrap()
+            .push_back(anyhow::Error::new(
+                EventSubTerminalError::ObsoleteConnection,
+            ));
+
+        run_eventsub_connection_with(&runtime, &params()).await;
+
+        let chat_status = runtime
+            .app_events
+            .snapshot()
+            .twitch_statuses
+            .into_iter()
+            .find(|status| status.domain == TwitchStatusDomain::Chat)
+            .expect("production app event state records the current chat snapshot");
+        assert_eq!(chat_status.connection_generation, Some(current_generation));
+        assert!(matches!(
+            (current_generation, chat_status.status),
+            (7, TwitchStatus::Disconnected) | (8, TwitchStatus::Connected)
+        ));
+        assert_eq!(
+            chat_status.message.as_deref(),
+            if current_generation == 7 {
+                Some("Twitch 認証が切り替わったため、旧 EventSub 接続を終了しました。")
+            } else {
+                Some("existing chat snapshot")
+            }
+        );
+        assert_eq!(
+            chat_status
+                .active_connection
+                .as_ref()
+                .map(|connection| connection.generation),
+            (current_generation == 8).then_some(8)
+        );
+        assert_eq!(runtime.urls.lock().unwrap().len(), 1);
+        assert_eq!(runtime.subscriptions.lock().unwrap().len(), 1);
+        assert!(!runtime
+            .statuses
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|status| matches!(status, TwitchStatus::AuthRequired)));
+    }
+}
+
+#[tokio::test(start_paused = true)]
 async fn production_session_reuses_dedupe_after_normal_reconnect() {
     let runtime = Runtime::default();
     runtime.sockets.lock().unwrap().extend([
@@ -532,6 +624,7 @@ impl OAuthTransport for Http {
 fn auth() -> TwitchAuthState {
     TwitchAuthState {
         generation: 1,
+        credential_revision: 0,
         pending: None,
         token: Some(TwitchToken {
             access_token: "old-access".into(),
@@ -576,7 +669,7 @@ async fn production_refresh_validates_and_saves_rotation_before_retrying_subscri
         || async {
             let (token, profile) = refresh_and_validate(&http, &credentials).await?;
             let (access, changed, warning) =
-                persist_eventsub_rotation(auth.clone(), &store, &credentials, token, profile)
+                persist_credential_rotation(auth.clone(), &store, &credentials, token, profile)
                     .await?;
             assert!(changed);
             assert!(warning.is_none());
@@ -609,7 +702,7 @@ async fn production_validate_result_and_rotation_after_logout_cannot_restore_aut
         apply_validated_profile(&mut auth.lock().unwrap(), generation, profile.clone()).is_err()
     );
     assert!(
-        persist_eventsub_rotation(auth.clone(), &store, &credentials, token, profile)
+        persist_credential_rotation(auth.clone(), &store, &credentials, token, profile)
             .await
             .is_err()
     );

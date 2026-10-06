@@ -1,154 +1,72 @@
 import { useEffect, useRef, useState } from "react";
-import { speechHealthLabels, speechQueuePhaseLabels } from "../presentation/speech";
-import { getTwitchAuthLabel, getTwitchConnectionLabel } from "../presentation/twitch";
-import type { AppState } from "../stores/appState";
-import type {
-  AuthStatus,
-  SpeechAdapterHealth,
-  SpeechQueuePhase,
-  TwitchChatConnectionStatus,
-} from "../types";
+import {
+  type LiveAnnouncement,
+  LiveAnnouncementQueue,
+  type LiveStatusSnapshot,
+} from "../models/liveAnnouncements";
 
-type AnnouncementPriority = "status" | "alert";
+export const LIVE_ANNOUNCEMENT_GAP_MS = 100;
+export const LIVE_ANNOUNCEMENT_HOLD_MS = 2500;
 
-export interface LiveStatusSnapshot {
-  twitchAuthStatus: AuthStatus;
-  twitchConnectionStatus: TwitchChatConnectionStatus;
-  speechAdapterHealth: SpeechAdapterHealth;
-  speechQueuePhase: SpeechQueuePhase;
-  latestWarning?: string;
-}
-
-export interface LiveStatusAnnouncement {
-  message: string;
-  priority: AnnouncementPriority;
-}
-
-export function toLiveStatusSnapshot(
-  state: Pick<
-    AppState,
-    | "twitchAuthStatus"
-    | "twitchConnectionStatus"
-    | "speechAdapterHealth"
-    | "speechQueuePhase"
-    | "notifications"
-  >,
-): LiveStatusSnapshot {
-  return {
-    twitchAuthStatus: state.twitchAuthStatus,
-    twitchConnectionStatus: state.twitchConnectionStatus,
-    speechAdapterHealth: state.speechAdapterHealth,
-    speechQueuePhase: state.speechQueuePhase,
-    latestWarning: state.notifications.find((notification) => notification.severity === "warning")
-      ?.message,
-  };
-}
-
-export function getLiveStatusAnnouncement(
-  previous: LiveStatusSnapshot,
-  current: LiveStatusSnapshot,
-): LiveStatusAnnouncement | undefined {
-  if (
-    previous.twitchAuthStatus !== current.twitchAuthStatus &&
-    isAuthError(current.twitchAuthStatus)
-  ) {
-    return {
-      message: `Twitch 認証: ${getTwitchAuthLabel(current.twitchAuthStatus, "announcement")}`,
-      priority: "alert",
-    };
-  }
-
-  if (
-    previous.twitchConnectionStatus !== current.twitchConnectionStatus &&
-    isConnectionError(current.twitchConnectionStatus)
-  ) {
-    if (current.twitchConnectionStatus === "authRequired") {
-      // The auth status transition emits the recovery instruction. Avoid
-      // announcing the same revocation once as a connection failure first.
-      return undefined;
-    }
-    return {
-      message: `Twitch 接続: ${getTwitchConnectionLabel(current.twitchConnectionStatus)}`,
-      priority: "alert",
-    };
-  }
-
-  if (
-    previous.speechAdapterHealth !== current.speechAdapterHealth &&
-    isSpeechError(current.speechAdapterHealth)
-  ) {
-    return {
-      message: `棒読みちゃん: ${speechHealthLabels[current.speechAdapterHealth]}`,
-      priority: "alert",
-    };
-  }
-
-  if (previous.latestWarning !== current.latestWarning && current.latestWarning) {
-    return { message: `警告: ${current.latestWarning}`, priority: "status" };
-  }
-
-  if (previous.twitchAuthStatus !== current.twitchAuthStatus) {
-    return {
-      message: `Twitch 認証: ${getTwitchAuthLabel(current.twitchAuthStatus, "announcement")}`,
-      priority: "status",
-    };
-  }
-
-  if (previous.twitchConnectionStatus !== current.twitchConnectionStatus) {
-    if (current.twitchConnectionStatus === "authRequired") {
-      return undefined;
-    }
-    return {
-      message: `Twitch 接続: ${getTwitchConnectionLabel(current.twitchConnectionStatus)}`,
-      priority: "status",
-    };
-  }
-
-  if (previous.speechAdapterHealth !== current.speechAdapterHealth) {
-    return {
-      message: `棒読みちゃん: ${speechHealthLabels[current.speechAdapterHealth]}`,
-      priority: "status",
-    };
-  }
-
-  if (previous.speechQueuePhase !== current.speechQueuePhase) {
-    return {
-      message: `読み上げキュー: ${speechQueuePhaseLabels[current.speechQueuePhase]}`,
-      priority: current.speechQueuePhase === "error" ? "alert" : "status",
-    };
-  }
-}
-
-export function LiveStatusAnnouncer({
-  state,
-}: {
-  state: Pick<
-    AppState,
-    | "twitchAuthStatus"
-    | "twitchConnectionStatus"
-    | "speechAdapterHealth"
-    | "speechQueuePhase"
-    | "notifications"
-  >;
-}) {
-  const snapshot = toLiveStatusSnapshot(state);
-  const previousSnapshot = useRef(snapshot);
-  const [announcement, setAnnouncement] = useState<LiveStatusAnnouncement>();
+export function LiveStatusAnnouncer({ state }: { state: LiveStatusSnapshot }) {
+  const delivery = useRef<LiveAnnouncementQueue>(undefined);
+  if (!delivery.current) delivery.current = new LiveAnnouncementQueue(state);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const active = useRef<LiveAnnouncement>(undefined);
+  const [announcement, setAnnouncement] = useState<LiveAnnouncement>();
 
   useEffect(() => {
-    const nextAnnouncement = getLiveStatusAnnouncement(previousSnapshot.current, snapshot);
-    previousSnapshot.current = snapshot;
-    if (nextAnnouncement) {
-      setAnnouncement(nextAnnouncement);
+    const queue = delivery.current;
+    if (!queue) return;
+    queue.update(state);
+    const clear = () => {
+      active.current = undefined;
+      setAnnouncement(undefined);
+    };
+    const schedule = () => {
+      if (timer.current !== undefined || !queue.size) return;
+      clear();
+      // Stable, initially empty regions get a distinct empty commit between messages,
+      // including different occurrences with exactly the same wording.
+      timer.current = setTimeout(() => {
+        const next = queue.take();
+        active.current = next;
+        setAnnouncement(next);
+        timer.current = setTimeout(
+          () => {
+            timer.current = undefined;
+            clear();
+            schedule();
+          },
+          Math.max(LIVE_ANNOUNCEMENT_HOLD_MS, (next?.message.length ?? 0) * 80),
+        );
+      }, LIVE_ANNOUNCEMENT_GAP_MS);
+    };
+    if (
+      (active.current?.notificationId &&
+        !state.notifications.some((item) => item.id === active.current?.notificationId)) ||
+      (active.current?.priority === "status" && queue.hasAlert)
+    ) {
+      clearTimeout(timer.current);
+      timer.current = undefined;
+      clear();
     }
+    schedule();
   }, [
-    snapshot.twitchAuthStatus,
-    snapshot.twitchConnectionStatus,
-    snapshot.speechAdapterHealth,
-    snapshot.speechQueuePhase,
-    snapshot.latestWarning,
+    state.twitchAuthStatus,
+    state.twitchConnectionStatus,
+    state.speechAdapterHealth,
+    state.speechQueuePhase,
+    state.notifications,
   ]);
 
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      timer.current = undefined;
+    },
+    [],
+  );
   return (
     <>
       <p className="sr-only" role="status" aria-atomic="true">
@@ -159,16 +77,4 @@ export function LiveStatusAnnouncer({
       </p>
     </>
   );
-}
-
-function isAuthError(status: AuthStatus): boolean {
-  return status === "expired" || status === "error";
-}
-
-function isConnectionError(status: TwitchChatConnectionStatus): boolean {
-  return status === "authRequired" || status === "error";
-}
-
-function isSpeechError(status: SpeechAdapterHealth): boolean {
-  return status === "disconnected" || status === "error";
 }

@@ -173,7 +173,7 @@ pub(super) async fn connect_validated_channel(
     channel_login: String,
     state: &impl ChatRuntime,
 ) -> Result<(), String> {
-    let (access_token, client_id, user_id, own_login, scopes) = {
+    let (access_token, client_id, user_id, own_login, scopes, auth_generation) = {
         let auth = state.auth().lock().map_err(|error| error.to_string())?;
         let token = auth
             .token
@@ -188,6 +188,7 @@ pub(super) async fn connect_validated_channel(
             profile.user_id.clone(),
             profile.login.clone(),
             profile.scopes.clone(),
+            auth.generation,
         )
     };
     if let Err(error) = ensure_required_twitch_scopes(&scopes) {
@@ -229,8 +230,10 @@ pub(super) async fn connect_validated_channel(
         }
         let params = EventSubConnectionParams {
             generation,
+            auth_generation,
             broadcaster_user_id: broadcaster.id,
             broadcaster_login: broadcaster.login,
+            client_id,
             user_id,
         };
         EventSubClient::new(&app_for_task).run(&params).await;

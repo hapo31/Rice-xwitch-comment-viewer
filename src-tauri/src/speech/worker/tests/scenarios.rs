@@ -1,4 +1,5 @@
 use super::*;
+use crate::speech::outcome::{SkippedReason, SpeechQueueOutcome};
 use crate::speech::{
     enqueue_message, QueueEnqueueOutcome, SpeechFormatter, SpeechFormatterOptions,
     DEFAULT_HISTORY_LIMIT, DEFAULT_QUEUE_LIMIT,
@@ -879,7 +880,15 @@ fn formatter_blocks_and_disabled_auto_speech_keep_snapshots_consistent() {
             0
         );
         if kind == "auto-off" {
-            assert!(queue.history.is_empty());
+            assert_eq!(queue.history.len(), 1);
+            assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Skipped);
+            assert!(matches!(
+                queue.history[0].outcome,
+                Some(SpeechQueueOutcome::Skipped {
+                    reason_code: SkippedReason::AutoSpeakDisabled,
+                    ..
+                })
+            ));
             assert!(outcome.warning.is_none());
         } else {
             assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Blocked);
