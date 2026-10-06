@@ -7,8 +7,6 @@ import type {
   AppEventsSnapshot,
   AppLogEvent,
   AppNotification,
-  AppSettings,
-  AppSettingsPatch,
   AuthStatus,
   ChatMessage,
   SpeechQueueUpdatedEvent,
@@ -301,37 +299,4 @@ export function subscribeDomainEvents({
 
 export function restoreStartupAuth(dependencies: StartupAuthDependencies) {
   return restoreAndValidateStartupAuth(dependencies);
-}
-
-export interface SettingsMutationDependencies {
-  updateSettings: (patch: AppSettingsPatch) => Promise<AppSettings>;
-  onSettingsLoaded: (settings: AppSettings) => void;
-  onError: (error: unknown) => void;
-}
-
-/** Serialize settings writes and publish only the value accepted by backend. */
-export function createSettingsMutationOrchestrator(dependencies: SettingsMutationDependencies) {
-  let tail = Promise.resolve();
-  return {
-    mutate(patch: Parameters<SettingsMutationDependencies["updateSettings"]>[0]): Promise<boolean> {
-      const operation = tail.then(async () => {
-        try {
-          const settings = await dependencies.updateSettings(patch);
-          dependencies.onSettingsLoaded(settings);
-          return true;
-        } catch (error) {
-          dependencies.onError(error);
-          return false;
-        }
-      });
-      tail = operation.then(
-        () => undefined,
-        () => undefined,
-      );
-      return operation;
-    },
-    waitForIdle(): Promise<void> {
-      return tail;
-    },
-  };
 }

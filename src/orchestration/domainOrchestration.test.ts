@@ -4,13 +4,27 @@ import { createDomainStores } from "../stores/domainStores";
 import { utcTimestamp } from "../time";
 import type { AppSettings } from "../types";
 import {
-  createSettingsMutationOrchestrator,
   type DomainEventBridge,
   dispatchDomainAction,
   restoreStartupAuth,
-  type SettingsMutationDependencies,
   subscribeDomainEvents,
 } from "./domainOrchestration";
+
+import { createSettingsController, type SettingsMutationDependencies } from "./settingsController";
+
+const initializationDependencies = {
+  initialGeneration: 0,
+  getSettingsRevision: () => 0,
+  loadSettings: async () => ({
+    twitch: defaultTwitchSettings(),
+    speech: defaultSpeechSettings(),
+    launcher: { items: [] },
+  }),
+  takeRecoveryNotice: async () => undefined,
+  onInitializationChanged: () => undefined,
+  onRecoveryNotice: () => undefined,
+  loadErrorMessage: () => "設定を読み込めませんでした。",
+};
 
 describe("domain orchestration", () => {
   it("routes a Twitch chat event to chat only and cleans up deferred listeners", async () => {
@@ -271,7 +285,8 @@ describe("domain orchestration", () => {
       () => new Promise((resolve) => resolvers.push(resolve)),
     );
     const loaded: AppSettings[] = [];
-    const orchestrator = createSettingsMutationOrchestrator({
+    const orchestrator = createSettingsController({
+      ...initializationDependencies,
       updateSettings,
       onSettingsLoaded: (settings) => loaded.push(settings),
       onError: vi.fn(),
@@ -315,7 +330,8 @@ describe("domain orchestration", () => {
       .mockReturnValueOnce(secondSave);
     const errors: unknown[] = [];
     const loaded: AppSettings[] = [];
-    const orchestrator = createSettingsMutationOrchestrator({
+    const orchestrator = createSettingsController({
+      ...initializationDependencies,
       updateSettings,
       onSettingsLoaded: (settings) => loaded.push(settings),
       onError: (error) => errors.push(error),
