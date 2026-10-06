@@ -45,7 +45,6 @@ pub enum SpeechQueuePhase {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SpeechLogLevel {
-    Info,
     Warning,
     Error,
 }

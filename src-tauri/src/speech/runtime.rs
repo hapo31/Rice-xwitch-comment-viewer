@@ -2,7 +2,7 @@ use super::{
     SpeechAdapter, SpeechControl, SpeechFailure, SpeechFuture, SpeechHealth,
     SpeechPlaybackCompletion, SpeechRequest, SpeechResult,
 };
-use crate::settings::{AppState, SpeechSettings};
+use crate::settings::SpeechSettings;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 

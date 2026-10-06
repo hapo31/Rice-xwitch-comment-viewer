@@ -1,8 +1,8 @@
+#[cfg(any(feature = "app", test))]
+use crate::speech::SpeechQueueSnapshot;
 pub use crate::speech::{
     SpeechAdapterHealth, SpeechQueueItemStatus, SpeechQueuePhase, SpeechStatus,
 };
-#[cfg(any(feature = "app", test))]
-use crate::speech::SpeechQueueSnapshot;
 #[cfg(feature = "app")]
 use crate::twitch::ChatMessage;
 use serde::Serialize;
@@ -523,10 +523,7 @@ pub(crate) fn speech_queue_updated_event(snapshot: SpeechQueueSnapshot) -> Speec
 }
 
 #[cfg(feature = "app")]
-pub fn emit_speech_queue_updated<R: Runtime>(
-    app: &AppHandle<R>,
-    payload: SpeechQueueUpdatedEvent,
-) {
+pub fn emit_speech_queue_updated<R: Runtime>(app: &AppHandle<R>, payload: SpeechQueueUpdatedEvent) {
     let payload = if let Some(state) = app_event_state(app) {
         state.record_speech_queue(payload)
     } else {
@@ -554,7 +551,9 @@ mod tests {
 
     #[test]
     fn speech_queue_domain_snapshot_maps_to_the_existing_event_contract() {
-        use crate::speech::outcome::{BlockedReason, OutcomeDetails, RecoveryAction, SpeechQueueOutcome};
+        use crate::speech::outcome::{
+            BlockedReason, OutcomeDetails, RecoveryAction, SpeechQueueOutcome,
+        };
         use crate::speech::SpeechQueueItemSnapshot;
 
         let payload = speech_queue_updated_event(SpeechQueueSnapshot {
@@ -588,7 +587,10 @@ mod tests {
         assert_eq!(serialized["items"][0]["id"], "queue-1");
         assert_eq!(serialized["items"][0]["sourceMessageId"], "chat-1");
         assert_eq!(serialized["items"][0]["status"], "blocked");
-        assert_eq!(serialized["items"][0]["outcome"]["reasonCode"], "blockedWord");
+        assert_eq!(
+            serialized["items"][0]["outcome"]["reasonCode"],
+            "blockedWord"
+        );
     }
 
     #[test]

@@ -2,6 +2,7 @@ pub mod bouyomi;
 pub mod endpoint;
 mod types;
 pub use types::{SpeechAdapterHealth, SpeechQueueItemStatus, SpeechQueuePhase, SpeechStatus};
+#[cfg(any(feature = "app", test))]
 pub(crate) use types::{SpeechLogLevel, SpeechQueueItemSnapshot, SpeechQueueSnapshot};
 #[cfg(feature = "app")]
 pub mod commands;
@@ -1062,7 +1063,6 @@ impl worker::SpeechQueueEvents for TauriSpeechQueueEvents {
     }
     fn log(&self, level: SpeechLogLevel, message: String) {
         let level = match level {
-            SpeechLogLevel::Info => AppLogLevel::Info,
             SpeechLogLevel::Warning => AppLogLevel::Warning,
             SpeechLogLevel::Error => AppLogLevel::Error,
         };
@@ -1108,6 +1108,7 @@ fn emit_queue_snapshot(
 }
 
 impl SpeechQueueState {
+    #[cfg(any(feature = "app", test))]
     pub(crate) fn snapshot(&self, warning: Option<String>) -> SpeechQueueSnapshot {
         let items = self
             .in_flight
@@ -1764,28 +1765,16 @@ mod tests {
         queue
             .history
             .push_back(history_item("failed", SpeechQueueItemStatus::Error));
-        assert_eq!(
-            queue.snapshot(None).phase,
-            SpeechQueuePhase::Error
-        );
+        assert_eq!(queue.snapshot(None).phase, SpeechQueuePhase::Error);
         queue.pending.push_back(queued_item("later"));
-        assert_eq!(
-            queue.snapshot(None).phase,
-            SpeechQueuePhase::Idle
-        );
+        assert_eq!(queue.snapshot(None).phase, SpeechQueuePhase::Idle);
         assert_eq!(
             queue.reserve_next_request_after_dispatch_lock().unwrap().id,
             "later"
         );
-        assert_eq!(
-            queue.snapshot(None).phase,
-            SpeechQueuePhase::Speaking
-        );
+        assert_eq!(queue.snapshot(None).phase, SpeechQueuePhase::Speaking);
         queue.paused = true;
-        assert_eq!(
-            queue.snapshot(None).phase,
-            SpeechQueuePhase::Paused
-        );
+        assert_eq!(queue.snapshot(None).phase, SpeechQueuePhase::Paused);
     }
 
     #[test]

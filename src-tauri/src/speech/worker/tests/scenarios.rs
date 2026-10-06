@@ -229,10 +229,7 @@ async fn reconnect_does_not_resend_history_until_explicit_manual_retry() {
     drop(session);
     {
         let mut queue = h.worker.queue.lock().unwrap();
-        assert_eq!(
-            queue.snapshot(None).phase,
-            SpeechQueuePhase::Error
-        );
+        assert_eq!(queue.snapshot(None).phase, SpeechQueuePhase::Error);
         assert!(!queue.claim_worker());
         assert!(queue.retry_exhausted_item("failed"));
         assert_eq!(queue.pending[0].retry_count, 0);
@@ -451,10 +448,7 @@ async fn pause_before_reservation_prevents_talk_until_explicit_resume() {
         let queue = h.worker.queue.lock().unwrap();
         assert_eq!(queue.pending[0].id, "first");
         assert!(!queue.is_processing);
-        assert_eq!(
-            queue.snapshot(None).phase,
-            SpeechQueuePhase::Paused
-        );
+        assert_eq!(queue.snapshot(None).phase, SpeechQueuePhase::Paused);
     }
     h.worker.queue.lock().unwrap().begin_control();
     let session = selected.lock().await;
@@ -508,10 +502,7 @@ async fn pause_during_send_is_ordered_before_completion_and_later_requests() {
         let queue = h.worker.queue.lock().unwrap();
         assert_eq!(queue.pending[0].id, "second");
         assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Spoken);
-        assert_eq!(
-            queue.snapshot(None).phase,
-            SpeechQueuePhase::Paused
-        );
+        assert_eq!(queue.snapshot(None).phase, SpeechQueuePhase::Paused);
         assert_eq!(queue.controls_in_progress, 0);
     }
     h.worker.queue.lock().unwrap().begin_control();
@@ -875,10 +866,7 @@ fn formatter_blocks_and_disabled_auto_speech_keep_snapshots_consistent() {
         let outcome = enqueue(&h, &settings, message);
         assert!(!outcome.should_spawn && !outcome.should_schedule_cleanup);
         let queue = h.worker.queue.lock().unwrap();
-        assert_eq!(
-            queue.snapshot(outcome.warning.clone()).queued_count,
-            0
-        );
+        assert_eq!(queue.snapshot(outcome.warning.clone()).queued_count, 0);
         if kind == "auto-off" {
             assert_eq!(queue.history.len(), 1);
             assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Skipped);

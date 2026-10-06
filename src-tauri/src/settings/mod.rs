@@ -15,11 +15,14 @@ mod writer;
 
 #[cfg(feature = "app")]
 pub(crate) use model::default_twitch_client_id;
-pub use model::{AppSettings, SettingsPatch, SpeechAdapterKind, SpeechSettings, UrlHandling, WindowPosition};
+pub use model::{
+    AppSettings, SettingsPatch, SpeechAdapterKind, SpeechSettings, UrlHandling, WindowPosition,
+};
 #[cfg(all(test, unix))]
 use persistence::validate_owner;
 #[cfg(test)]
 use persistence::{backup_path, protect_existing_file, write_temp_file, SaveFault};
+#[cfg(any(feature = "app", test))]
 pub use persistence::{SettingsRecoveryNotice, SettingsStore};
 
 fn validate_repeat_suppression_seconds(seconds: u16) -> Result<(), String> {

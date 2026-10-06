@@ -25,6 +25,7 @@ mod runtime;
 #[cfg(feature = "app")]
 mod subscription;
 
+#[cfg(feature = "app")]
 pub use auth_state::TwitchAuthState;
 #[cfg(all(test, feature = "app"))]
 pub(crate) use auth_store::{AuthCredentialStore, AuthLoadResult};
