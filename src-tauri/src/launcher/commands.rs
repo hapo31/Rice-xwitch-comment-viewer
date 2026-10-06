@@ -10,6 +10,7 @@ fn repository<'a>(
 ) -> AppSettingsRepository<'a, impl Fn(&AppSettings) -> Result<(), String> + Send + Sync + 'a> {
     AppSettingsRepository {
         settings: &state.settings,
+        transaction: &state.settings_transaction,
         persist: move |candidate: &AppSettings| {
             SettingsStore::save(app, candidate)
                 .map_err(|error| format!("ランチャーの設定を保存できませんでした: {error}"))

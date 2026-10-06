@@ -1095,3 +1095,59 @@ fn manual_retry_explicitly_restores_the_automatic_retry_budget() {
         SpeechQueueFailureTransition::RetryScheduled
     );
 }
+
+#[test]
+fn enqueue_proceeds_while_a_full_icon_settings_transaction_is_persisting() {
+    use std::sync::{mpsc, Arc, Mutex};
+    let settings = Arc::new(Mutex::new(
+        crate::launcher::bounds_tests::full_quota_settings(),
+    ));
+    let transaction = Arc::new(Mutex::new(()));
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (resume_tx, resume_rx) = mpsc::channel();
+    let worker_settings = settings.clone();
+    let worker_transaction = transaction.clone();
+    let worker = std::thread::spawn(move || {
+        crate::settings::update_shared_settings_transaction(
+            &worker_settings,
+            &worker_transaction,
+            |candidate| {
+                candidate.speech.auto_speak = false;
+                Ok::<(), String>(())
+            },
+            |candidate| {
+                assert_eq!(candidate.launcher.items.len(), 200);
+                let _wire = serde_json::to_vec(candidate).unwrap();
+                entered_tx.send(()).unwrap();
+                resume_rx.recv().unwrap();
+                Ok::<(), String>(())
+            },
+        )
+        .unwrap()
+    });
+    entered_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("save reached its barrier");
+    // The production enqueue path reads only the published speech settings before
+    // formatting and enqueueing. Exercise the actual queue while save cannot finish.
+    let snapshot = settings
+        .try_lock()
+        .expect("enqueue settings read is not blocked")
+        .speech
+        .clone();
+    assert!(snapshot.auto_speak);
+    let formatter = SpeechFormatter::new(SpeechFormatterOptions::from(&snapshot));
+    let mut queue = SpeechQueueState::default();
+    enqueue_message(
+        &mut queue,
+        &snapshot,
+        &formatter,
+        chat("保存中のコメント"),
+        Instant::now(),
+    );
+    assert_eq!(queue.pending.len(), 1);
+    assert!(queue.pending[0].text.contains("保存中のコメント"));
+    resume_tx.send(()).unwrap();
+    worker.join().unwrap();
+    assert!(!settings.lock().unwrap().speech.auto_speak);
+}

@@ -305,8 +305,9 @@ fn launcher_item(raw: &RawValue, changed: &mut bool, unknown: &mut bool) -> Opti
         }
     }
     let original = string(item.get("iconDataUrl"), 64 * 1024 + 22, changed);
-    candidate.icon_data_url = normalize_launcher_icon_data_url(original.clone());
-    *changed |= candidate.icon_data_url != original;
+    let normalized = normalize_launcher_icon_data_url(original.clone());
+    *changed |= normalized.as_deref() != original.as_deref();
+    candidate.icon_data_url = normalized;
     // Match normal metadata normalization, without filesystem/COM access.
     for text in [&mut candidate.target, &mut candidate.display_name] {
         if text.trim().len() != text.len() {
