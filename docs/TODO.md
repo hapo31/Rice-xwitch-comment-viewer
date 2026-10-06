@@ -624,3 +624,7 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] source-map-js の影響版を修正版へ統一し、既存監査・frozen install・frontend gates を通す。監査例外は追加しない。
 
 2026-10-06 Issue #261: @tailwindcss/node 4.3.3 の許容範囲 ^1.2.1 内で source-map-js を1.2.2へ統一し、未使用の1.2.1 entryを除去した。他の依存とpackage.jsonは変更しない。frozen offline install、frontend全429件、production build成功。pnpm auditはhigh/critical 0件で対象GHSAが消え、既存moderate 5件のみ。全CIの結果は PR #262 に記録する。
+
+## Issue #220: 再生中 session と制御先の一致
+
+- [ ] 設定上の宛先と再生中sessionを区別し、Pause/Resume/Skip/Clear・完了確認を同じadapterへ送る。A再生中のB設定保存と後続itemの選択をfakeで検証する。
