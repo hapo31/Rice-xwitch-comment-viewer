@@ -7,15 +7,12 @@ use crate::resource_limits::{
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(feature = "app")]
 use tauri::Manager;
 
 use super::schema;
 #[cfg(feature = "app")]
 use super::writer;
-
-static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(feature = "app")]
 fn settings_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyhow::Result<PathBuf> {
@@ -154,20 +151,17 @@ impl SettingsStore {
         } else {
             None
         };
-        let temporary_path = write_temp_file(path, text.as_bytes(), fault)?;
-        let result = (|| {
-            if let Some(previous) = previous {
-                atomic_write(&backup_path(path), previous.as_bytes(), SaveFault::None)?;
-            }
-            replace_file(&temporary_path, path, fault)?;
-            sync_parent_directory(path)?;
-            Ok(())
-        })();
-
-        if result.is_err() {
-            let _ = fs::remove_file(&temporary_path);
+        let mut temporary = write_temp_file(path, text.as_bytes(), fault)?;
+        if let Some(previous) = previous {
+            let backup_fault = if fault == SaveFault::BackupWrite {
+                SaveFault::TempWrite
+            } else {
+                SaveFault::None
+            };
+            atomic_write(&backup_path(path), previous.as_bytes(), backup_fault)?;
         }
-        result
+        replace_file(&mut temporary, path, fault)?;
+        sync_parent_directory(path)
     }
 
     fn recover_from_invalid_primary(
@@ -237,6 +231,7 @@ impl SettingsStore {
 pub(super) enum SaveFault {
     None,
     TempWrite,
+    BackupWrite,
     Replace,
 }
 
@@ -277,20 +272,16 @@ fn quarantine_file(path: &Path) -> anyhow::Result<PathBuf> {
 fn atomic_write(path: &Path, contents: &[u8], fault: SaveFault) -> anyhow::Result<()> {
     check_bytes(contents.len(), MAX_SETTINGS_JSON_BYTES, "設定JSON")?;
     protect_storage(path)?;
-    let temporary_path = write_temp_file(path, contents, fault)?;
-    let result =
-        replace_file(&temporary_path, path, fault).and_then(|_| sync_parent_directory(path));
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary_path);
-    }
-    result
+    let mut temporary = write_temp_file(path, contents, fault)?;
+    replace_file(&mut temporary, path, fault)?;
+    sync_parent_directory(path)
 }
 
 pub(super) fn write_temp_file(
     path: &Path,
     contents: &[u8],
     fault: SaveFault,
-) -> anyhow::Result<PathBuf> {
+) -> anyhow::Result<tempfile::TempPath> {
     let parent = path
         .parent()
         .ok_or_else(|| anyhow::anyhow!("設定ファイルの親フォルダを取得できません。"))?;
@@ -299,43 +290,37 @@ pub(super) fn write_temp_file(
         .and_then(|name| name.to_str())
         .unwrap_or("settings.json");
 
-    for _ in 0..1000 {
-        let counter = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let temporary_path = parent.join(format!(".{file_name}.{counter}.tmp"));
-        let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = match options.open(&temporary_path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error.into()),
-        };
-
-        let result = if fault == SaveFault::TempWrite {
-            Err(io::Error::new(
-                io::ErrorKind::StorageFull,
-                "fault injected: disk full",
-            ))
-        } else {
-            file.write_all(contents).and_then(|_| file.sync_all())
-        };
-        if let Err(error) = result {
-            let _ = fs::remove_file(&temporary_path);
-            return Err(error.into());
-        }
-        return Ok(temporary_path);
+    // Delegate collision-resistant naming and cleanup to tempfile, but create the
+    // file with this module's exact permissions and without Windows temporary-file
+    // attributes that can interfere with write-through replacement.
+    let mut temporary = tempfile::Builder::new()
+        .prefix(&format!(".{file_name}."))
+        .suffix(".tmp")
+        .make_in(parent, |temporary_path| {
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            options.open(temporary_path)
+        })?;
+    protect_existing_file(temporary.path())?;
+    if fault == SaveFault::TempWrite {
+        return Err(io::Error::new(io::ErrorKind::StorageFull, "fault injected: disk full").into());
     }
-
-    Err(anyhow::anyhow!(
-        "設定保存用の一時ファイルを作成できません。"
-    ))
+    temporary.write_all(contents)?;
+    temporary.as_file().sync_all()?;
+    // Close the handle before Windows replacement while retaining cleanup ownership.
+    Ok(temporary.into_temp_path())
 }
 
-fn replace_file(source: &Path, destination: &Path, fault: SaveFault) -> anyhow::Result<()> {
+fn replace_file(
+    source: &mut tempfile::TempPath,
+    destination: &Path,
+    fault: SaveFault,
+) -> anyhow::Result<()> {
     protect_existing_file(source)?;
     protect_existing_file(destination)?;
     if fault == SaveFault::Replace {
@@ -343,6 +328,7 @@ fn replace_file(source: &Path, destination: &Path, fault: SaveFault) -> anyhow::
     }
 
     atomic_replace(source, destination)?;
+    source.disable_cleanup(true);
     protect_existing_file(destination)?;
     Ok(())
 }

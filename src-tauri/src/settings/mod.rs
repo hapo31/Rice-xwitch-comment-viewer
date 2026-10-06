@@ -357,6 +357,7 @@ fn validate_range(value: i16, min: i16, max: i16, label: &str) -> Result<i16, St
 
 #[cfg(test)]
 mod tests {
+    use super::persistence::{protect_storage, write_temp_file};
     use super::{
         apply_patch, backup_path, update_settings_transaction, AppSettings, SaveFault,
         SettingsPatch, SettingsStore, WindowPosition,
@@ -805,7 +806,9 @@ mod tests {
         assert_eq!(mode(&path), 0o600);
         let temporary = super::write_temp_file(&path, b"private", SaveFault::None).unwrap();
         assert_eq!(mode(&temporary), 0o600);
-        fs::remove_file(temporary).unwrap();
+        let temporary_path = temporary.to_path_buf();
+        drop(temporary);
+        assert!(!temporary_path.exists());
         fs::set_permissions(&path, fs::Permissions::from_mode(0o666)).unwrap();
         fs::set_permissions(path.parent().unwrap(), fs::Permissions::from_mode(0o777)).unwrap();
         SettingsStore::load_from_path(&path).unwrap();
@@ -1016,6 +1019,100 @@ mod tests {
                 .expect("backup must be complete JSON");
         assert_eq!(primary.twitch.channel_login, "next");
         assert_eq!(backup.twitch.channel_login, "previous");
+        cleanup(&path);
+    }
+
+    #[test]
+    fn temporary_guards_clean_up_save_failures_and_leave_memory_unchanged() {
+        for (label, fault) in [
+            ("temp", SaveFault::TempWrite),
+            ("backup", SaveFault::BackupWrite),
+            ("replace", SaveFault::Replace),
+        ] {
+            let path = settings_path_for_test(&format!("temp-guard-{label}"));
+            SettingsStore::save_to_path(&path, &settings_with_channel("older")).unwrap();
+            let mut memory = settings_with_channel("current");
+            SettingsStore::save_to_path(&path, &memory).unwrap();
+            let primary_before = fs::read(&path).unwrap();
+            let backup_before = fs::read(backup_path(&path)).unwrap();
+            let result = update_settings_transaction(
+                &mut memory,
+                |candidate| {
+                    candidate.twitch.channel_login = "unsaved".into();
+                    Ok(())
+                },
+                |candidate| {
+                    SettingsStore::save_to_path_with_fault(&path, candidate, fault)
+                        .map_err(|error| error.to_string())
+                },
+            );
+            assert!(result.is_err());
+            assert_eq!(memory.twitch.channel_login, "current");
+            assert_eq!(fs::read(&path).unwrap(), primary_before);
+            assert_eq!(
+                fs::read(backup_path(&path)).unwrap(),
+                if fault == SaveFault::Replace {
+                    primary_before.clone()
+                } else {
+                    backup_before
+                }
+            );
+            assert_no_temporary_files(&path);
+            update_settings_transaction(
+                &mut memory,
+                |candidate| {
+                    candidate.twitch.channel_login = "saved".into();
+                    Ok(())
+                },
+                |candidate| {
+                    SettingsStore::save_to_path(&path, candidate).map_err(|error| error.to_string())
+                },
+            )
+            .unwrap();
+            assert_eq!(memory.twitch.channel_login, "saved");
+            assert_eq!(
+                SettingsStore::load_from_path(&path)
+                    .unwrap()
+                    .settings
+                    .twitch
+                    .channel_login,
+                "saved"
+            );
+            assert_eq!(fs::read(backup_path(&path)).unwrap(), primary_before);
+            assert_no_temporary_files(&path);
+            cleanup(&path);
+        }
+    }
+
+    fn assert_no_temporary_files(path: &std::path::Path) {
+        let leftovers: Vec<_> = fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(Result::unwrap)
+            .map(|entry| entry.path())
+            .filter(|entry| {
+                entry
+                    .extension()
+                    .is_some_and(|extension| extension == "tmp")
+            })
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temporary files leaked: {leftovers:?}"
+        );
+    }
+
+    #[test]
+    fn temporary_guard_cleans_up_after_unwind() {
+        let path = settings_path_for_test("temp-guard-unwind");
+        protect_storage(&path).unwrap();
+        let result = std::panic::catch_unwind(|| {
+            let temporary = write_temp_file(&path, b"private", SaveFault::None).unwrap();
+            assert_eq!(temporary.parent(), path.parent());
+            assert_eq!(fs::read(&temporary).unwrap(), b"private");
+            panic!("fault injected after temporary file preparation");
+        });
+        assert!(result.is_err());
+        assert_no_temporary_files(&path);
         cleanup(&path);
     }
 
@@ -1300,7 +1397,7 @@ foreach ($path in @($env:RICE_ACL_DIRECTORY, $env:RICE_ACL_FILE, $env:RICE_ACL_B
             .env("RICE_ACL_DIRECTORY", &directory)
             .env("RICE_ACL_FILE", &path)
             .env("RICE_ACL_BACKUP", backup_path(&path))
-            .env("RICE_ACL_TEMP", &temporary)
+            .env("RICE_ACL_TEMP", temporary.as_os_str())
             .output()
             .expect("inspect Windows ACLs");
         fs::remove_dir_all(&directory).expect("remove only isolated permission-test directory");

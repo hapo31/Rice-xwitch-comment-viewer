@@ -321,3 +321,9 @@ frontend は effect 開始時に認証復元の世代を予約し、event snapsh
 Settings/Filter は ready 前の既定値を編集可能な設定として提示せず、loading 表示または error と再試行を出す。起動/再試行の進捗と結果は system Chat にも残す。StrictMode の effect 再実行では一度だけ取り出せる復旧通知を同じ controller の read 間で共有し、受理された read だけが一度通知する。unmount 後の read/write 応答は通知・store 更新を行わず、旧 lifetime の未実行 write は開始しない。
 
 参照: [React StrictMode の effect 再実行](https://react.dev/reference/react/StrictMode#fixing-bugs-found-by-re-running-effects-in-development)。
+
+### 保存用一時ファイルの所有権
+
+設定保存とbackupの一時fileは `tempfile::Builder::make_in` の `NamedTempFile<File>` で生成・write/syncし、handleを閉じた後は `TempPath` がreplaceまで所有する。通常の早期returnとunwindはDropでcleanupし、成功したrename直後にguardのcleanupを解除する。親directory/owner/linkの検査、0600/0700とWindows ACL、writer lock、将来schema保護とbackup順序は既存の保存境界に残す。
+
+`NamedTempFile::persist` もatomic replacementを提供するがfile/directory同期は行わない。ここではUnix renameとWindowsのwrite-through MoveFileExによる既存 `atomic_replace` を保持し、`sync_all` と `sync_parent_directory` も残す。`make_in` の生成closureは既存OpenOptionsを使うため、Windows保存先にFILE_ATTRIBUTE_TEMPORARYを残さず、ファイル名の乱数・再試行・RAIIはcrateへ委ねる。参照: [NamedTempFile](https://docs.rs/tempfile/3.27.0/tempfile/struct.NamedTempFile.html)、[Builder::make_in](https://docs.rs/tempfile/3.27.0/tempfile/struct.Builder.html#method.make_in)、[TempPath](https://docs.rs/tempfile/3.27.0/tempfile/struct.TempPath.html)。
