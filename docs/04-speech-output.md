@@ -86,6 +86,10 @@ pub struct BouyomiTalkConfig {
 - 長文、URL、改行、制御文字は送信前に整形する。URL の検出・置換・遮断は `SpeechFormatter` に閉じ込め、空白区切りには依存しない。
 - 最大文字数は URL・NG・制御文字・emote の処理とユーザー名 prefix の付与を終えた最終読み上げ文へ Unicode 文字単位で適用する。切り詰め時の省略記号 `…` も上限に含めるため、上限 1 で切り詰めが必要な場合の出力は `…` とする。表示名だけで上限を超える場合も、最終読み上げ文の先頭から同じ規則で切り詰める。正規化後の本文が空の場合は、この切り詰めを行わず `Blocked` とする。
 - URL は ASCII の `http://`、`https://`、または scheme なしの `www.` で始まる形式を大文字小文字を区別せず検出する。日本語文中、括弧、引用符内でも対象にするが、ASCII の識別子やメールアドレスに連結した部分文字列は URL とみなさない。URL の直後に続く日本語本文は URL に含めず、末尾の句読点、対応しない閉じ括弧、対になる引用符、後続本文を囲む開き括弧・引用符は本文として残す。URL path 内で対になった括弧は URL の一部として扱う。角括弧付き IPv6 を含む authority は URL parser で検証し、不完全な authority は対象外とする。国際化ドメインは punycode 表記を対象にする。
+
+Speech の実装は責務ごとに分ける。`speech/mod.rs` は共通trait・公開型・module/export と既存 adapter 群の組立を担い、queue model/遷移は `queue.rs`、整形と URL 判定は `formatter.rs`、queue Tauri commands は `queue_commands.rs`、event payload/snapshot 変換は `events.rs` に置く。各回帰テストは `tests.rs` にまとめ、公開 command と worker が同じ queue/formatter 経路を使うことを確認する。
+
+URL 候補の範囲抽出には `linkify` の `LinkFinder`（`LinkKind::Url`、scheme 任意）を使えるが、その結果は有効 URL と保証されないため、候補をそのまま受理しない。アプリ側で http/https/www の許可、ASCII 識別子・メール境界、日本語隣接、host/port の厳格な URL parser 検証、末尾記号処理を維持する。linkify が候補を返さない場合に既存 parser で互換確認する経路を残し、候補が他にもある場合に落ちる角括弧付き IPv6 authority も同 parser で補う。依存の一般的な候補抽出と、製品固有の受理・置換規則を分離する。
 - 正規化（制御文字・空白・emote 除外など）の後に本文が空なら、ユーザー名読み上げの ON/OFF にかかわらず理由 `読み上げる本文がありません。` で `Blocked` とする。空の talk packet やユーザー名だけの読み上げは送信しない。
 - 棒読みちゃんタグを許可するかは設定で切り替える。初期値は安全側で「チャット由来タグを無効化/エスケープ」する。
 

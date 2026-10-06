@@ -4,7 +4,7 @@ use crate::twitch::{ChatMessage, MessageFragment};
 use linkify::{LinkFinder, LinkKind};
 use std::ops::Range;
 
-const DEFAULT_MAX_COMMENT_LENGTH: usize = 120;
+pub(super) const DEFAULT_MAX_COMMENT_LENGTH: usize = 120;
 
 #[derive(Debug, Clone)]
 pub struct SpeechFormatter {
@@ -167,15 +167,15 @@ fn replace_urls(text: &str) -> String {
     replaced
 }
 
-fn contains_url(text: &str) -> bool {
+pub(super) fn contains_url(text: &str) -> bool {
     !find_url_ranges(text).is_empty()
 }
 
 /// Uses linkify to locate candidate URL spans, then applies Rice's narrower
 /// accepted formats and URL parser validation before returning any byte range.
-/// The fallback only handles bracketed IPv6 authorities, which linkify does not
-/// currently return as candidates.
-fn find_url_ranges(text: &str) -> Vec<Range<usize>> {
+/// The compatibility parser scans the full input when linkify produced no
+/// accepted candidate and checks bracketed IPv6 even when other candidates exist.
+pub(super) fn find_url_ranges(text: &str) -> Vec<Range<usize>> {
     let mut ranges = Vec::new();
     let mut finder = LinkFinder::new();
     finder
@@ -202,8 +202,28 @@ fn find_url_ranges(text: &str) -> Vec<Range<usize>> {
     }
 
     // linkify intentionally keeps its URL grammar broad and currently skips
-    // bracketed IPv6 authorities. Preserve Rice's explicit IPv6 support by
-    // asking the compatibility parser about only those forms.
+    // some supported forms, such as bracketed IPv6 authorities and URLs
+    // followed immediately by ASCII prose delimiters. If it produced no
+    // accepted candidate, preserve those cases with the compatibility parser.
+    if ranges.is_empty() {
+        let mut index = 0;
+        while index < text.len() {
+            if let Some(range) = url_range_at(text, index) {
+                index = range.end;
+                ranges.push(range);
+                continue;
+            }
+            index += text[index..]
+                .chars()
+                .next()
+                .expect("index is within UTF-8 text")
+                .len_utf8();
+        }
+        return ranges;
+    }
+
+    // Bracketed IPv6 is the only known supported form that can be missed when
+    // another candidate caused the fallback scan above to be skipped.
     let mut index = 0;
     while index < text.len() {
         if is_bracketed_ip_literal_start(text, index) {
@@ -437,7 +457,7 @@ fn trim_url_suffix(text: &str, content_start: usize, mut end: usize) -> usize {
     end
 }
 
-fn contains_blocked_user(blocked_users: &[String], message: &ChatMessage) -> bool {
+pub(super) fn contains_blocked_user(blocked_users: &[String], message: &ChatMessage) -> bool {
     blocked_users.iter().any(|user| {
         let user = user.trim().trim_start_matches('@');
         !user.is_empty()

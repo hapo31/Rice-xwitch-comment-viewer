@@ -1,8 +1,6 @@
+use super::queue::{SpeechQueueFailureTransition, SpeechQueueState, RETRY_DELAY};
 use super::runtime::{SelectedSpeechAdapter, SpeechClock, SpeechDispatcher};
-use super::{
-    SpeechPlaybackCompletion, SpeechQueueFailureTransition, SpeechQueueState, SpeechStatus,
-    RETRY_DELAY,
-};
+use super::{SpeechPlaybackCompletion, SpeechStatus};
 use crate::app_events::{AppLogLevel, SpeechAdapterHealth};
 use crate::speech::SpeechFailure;
 use std::sync::{Arc, Mutex};

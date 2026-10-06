@@ -1,13 +1,14 @@
 use super::queue::{SpeechQueueItem, SpeechQueueState, DEFAULT_HISTORY_LIMIT, DEFAULT_QUEUE_LIMIT};
+#[cfg(feature = "app")]
 use super::worker;
+#[cfg(feature = "app")]
+use crate::app_events::SpeechStatus;
 #[cfg(feature = "app")]
 use crate::app_events::{
     emit_app_log, emit_speech_adapter_health, emit_speech_queue_updated, emit_speech_status,
     AppLogLevel,
 };
-use crate::app_events::{
-    SpeechQueueItemEvent, SpeechQueueItemStatus, SpeechQueuePhase, SpeechStatus,
-};
+use crate::app_events::{SpeechQueueItemEvent, SpeechQueueItemStatus, SpeechQueuePhase};
 
 #[cfg(feature = "app")]
 pub(super) struct TauriSpeechQueueEvents(pub(super) tauri::AppHandle<tauri::Wry>);

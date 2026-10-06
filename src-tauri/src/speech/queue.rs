@@ -1,6 +1,8 @@
 #[cfg(any(feature = "app", test))]
 use super::formatter::{SpeechFormatDecision, SpeechFormatter};
 use super::outcome::{self, BlockedReason, SkippedReason, SpeechQueueOutcome};
+#[cfg(test)]
+use super::FailureCode;
 use super::{SpeechControl, SpeechFailure, SpeechRequest};
 use crate::app_events::SpeechQueueItemStatus;
 #[cfg(test)]
@@ -14,7 +16,7 @@ pub(crate) const DEFAULT_QUEUE_LIMIT: usize = 200;
 // Keep one full queue worth of terminal states. This preserves the status of every
 // item after a user clears the maximum-sized pending queue, so the Chat timeline
 // cannot continue to show removed items as waiting.
-pub(super) const DEFAULT_HISTORY_LIMIT: usize = DEFAULT_QUEUE_LIMIT;
+pub(crate) const DEFAULT_HISTORY_LIMIT: usize = DEFAULT_QUEUE_LIMIT;
 pub(crate) const RETRY_DELAY: Duration = Duration::from_millis(700);
 // Twitch の設定値は 30 秒までで、background cleanup は通常1秒以内に期限を観測する。
 // 実際の解放時刻は runtime のスケジューリングと mutex 待ちの影響を受ける。

@@ -1,8 +1,10 @@
 use super::events::{emit_queue_snapshot, TauriSpeechQueueEvents};
 use super::formatter::{SpeechFormatter, SpeechFormatterOptions};
-use super::queue::{enqueue_message, SpeechQueueState, REPEAT_SUPPRESSION_CLEANUP_INTERVAL};
+use super::queue::{enqueue_message, REPEAT_SUPPRESSION_CLEANUP_INTERVAL};
+#[cfg(feature = "app")]
+use super::worker;
 use super::SpeechControl;
-use crate::app_events::{AppEventState, SpeechQueueItemStatus, SpeechStateSnapshot};
+use crate::app_events::{AppEventState, SpeechStateSnapshot};
 use crate::settings::AppState;
 use crate::twitch::ChatMessage;
 use tauri::Manager;
