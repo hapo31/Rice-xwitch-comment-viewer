@@ -609,6 +609,7 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] Rust: Launcher の拡張子、重複、順序、予約種別、旧設定互換テストを追加する。
 - [x] Rust: 設定JSONの原子的保存、disk full/replace failure、構文・設定値が不正な本体/backup復旧テストを追加する。
 - [x] Issue #231: 保存用一時fileをRAII guardで所有し、同一directory・権限/ACL・sync・schema/backup・writer lockを保持してwrite/backup/replace失敗時のcleanupを検証する。
+- [ ] Issue #233: 検証済みの Twitch activation URL を既存の Rust command から Tauri 公式 Opener の Rust API へ渡す。Tauri/Rust互換性、Windows/macOS/Linuxの既定ブラウザ動作、WSL fallbackとの差分、rendererの権限、許可外URLと起動失敗を確認し、必要な範囲だけテスト・文書を更新する。
 - [x] Rust: Issue #157 の旧設定互換、座標のJSON保存、画面外位置の復元抑止をテストする。
 - [x] TypeScript: store reducer テストを追加する。
 - [x] TypeScript: キュー行の状態表示テストを追加する。
