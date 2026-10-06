@@ -93,6 +93,8 @@
 
 - [ ] Issue #212: 認証復元結果に scope 不足・保存先障害・破損・移行の型付き reason を保持し、composition root の日本語部分一致を除去する。文言に依存しない状態通知と secret 非公開・旧 store 移行・失敗時保持を検証する。
 
+2026-10-06 Issue #212: AuthLoadResult に型付き reason と表示文を持つ notice を導入し、composition root の日本語部分一致を除去した。scope 不足は型付き error を復元まで保持し、破損 JSON は入力値を含まない固定文へ変換する。secure/legacy の分類・移行と失敗時保持、文言に依存しない起動時遷移の回帰を追加し、app feature で検証中。最終レビュー・CI・統合結果は PR #256 に記録する。
+
 Issue #199 は system timeline の中立モデルと型付き購読境界、source 別 transition 契約を実装した。初期 snapshot の認証/speech 通知、連続重複と復旧後の再通知、購読終了後の無視、不正 callback の型エラーを検証した。独立レビューで認証/接続の状態集合をさらに限定し、案内文を含む認証の重複抑制を維持した。最終 CI 結果と統合状況は PR #239 に記録する。
 
 2026-10-06: Issue #195の実装を専用 Draft PR #236 に分離した。AppShell配下へ controller/actions provider を組み立て、Twitch認証の非同期遷移、speech/queue/Launcher command、終了保護を責務別 controller/provider へ移した。画面はdomain別の安定action Contextと必要な selector を参照し、旧AppStateの再構成を除去した。初期レビューで見つかったDevice Code pollingのproduction lifecycle未接続、認証結果遷移の分散、実画面render計測の不足、手動操作/終了時の遅延応答競合を修正し、本番AppShell/provider/routes経由のtimer/render回帰へ更新した。親レビュー指摘を解消し、#205 の共通ラベルとの統合後は frontend 362件、format/lint/typecheck/build と diff check が成功。最終 CI と main 反映は PR #236 で確認する。
