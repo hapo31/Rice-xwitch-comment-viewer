@@ -1,4 +1,4 @@
-use crate::app_events::SpeechStatus;
+use crate::speech::SpeechStatus;
 use std::io::{Error, ErrorKind};
 
 #[derive(Debug, thiserror::Error)]
@@ -89,18 +89,42 @@ pub(crate) fn classify_error(error: anyhow::Error) -> SpeechFailure {
         None => (Code::Unknown, Failed, false),
     };
     let cause = match code {
-        Code::Configuration => "棒読みちゃんの接続設定が無効です。ホストとポートを修正してください。",
-        Code::ConnectionRefused => "棒読みちゃんに接続できません。起動中でアプリ連携/TCP受付が有効か確認してください。",
-        Code::ConnectTimeout => "棒読みちゃんへの接続がタイムアウトしました。接続先と通信設定を確認してください。",
-        Code::ConnectFailed => "棒読みちゃんへの接続に失敗しました。ホスト名とネットワークを確認してください。",
-        Code::ConnectionLost => "棒読みちゃんとの接続が切断されました。相手の起動状態と通信設定を確認してください。",
-        Code::PermissionDenied => "棒読みちゃんとの通信が許可されていません。セキュリティソフトの通信設定を確認してください。",
-        Code::WriteTimeout => "棒読みちゃんへの送信がタイムアウトしました。届いた可能性があるため、自動再送しません。",
-        Code::WriteFailed => "棒読みちゃんへの送信に失敗しました。届いた可能性があるため、自動再送しません。",
-        Code::ResponseTimeout => "棒読みちゃんの状態応答がタイムアウトしました。ポート競合やTCP受付を確認してください。",
-        Code::ResponseFailed => "棒読みちゃんの状態応答を受信できません。相手側の状態を確認してください。",
-        Code::ProtocolMismatch => "棒読みちゃんと互換性のない状態応答です。相手側の切断や別アプリとのポート競合を確認してください。",
-        Code::Unknown => "棒読みちゃん連携で予期しないエラーが発生しました。Logsの詳細を確認してください。",
+        Code::Configuration => {
+            "棒読みちゃんの接続設定が無効です。ホストとポートを修正してください。"
+        }
+        Code::ConnectionRefused => {
+            "棒読みちゃんに接続できません。起動中でアプリ連携/TCP受付が有効か確認してください。"
+        }
+        Code::ConnectTimeout => {
+            "棒読みちゃんへの接続がタイムアウトしました。接続先と通信設定を確認してください。"
+        }
+        Code::ConnectFailed => {
+            "棒読みちゃんへの接続に失敗しました。ホスト名とネットワークを確認してください。"
+        }
+        Code::ConnectionLost => {
+            "棒読みちゃんとの接続が切断されました。相手の起動状態と通信設定を確認してください。"
+        }
+        Code::PermissionDenied => {
+            "棒読みちゃんとの通信が許可されていません。セキュリティソフトの通信設定を確認してください。"
+        }
+        Code::WriteTimeout => {
+            "棒読みちゃんへの送信がタイムアウトしました。届いた可能性があるため、自動再送しません。"
+        }
+        Code::WriteFailed => {
+            "棒読みちゃんへの送信に失敗しました。届いた可能性があるため、自動再送しません。"
+        }
+        Code::ResponseTimeout => {
+            "棒読みちゃんの状態応答がタイムアウトしました。ポート競合やTCP受付を確認してください。"
+        }
+        Code::ResponseFailed => {
+            "棒読みちゃんの状態応答を受信できません。相手側の状態を確認してください。"
+        }
+        Code::ProtocolMismatch => {
+            "棒読みちゃんと互換性のない状態応答です。相手側の切断や別アプリとのポート競合を確認してください。"
+        }
+        Code::Unknown => {
+            "棒読みちゃん連携で予期しないエラーが発生しました。Logsの詳細を確認してください。"
+        }
     };
     SpeechFailure {
         code,

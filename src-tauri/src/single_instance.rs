@@ -31,8 +31,11 @@ fn activate_if_ready(app: &tauri::AppHandle, state: &PendingActivation) {
         return;
     }
     if restore_and_focus(&window) != 0 {
-        emit_app_log(app, AppLogLevel::Warning,
-            "Rice は既に起動しています。ウィンドウを表示できない場合はタスクバーから開いてください。");
+        emit_app_log(
+            app,
+            AppLogLevel::Warning,
+            "Rice は既に起動しています。ウィンドウを表示できない場合はタスクバーから開いてください。",
+        );
     }
 }
 

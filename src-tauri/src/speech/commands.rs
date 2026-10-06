@@ -3,10 +3,18 @@ use crate::app_events::{
     emit_app_log, emit_speech_adapter_health, emit_speech_status, AppLogLevel, SpeechAdapterHealth,
     SpeechStatus,
 };
-use crate::settings::AppState;
+use crate::application::AppState;
 
-fn selected(state: &AppState) -> Result<super::runtime::SelectedSpeechAdapter, SpeechFailure> {
-    state.speech_runtime.select_from_state(state)
+pub(crate) fn selected(
+    state: &AppState,
+) -> Result<super::runtime::SelectedSpeechAdapter, SpeechFailure> {
+    let snapshot = state
+        .settings
+        .lock()
+        .map_err(|error| SpeechFailure::unknown(error.to_string()))?
+        .speech
+        .clone();
+    state.speech_runtime.select(&snapshot)
 }
 
 async fn checked_health(session: &super::runtime::SpeechSession) -> Result<(), SpeechFailure> {
@@ -236,7 +244,9 @@ fn control_failure_message(command: SpeechControl, error: &str) -> String {
         SpeechControl::Skip => "スキップ",
         SpeechControl::Clear => "クリア",
     };
-    format!("読み上げ先へ{operation}を送信できなかったため、アプリ内の読み上げキューは変更していません。相手側には届いている可能性があるため、状態を確認してください: {error}")
+    format!(
+        "読み上げ先へ{operation}を送信できなかったため、アプリ内の読み上げキューは変更していません。相手側には届いている可能性があるため、状態を確認してください: {error}"
+    )
 }
 
 fn normalize_test_text(text: &str) -> String {

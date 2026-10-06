@@ -82,7 +82,10 @@ fn private_addresses(addresses: &[SocketAddr]) -> Result<(), ValidationError> {
         .iter()
         .any(|address| !loopback(address.ip()) && !private_unicast(address.ip()))
     {
-        return Err(error("endpointNotAllowed", "外部接続はprivate LAN/VPNのunicast宛先だけです。public・link-local・multicast・未指定宛先へは接続しません。"));
+        return Err(error(
+            "endpointNotAllowed",
+            "外部接続はprivate LAN/VPNのunicast宛先だけです。public・link-local・multicast・未指定宛先へは接続しません。",
+        ));
     }
     Ok(())
 }
@@ -235,7 +238,10 @@ impl DestinationPolicy {
         // A native re-confirmation that is declined must not leave an older
         // approval active. Pending transport cannot retroactively unsend bytes.
         self.revoke();
-        let message = format!("接続先: {}:{}\nDNS解決後の宛先:\n{addresses}\n\nTwitchユーザー名・チャット本文・テスト文・操作要求を、TLS暗号化も相手認証もない平文TCPで送信します。private LAN/VPN内でも盗聴・なりすましの危険があります。信頼する相手だけを許可し、暗号化トンネル/VPNを使用してください。\n\nこの起動中、上記の接続先とアドレスだけを許可します。変更・DNS結果変更・再起動後は再確認が必要です。許可しますか？", identity.host, identity.port);
+        let message = format!(
+            "接続先: {}:{}\nDNS解決後の宛先:\n{addresses}\n\nTwitchユーザー名・チャット本文・テスト文・操作要求を、TLS暗号化も相手認証もない平文TCPで送信します。private LAN/VPN内でも盗聴・なりすましの危険があります。信頼する相手だけを許可し、暗号化トンネル/VPNを使用してください。\n\nこの起動中、上記の接続先とアドレスだけを許可します。変更・DNS結果変更・再起動後は再確認が必要です。許可しますか？",
+            identity.host, identity.port
+        );
         if !consent.ask(message).await? {
             return Err(error(
                 "consentDeclined",
@@ -295,7 +301,7 @@ impl EndpointConsent for NativeConsent {
 #[cfg(feature = "app")]
 #[tauri::command]
 pub async fn speech_authorize_endpoint(
-    state: tauri::State<'_, crate::settings::AppState>,
+    state: tauri::State<'_, crate::application::AppState>,
     app: tauri::AppHandle<tauri::Wry>,
 ) -> Result<(), ValidationError> {
     let snapshot = state

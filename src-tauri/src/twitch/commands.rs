@@ -6,7 +6,7 @@ use super::auth_state::{
 };
 use super::chat_service::TwitchChatService;
 use super::runtime::TauriTwitchRuntime;
-use crate::settings::AppState;
+use crate::application::AppState;
 
 #[tauri::command]
 pub async fn twitch_start_auth(
