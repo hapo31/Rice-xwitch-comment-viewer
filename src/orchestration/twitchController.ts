@@ -88,11 +88,12 @@ export function createTwitchController(deps: TwitchControllerDependencies) {
     return transition.state;
   }
 
-  async function restore() {
-    const operation = deps.operations.begin("restore");
+  async function restore(operation = deps.operations.begin("restore")) {
+    if (!deps.operations.isCurrent(operation)) return;
     transitionAuth({ type: "restore.started" });
     try {
       const auth = await restoreStartupAuth({
+        isCurrent: () => deps.operations.isCurrent(operation),
         getStoredAuth: twitchGetStoredAuth,
         validateAuth: twitchValidateAuth,
         reportSystemMessage: (message) => {

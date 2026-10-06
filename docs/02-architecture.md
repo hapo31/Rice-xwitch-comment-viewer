@@ -284,3 +284,7 @@ system Chat の状態通知は中立モデル `models/systemTimeline.ts` の `Sy
 - config path: `directories` またはTauri API
 - keyring: `keyring`
 - Windows拡張: `windows` crate
+
+### 起動時の認証操作世代
+
+frontend は effect 開始時に認証復元の世代を予約し、event snapshot 復元の完了後もその世代を使う。後発の手動 start/validate/disconnect は予約を失効させ、古い snapshot の Auth 状態、保存済み認証の取得・検証結果、通知を反映しない。保存済み情報の読込後に失効していれば検証 command も開始しない。live backend event と Chat snapshot の revision/generation 判定は継続する。これは backend credential 保護とは別の UI 操作優先順位であり、StrictMode の cleanup は予約を失効させ、再 setup が新たな予約を作る。

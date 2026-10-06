@@ -113,10 +113,15 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
   );
   const settingsSnapshot = useRef<AppSettings | undefined>(undefined);
   const startupAuthAttempted = useRef(false);
+  const startupAuthGeneration = useRef<number | undefined>(undefined);
   const authOperations = useRef(new AuthOperationController());
   const systemTimelineRouter = useRef(new SystemTimelineRouter());
 
-  useEffect(() => () => authOperations.current.invalidate(), []);
+  useEffect(() => {
+    // Reserve before snapshot IO so later manual actions always keep priority.
+    startupAuthGeneration.current = authOperations.current.begin("restore");
+    return () => authOperations.current.invalidate();
+  }, []);
 
   useEffect(() => {
     Promise.all([getSettings(), takeSettingsRecoveryNotice()])
@@ -145,7 +150,8 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
     }
     startupAuthAttempted.current = true;
 
-    void twitchController.restore();
+    const generation = startupAuthGeneration.current;
+    if (generation !== undefined) void twitchController.restore(generation);
   }, [eventsRestored]);
 
   function addSystemChatMessage(text: string) {
@@ -285,6 +291,9 @@ function ApplicationControllerProvider({ children }: { children: ReactNode }) {
         reportNotification,
         replaySystemLog: addSystemChatMessage,
         onRestored: () => setEventsRestored(true),
+        shouldRestoreAuth: () =>
+          startupAuthGeneration.current !== undefined &&
+          authOperations.current.isCurrent(startupAuthGeneration.current),
         routeSystemTimelineEvent,
         speechRecoveryMessage: speechRecoveryTimelineEvent,
         twitchTimelineEvent: timelineEventFromTwitchStatus,

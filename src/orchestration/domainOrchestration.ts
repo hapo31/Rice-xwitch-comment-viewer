@@ -121,6 +121,7 @@ export interface DomainEventBridge {
 export interface DomainEventSubscriptionOptions {
   stores: DomainStores;
   onRestored?: () => void;
+  shouldRestoreAuth?: () => boolean;
   replaySystemLog?: (message: string) => void;
   bridge: DomainEventBridge;
   reportNotification: (
@@ -147,6 +148,7 @@ export function subscribeDomainEvents({
   speechRecoveryMessage,
   twitchTimelineEvent,
   onRestored,
+  shouldRestoreAuth,
   replaySystemLog,
 }: DomainEventSubscriptionOptions): () => void {
   let disposed = false;
@@ -272,8 +274,9 @@ export function subscribeDomainEvents({
               );
             for (const event of [...events.twitchStatuses].sort(
               (a, b) => (a.revision ?? 0) - (b.revision ?? 0),
-            ))
-              twitch(event);
+            )) {
+              if (event.domain !== "auth" || shouldRestoreAuth?.() !== false) twitch(event);
+            }
             if (events.speechStatus) speech(events.speechStatus);
           }
           if (state) {
