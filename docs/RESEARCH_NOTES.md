@@ -1,5 +1,13 @@
 # 調査メモ
 
+## 2026-10-06 Issue #203: domain state と旧互換実装の統合
+
+- 親レビューで旧 AppState reducer 専用テストから queue status 5種/system row保持、200件上限とclear snapshot後のskipped反映、Launcher更新時の他設定保持という4つの実契約を選び、`createDomainStores` と `dispatchDomainAction` を通す回帰へ移した。Settings更新は1件目の失敗前に2件目と `waitForIdle` を登録し、1件目reject後も2件目settleまでidleがresolveしないことを検証した。
+- Issue #199 の reviewed main と #197 の commit `6bdb52c` を取り込んだ。Twitch controller のdispatchから`twitch.connectionStatus` を除外する所有権制約と、実 AppShell auth/chat ownership DOM回帰を保持した。最終対象で frontend 366件、typecheck/build、変更source Biome check、diff checkが成功。PR #251 の最終 CI/親レビュー/merge は未完了。
+- runtime は `DomainStores` と `createSettingsMutationOrchestrator` を既に使っていたため、旧 `appReducer` / `SettingsUpdateQueue` は専用テストだけの別実装だった。`AppState` を `appState.ts` の画面読取モデルに分け、書込・保持・重複判定を domain store/orchestrator へ集約した。
+- `logsStore` は source event ID を別に保持し、明示 ID の replay を同じイベントとして抑止する。IDのない同時刻・同文ログや表示用 ID 文字列が偶然ぶつかったログは別エントリとして suffix 採番する。bridge の通知/Chat副作用は reducer/store がログを受理した後だけ行う。
+- 設定更新 queue の順序・失敗後継続・idle待機は本番 orchestrator の回帰で確認し、テスト専用queueを削除した。関連検証と進捗は Draft PR #251 で継続する。
+
 ## 2026-10-06 Issue #195: frontend controller境界と認証遷移
 
 - Chat/Queue/connection/settings/logsの状態は既存の独立external storeを引き続き正本とし、画面stateを旧AppStateへ合成しない。Contextはドメイン別の安定action facadeを提供し、画面ごとのselector/action購読を保つ。`MainView`から操作callbackをrouteへ渡す経路を外し、AppShellはcontroller providerと画面配置を組み立てる。

@@ -87,6 +87,63 @@ describe("Filter and Settings form drafts", () => {
     expect(screen.getByLabelText("NG ワード")).toHaveValue("draft word");
   });
 
+  it("rejects blank repeat intervals but accepts and saves literal zero", async () => {
+    const user = userEvent.setup();
+    const initial = makeSettings();
+    const onSettingsUpdate = vi.fn(async () => true);
+    render(<FilterView settings={initial} onSettingsUpdate={onSettingsUpdate} />);
+    const repeatSeconds = screen.getByLabelText(/連投抑制秒/);
+
+    fireEvent.change(repeatSeconds, { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "設定を保存" })).toBeDisabled();
+    fireEvent.change(repeatSeconds, { target: { value: "  " } });
+    expect(screen.getByRole("button", { name: "設定を保存" })).toBeDisabled();
+
+    await user.clear(repeatSeconds);
+    await user.type(repeatSeconds, "0");
+    expect(screen.getByRole("button", { name: "設定を保存" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "設定を保存" }));
+
+    expect(onSettingsUpdate).toHaveBeenCalledWith({
+      speech: { repeatSuppressionSeconds: 0 },
+    });
+  });
+
+  it("clears overlapping save markers when saved settings catch up", async () => {
+    const initial = makeSettings();
+    const completions: Array<(value: boolean) => void> = [];
+    const onSettingsUpdate = vi.fn(
+      () => new Promise<boolean>((resolve) => completions.push(resolve)),
+    );
+    const { rerender } = render(
+      <FilterView settings={initial} onSettingsUpdate={onSettingsUpdate} />,
+    );
+    fireEvent.change(screen.getByLabelText("NG ワード"), {
+      target: { value: "saved-word" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "設定を保存" }));
+    fireEvent.click(screen.getByRole("button", { name: "設定を保存" }));
+    expect(onSettingsUpdate).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      for (const complete of completions) complete(true);
+    });
+    rerender(
+      <FilterView
+        settings={{
+          ...initial,
+          speech: { ...initial.speech, blockedWords: ["saved-word"] },
+        }}
+        onSettingsUpdate={onSettingsUpdate}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "設定を保存" })).not.toBeInTheDocument(),
+    );
+  });
+
   it("keeps a Settings edit back to the original value while its save is pending", async () => {
     const user = userEvent.setup();
     const initial = makeSettings();

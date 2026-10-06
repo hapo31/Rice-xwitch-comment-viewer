@@ -28,7 +28,9 @@ domain store が状態の唯一のsourceであり、React Context はdomain単�
 
 Device Code認証の結果、status、prompt、profile、通知/error副作用は`authFlowTransition`の小さな純粋モデルで一緒に決める。`AuthOperationController`は世代付きの操作開始/完了、手動操作による古い応答の無効化、単一pollの排他、provider破棄時のinvalidateを担う。AppShell effectはprompt/status lifecycleに沿ってpoll timerを開始・cleanupし、timerはschedule時の世代とprompt情報を照合してからpollまたは期限切れを要求する。世代が変わった後、異なるpromptになった後、手動認証操作中は期限切れtimerも状態や通知を更新しない。期限切れはauth flowへ通知する。XStateの[`invoke`](https://stately.ai/docs/invoke)と[遅延遷移](https://stately.ai/docs/delayed-transitions)はpromise完了による遷移とstate退出時のtimer解除を提供するが、この認証には追加actor/runtime依存と移行費用がある。promise actor退出後の結果破棄も実行中のTauri commandを止める保証ではなく、backend generation保護は別途必要である。そのため、現在の操作競合と短いDevice Code timerは明示reducer/controllerで管理し、XStateは導入しない。
 
-旧 `AppState/appReducer` は presentation/test compatibility facade として残し、runtime の更新経路には使用しない。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
+旧 `appReducer` と専用テストは除去し、`appState.ts` は画面用の合成 read model と action 契約だけを保持する。状態更新は本番 domain store が担当し、`dispatchDomainAction` は action を各 store へ振り分ける。ログ表示IDとbackend replay IDの区別・重複排除は `logsStore` に集約し、bridge の副作用も受理されたログに限定する。設定更新は `createSettingsMutationOrchestrator` だけで直列化し、失敗後の待機済み更新と全処理の完了待ちを同じ経路で検証する。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
+
+`ExitProtectionProvider` は保存 I/O と保存後の終了・画面遷移の寿命を分ける。継続は要求ごとの token と blocker の location key に結び付け、キャンセル・破棄・新しい終了要求・unmount 後の古い成功を無視する。同じ要求の保存中は追加保存を受け付けない。別の確認中に旧保存が完了しても現在の操作を自動承認せず、保存済みの確認から続行またはキャンセルできる。
 
 ## データフロー
 
@@ -195,7 +197,15 @@ Events:
 
 Rust の struct field にある `Option<T>` は、Tauri command と event のすべてで `None` を field omission として送る。TypeScript は対応する field を `?: T` とし、`null` を許可しない。これには status の `message`、queue の `warning` / `sourceMessageId`、chat fragment の `emote` / `cheermote` / `ownerId`、認証結果の `storageWarning`、snapshot の `speechStatus`、Launcher の任意表示属性、window position、build info の `commitHash` を含む。
 
-struct 全体を `Option<T>` として返す command だけは JSON `null` を使う。現在は `settings_take_recovery_notice` と `twitch_get_stored_auth` が該当し、client 層で `undefined` に変換してから UI へ渡す。frontend は generic の `invoke<T>` / `listen<T>` を信頼せず、認証、chat、status、speech queue、snapshot の主要 payload では required field、enum、camelCase field 名まで検証する。その他の command result は再帰的な null 排除だけを行うため、shape の検証が必要な利用箇所を追加するときは個別 parser も同じ変更で追加する。
+struct 全体を `Option<T>` として返す command だけは JSON `null` を使う。現在は `settings_take_recovery_notice` と `twitch_get_stored_auth` が該当し、client 層で `undefined` に変換してから UI へ渡す。Rust `()` の command result も JSON `null` を検証してから void として返す。欠落応答 `undefined` はいずれも不正とする。
+
+全 command と event は `invoke<unknown>` / `listen<unknown>` から Zod schema (`tauri/schemas.ts`) を通す。必須 field、primitive、literal、範囲、入れ子の optional-null を検証し、不正値を含めず field path の日本語エラーを既存の caller へ返す。独自の generic field parser と null 検査だけの型 assertion は使わない。型は schema から導出し、UI 固有の AuthStatus / system Chat と入力 patch は domain 型として分離する。
+
+Rust Serde DTO が wire 型の正本。test 時だけ `ts-rs` で `bindings/wire.ts` を生成し、通常の Rust quality gate が再生成結果との完全一致を検査する。`tauri/wireParity.ts` は全生成型と canonical schema の双方向代入可能性を frontend typecheck で検査する。u64 / u128 は IPC に合わせ number を生成し、runtime では JS safe integer と日時上限を要求する。Option は optional field、camelCase / tagged union / chrono 日時は Serde の送信形に合わせ、TypeScript enum / namespace は生成しない。`TwitchUserProfile.client_id` の送信除外も生成側に反映する。
+
+canonical wire と legacy input を区別し、旧 revision / phase の omission、設定の window / remoteMode 追加前の omission だけを対応する schema から派生して許可する。chat の receivedAt は shape 検証後に既存の UTC timestamp 正規化・受信時刻 fallback を通す。Request のサイズ preflight・ACL・command 登録は変更しない。
+
+選定根拠: [Zod](https://zod.dev/basics) は検証と型導出を同じ定義にまとめる。[ts-rs](https://docs.rs/ts-rs/latest/ts_rs/trait.TS.html) は test dependency として既存 Serde DTO から型だけを生成できる。[tauri-specta](https://github.com/specta-rs/tauri-specta/releases) は RC 系列かつ command 登録の変更を伴うため今回採用しない。型生成は runtime validation の代わりにしない。
 
 ## Renderer のセキュリティ境界
 

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { initialAppState } from "../stores/appStore";
+import { initialAppState } from "../stores/appState";
 import {
   getLiveStatusAnnouncement,
-  toLiveStatusSnapshot,
   type LiveStatusSnapshot,
+  toLiveStatusSnapshot,
 } from "./LiveStatusAnnouncer";
 
 const initial: LiveStatusSnapshot = {

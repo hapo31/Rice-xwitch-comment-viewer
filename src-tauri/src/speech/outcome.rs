@@ -5,6 +5,7 @@ use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum BlockedReason {
     RepeatSuppressed,
     BlockedUser,
@@ -27,6 +28,7 @@ impl BlockedReason {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum SkippedReason {
     Overflow,
     UserSkip,
@@ -36,6 +38,7 @@ pub enum SkippedReason {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum RecoveryAction {
     ReviewFilters,
     ReviewQueue,
@@ -46,6 +49,8 @@ pub enum RecoveryAction {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct OutcomeDetails {
     pub message: String,
     /// Failure category permits a new safe attempt, not an unused retry budget.
@@ -61,6 +66,7 @@ pub struct OutcomeDetails {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum SpeechQueueOutcome {
     Blocked {
         reason_code: BlockedReason,

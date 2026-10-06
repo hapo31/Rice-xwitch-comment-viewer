@@ -5,13 +5,16 @@ use super::auth_store::{AuthCredentialStore, AuthLoadResult, TwitchAuthStore};
 use super::chat_service::{ChatRuntime, TwitchChatService, TwitchConnectionHandle};
 use super::dedupe::MessageDedupe;
 use super::error::{EventSubTerminalError, SubscriptionRequestError, TwitchApiError};
-use super::eventsub::{process_eventsub_frame, EventSubRuntime};
+use super::eventsub::{process_eventsub_frame, run_eventsub_connection_with, EventSubRuntime};
 use super::model::ChatMessage;
 use super::oauth::{DeviceOAuthTransport, OAuthTransport, PollAuthError};
 use super::subscription::{create_chat_message_subscription, SubscriptionRuntime};
 use super::test_harness::FakeSocket;
 use super::{CHAT_READ_SCOPE, DEDUPE_CACHE_LIMIT, DEDUPE_CACHE_TTL};
-use crate::app_events::{AppLogLevel, TwitchAuthRequiredReason, TwitchStatus, TwitchStatusDomain};
+use crate::app_events::{
+    AppEventState, AppLogEvent, AppLogLevel, TwitchAuthRequiredReason, TwitchStatus,
+    TwitchStatusDomain, TwitchStatusEvent,
+};
 use chrono::{DateTime, Utc};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -112,6 +115,7 @@ struct Runtime {
     auth_required: Arc<AtomicUsize>,
     chats: Arc<Mutex<Vec<ChatMessage>>>,
     logs: Arc<Mutex<Vec<String>>>,
+    events: Arc<AppEventState>,
     preferred: Arc<Mutex<String>>,
     clock: Arc<Mutex<SystemTime>>,
     monotonic_origin: Instant,
@@ -134,6 +138,7 @@ impl Default for Runtime {
             auth_required: Arc::default(),
             chats: Arc::default(),
             logs: Arc::default(),
+            events: Arc::default(),
             preferred: Arc::new(Mutex::new("preferred_streamer".into())),
             clock: Arc::new(Mutex::new(UNIX_EPOCH + Duration::from_secs(CLOCK_EPOCH))),
             monotonic_origin: Instant::now(),
@@ -208,14 +213,36 @@ impl AuthRuntime for Runtime {
             Ok(false)
         }
     }
-    fn auth_status(&self, _: TwitchStatusDomain, status: TwitchStatus, _: Option<String>) {
+    fn auth_status(
+        &self,
+        domain: TwitchStatusDomain,
+        status: TwitchStatus,
+        message: Option<String>,
+    ) {
+        self.events.record_test_twitch_status(TwitchStatusEvent {
+            revision: 0,
+            domain,
+            status: status.clone(),
+            message,
+            reason: None,
+            connection_generation: None,
+            active_connection: None,
+            occurred_at_ms: 1,
+        });
         if matches!(status, TwitchStatus::Connected) {
             self.backend.order.lock().unwrap().push("connected");
         }
         self.statuses.lock().unwrap().push(status);
     }
-    fn auth_log(&self, _: AppLogLevel, message: impl Into<String>) {
-        self.logs.lock().unwrap().push(message.into());
+    fn auth_log(&self, level: AppLogLevel, message: impl Into<String>) {
+        let message = message.into();
+        self.events.record_test_log(AppLogEvent {
+            id: None,
+            level,
+            message: message.clone(),
+            occurred_at_ms: 1,
+        });
+        self.logs.lock().unwrap().push(message);
     }
     fn require_auth(&self, reason: TwitchAuthRequiredReason, _: impl Into<String>) {
         assert!(matches!(
@@ -294,7 +321,17 @@ impl EventSubRuntime for Runtime {
     fn status(&self, domain: TwitchStatusDomain, status: TwitchStatus, message: Option<String>) {
         self.auth_status(domain, status, message);
     }
-    fn chat_status(&self, status: TwitchStatus, _: Option<String>, _: u64) {
+    fn chat_status(&self, status: TwitchStatus, message: Option<String>, generation: u64) {
+        self.events.record_test_twitch_status(TwitchStatusEvent {
+            revision: 0,
+            domain: TwitchStatusDomain::Chat,
+            status: status.clone(),
+            message,
+            reason: None,
+            connection_generation: Some(generation),
+            active_connection: None,
+            occurred_at_ms: 1,
+        });
         self.statuses.lock().unwrap().push(status);
     }
     fn connected(&self, _: &EventSubConnectionParams, _: String) {
@@ -1089,6 +1126,151 @@ async fn eventsub_frame_uses_injected_monotonic_and_receive_clocks() {
     assert_eq!(chats.len(), 2);
     assert_ne!(chats[0].received_at, chats[1].received_at);
     assert_eq!(chats[1].connection_generation, Some(9));
+}
+
+#[tokio::test]
+async fn terminal_subscription_records_final_snapshot_before_task_exit() {
+    for http_status in [400, 410, 401, 403] {
+        let runtime = Runtime::default();
+        runtime.authorize();
+        runtime
+            .http
+            .sockets
+            .lock()
+            .unwrap()
+            .push_back(FakeSocket::new([welcome()]));
+        if http_status == 401 {
+            runtime.http.subscriptions.lock().unwrap().extend([
+                Err(SubscriptionRequestError::Unauthorized),
+                Err(SubscriptionRequestError::Unauthorized),
+            ]);
+            runtime
+                .http
+                .refreshes
+                .lock()
+                .unwrap()
+                .push_back(Ok(token()));
+            runtime
+                .http
+                .validations
+                .lock()
+                .unwrap()
+                .push_back(Ok(validate("reader")));
+        } else {
+            runtime.http.subscriptions.lock().unwrap().push_back(Err(
+                SubscriptionRequestError::Permanent(TwitchApiError::Http {
+                    status: http_status,
+                    code: None,
+                    message: "fake HTTP failure".into(),
+                }),
+            ));
+        }
+        let task_runtime = runtime.clone();
+        tokio::spawn(async move { run_eventsub_connection_with(&task_runtime, &params()).await })
+            .await
+            .unwrap();
+
+        let snapshot = runtime.events.snapshot();
+        let chat = snapshot
+            .twitch_statuses
+            .iter()
+            .find(|status| status.domain == TwitchStatusDomain::Chat)
+            .unwrap();
+        assert_eq!(chat.connection_generation, Some(params().generation));
+        let requires_auth = matches!(http_status, 401 | 403);
+        if requires_auth {
+            assert!(matches!(chat.status, TwitchStatus::AuthRequired));
+            assert!(snapshot.twitch_statuses.iter().any(|status| {
+                status.domain == TwitchStatusDomain::Auth
+                    && matches!(status.status, TwitchStatus::AuthRequired)
+                    && status.message.is_some()
+            }));
+        } else {
+            assert!(matches!(chat.status, TwitchStatus::Error));
+            assert!(chat
+                .message
+                .as_ref()
+                .is_some_and(|message| !message.is_empty()));
+        }
+        assert!(snapshot
+            .logs
+            .iter()
+            .any(|log| matches!(log.level, AppLogLevel::Error)));
+        assert!(!runtime
+            .statuses
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|status| matches!(status, TwitchStatus::Reconnecting)));
+        assert_eq!(
+            runtime.http.subscription_calls.lock().unwrap().len(),
+            if http_status == 401 { 2 } else { 1 }
+        );
+        assert_eq!(
+            runtime.http.refresh_calls.load(Ordering::Relaxed),
+            usize::from(http_status == 401)
+        );
+    }
+}
+
+#[tokio::test]
+async fn revoked_subscription_has_one_terminal_chat_transition_and_recovery_snapshot() {
+    for reason in [
+        "authorization_revoked",
+        "user_removed",
+        "version_removed",
+        "unknown",
+    ] {
+        let runtime = Runtime::default();
+        runtime.authorize();
+        let revocation = Message::Text(
+            serde_json::json!({
+                "metadata": { "message_type": "revocation", "message_id": "revoked" },
+                "payload": { "subscription": { "type": "channel.chat.message", "status": reason } }
+            })
+            .to_string(),
+        );
+        runtime
+            .http
+            .sockets
+            .lock()
+            .unwrap()
+            .push_back(FakeSocket::new([welcome(), revocation]));
+        run_eventsub_connection_with(&runtime, &params()).await;
+        let snapshot = runtime.events.snapshot();
+        let chat = snapshot
+            .twitch_statuses
+            .iter()
+            .find(|status| status.domain == TwitchStatusDomain::Chat)
+            .unwrap();
+        assert_eq!(chat.connection_generation, Some(params().generation));
+        if reason == "authorization_revoked" {
+            assert!(matches!(chat.status, TwitchStatus::AuthRequired));
+            assert!(snapshot
+                .twitch_statuses
+                .iter()
+                .any(|status| status.domain == TwitchStatusDomain::Auth
+                    && matches!(status.status, TwitchStatus::AuthRequired)));
+        } else {
+            assert!(matches!(chat.status, TwitchStatus::Error));
+            assert!(chat.message.as_ref().unwrap().contains(reason));
+            assert_eq!(
+                runtime
+                    .statuses
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|status| matches!(status, TwitchStatus::Error))
+                    .count(),
+                1
+            );
+        }
+        assert!(snapshot
+            .logs
+            .iter()
+            .any(|log| matches!(log.level, AppLogLevel::Error) && log.message.contains(reason)));
+        assert_eq!(runtime.http.subscription_calls.lock().unwrap().len(), 1);
+    }
 }
 
 #[test]
