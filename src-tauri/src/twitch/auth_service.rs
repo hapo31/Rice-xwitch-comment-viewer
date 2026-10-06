@@ -5,6 +5,7 @@ use super::auth_state::{
     TwitchUserProfile,
 };
 use super::auth_store::{AuthClearOutcome, AuthSaveOutcome, TwitchAuthStore};
+use super::chat_service::ChatCancellation;
 use super::error::{
     is_definitive_auth_failure, retryable_auth_error_message, to_secure_store_user_message,
     to_twitch_user_message,
@@ -19,7 +20,7 @@ pub(super) trait AuthRuntime: DeviceOAuthTransport + Sync {
     fn store(&self) -> &TwitchAuthStore;
     fn client_id(&self) -> String;
     fn now(&self) -> std::time::SystemTime;
-    fn cancel_chat(&self) -> Result<bool, String>;
+    fn cancel_chat(&self) -> Result<ChatCancellation, String>;
     fn auth_status(
         &self,
         domain: TwitchStatusDomain,
@@ -409,11 +410,12 @@ pub(super) fn stored_auth_profile(
     Ok(auth.lock().map_err(|error| error.to_string())?.profile())
 }
 
-pub(super) async fn clear_twitch_auth_state(state: &impl AuthRuntime) -> Result<(), String> {
+pub(super) async fn clear_twitch_auth_state(
+    state: &impl AuthRuntime,
+) -> Result<ChatCancellation, String> {
     clear_twitch_auth_state_with_store(state.auth().clone(), state.store()).await?;
 
-    state.cancel_chat()?;
-    Ok(())
+    state.cancel_chat()
 }
 
 /// Clears durable Twitch credentials after first invalidating the in-memory

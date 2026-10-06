@@ -1,6 +1,6 @@
 # 実装 TODO
 
-- [x] Issue #209: Twitch接続taskの開始前にgeneration・connection handle・Connecting状態を確定し、lookupの即時成功/失敗や開始中の停止・接続交換・登録失敗で競合とorphan taskを発生させない。開始gateとキャンセル責務を明確にし、即時結果・stop/交換・登録失敗をdeterministicに検証する。
+- [x] Issue #209: Twitch接続taskの開始前にgeneration・connection handle・Connecting状態を確定する。mutex共有のconnection ownerでgeneration予約・登録・stop/cancelを順序付け、古い予約の登録拒否、Connecting公開後のstart gate、即時lookup・登録前stop/新接続・登録失敗をdeterministicに検証する。
 
 - [x] Issue #195: AppShellの認証・接続・speech・Launcher・終了保護をcontroller/providerへ分離し、各画面がdomain selector/actionを直接利用する。巨大な旧AppStateの再構成とMainView経由のcallback転送をなくし、無関係な画面の再renderを計測回帰で保証する。認証の遷移は既存のgeneration/poll排他と手動優先を保ち、XState invoke/delayと小さなreducerを比較して判断する。
 
@@ -93,7 +93,7 @@
 
 ## 現在の進捗サマリ
 
-Issue #209では、接続taskをspawnしてからhandle登録・Connecting通知を行っていたため、即時lookup失敗のErrorをConnectingが後から上書きし、登録失敗時にtaskがdetachする競合を解消した。oneshot開始gateで登録・Connecting通知後にlookupを開始し、TwitchConnectionHandleのDropが所有taskをabortする。即時失敗、登録失敗、開始中stop／接続交換をdeterministicに検証し、Rust 1.90 all-featuresの関連7件が成功した。#207の共通chat delivery境界、#212の型付き認証エラーを含む最終CIと親レビューはPR #252で確認する。
+Issue #209では、接続taskをspawnしてからhandle登録・Connecting通知を行っていたため、即時lookup失敗のErrorをConnectingが後から上書きし、登録失敗時にtaskがdetachする競合を解消した。oneshot開始gateで登録・Connecting通知後にlookupを開始し、TwitchConnectionHandleのDropが所有taskをabortする。追補では予約・登録・cancelを同じmutex保護のTwitchConnectionOwnerへ集約し、古い予約の登録拒否を登録直前 barrier でstop／新接続の両順序から検証する。即時 lookup 成功／失敗も multi-thread runtime で lookup 開始を同期して状態順を検証する。Rust 1.90 all-features の追補検証とレビュー済み main 統合後の最終差分はPR #252で確認する。
 
 2026-10-06: Issue #207 で EventSub 正規化時に ChatMessage へ接続 generation を付け、同じ値のまま UI と speech へ渡す。親レビュー対応で generation 検証と両sink配送を共有 `dispatch_chat_message` に集約し、本番 runtime と fake が同じ境界を使用する。回帰は同一 channel の世代交換、旧世代の遅延通知、停止後の通知、別 channel、UI/speech 両sinkの同一内容と順序を確認する。main `2802a4a`、`98bfd81`、`6bdb52c`、`6916a44`、`0d72925`、`493c57f` を統合。#203 の `7e880c4` と #213 の変更は frontend と docs に限られ、今回の Rust 本番処理との重複がないことを確認した。Tauri非依存 boundary test、strict app-feature Clippy、frontend 414件、format/lint/typecheck/build が成功。親レビューで本番/fake 共通配送と generation 保持、strict Clippy 指摘の修正を確認した。最終 app-feature runtime 回帰、exact-head CI と統合結果は PR #248 に記録する。no-default strict Clippy は既存 dead_code 警告群で失敗するが、警告抑制なしの通常 no-default Clippy と対象 unit test は成功した。実 Twitch 環境の手動確認は未実施。
 
