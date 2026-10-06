@@ -482,9 +482,11 @@ mod tests {
 
         // Unlike a child still running, this polls the join before cancellation:
         // stdout reaches EOF while the other pipe remains open indefinitely.
-        assert!(tokio::time::timeout(Duration::from_millis(1), readers.join())
-            .await
-            .is_err());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(1), readers.join())
+                .await
+                .is_err()
+        );
         assert!(matches!(readers.stdout, ReaderState::Complete(Ok(Ok(_)))));
         assert!(matches!(readers.stderr, ReaderState::Pending(_)));
 
