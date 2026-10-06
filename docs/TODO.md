@@ -511,7 +511,7 @@ Issue #204 は対処待ち通知と情報履歴を各100件の別領域へ分離
 - [x] Issue #18: Launcher の削除メニューを WAI-ARIA Menu Button のキーボード操作とフォーカス管理に対応させる。
 - [x] Issue #227: Launcherメニューの一般的な操作・focus・外側操作・配置をheadless primitiveへ委譲し、項目ごとの開閉・busy・削除後focusを実DOMで検証する。#225とのライブラリ共通化と導入サイズを比較する。
 
-2026-10-06 Issue #227: LauncherItemMenuにRadix Dropdown Menuを導入し、親の汎用key処理/DOM検索/open ID/ref Map/外側document listenerを除去した。Tabだけは既定の消費を解除しnative document順へ離脱する。実LauncherView DOMで循環・Home/End・Tab/Shift+Tab・Escape・外側・単一menu・busy・削除後focus・起動非伝播を確認する。#225と同じRadix基盤を使う比較を設計へ記録。最終検証・CIはPR #271で管理する。Windows実WebViewの配置確認は未実施。
+2026-10-06 Issue #227: LauncherItemMenuにRadix Dropdown Menuを導入し、親の汎用key処理/DOM検索/open ID/ref Map/外側document listenerを除去した。Tabだけは既定の消費を解除しnative document順へ離脱する。実LauncherView DOMで循環・Home/End・Tab/Shift+Tab・Escape・外側・単一menu・busy・削除後focus・起動非伝播を確認する。#225と同じRadix基盤を使う比較を設計へ記録。frontend全476件と、#225・#228統合後の関連DOM44件/buildが成功。Dialog込みgzip215.67 kB（main比+17.23 kB）。最終CIはPR #271で管理する。Windows実WebViewの配置確認は未実施。
 
 - [x] Issue #24: チャット・ログ・状態更新時にも Launcher の DnD listener を再登録せず、mount 中の購読を維持し、最新 handler と遅延登録後の cleanup をテストする。
 - [x] Settings 画面から Login 画面を分離し、認証専用の画面として整理する。
