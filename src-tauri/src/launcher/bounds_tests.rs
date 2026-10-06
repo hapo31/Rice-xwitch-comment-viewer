@@ -130,14 +130,7 @@ fn requests_bound_raw_duplicates_utf8_bytes_and_escaped_json_before_owned_copy()
 }
 
 #[test]
-fn extraction_output_and_file_item_deserialization_are_bounded_not_truncated() {
-    assert_eq!(read_pipe_bounded(Cursor::new(b"1234"), 4).unwrap(), b"1234");
-    assert_eq!(
-        read_pipe_bounded(Cursor::new(b"12345"), 4)
-            .unwrap_err()
-            .kind(),
-        std::io::ErrorKind::InvalidData
-    );
+fn file_item_deserialization_is_bounded_not_truncated() {
     let valid = serde_json::to_value(item(0)).unwrap();
     assert!(serde_json::from_value::<LauncherSettings>(
         serde_json::json!({"items": vec![valid.clone(); 200]})

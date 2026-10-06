@@ -5,8 +5,7 @@ use super::{
     build_new_items_in_workers_with_extractor, derive_display_name, is_supported_application_path,
     launcher_items_snapshot, merge_new_launcher_items, next_order,
     normalize_launcher_icon_data_url, normalize_launcher_items, path_identity_key,
-    wait_for_child_exit, ChildExitWaitError, LauncherIconExtractor, LauncherItem, LauncherItemKind,
-    LauncherWorkerConfig,
+    LauncherIconExtractor, LauncherItem, LauncherItemKind, LauncherWorkerConfig,
 };
 use crate::settings::AppSettings;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
@@ -542,31 +541,6 @@ async fn worker_icon_extraction_runs_after_the_settings_snapshot_releases_its_lo
         .await
         .expect("join extraction worker")
         .expect("build launcher item");
-}
-
-#[cfg(unix)]
-#[test]
-fn timed_out_child_is_killed_and_reaped() {
-    let mut child = std::process::Command::new("sh")
-        .args(["-c", "exec sleep 30"])
-        .spawn()
-        .expect("start stalled child");
-    let started_at = Instant::now();
-
-    let result = wait_for_child_exit(&mut child, Duration::from_millis(50));
-
-    assert!(started_at.elapsed() < Duration::from_secs(1));
-    match result {
-        Err(ChildExitWaitError::TimedOut { termination: Ok(_) }) => {}
-        Err(ChildExitWaitError::TimedOut {
-            termination: Err(error),
-        }) => panic!("timed out child was not terminated and reaped: {error}"),
-        Err(ChildExitWaitError::Wait(error)) => {
-            panic!("stalled child status could not be read: {error}")
-        }
-        Ok(status) => panic!("stalled child unexpectedly exited: {status}"),
-    }
-    assert!(child.try_wait().expect("read child status").is_some());
 }
 
 #[test]

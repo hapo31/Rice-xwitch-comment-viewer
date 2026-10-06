@@ -127,7 +127,9 @@ async fn real_links_validate_target_arguments_workdir_permissions_and_partial_su
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/launcher-probe.rs"))
         .arg("-o")
         .arg(&executable);
-    capture_bounded(compile, Duration::from_secs(30), 4096).unwrap();
+    capture_bounded(compile, Duration::from_secs(30), 4096)
+        .await
+        .unwrap();
     assert!(
         executable.is_file(),
         "probe compiler must create the expected executable: {}",
