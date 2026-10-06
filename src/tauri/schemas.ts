@@ -241,7 +241,13 @@ export const blockedReasonSchema = z.enum([
   "blockedUrl",
   "emptyAfterFormatting",
 ]);
-export const skippedReasonSchema = z.enum(["overflow", "userSkip", "removed", "cleared"]);
+export const skippedReasonSchema = z.enum([
+  "overflow",
+  "userSkip",
+  "removed",
+  "cleared",
+  "autoSpeakDisabled",
+]);
 export const failureCodeSchema = z.enum([
   "configuration",
   "connectionRefused",

@@ -157,7 +157,7 @@ pub(super) async fn run_eventsub_connection_with<R: EventSubRuntime>(
                         (TwitchStatus::Error, Some(message.clone()))
                     }
                     EventSubTerminalError::ObsoleteConnection => {
-                        unreachable!("obsolete EventSub connections exit before publishing status")
+                        unreachable!("obsolete EventSub connections are handled above")
                     }
                 };
                 app.chat_status(status, message, params.generation);

@@ -167,9 +167,10 @@ Issue #85の結果詳細は、outcomeを持つuser行の状態ラベルをキー
 
 状態:
 
-- `queued`: 読み上げ待ち
+- `received`: 受信済み。backend の読み上げ受付結果がまだ届いていない
+- `queued`: backend がキューへ受け付けた読み上げ待ち
 - `spoken`: 読み上げ済み
-- `skipped`: スキップ
+- `skipped`: スキップ（自動読み上げ OFF の対象外も、backend が返した理由付きで表示）
 - `blocked`: ルールで除外
 - `error`: 読み上げ失敗
 
