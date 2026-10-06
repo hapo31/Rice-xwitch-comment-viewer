@@ -105,6 +105,8 @@
 
 ## 現在の進捗サマリ
 
+Issue #220: 再生中itemのadapter所有権を保持し、設定変更後も制御と完了確認を同じ宛先へ送る。後続itemから新しい設定を使う。
+
 Issue #219: 認証解除の要求を認証状態から分離し、失敗後に再試行できる調停を追加した。PR #264で最終検証を確認する。
 
 Issue #218: 起動時認証復元より後発の手動ログインを優先する世代予約を追加した。PR #263で最終CIを確認する。
@@ -638,6 +640,12 @@ Issue #205 調査メモ: 接続ラベルは4か所で同じ内容、認証ラベ
 - [x] source-map-js の影響版を修正版へ統一し、既存監査・frozen install・frontend gates を通す。監査例外は追加しない。
 
 2026-10-06 Issue #261: @tailwindcss/node 4.3.3 の許容範囲 ^1.2.1 内で source-map-js を1.2.2へ統一し、未使用の1.2.1 entryを除去した。他の依存とpackage.jsonは変更しない。frozen offline install、frontend全429件、production build成功。pnpm auditはhigh/critical 0件で対象GHSAが消え、既存moderate 5件のみ。全CIの結果は PR #262 に記録する。
+
+## Issue #220: 再生中 session と制御先の一致
+
+- [x] 設定上の宛先と再生中sessionを区別し、Pause/Resume/Skip/Clear・完了確認を同じadapterへ送る。A再生中のB設定保存と後続itemの選択をfakeで検証する。
+
+2026-10-06 Issue #220: fake adapter A/Bで4種類の制御、送信完了待ちとの競合、制御失敗時の状態維持、後続itemのB選択を検証した。no-default全224件・app構成speech112件・strict Clippy・frontend build・format/diff検査成功。実棒読みちゃんの手動確認は未実施。最終headのCIはPR #265で確認する。
 
 ## Issue #219: 認証解除失敗後の再試行
 

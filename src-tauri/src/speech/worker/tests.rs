@@ -159,10 +159,7 @@ struct FakeEvents {
 }
 impl SpeechQueueEvents for FakeEvents {
     fn snapshot(&self, queue: &SpeechQueueState, warning: Option<String>) {
-        self.snapshots
-            .lock()
-            .unwrap()
-            .push(queue.snapshot(warning));
+        self.snapshots.lock().unwrap().push(queue.snapshot(warning));
     }
     fn activity(&self, _: SpeechStatus, _: Option<String>) {}
     fn health(&self, health: SpeechAdapterHealth, _: Option<String>) {
@@ -182,6 +179,7 @@ struct Harness {
     events: Arc<FakeEvents>,
 }
 
+mod active_session;
 mod scenarios;
 fn queued(id: &str) -> SpeechQueueItem {
     SpeechQueueItem {
@@ -530,10 +528,7 @@ async fn completion_wait_releases_the_dispatch_gate_for_control() {
     let queue = h.worker.queue.lock().unwrap();
     assert_eq!(queue.pending[0].id, "second");
     assert_eq!(queue.history[0].status, SpeechQueueItemStatus::Spoken);
-    assert_eq!(
-        queue.snapshot(None).phase,
-        SpeechQueuePhase::Paused
-    );
+    assert_eq!(queue.snapshot(None).phase, SpeechQueuePhase::Paused);
     assert_eq!(
         *h.adapter.calls.lock().unwrap(),
         ["talk:first", "completion", "pause"]

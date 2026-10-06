@@ -137,7 +137,7 @@ pub trait SpeechAdapter: Send + Sync {
 
 boxed futureにより`Arc<dyn SpeechAdapter>`として差し替えられる（[Rust Reference: dyn compatibility](https://doc.rust-lang.org/reference/items/traits.html#dyn-compatibility)）。MVPの実装は`BouyomiAdapter`のみで、VOICEROID2は未実装のままとする。
 
-app stateの`SpeechRuntime`がfactory・共通dispatch gate・clockを保持する。factoryだけが設定snapshotから具体adapterを構築し、棒読みちゃんのhost/port/声質を解釈する。health、無音probe、test、queue、pause/resume/skip/clearは同じ選択を通る。`SelectedSpeechAdapter::lock`から得るsessionを介して呼び出し、raw traitの送信は既にgateを所有している前提で再lockしない。
+app stateの`SpeechRuntime`がfactory・共通dispatch gate・clockを保持する。factoryだけが設定snapshotから具体adapterを構築し、棒読みちゃんのhost/port/声質を解釈する。health、無音probe、test、queueは設定から選択する。queueの受付から完了処理まで保持する再生sessionがあれば、pause/resume/skip/clearはdispatcher取得後にそのadapterを使い、なければ現在設定を選ぶ。設定変更は後続itemに適用する。`SelectedSpeechAdapter::lock`から得るsessionを介して呼び出し、raw traitの送信は既にgateを所有している前提で再lockしない。
 
 workerは共通gateを取得してから項目を予約し、session内で送信する。controlはremote送信からlocal queue反映・成功通知まで同じsessionを保持する。受付後の完了待ちはsessionを解放して共通の`Completed / Unconfirmed(SpeechFailure)`を待つため、完了待ち中にもcontrolを送れる。adapter側の完了確認queryは同じgateで短時間ずつ直列化する。受付済みと再生完了を混同せず、未確認の要求は自動再送しない。
 
