@@ -1,3 +1,4 @@
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   createContext,
   useContext,
@@ -62,57 +63,56 @@ export function useUnsavedChanges(id: string, change: UnsavedChange) {
   }, [change.isDirty, id, registry]);
 }
 
-/** Uses the browser's modal dialog behavior for focus containment and background inertness. */
+/** Shared modal behavior; operation approval remains owned by ExitProtectionProvider. */
 function ModalDialog({
   children,
   onCancel,
   cancelDisabled = false,
-  labelledBy,
-  describedBy,
 }: {
   children: ReactNode;
   onCancel: () => void;
   cancelDisabled?: boolean;
-  labelledBy: string;
-  describedBy: string;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
+  const previousFocus = useRef<HTMLElement | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const previousFocus =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialog.showModal();
-    dialog.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
-    return () => {
-      if (dialog.open) dialog.close();
-      window.setTimeout(() => {
-        if (
-          (!previousFocus || previousFocus === document.body || !previousFocus.isConnected) &&
-          document.activeElement === document.body
-        )
-          document.querySelector<HTMLElement>("[data-modal-focus-fallback]")?.focus();
-      }, 0);
-    };
-  }, []);
-
+    if (cancelDisabled) contentRef.current?.focus();
+  }, [cancelDisabled]);
   return (
-    <dialog
-      ref={dialogRef}
-      tabIndex={-1}
-      aria-modal="true"
-      aria-labelledby={labelledBy}
-      aria-describedby={describedBy}
-      onCancel={(event) => {
-        // A modal confirmation must never be dismissed by a browser default path.
-        event.preventDefault();
-        if (!cancelDisabled) onCancel();
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open && !cancelDisabled) onCancel();
       }}
-      className="fixed inset-0 m-0 flex h-full w-full max-h-none max-w-none items-center justify-center border-0 bg-transparent p-4 text-zinc-100 backdrop:bg-zinc-950/70"
     >
-      {children}
-    </dialog>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/70 p-4">
+          <Dialog.Content
+            ref={contentRef}
+            aria-modal="true"
+            className="w-full max-w-md border border-zinc-700 bg-zinc-900 p-5 text-zinc-100 shadow-xl"
+            onOpenAutoFocus={() => {
+              previousFocus.current =
+                document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              const target = previousFocus.current;
+              if (document.activeElement !== document.body) return;
+              if (target?.isConnected && target !== document.body) target.focus();
+              else if (document.activeElement === document.body)
+                document.querySelector<HTMLElement>("[data-modal-focus-fallback]")?.focus();
+            }}
+            onEscapeKeyDown={(event) => {
+              if (cancelDisabled) event.preventDefault();
+            }}
+            onInteractOutside={(event) => event.preventDefault()}
+          >
+            {children}
+          </Dialog.Content>
+        </Dialog.Overlay>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
@@ -131,23 +131,31 @@ export function UnsavedChangesDialog({
   hasUnsavedChanges?: boolean;
   isSaving?: boolean;
 }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    // A focused Save button becoming disabled can leave the browser focus on body.
+    // Move to the remaining safe action; the primitive continues to own Tab looping.
+    if (
+      isSaving &&
+      (document.activeElement === document.body ||
+        (document.activeElement instanceof HTMLButtonElement && document.activeElement.disabled))
+    )
+      cancelRef.current?.focus();
+  }, [isSaving]);
   return (
-    <ModalDialog
-      onCancel={onCancel}
-      labelledBy="unsaved-changes-title"
-      describedBy="unsaved-changes-description"
-    >
-      <section className="w-full max-w-md border border-zinc-700 bg-zinc-900 p-5 shadow-xl">
-        <h2 id="unsaved-changes-title" className="text-base font-semibold text-zinc-100">
+    <ModalDialog onCancel={onCancel}>
+      <>
+        <Dialog.Title className="text-base font-semibold text-zinc-100">
           {hasUnsavedChanges ? "未保存の変更があります" : "移動または終了しますか？"}
-        </h2>
-        <p id="unsaved-changes-description" className="mt-2 text-sm text-zinc-400">
+        </Dialog.Title>
+        <Dialog.Description className="mt-2 text-sm text-zinc-400">
           {hasUnsavedChanges
             ? "保存してから移動または終了しますか？"
             : "変更は保存されました。操作を続けるか確認してください。"}
-        </p>
+        </Dialog.Description>
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button
+            ref={cancelRef}
             type="button"
             onClick={onCancel}
             className="border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:border-sky-400"
@@ -172,7 +180,7 @@ export function UnsavedChangesDialog({
             {isSaving ? "保存しています…" : hasUnsavedChanges ? "保存して続ける" : "続ける"}
           </button>
         </div>
-      </section>
+      </>
     </ModalDialog>
   );
 }
@@ -187,20 +195,15 @@ export function ActiveOperationsExitDialog({
   isClosing?: boolean;
 }) {
   return (
-    <ModalDialog
-      onCancel={onCancel}
-      cancelDisabled={isClosing}
-      labelledBy="active-operations-exit-title"
-      describedBy="active-operations-exit-description"
-    >
-      <section className="w-full max-w-md border border-zinc-700 bg-zinc-900 p-5 shadow-xl">
-        <h2 id="active-operations-exit-title" className="text-base font-semibold text-zinc-100">
+    <ModalDialog onCancel={onCancel} cancelDisabled={isClosing}>
+      <>
+        <Dialog.Title className="text-base font-semibold text-zinc-100">
           配信支援を停止して終了しますか？
-        </h2>
-        <p id="active-operations-exit-description" className="mt-2 text-sm text-zinc-400">
+        </Dialog.Title>
+        <Dialog.Description className="mt-2 text-sm text-zinc-400">
           Twitch
           チャット受信または読み上げキューが動作中です。終了するとチャット受信を停止し、待機中の読み上げをクリアします。
-        </p>
+        </Dialog.Description>
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button
             type="button"
@@ -219,7 +222,7 @@ export function ActiveOperationsExitDialog({
             {isClosing ? "停止しています…" : "停止して終了"}
           </button>
         </div>
-      </section>
+      </>
     </ModalDialog>
   );
 }

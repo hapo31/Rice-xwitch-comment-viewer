@@ -3,23 +3,6 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, expect, vi } from "vitest";
 import { nativeWindow, tauriMock } from "./tauriMock";
 
-// jsdom has no native modal dialog support. Keep the open/close and focus return
-// contract so AppShell DOM tests can exercise the same React lifecycle.
-const dialogReturnFocus = new WeakMap<HTMLDialogElement, HTMLElement | null>();
-HTMLDialogElement.prototype.showModal = function showModal() {
-  dialogReturnFocus.set(
-    this,
-    document.activeElement instanceof HTMLElement ? document.activeElement : null,
-  );
-  this.setAttribute("open", "");
-};
-HTMLDialogElement.prototype.close = function close() {
-  this.removeAttribute("open");
-  const previousFocus = dialogReturnFocus.get(this);
-  if (previousFocus?.isConnected) previousFocus.focus();
-  dialogReturnFocus.delete(this);
-};
-
 vi.mock("@tauri-apps/api/core", () => ({ invoke: tauriMock.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: tauriMock.listen }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => nativeWindow }));

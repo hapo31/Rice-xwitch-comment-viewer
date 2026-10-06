@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ActiveOperationsExitDialog, UnsavedChangesDialog } from "./unsavedChanges";
 
 describe("confirmation modal dialogs", () => {
-  it("opens a native modal, focuses its first action, handles Escape as cancel, and restores focus", () => {
+  it("opens a shared modal, focuses its first action, handles Escape as cancel, and restores focus", async () => {
     const onCancel = vi.fn();
     const { rerender } = render(
       <div>
@@ -24,13 +24,14 @@ describe("confirmation modal dialogs", () => {
     );
 
     const dialog = screen.getByRole("dialog", { name: "未保存の変更があります" });
-    expect(dialog).toHaveAttribute("open");
+    expect(dialog).toBeVisible();
     expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog).toHaveAccessibleDescription("保存してから移動または終了しますか？");
+    expect(screen.getByRole("button", { name: "保存して続ける" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "破棄して続ける" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "キャンセル" })).toHaveFocus();
 
-    const cancel = new Event("cancel", { cancelable: true });
-    dialog.dispatchEvent(cancel);
-    expect(cancel.defaultPrevented).toBe(true);
+    fireEvent.keyDown(dialog, { key: "Escape" });
     expect(onCancel).toHaveBeenCalledOnce();
 
     rerender(
@@ -38,7 +39,7 @@ describe("confirmation modal dialogs", () => {
         <button type="button">終了要求</button>
       </div>,
     );
-    expect(screen.getByRole("button", { name: "終了要求" })).toHaveFocus();
+    await waitFor(() => expect(screen.getByRole("button", { name: "終了要求" })).toHaveFocus());
   });
 
   it("keeps cancellation available while saving and announces the pending operation", () => {
@@ -55,7 +56,7 @@ describe("confirmation modal dialogs", () => {
 
     const dialog = screen.getByRole("dialog");
     expect(screen.getByRole("button", { name: "保存しています…" })).toBeDisabled();
-    dialog.dispatchEvent(new Event("cancel", { cancelable: true }));
+    fireEvent.keyDown(dialog, { key: "Escape" });
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
@@ -97,11 +98,9 @@ describe("confirmation modal dialogs", () => {
     );
 
     const dialog = screen.getByRole("dialog", { name: "配信支援を停止して終了しますか？" });
-    const cancel = new Event("cancel", { cancelable: true });
-    dialog.dispatchEvent(cancel);
-    expect(cancel.defaultPrevented).toBe(true);
+    fireEvent.keyDown(dialog, { key: "Escape" });
     expect(onCancel).not.toHaveBeenCalled();
-    expect(dialog).toHaveAttribute("open");
+    expect(dialog).toBeVisible();
     expect(screen.getByRole("button", { name: "停止しています…" })).toBeDisabled();
   });
 });
