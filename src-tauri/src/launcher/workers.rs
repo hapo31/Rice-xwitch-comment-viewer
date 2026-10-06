@@ -13,7 +13,7 @@ use tokio::sync::Semaphore;
 #[derive(Debug, Clone)]
 struct PreparedLauncherItem {
     target: PathBuf,
-    icon_data_url: Option<String>,
+    icon_data_url: Option<ValidatedLauncherIconDataUrl>,
     icon_warning: Option<IconExtractionWarning>,
 }
 
@@ -26,8 +26,11 @@ fn prepare_launcher_item(
     let started_at = Instant::now();
     let (icon_data_url, icon_warning) = match extractor.extract(&target) {
         Ok(icon_data_url) => {
-            if icon_data_url.as_ref().is_some_and(|icon| !valid_icon_data_url(icon)) { return Err("アイコンは正しいPNG画像48KiB・128×128以内にしてください。小さいアイコンのアプリを選んでください。追加内容は保存していません。".into()); }
-            (icon_data_url, None)
+            let validated = icon_data_url
+                .map(|icon| ValidatedLauncherIconDataUrl::parse(&icon))
+                .transpose()
+                .map_err(|_| "アイコンは正しいPNG画像48KiB・128×128以内にしてください。小さいアイコンのアプリを選んでください。追加内容は保存していません。".to_string())?;
+            (validated, None)
         },
         Err(IconExtractionError::ResourceLimit) => return Err("アイコン出力は64KiBまでです。小さいアイコンのアプリを選んでください。追加内容は保存していません。".into()),
         Err(IconExtractionError::Failed(message)) => (
@@ -195,4 +198,65 @@ pub(super) async fn build_new_items_in_workers_with_extractor(
         config,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+    use std::sync::Mutex;
+
+    struct ChangingExtractor(Mutex<String>);
+
+    impl IconExtractor for ChangingExtractor {
+        fn extract(&self, _: &Path) -> Result<Option<String>, IconExtractionError> {
+            Ok(Some(self.0.lock().unwrap().clone()))
+        }
+    }
+
+    struct Resolver;
+
+    impl ApplicationTargetResolver for Resolver {
+        fn resolve(&self, target: &str) -> Result<PathBuf, String> {
+            Ok(PathBuf::from(target))
+        }
+    }
+
+    fn png_data_url() -> (String, Vec<u8>) {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, 1, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&[0, 0, 0, 0]).unwrap();
+        }
+        let url = format!(
+            "{LAUNCHER_ICON_DATA_URL_PREFIX}{}",
+            BASE64_STANDARD.encode(&bytes)
+        );
+        (url, bytes)
+    }
+
+    #[test]
+    fn changed_extracted_icon_bytes_are_validated_again() {
+        reset_icon_png_decode_count();
+        let (first_url, mut changed_png) = png_data_url();
+        let extractor = ChangingExtractor(Mutex::new(first_url));
+        let resolver = Resolver;
+
+        let first = prepare_launcher_item("app.exe".into(), &extractor, &resolver)
+            .expect("first external icon is valid");
+        assert!(first.icon_data_url.is_some());
+        assert_eq!(icon_png_decode_count(), 1);
+
+        // Keep a valid PNG shape and base64 encoding while changing its IHDR CRC.
+        changed_png[29] ^= 1;
+        *extractor.0.lock().unwrap() = format!(
+            "{LAUNCHER_ICON_DATA_URL_PREFIX}{}",
+            BASE64_STANDARD.encode(changed_png)
+        );
+        assert!(prepare_launcher_item("app.exe".into(), &extractor, &resolver).is_err());
+        assert_eq!(icon_png_decode_count(), 2);
+    }
 }

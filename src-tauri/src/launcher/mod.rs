@@ -1,4 +1,6 @@
 //! Stable public model facade; implementations are deliberately layer-local.
+#[cfg(test)]
+pub(crate) use model::{LauncherAddResult, LauncherLaunchResult};
 #[cfg(feature = "app")]
 pub(crate) mod commands;
 #[cfg(feature = "app")]
@@ -17,6 +19,7 @@ pub(crate) use model::{
     validate_launcher_resources, validate_launcher_structure, LauncherCapabilities, LauncherItem,
     LauncherItemKind, LauncherSettings, LauncherSettingsPatch,
 };
+#[cfg(feature = "app")]
 pub(crate) use service::LauncherRuntime;
 
 #[cfg(test)]
@@ -28,15 +31,13 @@ use model::*;
 #[cfg(test)]
 use platform::normalize_canonical_path;
 #[cfg(test)]
-use platform::process::{read_pipe_bounded, wait_for_child_exit, ChildExitWaitError};
-#[cfg(test)]
 use ports::*;
 #[cfg(test)]
 use repository::launcher_items_snapshot;
 #[cfg(test)]
 use service::*;
 #[cfg(test)]
-use std::{io::Cursor, path::Path, sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 #[cfg(test)]
 use tokio::sync::Semaphore;
 #[cfg(test)]

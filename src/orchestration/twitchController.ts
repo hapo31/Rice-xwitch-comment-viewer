@@ -1,0 +1,319 @@
+import { type AuthFlowEvent, type AuthFlowState, authFlowTransition } from "../authFlow";
+import { type AuthOperationName, AuthOperationController } from "../authOperation";
+import { getDeviceAuthRemainingSeconds } from "../features/auth/deviceAuthExpiry";
+import type { SystemTimelineEvent } from "../models/systemTimeline";
+import { presentError } from "../presentation/errors";
+import { autoConnectTimelineEvent } from "../presentation/systemTimeline";
+import type { AppAction } from "../stores/appState";
+import {
+  appOpenExternalUrl,
+  twitchConnect,
+  twitchDisconnect,
+  twitchGetStoredAuth,
+  twitchPollAuth,
+  twitchStartAuth,
+  twitchStopChat,
+  twitchValidateAuth,
+} from "../tauri/client";
+import type {
+  AppNotification,
+  AuthStatus,
+  NotificationSeverity,
+  NotificationSource,
+  TwitchDeviceAuthStart,
+  TwitchUserProfile,
+} from "../types";
+import { routeAuthStorageWarning } from "./authWarnings";
+import { restoreStartupAuth } from "./domainOrchestration";
+
+export interface TwitchControllerDependencies {
+  operations: AuthOperationController;
+  dispatch: (action: Exclude<AppAction, { type: "twitch.connectionStatus" }>) => void;
+  getAuthPrompt: () => TwitchDeviceAuthStart | undefined;
+  getAuthStatus: () => AuthStatus;
+  getAuthRevision: () => number;
+  getAuthProfile: () => TwitchUserProfile | undefined;
+  getChannelLogin: () => string | undefined;
+  getConfirmBeforeStopChat: () => boolean;
+  waitForSettings: () => Promise<void>;
+  reportSystemMessage: (message: string) => void;
+  reportInfo: (message: string, source?: "command" | "event") => void;
+  reportNotification: (
+    severity: NotificationSeverity,
+    source: NotificationSource,
+    message: string,
+    correlationId?: string,
+    announcementDomains?: AppNotification["announcementDomains"],
+  ) => void;
+  reportError: (
+    error: unknown,
+    operation?: "auth" | "chat" | "externalUrl",
+    announcementDomains?: AppNotification["announcementDomains"],
+  ) => unknown;
+  reportTechnicalError: (message: string) => void;
+  routeAutoConnectTimeline: (event: SystemTimelineEvent) => void;
+}
+
+export function createTwitchController(deps: TwitchControllerDependencies) {
+  let pendingDisconnect: number | undefined;
+  function beginOperation(name: Exclude<AuthOperationName, "poll">) {
+    if (pendingDisconnect !== undefined) {
+      deps.dispatch({ type: "twitch.disconnectFinished", generation: pendingDisconnect });
+      pendingDisconnect = undefined;
+    }
+    return deps.operations.begin(name);
+  }
+  function transitionAuth(event: AuthFlowEvent, quietWaiting = false) {
+    const current: AuthFlowState = {
+      status: deps.getAuthStatus(),
+      prompt: deps.getAuthPrompt(),
+      profile: deps.getAuthProfile(),
+    };
+    const transition = authFlowTransition(current, event);
+    deps.dispatch({ type: "twitch.authStatus", status: transition.state.status });
+    deps.dispatch({ type: "twitch.authPrompt", prompt: transition.state.prompt });
+    deps.dispatch({ type: "twitch.profile", profile: transition.state.profile });
+    for (const effect of transition.effects) {
+      if (
+        effect.type === "info" &&
+        effect.message &&
+        !(quietWaiting && event.type === "poll.waiting")
+      ) {
+        deps.reportInfo(effect.message, event.type === "poll.waiting" ? "event" : "command");
+      } else if (effect.type === "warning") {
+        deps.reportNotification(effect.severity, "event", effect.message, undefined, ["auth"]);
+      } else if (effect.type === "notification") {
+        deps.reportNotification(
+          effect.severity,
+          event.type === "restore.failed" ? "command" : "event",
+          effect.message,
+          undefined,
+          ["auth"],
+        );
+      } else if (effect.type === "failure") {
+        deps.reportError(effect.error, "auth", ["auth"]);
+      }
+    }
+    return transition.state;
+  }
+
+  async function restore(operation = beginOperation("restore")) {
+    if (!deps.operations.isCurrent(operation)) return;
+    transitionAuth({ type: "restore.started" });
+    try {
+      const auth = await restoreStartupAuth({
+        isCurrent: () => deps.operations.isCurrent(operation),
+        getStoredAuth: twitchGetStoredAuth,
+        validateAuth: twitchValidateAuth,
+        reportSystemMessage: (message) => {
+          if (deps.operations.isCurrent(operation)) deps.reportSystemMessage(message);
+        },
+        reportTechnicalError: (message) => {
+          if (deps.operations.isCurrent(operation)) deps.reportTechnicalError(message);
+        },
+      });
+      if (!deps.operations.isCurrent(operation)) return;
+      if (auth.status === "authenticated") {
+        transitionAuth({ type: "restore.authenticated", profile: auth.result.profile });
+        routeAuthStorageWarning(auth.result, deps.reportNotification, deps.reportSystemMessage);
+      } else if (auth.status === "missing") {
+        transitionAuth({ type: "restore.missing" });
+      } else if (auth.status === "error") {
+        transitionAuth({ type: "restore.failed", message: auth.error });
+      }
+    } finally {
+      deps.operations.finishOperation(operation);
+    }
+  }
+
+  async function startAuth() {
+    const operation = beginOperation("start");
+    transitionAuth({ type: "prompt.requested" });
+    try {
+      const prompt = await twitchStartAuth();
+      if (!deps.operations.isCurrent(operation)) return;
+      transitionAuth({ type: "prompt.started", prompt });
+      deps.reportInfo("Twitch の認証コードを発行しました。");
+    } catch (error) {
+      if (!deps.operations.isCurrent(operation)) return;
+      transitionAuth({ type: "prompt.failed", error });
+    } finally {
+      deps.operations.finishOperation(operation);
+    }
+  }
+
+  async function pollAuth(options: { quietWaiting?: boolean; expectedGeneration?: number } = {}) {
+    const operation = deps.operations.tryBeginPoll(options.expectedGeneration);
+    if (operation === undefined) return;
+    transitionAuth({ type: "poll.started" });
+    try {
+      const result = await twitchPollAuth();
+      if (!deps.operations.isCurrent(operation)) return;
+      if (result.status === "authorized") {
+        transitionAuth({ type: "poll.authorized", profile: result.profile });
+        routeAuthStorageWarning(result, deps.reportNotification, deps.reportSystemMessage);
+      } else {
+        if (result.status === "pending" || result.status === "slowDown")
+          transitionAuth(
+            { type: "poll.waiting", interval: result.interval, message: result.message },
+            options.quietWaiting,
+          );
+        else
+          transitionAuth({ type: "poll.denied", status: result.status, message: result.message });
+      }
+    } catch (error) {
+      if (!deps.operations.isCurrent(operation)) return;
+      transitionAuth({ type: "poll.failed", error });
+    } finally {
+      deps.operations.finishPoll(operation);
+    }
+  }
+
+  async function validateAuth(): Promise<boolean> {
+    const operation = beginOperation("validate");
+    transitionAuth({ type: "validate.started" });
+    try {
+      const result = await twitchValidateAuth();
+      if (!deps.operations.isCurrent(operation)) return false;
+      transitionAuth({ type: "validate.valid", profile: result.profile });
+      routeAuthStorageWarning(result, deps.reportNotification, deps.reportSystemMessage);
+      return true;
+    } catch (error) {
+      if (!deps.operations.isCurrent(operation)) return false;
+      transitionAuth({ type: "validate.invalid", error });
+      return false;
+    } finally {
+      deps.operations.finishOperation(operation);
+    }
+  }
+
+  async function connect({ automatic = false }: { automatic?: boolean } = {}) {
+    try {
+      await deps.waitForSettings();
+      if (automatic) {
+        deps.routeAutoConnectTimeline(
+          autoConnectTimelineEvent("started", "Twitch チャットの自動接続を開始します。"),
+        );
+      }
+      await twitchConnect(deps.getChannelLogin());
+      deps.reportInfo("Twitch チャット接続を開始しました。");
+    } catch (error) {
+      deps.reportError(error, "chat");
+      if (automatic) {
+        deps.routeAutoConnectTimeline(
+          autoConnectTimelineEvent(
+            "failed",
+            `Twitch チャットの自動接続に失敗しました: ${presentError(error, "chat").message}`,
+          ),
+        );
+      }
+    }
+  }
+
+  async function stopChat() {
+    if (deps.getConfirmBeforeStopChat() && !window.confirm("Twitch チャット受信を停止しますか？"))
+      return;
+    try {
+      await twitchStopChat();
+    } catch (error) {
+      deps.reportError(error, "chat");
+    }
+  }
+
+  async function disconnect() {
+    if (!window.confirm("Twitch 連携を解除しますか？")) return;
+    const operation = beginOperation("disconnect");
+    const revision = deps.getAuthRevision();
+    const canReconcile = () =>
+      deps.operations.isCurrent(operation) && deps.getAuthRevision() === revision;
+    pendingDisconnect = operation;
+    deps.dispatch({ type: "twitch.disconnectStarted", generation: operation });
+    try {
+      await twitchDisconnect();
+      if (canReconcile()) transitionAuth({ type: "disconnect.succeeded" });
+    } catch (error) {
+      if (!deps.operations.isCurrent(operation)) return;
+      deps.reportError(error, "auth", ["auth"]);
+      if (!canReconcile()) return;
+      try {
+        const profile = await twitchGetStoredAuth();
+        if (canReconcile()) transitionAuth({ type: "disconnect.reconciled", profile });
+      } catch (reconciliationError) {
+        if (canReconcile()) {
+          deps.reportTechnicalError(presentError(reconciliationError, "auth").details);
+          deps.reportSystemMessage(
+            "Twitch 認証の現在の状態を確認できませんでした。認証解除または有効性確認を再試行してください。",
+          );
+        }
+      }
+    } finally {
+      if (deps.operations.isCurrent(operation)) {
+        deps.dispatch({ type: "twitch.disconnectFinished", generation: operation });
+        pendingDisconnect = undefined;
+      }
+      deps.operations.finishOperation(operation);
+    }
+  }
+
+  async function openExternalUrl(url: string) {
+    try {
+      await appOpenExternalUrl(url);
+    } catch (error) {
+      deps.reportError(error, "externalUrl");
+    }
+  }
+
+  function schedulePoll(prompt: TwitchDeviceAuthStart | undefined): () => void {
+    if (!prompt) return () => undefined;
+    const generation = deps.operations.getState().generation;
+    const remainingMs = Math.max(0, prompt.expiresAtMs - Date.now());
+    if (remainingMs === 0) {
+      expireAuthPrompt(prompt, generation);
+      return () => undefined;
+    }
+    const pollDelayMs = Math.min(Math.max(prompt.interval, 1) * 1000, remainingMs);
+    const timer = window.setTimeout(() => {
+      const current = deps.getAuthPrompt();
+      if (
+        current?.userCode === prompt.userCode &&
+        current.expiresAtMs === prompt.expiresAtMs &&
+        current.interval === prompt.interval &&
+        getDeviceAuthRemainingSeconds(current.expiresAtMs) > 0
+      ) {
+        void pollAuth({ quietWaiting: true, expectedGeneration: generation });
+      } else if (current) {
+        if (getDeviceAuthRemainingSeconds(current.expiresAtMs) === 0)
+          expireAuthPrompt(prompt, generation);
+      }
+    }, pollDelayMs);
+    return () => window.clearTimeout(timer);
+  }
+
+  function expireAuthPrompt(prompt: TwitchDeviceAuthStart, generation: number) {
+    const operation = deps.operations.getState().activeOperation;
+    const current = deps.getAuthPrompt();
+    if (
+      !deps.operations.isCurrent(generation) ||
+      (operation !== undefined && operation !== "poll") ||
+      current?.userCode !== prompt.userCode ||
+      current.expiresAtMs !== prompt.expiresAtMs
+    )
+      return;
+    transitionAuth({
+      type: "prompt.expired",
+      message: "Twitch の認証コードの有効期限が切れました。再度ログインしてください。",
+    });
+  }
+
+  return {
+    restore,
+    startAuth,
+    pollAuth,
+    validateAuth,
+    connect,
+    stopChat,
+    disconnect,
+    openExternalUrl,
+    schedulePoll,
+  };
+}

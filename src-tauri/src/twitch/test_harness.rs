@@ -1,5 +1,7 @@
 //! Injected transports drive the production session, handover and supervisor.
+use super::chat_delivery::dispatch_chat_message;
 use super::*;
+use crate::app_events::{AppEventState, TwitchStatusEvent};
 use futures_util::{Sink, Stream};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -72,10 +74,21 @@ struct Runtime {
     urls: Mutex<Vec<String>>,
     subscriptions: Mutex<Vec<(String, String)>>,
     subscription_errors: Mutex<VecDeque<anyhow::Error>>,
+    /// UI chat-event sink.
     chats: Mutex<Vec<ChatMessage>>,
+    /// Speech enqueue sink.
+    speech_messages: Mutex<Vec<ChatMessage>>,
     statuses: Mutex<Vec<TwitchStatus>>,
     active_connections: Mutex<Vec<TwitchActiveConnection>>,
     logs: Mutex<Vec<String>>,
+    app_events: AppEventState,
+    active_generation: Mutex<ActiveGeneration>,
+}
+struct ActiveGeneration(Option<u64>);
+impl Default for ActiveGeneration {
+    fn default() -> Self {
+        Self(Some(7))
+    }
 }
 impl EventSubRuntime for Runtime {
     type Socket = FakeSocket;
@@ -104,8 +117,19 @@ impl EventSubRuntime for Runtime {
     fn status(&self, _: TwitchStatusDomain, status: TwitchStatus, _: Option<String>) {
         self.statuses.lock().unwrap().push(status);
     }
-    fn chat_status(&self, status: TwitchStatus, _: Option<String>, _: u64) {
-        self.statuses.lock().unwrap().push(status);
+    fn chat_status(&self, status: TwitchStatus, message: Option<String>, generation: u64) {
+        self.statuses.lock().unwrap().push(status.clone());
+        self.app_events
+            .record_test_twitch_status(TwitchStatusEvent {
+                revision: 0,
+                domain: TwitchStatusDomain::Chat,
+                status,
+                reason: None,
+                connection_generation: Some(generation),
+                active_connection: None,
+                message,
+                occurred_at_ms: 1,
+            });
     }
     fn connected(&self, params: &EventSubConnectionParams, _: String) {
         self.statuses.lock().unwrap().push(TwitchStatus::Connected);
@@ -121,16 +145,23 @@ impl EventSubRuntime for Runtime {
     fn log(&self, _: AppLogLevel, message: impl Into<String>) {
         self.logs.lock().unwrap().push(message.into());
     }
-    fn chat(&self, mut message: ChatMessage, connection_generation: u64) {
-        message.connection_generation = Some(connection_generation);
-        self.chats.lock().unwrap().push(message);
+    fn chat(&self, message: ChatMessage) {
+        let active_generation = self.active_generation.lock().unwrap();
+        dispatch_chat_message(
+            &message,
+            active_generation.0,
+            |message| self.chats.lock().unwrap().push(message.clone()),
+            |message| self.speech_messages.lock().unwrap().push(message.clone()),
+        );
     }
 }
 fn params() -> EventSubConnectionParams {
     EventSubConnectionParams {
         generation: 7,
+        auth_generation: 0,
         broadcaster_user_id: "broadcaster".into(),
         broadcaster_login: "streamer".into(),
+        client_id: "client".into(),
         user_id: "reader".into(),
     }
 }
@@ -138,13 +169,128 @@ fn welcome(id: &str) -> Message {
     Message::Text(serde_json::json!({"metadata":{"message_type":"session_welcome","message_id":"welcome"},"payload":{"session":{"id":id,"keepalive_timeout_seconds":10}}}).to_string())
 }
 fn chat(id: &str) -> Message {
+    chat_for_channel(id, "broadcaster")
+}
+fn chat_for_channel(id: &str, channel_id: &str) -> Message {
     let mut value: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/channel_chat_message.json")).unwrap();
     value["payload"]["event"]["message_id"] = id.into();
+    value["payload"]["event"]["broadcaster_user_id"] = channel_id.into();
     Message::Text(value.to_string())
 }
 fn cache() -> MessageDedupe {
     MessageDedupe::new(DEDUPE_CACHE_LIMIT, DEDUPE_CACHE_TTL)
+}
+
+#[tokio::test]
+async fn shared_delivery_boundary_sends_the_same_message_to_both_sinks_or_rejects_both() {
+    let runtime = Runtime::default();
+    let mut socket = FakeSocket::new([]);
+    let mut seen = cache();
+
+    // A current generation reaches both sinks with identical serialized content.
+    process_eventsub_frame(
+        &runtime,
+        &mut socket,
+        chat("current-generation"),
+        &mut seen,
+        Utc::now(),
+        7,
+    )
+    .await
+    .unwrap();
+    {
+        let ui = runtime.chats.lock().unwrap();
+        let speech = runtime.speech_messages.lock().unwrap();
+        assert_eq!(ui.len(), 1);
+        assert_eq!(speech.len(), 1);
+        assert_eq!(ui[0].connection_generation, Some(7));
+        assert_eq!(
+            serde_json::to_value(&ui[0]).unwrap(),
+            serde_json::to_value(&speech[0]).unwrap()
+        );
+    }
+
+    // EventSub duplicate delivery remains deduped before the shared boundary.
+    process_eventsub_frame(
+        &runtime,
+        &mut socket,
+        chat("current-generation"),
+        &mut seen,
+        Utc::now(),
+        7,
+    )
+    .await
+    .unwrap();
+
+    // A same-channel replacement rejects delayed frames from the old session,
+    // then delivers new-session frames to both sinks.
+    runtime.active_generation.lock().unwrap().0 = Some(8);
+    process_eventsub_frame(
+        &runtime,
+        &mut socket,
+        chat("late-old-generation"),
+        &mut seen,
+        Utc::now(),
+        7,
+    )
+    .await
+    .unwrap();
+    process_eventsub_frame(
+        &runtime,
+        &mut socket,
+        chat("new-generation"),
+        &mut seen,
+        Utc::now(),
+        8,
+    )
+    .await
+    .unwrap();
+
+    // A connection to another channel has its own generation and reaches both
+    // sinks with the same model.
+    runtime.active_generation.lock().unwrap().0 = Some(9);
+    process_eventsub_frame(
+        &runtime,
+        &mut socket,
+        chat_for_channel("other-channel", "other-broadcaster"),
+        &mut seen,
+        Utc::now(),
+        9,
+    )
+    .await
+    .unwrap();
+
+    // A stopped connection has no active generation and rejects both sinks.
+    runtime.active_generation.lock().unwrap().0 = None;
+    process_eventsub_frame(
+        &runtime,
+        &mut socket,
+        chat("after-stop"),
+        &mut seen,
+        Utc::now(),
+        8,
+    )
+    .await
+    .unwrap();
+
+    let ui = runtime.chats.lock().unwrap();
+    let speech = runtime.speech_messages.lock().unwrap();
+    assert_eq!(ui.len(), 3);
+    assert_eq!(speech.len(), 3);
+    let ui_messages: Vec<_> = ui.iter().map(|message| message.id.as_str()).collect();
+    let speech_messages: Vec<_> = speech.iter().map(|message| message.id.as_str()).collect();
+    assert_eq!(
+        ui_messages,
+        ["current-generation", "new-generation", "other-channel"]
+    );
+    assert_eq!(speech_messages, ui_messages);
+    assert_eq!(ui[1].connection_generation, Some(8));
+    assert_eq!(ui[2].channel_id, "other-broadcaster");
+    assert_eq!(ui[2].connection_generation, Some(9));
+    assert!(ui.iter().zip(speech.iter()).all(|(ui, speech)| {
+        serde_json::to_value(ui).unwrap() == serde_json::to_value(speech).unwrap()
+    }));
 }
 
 #[tokio::test(start_paused = true)]
@@ -264,6 +410,83 @@ async fn production_supervisor_retries_transient_error_but_stops_on_terminal_err
 }
 
 #[tokio::test(start_paused = true)]
+async fn obsolete_auth_session_disconnects_only_its_current_chat_generation() {
+    for current_generation in [7, 8] {
+        let runtime = Runtime::default();
+        runtime
+            .app_events
+            .record_test_twitch_status(TwitchStatusEvent {
+                revision: 0,
+                domain: TwitchStatusDomain::Chat,
+                status: if current_generation == 7 {
+                    TwitchStatus::Connecting
+                } else {
+                    TwitchStatus::Connected
+                },
+                reason: None,
+                connection_generation: Some(current_generation),
+                active_connection: (current_generation == 8).then(|| TwitchActiveConnection {
+                    generation: current_generation,
+                    broadcaster_user_id: "current-broadcaster".into(),
+                    broadcaster_login: "current-channel".into(),
+                }),
+                message: Some("existing chat snapshot".into()),
+                occurred_at_ms: 1,
+            });
+        runtime
+            .sockets
+            .lock()
+            .unwrap()
+            .push_back(Ok(FakeSocket::new([welcome("old-session")])));
+        runtime
+            .subscription_errors
+            .lock()
+            .unwrap()
+            .push_back(anyhow::Error::new(
+                EventSubTerminalError::ObsoleteConnection,
+            ));
+
+        run_eventsub_connection_with(&runtime, &params()).await;
+
+        let chat_status = runtime
+            .app_events
+            .snapshot()
+            .twitch_statuses
+            .into_iter()
+            .find(|status| status.domain == TwitchStatusDomain::Chat)
+            .expect("production app event state records the current chat snapshot");
+        assert_eq!(chat_status.connection_generation, Some(current_generation));
+        assert!(matches!(
+            (current_generation, chat_status.status),
+            (7, TwitchStatus::Disconnected) | (8, TwitchStatus::Connected)
+        ));
+        assert_eq!(
+            chat_status.message.as_deref(),
+            if current_generation == 7 {
+                Some("Twitch 認証が切り替わったため、旧 EventSub 接続を終了しました。")
+            } else {
+                Some("existing chat snapshot")
+            }
+        );
+        assert_eq!(
+            chat_status
+                .active_connection
+                .as_ref()
+                .map(|connection| connection.generation),
+            (current_generation == 8).then_some(8)
+        );
+        assert_eq!(runtime.urls.lock().unwrap().len(), 1);
+        assert_eq!(runtime.subscriptions.lock().unwrap().len(), 1);
+        assert!(!runtime
+            .statuses
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|status| matches!(status, TwitchStatus::AuthRequired)));
+    }
+}
+
+#[tokio::test(start_paused = true)]
 async fn production_session_reuses_dedupe_after_normal_reconnect() {
     let runtime = Runtime::default();
     runtime.sockets.lock().unwrap().extend([
@@ -290,6 +513,48 @@ async fn production_session_reuses_dedupe_after_normal_reconnect() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn handover_revocation_propagates_to_terminal_supervisor_without_retry() {
+    for reason in ["authorization_revoked", "user_removed"] {
+        let runtime = Runtime::default();
+        let reconnect = Message::Text(
+            serde_json::json!({
+                "metadata": { "message_type": "session_reconnect", "message_id": "reconnect" },
+                "payload": { "session": { "id": "old", "reconnect_url": "wss://handover" } }
+            })
+            .to_string(),
+        );
+        let revoked = Message::Text(
+            serde_json::json!({
+                "metadata": { "message_type": "revocation", "message_id": "revoked" },
+                "payload": { "subscription": { "type": "channel.chat.message", "status": reason } }
+            })
+            .to_string(),
+        );
+        runtime.sockets.lock().unwrap().extend([
+            Ok(FakeSocket::new([welcome("old"), reconnect])),
+            Ok(FakeSocket::new([revoked])),
+        ]);
+        let start = tokio::time::Instant::now();
+        run_eventsub_connection_with(&runtime, &params()).await;
+        assert_eq!(start.elapsed(), Duration::ZERO);
+        assert_eq!(runtime.urls.lock().unwrap().len(), 2);
+        assert_eq!(runtime.subscriptions.lock().unwrap().len(), 1);
+        let statuses = runtime.statuses.lock().unwrap();
+        assert!(matches!(
+            statuses.last(),
+            Some(TwitchStatus::Error | TwitchStatus::AuthRequired)
+        ));
+        assert!(runtime
+            .logs
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .contains(reason));
+    }
+}
+
+#[tokio::test(start_paused = true)]
 async fn production_connection_handle_aborts_pending_session() {
     let runtime = Arc::new(Runtime::default());
     runtime
@@ -302,9 +567,12 @@ async fn production_connection_handle_aborts_pending_session() {
         run_eventsub_connection_with(task_runtime.as_ref(), &params()).await
     });
     let handle = TwitchConnectionHandle::new(1, task);
+    let abort = handle.task.abort_handle();
     tokio::task::yield_now().await;
     handle.abort();
-    assert!(handle.task.await.unwrap_err().is_cancelled());
+    drop(handle);
+    tokio::task::yield_now().await;
+    assert!(abort.is_finished());
     assert!(runtime.subscriptions.lock().unwrap().is_empty());
 }
 
@@ -356,6 +624,7 @@ impl OAuthTransport for Http {
 fn auth() -> TwitchAuthState {
     TwitchAuthState {
         generation: 1,
+        credential_revision: 0,
         pending: None,
         token: Some(TwitchToken {
             access_token: "old-access".into(),
@@ -400,7 +669,7 @@ async fn production_refresh_validates_and_saves_rotation_before_retrying_subscri
         || async {
             let (token, profile) = refresh_and_validate(&http, &credentials).await?;
             let (access, changed, warning) =
-                persist_eventsub_rotation(auth.clone(), &store, &credentials, token, profile)
+                persist_credential_rotation(auth.clone(), &store, &credentials, token, profile)
                     .await?;
             assert!(changed);
             assert!(warning.is_none());
@@ -433,7 +702,7 @@ async fn production_validate_result_and_rotation_after_logout_cannot_restore_aut
         apply_validated_profile(&mut auth.lock().unwrap(), generation, profile.clone()).is_err()
     );
     assert!(
-        persist_eventsub_rotation(auth.clone(), &store, &credentials, token, profile)
+        persist_credential_rotation(auth.clone(), &store, &credentials, token, profile)
             .await
             .is_err()
     );

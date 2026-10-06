@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import { createDefaultAppSettings } from "../settings/model";
 
 type Listener = (event: { event: string; id: number; payload: unknown }) => void;
 type Handler = (args?: Record<string, unknown>) => unknown;
@@ -8,38 +9,10 @@ const pendingSubscriptions: Array<() => void> = [];
 const rejectedSubscriptions = new Set<string>();
 let holdSubscriptions = false;
 
-export const defaultSettings = {
-  twitch: {
-    channelLogin: "",
-    autoConnect: false,
-    confirmBeforeStopChat: true,
-    liveChatAnnouncements: true,
-  },
-  speech: {
-    adapter: "bouyomi",
-    bouyomiHost: "127.0.0.1",
-    bouyomiPort: 50001,
-    bouyomiSpeed: -1,
-    bouyomiTone: -1,
-    bouyomiVolume: -1,
-    bouyomiVoice: 0,
-    readUserName: true,
-    autoSpeak: true,
-    maxCommentLength: 120,
-    repeatSuppressionSeconds: 2,
-    blockedUsers: [],
-    blockedWords: [],
-    urlHandling: "replace",
-    readEmotes: false,
-    connectionSuccessSpeechEnabled: true,
-    connectionSuccessSpeechText: "",
-  },
-  launcher: { items: [] },
-  window: {},
-};
+export const defaultSettings = createDefaultAppSettings();
 
 const defaults: Record<string, unknown> = {
-  settings_get: defaultSettings,
+  settings_get: createDefaultAppSettings(),
   settings_take_recovery_notice: null,
   twitch_get_stored_auth: null,
   app_build_info: {

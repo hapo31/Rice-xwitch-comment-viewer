@@ -75,7 +75,10 @@ pub struct BouyomiTalkConfig {
 
 - 読み上げごとに短いTCP接続を張る設計から始める。棒読みちゃん側の既存連携と相性がよい。
 - アプリ内の talk、テスト読み上げ、接続確認、無音プローブ、pause/resume/skip/clear は共有 async dispatcher を通す。短命TCP接続は維持するが、一つの送信が物理的に完了するまで次の接続を開始しない。キューワーカーは dispatcher を取得してから pending を in-flight へ予約し、同じ guard のまま talk packet を書き込む。control は queue の control-in-progress を先に記録し、同じ dispatcher guard の中で packet 送信、ローカル queue 反映、成功 status/log の通知を行う。これにより、control が先に開始された場合に予約済みの talk が control 成功後に送られること、pause/resume の wire 順とローカル適用・通知順が入れ替わることを防ぐ。制御送信の失敗時はローカル queue が未変更で、棒読みちゃん側は到達不明と明示する。失敗した control が最後の barrier なら、保留中の自動読み上げ worker を再開する。送信後のローカル反映に失敗した場合は、棒読みちゃん側は送信済みでローカル状態だけが未反映と明示する。
+- host入力のIPv6文法はfrontendで既存Zodの `ipv6()`、backendでRust標準 `IpAddr` に委譲し、共通 `settings-validation.json` で圧縮・IPv4埋込み・先頭ゼロ・group超過・zone IDを照合する。raw入力253 UTF-8 bytes、制御文字/角括弧/内部空白の禁止とASCII DNS labelの扱いはapp policyとして保持する。IPv4風の数値DNS labelも従来どおりこのpolicyで扱い、解決後の接続許可はbackendが別途判断する。参照: [Zod IP addresses](https://zod.dev/api#ip-addresses)、[Rust Ipv6Addr](https://doc.rust-lang.org/std/net/struct.Ipv6Addr.html)。
 - 接続先はhost/portを構造化して保持し、共通destination policyでIPv4・DNS・IPv6を2秒/最大16address以内へ解決する。全addressを検証してから`SocketAddr`集合へ直接接続し、connect内部でhostnameを再解決しない。通常は127/8・::1（IPv4-mapped loopbackも含む）だけへ接続する。private LAN/VPN宛先も明示remote mode＋native consentがなければ送信しない。
+- queue の talk 受付後は、adapter と item ID を持つ再生sessionを、完了確認とローカル結果反映が終わるまで保持する。Pause/Resume/Skip/Clear は dispatcher 取得後にこのsessionを選び、再生中に設定を A から B へ保存しても A へ送る。後続item（再送を含む）は送信予約時の設定 B を使う。再生中sessionがない制御は現在設定を使う。sessionは正常終了・失敗・worker取消で解放する。各adapterの接続時許可検証は継続し、外部宛先 A の許可が設定保存で失効すれば制御も失敗としてキューを維持する。Bへの代替送信はしない。
+
 - remote modeだけでは許可されない。Settingsでhost/port/modeを保存し、［保存済みの接続先をネイティブ確認で許可］を操作すると、宛先/DNS結果とTwitch user/chat/test/controlの平文送信・TLS/相手認証なしをnative UIで確認する。public/link-local/multicast/未指定宛先は未対応。信頼するprivate宛先を最小allowlistとしてこの起動中だけ保持し、暗号化トンネル/VPNを推奨する（トンネルの接続/暗号化をRiceが保証するわけではない）。同意は設定JSONに保存せず、再起動/endpoint変更/DNS集合変更後は手動で再確認する。自動読み上げ・diagnostics・health/test・全controlに例外はない。許可拒否/変更時は自動再送せず、既に開始済みの送信を取り消す保証はない。
 - host欄はIPv4、DNS名、または角括弧なしのIPv6アドレスを受け付ける。portをhost欄へ含めず、IPv6 zone identifierは初期実装では受け付けない。表示・diagnosticsではIPv6を `[::1]:50001` のように角括弧付きで表記する。
 - hostの妥当性検証とaddress構築はアダプタの一箇所に集約し、設定保存、queue、health、test、control、diagnosticsから共通して利用する。
@@ -86,6 +89,11 @@ pub struct BouyomiTalkConfig {
 - 長文、URL、改行、制御文字は送信前に整形する。URL の検出・置換・遮断は `SpeechFormatter` に閉じ込め、空白区切りには依存しない。
 - 最大文字数は URL・NG・制御文字・emote の処理とユーザー名 prefix の付与を終えた最終読み上げ文へ Unicode 文字単位で適用する。切り詰め時の省略記号 `…` も上限に含めるため、上限 1 で切り詰めが必要な場合の出力は `…` とする。表示名だけで上限を超える場合も、最終読み上げ文の先頭から同じ規則で切り詰める。正規化後の本文が空の場合は、この切り詰めを行わず `Blocked` とする。
 - URL は ASCII の `http://`、`https://`、または scheme なしの `www.` で始まる形式を大文字小文字を区別せず検出する。日本語文中、括弧、引用符内でも対象にするが、ASCII の識別子やメールアドレスに連結した部分文字列は URL とみなさない。URL の直後に続く日本語本文は URL に含めず、末尾の句読点、対応しない閉じ括弧、対になる引用符、後続本文を囲む開き括弧・引用符は本文として残す。URL path 内で対になった括弧は URL の一部として扱う。角括弧付き IPv6 を含む authority は URL parser で検証し、不完全な authority は対象外とする。国際化ドメインは punycode 表記を対象にする。
+
+Speech の実装は責務ごとに分ける。`speech/mod.rs` は共通trait・公開型・module/export と既存 adapter 群の組立を担い、queue model/遷移は `queue.rs`、整形と URL 判定は `formatter.rs`、queue Tauri commands は `queue_commands.rs`、event payload/snapshot 変換は `events.rs` に置く。各回帰テストは `tests.rs` にまとめ、公開 command と worker が同じ queue/formatter 経路を使うことを確認する。
+
+[linkify 0.11 の LinkFinder](https://docs.rs/linkify/0.11.0/linkify/struct.LinkFinder.html) を既存fixtureと比較した。URLのみ・scheme任意・IRI無効の設定では `https://example.com(note)` と角括弧IPv6の候補が得られず、識別子へ連結したschemeや不正portの候補はアプリ側の追加検証が必要だった。候補がゼロの場合だけ独自処理へ戻す方式は、同じ本文に通常URLを混ぜると括弧隣接URLを置換しなくなることも本番formatterテストで再現した。互換fallbackにも同じ走査・authority検証・境界処理が必要でコードが増えるため、今回は依存を追加せず、既存の一つの走査をformatter内だけに残す。対象はhttp/https/www、ASCII境界、句読点・括弧、厳格authority検証に限定し、fixtureと複数形式混在の回帰を共通経路へ適用する。
+
 - 正規化（制御文字・空白・emote 除外など）の後に本文が空なら、ユーザー名読み上げの ON/OFF にかかわらず理由 `読み上げる本文がありません。` で `Blocked` とする。空の talk packet やユーザー名だけの読み上げは送信しない。
 - 棒読みちゃんタグを許可するかは設定で切り替える。初期値は安全側で「チャット由来タグを無効化/エスケープ」する。
 
@@ -180,6 +188,8 @@ Tauri Rust
 - 実装は配信中に失敗しても棒読みちゃんへ戻せるよう、必ずアダプタ分離する。
 
 ## 読み上げキュー
+
+コメント受信時の設定 snapshot が自動読み上げ OFF の場合は、pending に入れず `skipped` / `autoSpeakDisabled` の結果を履歴に保持し、通常の queue event と snapshot で通知する。履歴上限200件、待機数に含めないこと、連投抑制時刻を更新しないことを維持する。ON/OFF の切替が後から起きても既存結果を変更・再 enqueue しない。frontend は現在の設定から受付を推測せず、結果受信前を「受信済み」、受付後だけ「待機」と表示する。
 
 初期キュー仕様:
 

@@ -1,4 +1,10 @@
 mod app_events;
+#[cfg(feature = "app")]
+mod application;
+#[cfg(test)]
+mod architecture_tests;
+#[cfg(target_os = "linux")]
+mod external_url;
 mod launcher;
 mod resource_limits;
 mod settings;
@@ -8,6 +14,8 @@ mod speech;
 mod twitch;
 #[cfg(all(test, feature = "app"))]
 mod twitch_test_ports;
+#[cfg(test)]
+mod wire_contracts;
 
 #[cfg(feature = "app")]
 use app_events::{
@@ -16,12 +24,14 @@ use app_events::{
     TwitchStatusDomain,
 };
 #[cfg(feature = "app")]
+use application::AppState;
+#[cfg(feature = "app")]
 use launcher::commands::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
 use serde::Serialize;
 #[cfg(feature = "app")]
 use settings::{
-    settings_get, settings_take_recovery_notice, settings_update, AppSettings, AppState,
-    SettingsStore, WindowPosition,
+    settings_get, settings_take_recovery_notice, settings_update, AppSettings, SettingsStore,
+    WindowPosition,
 };
 #[cfg(feature = "app")]
 use speech::bouyomi::speech_connection_diagnostics;
@@ -37,11 +47,11 @@ use speech::{
     emit_current_queue, speech_queue_dismiss, speech_queue_dismiss_history, speech_queue_reload,
     speech_queue_remove, speech_queue_retry,
 };
-#[cfg(feature = "app")]
-use std::process::Command;
 use std::sync::Mutex;
 #[cfg(feature = "app")]
 use tauri::{Manager, PhysicalPosition, WindowEvent};
+#[cfg(all(feature = "app", not(target_os = "linux")))]
+use tauri_plugin_opener::OpenerExt;
 #[cfg(feature = "app")]
 use twitch::commands::{
     twitch_connect, twitch_disconnect, twitch_get_stored_auth, twitch_poll_auth, twitch_start_auth,
@@ -57,15 +67,44 @@ fn app_exit(app: tauri::AppHandle) {
 
 #[cfg(feature = "app")]
 #[tauri::command]
-fn app_open_external_url(url: String) -> Result<(), String> {
-    let url = validate_external_url(&url)?;
-    open_external_url(url.as_str()).map_err(|error| {
-        format!("ブラウザを開けませんでした。URLをコピーして手動で開いてください: {error}")
+fn app_open_external_url(_app: tauri::AppHandle, url: String) -> Result<(), String> {
+    open_validated_external_url(&url, |url| {
+        #[cfg(target_os = "linux")]
+        {
+            external_url::open_system_url(url.as_str())
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            open_system_url(&_app, url.as_str())
+        }
     })
+}
+
+#[cfg(all(feature = "app", not(target_os = "linux")))]
+fn open_system_url(app: &tauri::AppHandle, url: &str) -> anyhow::Result<()> {
+    app.opener()
+        .open_url(url.to_string(), None::<String>)
+        .map_err(Into::into)
+}
+
+#[cfg(feature = "app")]
+fn open_validated_external_url<E: std::fmt::Display>(
+    raw_url: &str,
+    open: impl FnOnce(&reqwest::Url) -> Result<(), E>,
+) -> Result<(), String> {
+    let url = validate_external_url(raw_url)?;
+    open(&url).map_err(external_url_open_error)
+}
+
+#[cfg(feature = "app")]
+fn external_url_open_error(error: impl std::fmt::Display) -> String {
+    format!("ブラウザを開けませんでした。URLをコピーして手動で開いてください: {error}")
 }
 
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 struct AppBuildInfo {
     version: &'static str,
     is_dev: bool,
@@ -108,6 +147,11 @@ fn app_builder_with_state(state: AppState) -> tauri::Builder<tauri::Wry> {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             single_instance::request_activation(app);
         }))
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .manage(single_instance::PendingActivation::default())
         .manage(state)
@@ -147,6 +191,7 @@ fn app_builder_with_state(state: AppState) -> tauri::Builder<tauri::Wry> {
             twitch_disconnect
         ])
         .setup(|app| {
+            app.manage(twitch::TwitchHttp::new()?);
             let state = app.state::<AppState>();
             let loaded_settings = settings::SettingsStore::load(app.handle())?;
             restore_main_window_position(app.handle(), &loaded_settings.settings);
@@ -199,25 +244,17 @@ fn app_builder_with_state(state: AppState) -> tauri::Builder<tauri::Wry> {
                     "保存済みの Twitch 認証情報を復元しました。/validate を実行して確認します。",
                 );
             }
-            if let Some(warning) = restored_auth.storage_warning {
-                emit_app_log(app.handle(), AppLogLevel::Warning, warning.clone());
-                if !has_restored_auth && warning.contains("Twitch 認証に必要な権限がありません")
-                {
-                    emit_twitch_auth_required(
-                        app.handle(),
-                        TwitchAuthRequiredReason::MissingRequiredScope,
-                        warning,
-                    );
+            if let Some(notice) = restored_auth.notice {
+                let (status, reason) = restored_auth_status(has_restored_auth, &notice);
+                emit_app_log(app.handle(), AppLogLevel::Warning, notice.message.clone());
+                if let Some(reason) = reason {
+                    emit_twitch_auth_required(app.handle(), reason, notice.message);
                 } else {
                     emit_twitch_status(
                         app.handle(),
                         TwitchStatusDomain::Auth,
-                        if has_restored_auth {
-                            TwitchStatus::Validating
-                        } else {
-                            TwitchStatus::AuthRequired
-                        },
-                        Some(warning),
+                        status,
+                        Some(notice.message),
                     );
                 }
             }
@@ -229,6 +266,21 @@ fn app_builder_with_state(state: AppState) -> tauri::Builder<tauri::Wry> {
                 persist_main_window_position(window.app_handle());
             }
         })
+}
+
+#[cfg(feature = "app")]
+fn restored_auth_status(
+    has_restored_auth: bool,
+    notice: &twitch::AuthLoadNotice,
+) -> (TwitchStatus, Option<TwitchAuthRequiredReason>) {
+    match (has_restored_auth, notice.reason) {
+        (true, _) => (TwitchStatus::Validating, None),
+        (false, twitch::AuthLoadReason::MissingRequiredScope) => (
+            TwitchStatus::AuthRequired,
+            Some(TwitchAuthRequiredReason::MissingRequiredScope),
+        ),
+        (false, _) => (TwitchStatus::AuthRequired, None),
+    }
 }
 
 #[cfg(feature = "app")]
@@ -274,17 +326,20 @@ fn persist_main_window_position(app: &tauri::AppHandle) {
         return;
     };
     let state = app.state::<AppState>();
-    let Ok(mut settings) = state.settings.lock() else {
+    let Ok(_transaction) = state.settings_transaction.lock() else {
         return;
     };
-
-    let mut candidate = settings.clone();
+    let Ok(mut candidate) = state.settings.lock().map(|settings| settings.clone()) else {
+        return;
+    };
     candidate.window.position = Some(WindowPosition {
         x: position.x,
         y: position.y,
     });
     if SettingsStore::save(app, &candidate).is_ok() {
-        *settings = candidate;
+        if let Ok(mut settings) = state.settings.lock() {
+            *settings = candidate;
+        }
     }
 }
 
@@ -335,74 +390,14 @@ fn validate_external_url(raw_url: &str) -> Result<reqwest::Url, String> {
     }
 }
 
-#[cfg(feature = "app")]
-fn open_external_url(url: &str) -> anyhow::Result<()> {
-    #[cfg(target_os = "windows")]
-    {
-        return run_open_command("rundll32", &["url.dll,FileProtocolHandler", url]);
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        return run_open_command("open", &[url]);
-    }
-
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let commands: &[(&str, &[&str])] = if is_wsl() {
-            &[
-                ("wslview", &[url]),
-                ("xdg-open", &[url]),
-                ("gio", &["open", url]),
-            ]
-        } else {
-            &[
-                ("xdg-open", &[url]),
-                ("gio", &["open", url]),
-                ("wslview", &[url]),
-            ]
-        };
-
-        let mut errors = Vec::new();
-        for (program, args) in commands {
-            match run_open_command(program, args) {
-                Ok(()) => return Ok(()),
-                Err(error) => errors.push(format!("{program}: {error}")),
-            }
-        }
-
-        Err(anyhow::anyhow!(errors.join("; ")))
-    }
-}
-
-#[cfg(feature = "app")]
-fn run_open_command(program: &str, args: &[&str]) -> anyhow::Result<()> {
-    let output = Command::new(program).args(args).output()?;
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if stderr.is_empty() {
-        Err(anyhow::anyhow!("終了コード {}", output.status))
-    } else {
-        Err(anyhow::anyhow!(stderr))
-    }
-}
-
-#[cfg(all(feature = "app", unix, not(target_os = "macos")))]
-fn is_wsl() -> bool {
-    std::env::var_os("WSL_DISTRO_NAME").is_some()
-        || std::fs::read_to_string("/proc/version")
-            .map(|version| version.to_ascii_lowercase().contains("microsoft"))
-            .unwrap_or(false)
-}
-
 pub(crate) type SharedSettings<T> = Mutex<T>;
 
 #[cfg(all(test, feature = "app"))]
 mod tests {
-    use super::{app_build_info_value, title_bar_is_visible, validate_external_url};
+    use super::{
+        app_build_info_value, external_url_open_error, open_validated_external_url,
+        title_bar_is_visible, validate_external_url,
+    };
     use crate::settings::WindowPosition;
 
     #[test]
@@ -427,6 +422,46 @@ mod tests {
         assert!(validate_external_url("https://example.com/activate").is_err());
         assert!(validate_external_url("http://www.twitch.tv/activate").is_err());
         assert!(validate_external_url("https://www.twitch.tv/settings").is_err());
+    }
+
+    #[test]
+    fn external_browser_failure_keeps_japanese_recovery_guidance() {
+        let message = external_url_open_error("system opener failed");
+
+        assert!(
+            message.starts_with("ブラウザを開けませんでした。URLをコピーして手動で開いてください:")
+        );
+        assert!(message.contains("system opener failed"));
+    }
+
+    #[test]
+    fn rejects_untrusted_url_before_calling_the_opener() {
+        let mut opener_called = false;
+
+        let result = open_validated_external_url("https://example.com/activate", |_| {
+            opener_called = true;
+            Ok::<(), std::convert::Infallible>(())
+        });
+
+        assert_eq!(result, Err("許可されていない外部URLです。".to_string()));
+        assert!(!opener_called);
+    }
+
+    #[test]
+    fn opens_the_validated_twitch_activation_url() {
+        let mut opened_url = None;
+
+        let result =
+            open_validated_external_url("https://www.twitch.tv/activate?device-code=123", |url| {
+                opened_url = Some(url.to_string());
+                Ok::<(), std::convert::Infallible>(())
+            });
+
+        assert_eq!(result, Ok(()));
+        assert_eq!(
+            opened_url.as_deref(),
+            Some("https://www.twitch.tv/activate?device-code=123")
+        );
     }
 
     #[test]
@@ -475,5 +510,37 @@ mod tests {
             1920,
             1080,
         ));
+    }
+}
+
+#[cfg(all(test, feature = "app"))]
+#[test]
+fn auth_restore_notification_uses_reason_even_when_display_text_changes() {
+    use twitch::{AuthLoadNotice, AuthLoadReason};
+    for message in [
+        "文言を変更しました。",
+        "Twitch 認証に必要な権限がありません",
+    ] {
+        for reason in [
+            AuthLoadReason::MissingRequiredScope,
+            AuthLoadReason::StoreUnavailable,
+            AuthLoadReason::CorruptData,
+            AuthLoadReason::LegacyMigrated,
+            AuthLoadReason::LegacyCleanupFailed,
+        ] {
+            let notice = AuthLoadNotice {
+                reason,
+                message: message.into(),
+            };
+            let (status, required_reason) = restored_auth_status(false, &notice);
+            assert!(matches!(status, TwitchStatus::AuthRequired));
+            assert_eq!(
+                required_reason.is_some(),
+                reason == AuthLoadReason::MissingRequiredScope
+            );
+            let (status, required_reason) = restored_auth_status(true, &notice);
+            assert!(matches!(status, TwitchStatus::Validating));
+            assert!(required_reason.is_none());
+        }
     }
 }

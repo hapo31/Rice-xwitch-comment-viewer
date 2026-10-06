@@ -305,8 +305,9 @@ fn launcher_item(raw: &RawValue, changed: &mut bool, unknown: &mut bool) -> Opti
         }
     }
     let original = string(item.get("iconDataUrl"), 64 * 1024 + 22, changed);
-    candidate.icon_data_url = normalize_launcher_icon_data_url(original.clone());
-    *changed |= candidate.icon_data_url != original;
+    let normalized = normalize_launcher_icon_data_url(original.clone());
+    *changed |= normalized.as_deref() != original.as_deref();
+    candidate.icon_data_url = normalized;
     // Match normal metadata normalization, without filesystem/COM access.
     for text in [&mut candidate.target, &mut candidate.display_name] {
         if text.trim().len() != text.len() {
@@ -327,8 +328,12 @@ fn launcher_item(raw: &RawValue, changed: &mut bool, unknown: &mut bool) -> Opti
 }
 
 pub(super) fn decode(text: &str) -> Result<DecodedSettings, String> {
-    super::check_bytes(text.len(), super::MAX_SETTINGS_JSON_BYTES, "設定JSON")
-        .map_err(|error| error.to_string())?;
+    crate::resource_limits::check_bytes(
+        text.len(),
+        crate::resource_limits::MAX_SETTINGS_JSON_BYTES,
+        "設定JSON",
+    )
+    .map_err(|error| error.to_string())?;
     let raw: &RawValue =
         serde_json::from_str(text).map_err(|_| "設定JSONを読み取れません。".to_string())?;
     let mut changed = false;

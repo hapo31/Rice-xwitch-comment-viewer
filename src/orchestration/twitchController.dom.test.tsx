@@ -1,0 +1,306 @@
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AppShell } from "../AppShell";
+import { AuthOperationController } from "../authOperation";
+import { type AppAction, initialAppState } from "../stores/appState";
+import { createDomainStores, DomainProvider } from "../stores/domainStores";
+import { tauriMock } from "../testing/tauriMock";
+import type { TwitchDeviceAuthStart, TwitchUserProfile } from "../types";
+import { dispatchDomainAction } from "./domainOrchestration";
+import { createTwitchController } from "./twitchController";
+
+const prompt: TwitchDeviceAuthStart = {
+  userCode: "ABCD-EFGH",
+  verificationUri: "https://www.twitch.tv/activate",
+  expiresIn: 60,
+  expiresAtMs: Date.now() + 60_000,
+  interval: 1,
+};
+const profile: TwitchUserProfile = {
+  userId: "1",
+  login: "viewer",
+  scopes: ["user:read:chat"],
+  expiresIn: 3600,
+};
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function makeController(state = initialAppState) {
+  const stores = createDomainStores();
+  dispatchDomainAction(stores, { type: "twitch.authStatus", status: state.twitchAuthStatus });
+  dispatchDomainAction(stores, { type: "twitch.authPrompt", prompt: state.twitchAuthPrompt });
+  dispatchDomainAction(stores, { type: "twitch.profile", profile: state.twitchProfile });
+  const operations = new AuthOperationController();
+  const reportInfo = vi.fn();
+  const reportNotification = vi.fn();
+  const reportError = vi.fn();
+  const controller = createTwitchController({
+    operations,
+    dispatch: (action: AppAction) => dispatchDomainAction(stores, action),
+    getAuthPrompt: () => stores.connection.getState().twitchAuthPrompt,
+    getAuthStatus: () => stores.connection.getState().twitchAuthStatus,
+    getAuthRevision: () => stores.connection.getState().authRevision,
+    getAuthProfile: () => stores.connection.getState().twitchProfile,
+    getChannelLogin: () => undefined,
+    getConfirmBeforeStopChat: () => false,
+    waitForSettings: async () => undefined,
+    reportSystemMessage: vi.fn(),
+    reportInfo,
+    reportNotification,
+    reportError,
+    reportTechnicalError: vi.fn(),
+    routeAutoConnectTimeline: vi.fn(),
+  });
+  return {
+    controller,
+    operations,
+    getState: () => ({
+      ...initialAppState,
+      ...stores.connection.getState(),
+    }),
+    reportInfo,
+    reportNotification,
+    reportError,
+  };
+}
+
+afterEach(() => vi.useRealTimers());
+
+describe("Twitch controller auth-operation lifecycle", () => {
+  it.each(["resolve", "reject"] as const)(
+    "keeps a later manual login after old disconnect %s",
+    async (completion) => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      const oldDisconnect = deferred<null>();
+      tauriMock.setCommand("twitch_disconnect", () => oldDisconnect.promise);
+      tauriMock.setCommand("twitch_start_auth", { ...prompt, userCode: "NEW-CODE" });
+      const harness = makeController({
+        ...initialAppState,
+        twitchAuthStatus: "authenticated",
+        twitchProfile: profile,
+      });
+      const disconnecting = harness.controller.disconnect();
+      expect(harness.getState().twitchDisconnectRequest).toBeDefined();
+      await harness.controller.startAuth();
+      expect(harness.getState().twitchDisconnectRequest).toBeUndefined();
+      const before = harness.getState();
+      if (completion === "resolve") oldDisconnect.resolve(null);
+      else oldDisconnect.reject(new Error("old keyring failure"));
+      await disconnecting;
+      expect(harness.getState()).toEqual(before);
+      expect(harness.getState().twitchAuthPrompt?.userCode).toBe("NEW-CODE");
+      expect(harness.reportError).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["start", "validate"] as const)(
+    "does not let a due expiry timer preempt deferred manual %s",
+    async (operation) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000_000);
+      const expiringPrompt = {
+        ...prompt,
+        expiresAtMs: Date.now() + 1000,
+        interval: 5,
+      };
+      const pendingStart = deferred<TwitchDeviceAuthStart>();
+      const pendingValidation = deferred<{ profile: TwitchUserProfile }>();
+      tauriMock.setCommand("twitch_start_auth", () => pendingStart.promise);
+      tauriMock.setCommand("twitch_validate_auth", () => pendingValidation.promise);
+      const harness = makeController({
+        ...initialAppState,
+        twitchAuthPrompt: expiringPrompt,
+      });
+      harness.controller.schedulePoll(expiringPrompt);
+
+      const manual =
+        operation === "start" ? harness.controller.startAuth() : harness.controller.validateAuth();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+
+      expect(harness.getState().twitchAuthStatus).not.toBe("expired");
+      expect(harness.reportNotification).not.toHaveBeenCalledWith(
+        "warning",
+        "event",
+        "Twitch の認証コードの有効期限が切れました。再度ログインしてください。",
+      );
+
+      if (operation === "start") pendingStart.resolve({ ...prompt, userCode: "NEW-CODE" });
+      else pendingValidation.resolve({ profile });
+      await act(async () => manual);
+
+      expect(harness.getState().twitchAuthStatus).not.toBe("expired");
+      if (operation === "start") {
+        expect(harness.getState().twitchAuthPrompt?.userCode).toBe("NEW-CODE");
+      } else {
+        expect(harness.getState()).toMatchObject({
+          twitchAuthStatus: "authenticated",
+          twitchProfile: profile,
+        });
+      }
+    },
+  );
+
+  it("does not expire an already-expired retained prompt during manual start", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const pendingStart = deferred<TwitchDeviceAuthStart>();
+    tauriMock.setCommand("twitch_start_auth", () => pendingStart.promise);
+    const expiredPrompt = { ...prompt, expiresAtMs: Date.now() - 1 };
+    const harness = makeController({ ...initialAppState, twitchAuthPrompt: expiredPrompt });
+
+    const manual = harness.controller.startAuth();
+    harness.controller.schedulePoll(expiredPrompt);
+
+    expect(harness.getState().twitchAuthStatus).not.toBe("expired");
+    expect(harness.getState().twitchAuthPrompt).toEqual(expiredPrompt);
+    expect(harness.reportNotification).not.toHaveBeenCalledWith(
+      "warning",
+      "event",
+      "Twitch の認証コードの有効期限が切れました。再度ログインしてください。",
+    );
+
+    pendingStart.resolve({ ...prompt, userCode: "NEW-CODE" });
+    await act(async () => manual);
+    expect(harness.getState().twitchAuthPrompt?.userCode).toBe("NEW-CODE");
+  });
+
+  it.each(["start", "validate", "disconnect"] as const)(
+    "prevents a due Device Code timer from overtaking deferred manual %s",
+    async (operation) => {
+      vi.useFakeTimers();
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      const pendingStart = deferred<TwitchDeviceAuthStart>();
+      const pendingValidation = deferred<{ profile: TwitchUserProfile }>();
+      const pendingDisconnect = deferred<null>();
+      tauriMock.setCommand("twitch_start_auth", () => pendingStart.promise);
+      tauriMock.setCommand("twitch_validate_auth", () => pendingValidation.promise);
+      tauriMock.setCommand("twitch_disconnect", () => pendingDisconnect.promise);
+      const harness = makeController({
+        ...initialAppState,
+        twitchAuthPrompt: prompt,
+      });
+      harness.controller.schedulePoll(prompt);
+
+      let manual: Promise<unknown>;
+      if (operation === "start") manual = harness.controller.startAuth();
+      else if (operation === "validate") manual = harness.controller.validateAuth();
+      else manual = harness.controller.disconnect();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(tauriMock.invoke).not.toHaveBeenCalledWith("twitch_poll_auth");
+      expect(harness.operations.getState().activeOperation).toBe(operation);
+
+      if (operation === "start") pendingStart.resolve({ ...prompt, userCode: "NEW-CODE" });
+      else if (operation === "validate") pendingValidation.resolve({ profile });
+      else pendingDisconnect.resolve(null);
+      await act(async () => manual);
+
+      expect(tauriMock.invoke).not.toHaveBeenCalledWith("twitch_poll_auth");
+      if (operation === "start") {
+        expect(harness.getState()).toMatchObject({
+          twitchAuthStatus: "unauthenticated",
+          twitchAuthPrompt: { userCode: "NEW-CODE" },
+        });
+      } else if (operation === "validate") {
+        expect(harness.getState()).toMatchObject({
+          twitchAuthStatus: "authenticated",
+          twitchProfile: profile,
+        });
+      } else {
+        expect(harness.getState()).toMatchObject({
+          twitchAuthStatus: "unauthenticated",
+          twitchAuthPrompt: undefined,
+        });
+      }
+    },
+  );
+
+  it("invalidates deferred manual auth results when AppShell unmounts", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const pendingStart = deferred<TwitchDeviceAuthStart>();
+    tauriMock.setCommand("twitch_start_auth", () => pendingStart.promise);
+    const stores = createDomainStores();
+    const router = createMemoryRouter(
+      [
+        {
+          path: "*",
+          element: (
+            <DomainProvider stores={stores}>
+              <AppShell />
+            </DomainProvider>
+          ),
+        },
+      ],
+      { initialEntries: ["/auth"] },
+    );
+    const view = render(<RouterProvider router={router} />);
+    await waitFor(() => expect(stores.settings.getState().settings).toBeDefined());
+    await waitFor(() => expect(screen.getByRole("button", { name: "認証開始" })).toBeEnabled());
+    await act(async () => {
+      screen.getByRole("button", { name: "認証開始" }).click();
+    });
+    await waitFor(() => expect(tauriMock.invoke).toHaveBeenCalledWith("twitch_start_auth"));
+    const beforeUnmount = stores.connection.getState();
+    const chatBeforeUnmount = stores.chat.getState().messages;
+    const logsBeforeUnmount = stores.logs.getState().logs;
+    view.unmount();
+    router.dispose();
+
+    pendingStart.resolve(prompt);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(stores.connection.getState()).toEqual(beforeUnmount);
+    expect(stores.chat.getState().messages).toEqual(chatBeforeUnmount);
+    expect(stores.logs.getState().logs).toEqual(logsBeforeUnmount);
+  });
+
+  it("suppresses delayed restore callbacks when AppShell unmounts", async () => {
+    const pendingStoredAuth = deferred<TwitchUserProfile | undefined>();
+    tauriMock.setCommand("twitch_get_stored_auth", () => pendingStoredAuth.promise);
+    const stores = createDomainStores();
+    const router = createMemoryRouter(
+      [
+        {
+          path: "*",
+          element: (
+            <DomainProvider stores={stores}>
+              <AppShell />
+            </DomainProvider>
+          ),
+        },
+      ],
+      { initialEntries: ["/auth"] },
+    );
+    const view = render(<RouterProvider router={router} />);
+    await waitFor(() => expect(stores.settings.getState().settings).toBeDefined());
+    await waitFor(() => expect(tauriMock.invoke).toHaveBeenCalledWith("twitch_get_stored_auth"));
+    const chatBeforeUnmount = stores.chat.getState().messages;
+    view.unmount();
+    router.dispose();
+
+    pendingStoredAuth.resolve(undefined);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(stores.chat.getState().messages).toEqual(chatBeforeUnmount);
+    expect(stores.logs.getState().logs).toEqual([]);
+  });
+});

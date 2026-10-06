@@ -1,9 +1,10 @@
-use crate::app_events::{SpeechAdapterHealth, SpeechStatus};
+use super::{SpeechAdapterHealth, SpeechStatus};
 
 /// Adapter-independent delivery/health classification. Adapters map their native
 /// errors here; the scheduler never inspects protocol errors or display strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum FailureCode {
     Configuration,
     ConnectionRefused,

@@ -1,9 +1,15 @@
 //! Stable Twitch facade. Production modules import explicit dependencies.
+#[cfg(test)]
+pub(crate) use auth_state::{
+    TwitchAuthPollResult, TwitchAuthValidationResult, TwitchDeviceAuthStart,
+};
 #[cfg(feature = "app")]
 mod auth_service;
 mod auth_state;
 #[cfg(feature = "app")]
 mod auth_store;
+#[cfg(any(feature = "app", test))]
+mod chat_delivery;
 #[cfg(feature = "app")]
 mod chat_service;
 #[cfg(feature = "app")]
@@ -11,7 +17,10 @@ pub(crate) mod commands;
 mod dedupe;
 mod error;
 mod eventsub;
+mod http;
 mod model;
+#[cfg(feature = "app")]
+pub(crate) use http::TwitchHttp;
 mod normalization;
 mod oauth;
 #[cfg(feature = "app")]
@@ -19,13 +28,16 @@ mod runtime;
 #[cfg(feature = "app")]
 mod subscription;
 
-pub use auth_state::TwitchAuthState;
 #[cfg(feature = "app")]
-pub(crate) use auth_store::TwitchAuthStore;
+pub use auth_state::TwitchAuthState;
 #[cfg(all(test, feature = "app"))]
 pub(crate) use auth_store::{AuthCredentialStore, AuthLoadResult};
 #[cfg(feature = "app")]
-pub use chat_service::TwitchConnectionHandle;
+pub(crate) use auth_store::{AuthLoadNotice, AuthLoadReason, TwitchAuthStore};
+#[cfg(all(feature = "app", test))]
+pub(crate) use chat_service::TwitchConnectionHandle;
+#[cfg(feature = "app")]
+pub(crate) use chat_service::TwitchConnectionOwner;
 pub use model::*;
 use std::time::Duration;
 

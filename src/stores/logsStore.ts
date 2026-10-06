@@ -1,11 +1,13 @@
 import type { AppLogEvent, AppNotification } from "../types";
 import { createExternalStore, type ExternalStore } from "./store";
 
-export type StoredAppLogEvent = AppLogEvent & { id: string };
+export type StoredAppLogEvent = AppLogEvent & { id: string; sourceEventId?: string };
 
 export interface LogsState {
   logs: StoredAppLogEvent[];
+  /** Unresolved actionable notices have a capacity independent of informational history. */
   notifications: AppNotification[];
+  notificationHistory: AppNotification[];
 }
 
 export type LogsAction =
@@ -14,15 +16,30 @@ export type LogsAction =
   | { type: "logs.cleared" }
   | { type: "warnings.cleared" };
 
-export const initialLogsState: LogsState = { logs: [], notifications: [] };
+export const initialLogsState: LogsState = { logs: [], notifications: [], notificationHistory: [] };
+const notificationLimits = { notifications: 100, notificationHistory: 100 } as const;
+
+function notificationBucket(notification: AppNotification): keyof typeof notificationLimits {
+  return notification.severity === "warning" || notification.severity === "error"
+    ? "notifications"
+    : "notificationHistory";
+}
 
 export function logsReducer(state: LogsState, action: LogsAction): LogsState {
   switch (action.type) {
     case "log.added":
-      if (action.log.id && state.logs.some((log) => log.id === action.log.id)) return state;
+      if (action.log.id && state.logs.some((log) => log.sourceEventId === action.log.id))
+        return state;
       return {
         ...state,
-        logs: [{ ...action.log, id: uniqueLogId(action.log, state.logs) }, ...state.logs]
+        logs: [
+          {
+            ...action.log,
+            id: uniqueLogId(action.log, state.logs),
+            ...(action.log.id ? { sourceEventId: action.log.id } : {}),
+          },
+          ...state.logs,
+        ]
           .sort((a, b) => b.occurredAtMs - a.occurredAtMs)
           .slice(0, 500),
       };
@@ -31,32 +48,53 @@ export function logsReducer(state: LogsState, action: LogsAction): LogsState {
         ...action.notification,
         id: action.notification.id ?? notificationId(action.notification),
       };
-      const duplicateIndex = state.notifications.findIndex((existing) =>
-        isDuplicateNotification(existing, notification),
+      const existing = [...state.notifications, ...state.notificationHistory].find((entry) =>
+        isDuplicateNotification(entry, notification, action.notification.id !== undefined),
       );
-      if (duplicateIndex >= 0) {
-        const existing = state.notifications[duplicateIndex];
+      let target = notificationBucket(notification);
+      if (existing) {
+        const announcementDomains = [
+          ...new Set([
+            ...(existing.announcementDomains ?? []),
+            ...(notification.announcementDomains ?? []),
+          ]),
+        ];
+        const escalated =
+          notificationSeverityRank(notification.severity) >
+          notificationSeverityRank(existing.severity);
         if (
-          notificationSeverityRank(notification.severity) <=
-          notificationSeverityRank(existing.severity)
+          !escalated &&
+          announcementDomains.length === (existing.announcementDomains?.length ?? 0)
         )
           return state;
-        const notifications = [...state.notifications];
-        notifications[duplicateIndex] = { ...existing, severity: notification.severity };
-        return { ...state, notifications };
+        const source = notificationBucket(existing);
+        const promoted = {
+          ...existing,
+          severity: escalated ? notification.severity : existing.severity,
+          ...(announcementDomains.length ? { announcementDomains } : {}),
+        };
+        target = notificationBucket(promoted);
+        if (source === target) {
+          return {
+            ...state,
+            [target]: state[target].map((entry) => (entry === existing ? promoted : entry)),
+          };
+        }
+        return {
+          ...state,
+          [source]: state[source].filter((entry) => entry !== existing),
+          [target]: [promoted, ...state[target]].slice(0, notificationLimits[target]),
+        };
       }
-      return { ...state, notifications: [notification, ...state.notifications].slice(0, 100) };
+      return {
+        ...state,
+        [target]: [notification, ...state[target]].slice(0, notificationLimits[target]),
+      };
     }
     case "logs.cleared":
       return { ...state, logs: [] };
     case "warnings.cleared":
-      return {
-        ...state,
-        notifications: state.notifications.filter(
-          (notification) =>
-            notification.severity !== "warning" && notification.severity !== "error",
-        ),
-      };
+      return { ...state, notifications: [] };
     default:
       return state;
   }
@@ -73,9 +111,14 @@ export function warningNotifications(notifications: AppNotification[]): AppNotif
 function notificationId(notification: Omit<AppNotification, "id">): string {
   return `${notification.occurredAtMs}-${notification.severity}-${notification.source}-${notification.correlationId ?? notification.message}`;
 }
-function isDuplicateNotification(existing: AppNotification, incoming: AppNotification): boolean {
+function isDuplicateNotification(
+  existing: AppNotification,
+  incoming: AppNotification,
+  explicitId: boolean,
+): boolean {
   if (existing.correlationId && incoming.correlationId)
     return existing.correlationId === incoming.correlationId;
+  if (explicitId) return existing.id === incoming.id;
   return (
     existing.message === incoming.message &&
     Math.abs(existing.occurredAtMs - incoming.occurredAtMs) <= 5_000

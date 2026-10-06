@@ -1,5 +1,5 @@
 //! Twitch auth_store responsibility boundary.
-use super::auth_state::{StoredTwitchAuth, TwitchAuthState};
+use super::auth_state::{MissingRequiredTwitchScopes, StoredTwitchAuth, TwitchAuthState};
 use super::error::{
     to_auth_recovery_failure_user_message, to_legacy_cleanup_user_message,
     to_secure_store_load_user_message, to_session_only_user_message,
@@ -25,9 +25,30 @@ pub(super) struct AuthStorage<'a, SecureStore, LegacyStore> {
     pub(super) legacy: &'a LegacyStore,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AuthLoadReason {
+    MissingRequiredScope,
+    StoreUnavailable,
+    CorruptData,
+    LegacyMigrated,
+    LegacyCleanupFailed,
+}
+
+/// Display text never controls the startup authentication transition.
+pub(crate) struct AuthLoadNotice {
+    pub(crate) reason: AuthLoadReason,
+    pub(crate) message: String,
+}
+
+impl AuthLoadNotice {
+    fn new(reason: AuthLoadReason, message: String) -> Self {
+        Self { reason, message }
+    }
+}
+
 pub(crate) struct AuthLoadResult {
     pub(crate) auth: Option<TwitchAuthState>,
-    pub(crate) storage_warning: Option<String>,
+    pub(crate) notice: Option<AuthLoadNotice>,
 }
 
 impl<SecureStore: AuthSecretStore, LegacyStore: AuthSecretStore>
@@ -38,17 +59,15 @@ impl<SecureStore: AuthSecretStore, LegacyStore: AuthSecretStore>
             Ok(Some(secret)) => match restore_stored_auth(&secret) {
                 Ok(auth) => AuthLoadResult {
                     auth: Some(auth),
-                    storage_warning: self
-                        .legacy
-                        .clear_secret()
-                        .err()
-                        .map(to_legacy_cleanup_user_message),
+                    notice: self.legacy.clear_secret().err().map(|error| {
+                        AuthLoadNotice::new(AuthLoadReason::LegacyCleanupFailed, to_legacy_cleanup_user_message(error))
+                    }),
                 },
                 Err(error) => AuthLoadResult {
                     auth: None,
-                    storage_warning: Some(format!(
+                    notice: Some(AuthLoadNotice::new(error.reason(), format!(
                         "OS の資格情報ストアにある Twitch 認証情報を読み込めませんでした。Login から再認証してください: {error}"
-                    )),
+                    ))),
                 },
             },
             Ok(None) => self.migrate_legacy_auth(None),
@@ -65,15 +84,20 @@ impl<SecureStore: AuthSecretStore, LegacyStore: AuthSecretStore>
             Ok(None) => {
                 return AuthLoadResult {
                     auth: None,
-                    storage_warning: secure_load_error.map(to_secure_store_load_user_message),
+                    notice: secure_load_error.map(|error| {
+                        AuthLoadNotice::new(
+                            AuthLoadReason::StoreUnavailable,
+                            to_secure_store_load_user_message(error),
+                        )
+                    }),
                 }
             }
             Err(error) => {
                 return AuthLoadResult {
                     auth: None,
-                    storage_warning: Some(to_auth_recovery_failure_user_message(
-                        secure_load_error,
-                        error,
+                    notice: Some(AuthLoadNotice::new(
+                        AuthLoadReason::StoreUnavailable,
+                        to_auth_recovery_failure_user_message(secure_load_error, error),
                     )),
                 }
             }
@@ -84,9 +108,9 @@ impl<SecureStore: AuthSecretStore, LegacyStore: AuthSecretStore>
             Err(error) => {
                 return AuthLoadResult {
                     auth: None,
-                    storage_warning: Some(to_auth_recovery_failure_user_message(
-                        secure_load_error,
-                        error,
+                    notice: Some(AuthLoadNotice::new(
+                        error.reason(),
+                        to_auth_recovery_failure_user_message(secure_load_error, error.into()),
                     )),
                 }
             }
@@ -95,27 +119,18 @@ impl<SecureStore: AuthSecretStore, LegacyStore: AuthSecretStore>
         match self.secure.save_secret(&secret) {
             Ok(()) => AuthLoadResult {
                 auth: Some(auth),
-                storage_warning: self.legacy.clear_secret().err().map_or_else(
-                    || {
-                        Some(
-                            "以前のローカル認証情報を OS の資格情報ストアへ移行し、平文ファイルを削除しました。"
-                                .to_string(),
-                        )
-                    },
-                    |error| {
-                        Some(format!(
-                            "以前のローカル認証情報を OS の資格情報ストアへ移行しましたが、平文ファイルを削除できませんでした。{}",
-                            to_legacy_cleanup_user_message(error)
-                        ))
-                    },
-                ),
+                notice: Some(match self.legacy.clear_secret() {
+                    Ok(()) => AuthLoadNotice::new(AuthLoadReason::LegacyMigrated,
+                        "以前のローカル認証情報を OS の資格情報ストアへ移行し、平文ファイルを削除しました。".to_string()),
+                    Err(error) => AuthLoadNotice::new(AuthLoadReason::LegacyCleanupFailed, format!(
+                        "以前のローカル認証情報を OS の資格情報ストアへ移行しましたが、平文ファイルを削除できませんでした。{}",
+                        to_legacy_cleanup_user_message(error))),
+                }),
             },
             Err(error) => AuthLoadResult {
                 auth: None,
-                storage_warning: Some(to_auth_recovery_failure_user_message(
-                    secure_load_error,
-                    error,
-                )),
+                notice: Some(AuthLoadNotice::new(AuthLoadReason::StoreUnavailable,
+                    to_auth_recovery_failure_user_message(secure_load_error, error))),
             },
         }
     }
@@ -160,6 +175,7 @@ pub(crate) trait AuthCredentialStore: Send + Sync {
 pub(crate) struct TwitchAuthStore {
     backend: std::sync::Arc<dyn AuthCredentialStore>,
     io_lock: std::sync::Arc<std::sync::Mutex<()>>,
+    credential_update_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Default for TwitchAuthStore {
@@ -173,7 +189,12 @@ impl TwitchAuthStore {
         Self {
             backend,
             io_lock: std::sync::Arc::new(std::sync::Mutex::new(())),
+            credential_update_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
         }
+    }
+
+    pub(super) async fn lock_credential_update(&self) -> tokio::sync::OwnedMutexGuard<()> {
+        self.credential_update_lock.clone().lock_owned().await
     }
 
     pub(crate) async fn load(&self) -> anyhow::Result<AuthLoadResult> {
@@ -220,51 +241,70 @@ impl TwitchAuthStore {
                 .lock()
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
             current.generation == generation
+                && current.credential_revision == auth.credential_revision
         };
         if !is_current {
             return Ok(AuthSaveOutcome::Stale);
         }
-        self.backend.save(auth).map(AuthSaveOutcome::Saved)
+        let warning = self.backend.save(auth)?;
+        let is_current = {
+            let current = auth_state
+                .lock()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            current.generation == generation
+                && current.credential_revision == auth.credential_revision
+        };
+        if is_current {
+            Ok(AuthSaveOutcome::Saved(warning))
+        } else {
+            Ok(AuthSaveOutcome::Stale)
+        }
     }
 
     pub(super) async fn clear_if_current(
         &self,
         auth_state: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,
         generation: u64,
+        credential_revision: u64,
     ) -> anyhow::Result<AuthClearOutcome> {
         let store = self.clone();
-        tokio::task::spawn_blocking(move || store.clear_if_current_sync(&auth_state, generation))
-            .await
-            .map_err(anyhow::Error::from)?
+        tokio::task::spawn_blocking(move || {
+            store.clear_if_current_sync(&auth_state, generation, credential_revision)
+        })
+        .await
+        .map_err(anyhow::Error::from)?
     }
 
     pub(super) fn clear_if_current_sync(
         &self,
         auth_state: &std::sync::Mutex<TwitchAuthState>,
         generation: u64,
+        credential_revision: u64,
     ) -> anyhow::Result<AuthClearOutcome> {
         let _io_guard = self
             .io_lock
             .lock()
             .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        if auth_state
-            .lock()
-            .map_err(|error| anyhow::anyhow!(error.to_string()))?
-            .generation
-            != generation
-        {
+        let is_current = {
+            let current = auth_state
+                .lock()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            current.generation == generation && current.credential_revision == credential_revision
+        };
+        if !is_current {
             return Ok(AuthClearOutcome::Stale);
         }
         self.backend.clear()?;
         // The backend call can block after the pre-clear comparison. Keep the
         // I/O lock while checking once more so a newer auth/save waits to write
         // after this old clear, and callers never tear down its connection.
-        if auth_state
-            .lock()
-            .map_err(|error| anyhow::anyhow!(error.to_string()))?
-            .generation
-            != generation
-        {
+        let is_current = {
+            let current = auth_state
+                .lock()
+                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            current.generation == generation && current.credential_revision == credential_revision
+        };
+        if !is_current {
             Ok(AuthClearOutcome::StaleAfterClear)
         } else {
             Ok(AuthClearOutcome::Cleared)
@@ -384,10 +424,28 @@ impl AuthSecretStore for LegacyAuthStore {
     }
 }
 
-pub(super) fn restore_stored_auth(secret: &str) -> anyhow::Result<TwitchAuthState> {
-    serde_json::from_str::<StoredTwitchAuth>(secret)
-        .map(TwitchAuthState::restore)
-        .map_err(anyhow::Error::from)?
+#[derive(Debug, thiserror::Error)]
+pub(super) enum StoredAuthRestoreError {
+    // Serde errors can contain the invalid input value, including a token.
+    #[error("保存済み認証情報の形式が不正です。")]
+    CorruptData,
+    #[error(transparent)]
+    MissingRequiredScope(#[from] MissingRequiredTwitchScopes),
+}
+
+impl StoredAuthRestoreError {
+    fn reason(&self) -> AuthLoadReason {
+        match self {
+            Self::CorruptData => AuthLoadReason::CorruptData,
+            Self::MissingRequiredScope(_) => AuthLoadReason::MissingRequiredScope,
+        }
+    }
+}
+
+pub(super) fn restore_stored_auth(secret: &str) -> Result<TwitchAuthState, StoredAuthRestoreError> {
+    let stored = serde_json::from_str::<StoredTwitchAuth>(secret)
+        .map_err(|_| StoredAuthRestoreError::CorruptData)?;
+    TwitchAuthState::restore(stored).map_err(Into::into)
 }
 
 #[cfg(all(feature = "app", target_os = "linux"))]

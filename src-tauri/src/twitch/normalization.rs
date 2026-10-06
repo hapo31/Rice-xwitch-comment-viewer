@@ -69,6 +69,7 @@ pub(super) struct NormalizedChatMessage {
 pub(super) fn normalize_chat_message(
     envelope: EventSubEnvelope,
     fallback_received_at: DateTime<Utc>,
+    connection_generation: u64,
 ) -> anyhow::Result<Option<NormalizedChatMessage>> {
     if envelope.metadata.subscription_type.as_deref() != Some(CHANNEL_CHAT_MESSAGE_TYPE) {
         return Ok(None);
@@ -112,7 +113,7 @@ pub(super) fn normalize_chat_message(
             fragments: event.message.fragments,
             badges: event.badges,
             received_at,
-            connection_generation: None,
+            connection_generation: Some(connection_generation),
         },
         timestamp_warning,
     }))
@@ -148,7 +149,7 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
         let normalized =
-            normalize_chat_message(serde_json::from_value(value).unwrap(), received_at)
+            normalize_chat_message(serde_json::from_value(value).unwrap(), received_at, 0)
                 .unwrap()
                 .unwrap();
         assert_eq!(normalized.message.id, expected_id);
@@ -162,14 +163,14 @@ mod tests {
         let mut unrelated = fixture();
         unrelated["metadata"]["subscription_type"] = "channel.follow".into();
         assert!(
-            normalize_chat_message(serde_json::from_value(unrelated).unwrap(), received_at)
+            normalize_chat_message(serde_json::from_value(unrelated).unwrap(), received_at, 0)
                 .unwrap()
                 .is_none()
         );
         let mut empty = fixture();
         empty["payload"].as_object_mut().unwrap().remove("event");
         assert!(
-            normalize_chat_message(serde_json::from_value(empty).unwrap(), received_at)
+            normalize_chat_message(serde_json::from_value(empty).unwrap(), received_at, 0)
                 .unwrap()
                 .is_none()
         );

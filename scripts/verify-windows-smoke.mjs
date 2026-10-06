@@ -44,7 +44,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const [directory, reportFile, jobsFile, runId, tag, commit] = process.argv.slice(2);
   if (!directory || !reportFile || !jobsFile || !/^\d+$/.test(runId ?? "")) fail("Usage: artifacts report jobs.ndjson runId tag commit");
   const root = resolve(process.env.RICE_RELEASE_ROOT ?? fileURLToPath(new URL("..", import.meta.url)));
-  const { manifest } = verifyBundle(root, directory, { tag: tag || null, commit });
+  const { manifest } = await verifyBundle(root, directory, { tag: tag || null, commit });
   const manifestHash = createHash("sha256").update(readFileSync(join(directory, "ARTIFACT-MANIFEST.json"))).digest("hex");
   const jobs = readFileSync(jobsFile, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
   verifyWindowsSmoke(JSON.parse(readFileSync(reportFile, "utf8")), manifest, manifestHash, runId, jobs);

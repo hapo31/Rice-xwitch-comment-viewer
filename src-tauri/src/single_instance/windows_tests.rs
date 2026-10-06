@@ -1,6 +1,7 @@
 //! Explicit Windows CI fixture; runs the production builder and plugin, not a
 //! second implementation. No debug command, account or release is created.
-use crate::settings::{AppState, SettingsStore};
+use crate::application::AppState;
+use crate::settings::SettingsStore;
 use crate::twitch::{AuthCredentialStore, AuthLoadResult, TwitchAuthState, TwitchAuthStore};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
@@ -21,7 +22,7 @@ impl AuthCredentialStore for NoCredentials {
     fn load(&self) -> AuthLoadResult {
         AuthLoadResult {
             auth: None,
-            storage_warning: None,
+            notice: None,
         }
     }
     fn save(&self, _: &TwitchAuthState) -> anyhow::Result<Option<String>> {

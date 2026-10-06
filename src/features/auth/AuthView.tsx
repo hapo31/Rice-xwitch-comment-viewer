@@ -1,13 +1,23 @@
 import { CheckCircle2, Link2, LoaderCircle, LogOut, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
+import { FieldError } from "../../components/SettingsFormControls";
 import { focusIndicatorClass } from "../../presentation/focus";
 import { routeHeadingId } from "../../routeAccessibility";
-import type { AppState } from "../../stores/appStore";
+import type { AppState } from "../../stores/appState";
 import type { AppSettingsPatch } from "../../types";
 import { isValidTwitchChannelLogin } from "../../validation";
 import { defaultTwitchSettings } from "../settings/defaults";
-import { FieldError } from "../../components/SettingsFormControls";
 import { formatDeviceAuthRemainingTime, getDeviceAuthRemainingSeconds } from "./deviceAuthExpiry";
+
+type AuthViewState = Pick<
+  AppState,
+  | "settings"
+  | "twitchAuthStatus"
+  | "twitchProfile"
+  | "twitchAuthPrompt"
+  | "twitchActiveConnection"
+  | "twitchDisconnectRequest"
+>;
 
 export function AuthView({
   state,
@@ -18,7 +28,7 @@ export function AuthView({
   onTwitchDisconnect,
   onOpenExternalUrl,
 }: {
-  state: AppState;
+  state: AuthViewState;
   onSettingsUpdate: (patch: AppSettingsPatch) => Promise<boolean>;
   onTwitchStartAuth: () => void;
   onTwitchPollAuth: () => void;
@@ -27,7 +37,7 @@ export function AuthView({
   onOpenExternalUrl: (url: string) => void;
 }) {
   const twitchSettings = {
-    ...defaultTwitchSettings,
+    ...defaultTwitchSettings(),
     ...state.settings?.twitch,
   };
   const [channelLogin, setChannelLogin] = useState(twitchSettings.channelLogin);
@@ -37,17 +47,15 @@ export function AuthView({
   const isChannelValid = isValidTwitchChannelLogin(channelLogin);
   const channelError =
     "Twitch チャンネル名は 3 から 25 文字の英数字またはアンダースコアで入力してください。";
+  const isDisconnecting = state.twitchDisconnectRequest !== undefined;
   const isAuthenticated = state.twitchAuthStatus === "authenticated";
   const canDisconnect =
     Boolean(state.twitchProfile) &&
     state.twitchAuthStatus !== "authorizing" &&
     state.twitchAuthStatus !== "disconnecting";
-  const isAuthOperationInProgress = [
-    "authorizing",
-    "polling",
-    "checking",
-    "disconnecting",
-  ].includes(state.twitchAuthStatus);
+  const isAuthOperationInProgress =
+    isDisconnecting ||
+    ["authorizing", "polling", "checking", "disconnecting"].includes(state.twitchAuthStatus);
   const activeChannel = state.twitchActiveConnection?.broadcasterLogin;
   const hasPendingChannelChange = Boolean(
     activeChannel && activeChannel.toLowerCase() !== twitchSettings.channelLogin.toLowerCase(),
@@ -237,6 +245,7 @@ export function AuthView({
                 type="button"
                 onClick={canDisconnect ? onTwitchDisconnect : onTwitchStartAuth}
                 disabled={
+                  isDisconnecting ||
                   state.twitchAuthStatus === "authorizing" ||
                   state.twitchAuthStatus === "disconnecting"
                 }
@@ -245,11 +254,13 @@ export function AuthView({
                 }`}
               >
                 {canDisconnect ? <LogOut className="h-4 w-4" /> : <Link2 className="h-4 w-4" />}
-                {canDisconnect
-                  ? "認証解除"
-                  : state.twitchAuthPrompt
-                    ? "認証をやり直す"
-                    : "認証開始"}
+                {isDisconnecting
+                  ? "解除中…"
+                  : canDisconnect
+                    ? "認証解除"
+                    : state.twitchAuthPrompt
+                      ? "認証をやり直す"
+                      : "認証開始"}
               </button>
             </div>
             {authValidationNotice && isAuthenticated && (

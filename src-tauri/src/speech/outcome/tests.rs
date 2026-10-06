@@ -2,8 +2,8 @@ use super::*;
 use crate::app_events::{SpeechQueueItemStatus, SpeechStatus};
 use crate::settings::AppSettings;
 use crate::speech::{
-    enqueue_message, queue_event_snapshot, SpeechFormatter, SpeechFormatterOptions,
-    SpeechQueueFailureTransition, SpeechQueueState, DEFAULT_HISTORY_LIMIT, DEFAULT_QUEUE_LIMIT,
+    enqueue_message, SpeechFormatter, SpeechFormatterOptions, SpeechQueueFailureTransition,
+    SpeechQueueState, DEFAULT_HISTORY_LIMIT, DEFAULT_QUEUE_LIMIT,
 };
 use crate::twitch::{ChatMessage, Platform};
 use std::time::Instant;
@@ -68,6 +68,7 @@ fn all_reason_codes_share_the_exact_typescript_fixture_and_never_copy_secrets() 
             SkippedReason::UserSkip,
             SkippedReason::Removed,
             SkippedReason::Cleared,
+            SkippedReason::AutoSpeakDisabled,
         ]
         .into_iter()
         .map(|code| SpeechQueueOutcome::skipped(code, at)),
@@ -155,7 +156,7 @@ fn actual_formatter_and_repeat_paths_keep_safe_reasons_after_unrelated_updates_a
             .contains("SECRET_NG_WORD"));
         enqueue(&mut queue, "unrelated");
         for _ in 0..3 {
-            let snapshot = queue_event_snapshot(&queue, None);
+            let snapshot = queue.snapshot(None);
             let restored = snapshot
                 .items
                 .iter()
@@ -230,7 +231,7 @@ fn skip_remove_clear_and_overflow_keep_distinct_causes_with_bounded_history() {
     }
     assert_eq!(queue.pending.len(), DEFAULT_QUEUE_LIMIT);
     assert_eq!(queue.history.len(), DEFAULT_HISTORY_LIMIT);
-    let snapshot = queue_event_snapshot(&queue, None);
+    let snapshot = queue.snapshot(None);
     assert_eq!(
         snapshot.items.len(),
         DEFAULT_QUEUE_LIMIT + DEFAULT_HISTORY_LIMIT
@@ -270,7 +271,7 @@ fn typed_failure_survives_retry_and_reload_then_manual_retry_and_success_clear_i
             ..
         })
     ));
-    assert_eq!(queue_event_snapshot(&queue, None).items[0].outcome, saved);
+    assert_eq!(queue.snapshot(None).items[0].outcome, saved);
     assert!(queue.retry_exhausted_item(&id));
     assert!(queue.pending.front().unwrap().outcome.is_none());
     queue.begin_next_request().unwrap();
@@ -342,4 +343,82 @@ fn accepted_uncertain_delivery_and_cancelled_late_failure_preserve_correct_outco
         SpeechQueueFailureTransition::Ignored
     );
     assert_eq!(queue.history.front().unwrap().outcome, before);
+}
+
+#[test]
+fn automatic_speech_uses_the_captured_setting_and_records_exclusions_in_snapshots() {
+    let mut queue = SpeechQueueState::default();
+    let mut live_settings = AppSettings::default().speech;
+    live_settings.repeat_suppression_seconds = 0;
+    live_settings.auto_speak = false;
+    let captured_off = live_settings.clone();
+    live_settings.auto_speak = true;
+    let skipped = enqueue_message(
+        &mut queue,
+        &captured_off,
+        &SpeechFormatter::new(SpeechFormatterOptions::from(&captured_off)),
+        message("received-off", "first"),
+        Instant::now(),
+    );
+    assert!(!skipped.should_spawn && !skipped.should_schedule_cleanup);
+    assert!(skipped.warning.is_none());
+    assert!(queue.pending.is_empty() && queue.in_flight.is_none());
+    assert!(queue.last_user_enqueue.is_empty());
+    let snapshot = queue.snapshot(None);
+    assert_eq!(snapshot.queued_count, 0);
+    let excluded = &snapshot.items[0];
+    assert_eq!(excluded.source_message_id.as_deref(), Some("received-off"));
+    assert_eq!(excluded.status, SpeechQueueItemStatus::Skipped);
+    assert!(matches!(
+        excluded.outcome,
+        Some(SpeechQueueOutcome::Skipped {
+            reason_code: SkippedReason::AutoSpeakDisabled,
+            ..
+        })
+    ));
+
+    // OFF after capture cannot retroactively cancel an accepted ON decision.
+    let captured_on = live_settings.clone();
+    live_settings.auto_speak = false;
+    let accepted = enqueue_message(
+        &mut queue,
+        &captured_on,
+        &SpeechFormatter::new(SpeechFormatterOptions::from(&captured_on)),
+        message("received-on", "second"),
+        Instant::now(),
+    );
+    assert!(accepted.should_spawn);
+    assert_eq!(queue.pending.len(), 1);
+    assert_eq!(
+        queue.pending[0].source_message_id.as_deref(),
+        Some("received-on")
+    );
+    assert_eq!(queue.history.len(), 1);
+
+    // Exclusions keep bounded terminal history and never become pending later.
+    for index in 0..=DEFAULT_HISTORY_LIMIT {
+        enqueue_message(
+            &mut queue,
+            &live_settings,
+            &SpeechFormatter::new(SpeechFormatterOptions::from(&live_settings)),
+            message(&format!("off-{index}"), "third"),
+            Instant::now(),
+        );
+    }
+    assert_eq!(queue.history.len(), DEFAULT_HISTORY_LIMIT);
+    assert_eq!(queue.pending.len(), 1);
+    let restored = serde_json::to_value(crate::app_events::speech_queue_updated_event(
+        queue.snapshot(None),
+    ))
+    .unwrap();
+    assert_eq!(restored["queuedCount"], 1);
+    assert_eq!(
+        restored["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["outcome"]["reasonCode"] == "autoSpeakDisabled")
+            .count(),
+        DEFAULT_HISTORY_LIMIT
+    );
 }

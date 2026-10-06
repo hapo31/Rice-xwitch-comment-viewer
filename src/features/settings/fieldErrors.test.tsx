@@ -1,16 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { FloatingSaveButton } from "../../components/SettingsFormControls";
-import { AuthView } from "../auth/AuthView";
-import { initialAppState } from "../../stores/appStore";
+import { initialAppState } from "../../stores/appState";
 import type { AppSettings } from "../../types";
-import { SettingsView } from "./SettingsView";
+import { AuthView } from "../auth/AuthView";
 import { defaultSpeechSettings, defaultTwitchSettings } from "./defaults";
+import { SettingsView } from "./SettingsView";
 
 const invalidSettings: AppSettings = {
-  twitch: defaultTwitchSettings,
+  twitch: defaultTwitchSettings(),
   speech: {
-    ...defaultSpeechSettings,
+    ...defaultSpeechSettings(),
     bouyomiHost: "",
     bouyomiPort: 0,
     bouyomiVoice: 30001,
@@ -62,7 +62,10 @@ describe("field validation errors", () => {
       <AuthView
         state={{
           ...initialAppState,
-          settings: { ...invalidSettings, twitch: { ...defaultTwitchSettings, channelLogin: "!" } },
+          settings: {
+            ...invalidSettings,
+            twitch: { ...defaultTwitchSettings(), channelLogin: "!" },
+          },
         }}
         onSettingsUpdate={async () => false}
         onTwitchStartAuth={() => undefined}

@@ -1,4 +1,4 @@
-import type { AppState } from "../stores/appStore";
+import type { AppState } from "../stores/appState";
 import type { UtcTimestamp } from "../time";
 import { isSpeechReady, speechQueuePhaseLabels } from "./speech";
 
@@ -29,7 +29,10 @@ export interface StartupGuideMessage {
 }
 
 export function getStartupGuideMessages(
-  state: AppState,
+  state: Pick<
+    AppState,
+    "twitchAuthStatus" | "settings" | "speechAdapterHealth" | "speechQueuePhase"
+  >,
   receivedAt: UtcTimestamp,
 ): StartupGuideMessage[] {
   const isAuthenticated = state.twitchAuthStatus === "authenticated";

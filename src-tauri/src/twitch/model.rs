@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct ChatMessage {
     pub id: String,
     pub platform: Platform,
@@ -20,14 +22,24 @@ pub struct ChatMessage {
     pub connection_generation: Option<u64>,
 }
 
+impl ChatMessage {
+    #[cfg(any(feature = "app", test))]
+    pub(super) fn belongs_to_connection_generation(&self, generation: u64) -> bool {
+        self.connection_generation == Some(generation)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum Platform {
     Twitch,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct MessageFragment {
     #[serde(rename = "type")]
     pub kind: String,
@@ -40,6 +52,8 @@ pub struct MessageFragment {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct ChatEmote {
     pub id: String,
     #[serde(alias = "emote_set_id")]
@@ -52,6 +66,8 @@ pub struct ChatEmote {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct ChatCheermote {
     pub prefix: String,
     pub bits: u32,
@@ -60,6 +76,8 @@ pub struct ChatCheermote {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct ChatBadge {
     #[serde(alias = "set_id")]
     pub set_id: String,

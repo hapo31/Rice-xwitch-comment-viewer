@@ -1,10 +1,16 @@
 # 調査メモ
 
+## 2026-10-06 TypeScript 7: main統合と生成wire型
+
+- PR #226へmain `65160429`を統合し、manifest・lockfile・進捗文書の競合を解消した。Radix、React Hook Form、use-sync-external-store、Zod、CycloneDX/Ajv、YAML/TOML parserなどmainで追加された依存と、source-map-js 1.2.2を含む安全性修正を保持した。アプリ・Rust・生成bindingsはmainと同一である。
+- `src/tauri/wireParity.ts`が`bindings/wire.ts`を参照するため、従来の`rootDir: "./src"`ではTypeScript 7がTS6059を返した。`rootDir: "."`へ変更し、`include: ["src"]`とimport先の生成wire型を検査する。strict・副作用import検査・wire双方向型一致検査を維持し、`tsc --listFilesOnly`でも両ファイルの参加を確認した。
+- Node 22.22.0／pnpm 8.11.0で型検査、frontend 80ファイル536テスト、Vite 8.3.2本番build、format/lint、Tauri renderer security・版整合、bootstrap/Docker context guardが成功した。補助policyは88件成功・1件skip（ローカルRust toolchain不在のinstalled graph検査）。依存監査はHigh/Critical 0件、Moderate 2件。
+- サブエージェントがmain追加依存の版・integrity・peer解決と生成wire型の検査維持を確認し、新たな不具合なしと報告した。最終headのGitHub CI、Windows nativeとTauri開発build、マージ・後片付けの証跡は[PR #226](https://github.com/hapo31/Rice-xwitch-comment-viewer/pull/226)に記録する。実Twitch／棒読みちゃんの新たな手動接続は未実施。
 
 ## 2026-10-05 TypeScript 7 と互換ツールチェーン
 
 - [TypeScript 7正式版](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/)とnpm metadataを照合し、`typescript@7.0.2`を採用した。`tsc`は正式native compilerを起動する。Biome/Vite/Vitestの既存経路にCompiler API直接依存はなく、preview packageやTypeScript 6 API互換aliasは不要。
-- 元の`moduleResolution: Node`でTS5108を再現し、[Bundler解決](https://www.typescriptlang.org/tsconfig/moduleResolution.html)へ移行した。strict・ES2020・既存検査対象を保ち、`rootDir: ./src`、`types: ["vite/client"]`、`noUncheckedSideEffectImports: true`を明示する。[Vite client型](https://vite.dev/guide/features#client-types)でCSS/import.metaを解決する。型検査やside-effect import検査は無効化していない。
+- 元の`moduleResolution: Node`でTS5108を再現し、[Bundler解決](https://www.typescriptlang.org/tsconfig/moduleResolution.html)へ移行した。strict・ES2020・既存検査対象を保ち、当初`rootDir: ./src`（2026-10-06の統合で`.`へ変更）、`types: ["vite/client"]`、`noUncheckedSideEffectImports: true`を明示する。[Vite client型](https://vite.dev/guide/features#client-types)でCSS/import.metaを解決する。型検査やside-effect import検査は無効化していない。
 - Vite 8.3.2、React plugin 6.1.2、PostCSS 8.5.29、React Virtual 3.14.13、React Router 6.30.6へ更新した。Vite/Vitest用の`@types/node`22.20.5とTesting Library共通peerの`@testing-library/dom`10.4.2を直接宣言する。main 934f318のReact/DOM/型19.3.0、Vitest5.0.3、Lucide1.49.0、Tauri2.12.1とdialog2.8.1のJS/Rust整合・useRef初期値・DOMテスト修正を保持する。
 - 初期source0341101のReact18/Vitest4構成はNode20/22で検証したが、その後mainにReact19/Vitest5が入ったため最終構成を再検証する。Vitest5はNode22.12以上の対応LTSを要求する。package enginesを明示し、開発コンテナをCI/releaseと同じNode22.22.0 image/digestに揃え、bootstrap guardで両imageの一致を検証する。jsdom27.4.0、jest-dom6.9.1など既に互換性のある固定依存は継続する。
 - サブエージェントの元headレビューで、JS dialog2.8.1とRust2.7.2のminor不一致が指摘された。main統合でRust2.8.1とplugin対応の版guard・回帰検査を取り込み、`verify-tauri-versions.mjs --installed`が成功した。通常frontendのVite buildだけではnative CLIによる版拒否を検出できないため、GitHubのnative/dev buildでも確認する。
@@ -12,6 +18,28 @@
 - ユーザーがpushとPR作成を明示承認したため、専用branchをpush済み。[Draft PR #226](https://github.com/hapo31/Rice-xwitch-comment-viewer/pull/226)を作成した。サブエージェント2名の最終差分レビューで追加の互換性不具合なしを確認し、指摘された旧Node20のcomponent test文書も現構成へ合わせた。タグ・Release・mergeは行っていない。
 - 検証source `619974d913d822d4e3a0acc1ac52b1039be736d4` の[品質全9jobs](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318678398)、[依存監査](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318677901)、[両OS契約](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318677976)、[Windows実動作](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318677950)、[設定権限](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318678015)、[機能構成](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318678131)、[Tauri開発build](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318678219)、[Node22開発コンテナ再buildと検証](https://github.com/hapo31/Rice-xwitch-comment-viewer/actions/runs/37318677905)がすべて成功した。ローカル補助policy68件が成功し、npm監査はHigh/Critical 0件・Moderate 2件。実Twitch/棒読みちゃんの新たな手動接続と配布物の生成・公開は行っていない。この完了記録の追加ではアプリ・依存・build入力を変更していない。
 
+## 2026-10-06
+
+### Issue #207: 接続世代を共有 delivery boundary で検証
+
+- Issue #207: EventSub 正規化時点で domain `ChatMessage` に generation を一度付け、callback と serializer が別 generation を渡さない形にした。親レビューで fake が独自 predicate を持ち `None` を受け入れる点が見つかったため、production runtime と fake の両方が `dispatch_chat_message` を通し、active generation がない場合も両sinkへ配送しないようにした。
+- 接続所有の `twitch_connection` mutex は stop/replacement が現在 handle を無効化する境界でもある。production runtime は lock を保持したまま共有 boundary を呼び、同じ message を UI emit と speech enqueue に渡す。回帰は正常配送時に両sinkの内容と generation が同一であること、同一 channel の世代交換時に旧世代の遅延通知を両方で拒否すること、別 channel の配送、停止後の拒否、重複排除とsink順序を確認する。
+- main `2802a4a`、`98bfd81`、`6bdb52c`、`6916a44`、`0d72925`、`493c57f` を統合。#208 の終端 EventSub status 通知、service test recorder、handover revocation fake regression を保持した。#201 の wire-contract DTO 属性後も generation field を保ち、strict app-feature all-target Clippy を警告抑制なしで実行した。`chat_delivery.rs` のTauri非依存共有関数 test と frontend 414件、format/lint/typecheck/build も成功した。no-default Clippy は通常実行で成功し、strict `-D warnings` は既存のfeature非依存 dead_code 375件で失敗する。no-default 対象unit testも成功した。最新 main `ffc391a` を統合した。調査メモと TODO の同時追記による競合は両方の記録を保持して解消し、#212 の型付き認証復元を保持した。最終 app-feature runtime 回帰と CI・統合結果は PR #248 に記録する。実 Twitch 通信は未実施。
+
+## 2026-10-06 Issue #203: domain state と旧互換実装の統合
+
+- 親レビューで旧 AppState reducer 専用テストから queue status 5種/system row保持、200件上限とclear snapshot後のskipped反映、Launcher更新時の他設定保持という4つの実契約を選び、`createDomainStores` と `dispatchDomainAction` を通す回帰へ移した。Settings更新は1件目の失敗前に2件目と `waitForIdle` を登録し、1件目reject後も2件目settleまでidleがresolveしないことを検証した。
+- Issue #199 の reviewed main と #197 の commit `6bdb52c` を取り込んだ。Twitch controller のdispatchから`twitch.connectionStatus` を除外する所有権制約と、実 AppShell auth/chat ownership DOM回帰を保持した。最終対象で frontend 366件、typecheck/build、変更source Biome check、diff checkが成功。PR #251 の最終 CI/親レビュー/merge は未完了。
+- runtime は `DomainStores` と `createSettingsMutationOrchestrator` を既に使っていたため、旧 `appReducer` / `SettingsUpdateQueue` は専用テストだけの別実装だった。`AppState` を `appState.ts` の画面読取モデルに分け、書込・保持・重複判定を domain store/orchestrator へ集約した。
+- `logsStore` は source event ID を別に保持し、明示 ID の replay を同じイベントとして抑止する。IDのない同時刻・同文ログや表示用 ID 文字列が偶然ぶつかったログは別エントリとして suffix 採番する。bridge の通知/Chat副作用は reducer/store がログを受理した後だけ行う。
+- 設定更新 queue の順序・失敗後継続・idle待機は本番 orchestrator の回帰で確認し、テスト専用queueを削除した。関連検証と進捗は Draft PR #251 で継続する。
+
+## 2026-10-06 Issue #195: frontend controller境界と認証遷移
+
+- Chat/Queue/connection/settings/logsの状態は既存の独立external storeを引き続き正本とし、画面stateを旧AppStateへ合成しない。Contextはドメイン別の安定action facadeを提供し、画面ごとのselector/action購読を保つ。`MainView`から操作callbackをrouteへ渡す経路を外し、AppShellはcontroller providerと画面配置を組み立てる。
+- Auth controllerへstartup restore、start/poll/validate/disconnect/connect/stopとDevice Code timerを集約した。明示的なoperation reducerはgenerationを進めて以前の結果を無効化し、poll同時実行を防ぐ。終了時のfrontend応答破棄だけでは実行中native commandを止めないため、backend世代調停は維持する。
+- XState公式資料は[`invoke`](https://stately.ai/docs/invoke)でpromise結果をstate遷移へ結び、invoke元stateの退出時に結果を破棄することと、[delayed transitions](https://stately.ai/docs/delayed-transitions)を記載している。今回の遷移・timerは現在のgeneration/poll排他と少数の結果分岐に限られ、新runtime依存を増やす価値はなく小さなreducerを採用した。XStateを採用してもnative command cancellationやbackend generation protectionは別途必要。
+- Profiler回帰でqueue storeのみを更新した時にSettings/Logs/Launcherのrender commitが増えないことを確認する。実装と関連frontend全体の確認はDraft PR #236で続ける。
 
 ## 2026-10-05 Issue #101: Rice自身のMIT正本と実配布物の最終照合
 

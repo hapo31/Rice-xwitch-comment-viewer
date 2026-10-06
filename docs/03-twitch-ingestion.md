@@ -6,6 +6,12 @@ Twitch公式のEventSub WebSocketを採用する。TwitchのChat & Chatbotsド�
 
 MultiCommentViewerはTwitch用ディレクトリとして `TwitchIF` と `TwitchSitePlugin` を持つ既存チャットビューア実装で、参考対象としては有用。ただしGPL-3.0のため、コードを流用せず、挙動やUI観察に留める。
 
+## HTTP transportの寿命
+
+アプリsetup時に `TwitchHttp` を一度生成し、各runtimeへClientをcheap cloneする。OAuth device/poll/refresh/validate、Helix user取得、EventSub購読は同じreqwest poolを使う。connect/全要求timeoutは15秒、TLSはrustlsで既存の証明書検証を使い、生成policyは一箇所に集める。認証headerやrefresh tokenはClientの既定値に保存せず要求ごとに渡し、ログイン変更・token rotation直後にも古い資格情報を送らない。serviceのfake transport、認証generation/revision、refresh成功時の保存順序は変更しない。
+
+参照: [reqwest Clientの再利用と内部pool](https://docs.rs/reqwest/latest/reqwest/struct.Client.html)、[Twitch OAuth Device Code Flow](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow)。
+
 ## EventSub WebSocketの流れ
 
 ```text
@@ -44,12 +50,15 @@ Device Code Flowの利点:
 
 - refresh tokenは使い回し不可の前提で、更新に成功したら保存済みrefresh tokenを必ず差し替える。
 - `/validate` でトークン有効性を確認する。
+- Login の `/validate` と EventSub 401 refresh は共通の認証更新serviceを使い、同じ credential revision の処理を共有lockで直列化する。generation はログイン/ログアウト操作を、credential revision は同一generationでの token rotation/解除を識別する。
+- refresh・validate・scope確認・永続化・失効は開始時の generation/revision/token identity が現在値と一致する場合だけ反映する。古い成功・失敗・scope不足・保存完了で新しい認証を上書き・解除しない。
 - `/validate` の `scopes` に必須の `user:read:chat` が含まれることを、初回認証・保存済み認証の復元・refresh 後のすべてで確認する。不足時は `authRequired` の machine-readable な理由を `missingRequiredScope` とし、不足 scope 名と Login から再ログインして許可する手順を UI に表示する。scope 不足の認証状態では EventSub 接続 task を開始しない。
 - 認可取り消しや401時はUIに再ログインを促す。
 - access tokenとrefresh tokenはOS keyringに保存し、設定JSONには含めない。
 - keyring保存に失敗した場合は OS を問わずログイン状態をメモリ上で継続する。ただし access token と refresh token の平文ファイルや設定JSONは作成せず、UIへ「今回の起動中だけ有効」「再起動後は再ログインが必要」と警告する。
 - 旧版の Linux fallback `~/.rice/twitch-auth.json` を検出した場合は、keyringが利用できる時だけ移行して削除する。移行できない場合は安全のため token を読み込まず、ファイル削除、Twitch の「設定と接続」でのアクセス取り消し、再ログインを案内する。
 - 起動時はkeyringを優先してOAuth状態を復元する。保存済み認証を復元しただけでは認証済みとして扱わず、Login画面の有効性確認と同じく `/validate` を実行する。access tokenの検証に失敗した場合はrefresh tokenで更新を試み、成功時は保存済みrefresh tokenを即時差し替えてから認証済み状態へ遷移する。確認の開始・成功・失敗は system チャットへ表示する。
+- 保存済み認証の復元結果は、scope 不足・保存先障害・破損・旧 store 移行・旧ファイル削除失敗を型付き reason と表示文に分ける。起動時の AuthRequired reason は型から決め、表示文の部分一致では分類しない。破損 JSON の parser error に含まれ得る token 値は通知へ出さず、固定メッセージへ変換する。復元できた認証は移行・削除の警告があっても Validating のまま検証へ進める。
 - LinuxではSecret Service API対応ストアを優先する。Secret Serviceが利用できない環境でも認証フローは許可するが、永続化はしない。kernel keyutils、平文ローカルファイル、設定JSONへは退避しない。
 
 Client ID:
@@ -70,12 +79,13 @@ Twitch EventSub WebSocketでは、最初に `session_welcome` が届き、その
 - 接続直後の購読は素早く行う。Twitchドキュメントではwelcome後の購読猶予が短い。
 - `session_keepalive` または通知が一定時間来ない場合は切断扱いにして再接続/再購読する。PingにはPongを返すがkeepalive期限は延長しない。
 - `session_reconnect` を受けたら、指定された `reconnect_url` に接続し、新しいwelcomeを受けるまでは旧接続を維持する。旧socketで取得可能な通知は新welcome処理直後にも読み切り、同時readyの通知を捨てずに切り替える。新しい接続またはwelcomeに失敗した場合も旧接続を25秒間処理し続け、その期限後に通常再接続へ戻す。
-- 通常再接続で再購読する際は、接続開始時の token を保持せず、認証状態からその時点の access token を取得する。購読が 401 の場合だけ refresh token を用いて一度更新・安全な保存を行い、新しい access token で一度だけ再試行する。更新や再試行が失敗した場合は認証状態を解除し、UI に再ログインを案内する。
+- 通常再接続で再購読する際は、同じ認証generationとclient/user identityを維持していることを確認してから、認証状態の最新access tokenを取得する。接続開始時の古いtokenは保持しない。購読が401の場合だけ共通認証更新serviceがrefresh tokenを使って一度更新・安全な保存を行い、新しいaccess tokenで一度だけ再試行する。同一認証session内のtoken rotationは追従するが、別Login generationの資格情報は古い接続へ流用しない。更新失敗の認証解除は、その失敗を発生させたcredential revisionが現在も有効な場合だけ行う。
 - EventSub API エラーは HTTP status と OAuth/API code を保持する型として扱う。timeout と 5xx は backoff 再接続の対象、401 は一度だけ refresh 後に再購読し、400/403/410 などの永続障害は再接続せず Error または AuthRequired を UI へ出す。revocation は authorization_revoked を再ログイン、user_removed をチャンネル確認、version_removed をアプリ更新として扱い、日本語メッセージの部分一致で制御フローを決めない。
+- API と revocation の終端エラーは EventSub supervisor に集約し、task が終了する前に generation 付き Chat Error/AuthRequired と error log を記録する。最新 status と log は snapshot にも残し、後から購読を開始した UI の接続表示・Logs・system Chat へ復元する。AuthRequired の復旧案内は Auth 通知に載せ、Chat 通知には状態だけを載せて二重案内を避ける。handover 中の新 socket からの revocation も終端エラーとして supervisor へ返し、25秒の通常再接続待ちに変換しない。
 - 通知は少なくとも一回配送のため、`metadata.message_id` または `event.message_id` で重複排除する。
 - WebSocket切断中の通知は再送されないため、再接続は指数バックオフしつつ最初の数回は短い間隔にする。
 - backoff は通常接続では `session_welcome` と購読成功後、Twitch 指定の handover では新しい `session_welcome` 後に「確立済み」と記録する。handover 開始時には旧 session の確立時刻を失効させ、新しい welcome 前の接続失敗で旧 session の安定実績を使って reset しない。ただし確立直後の切断で待機時間が毎回最短に戻る retry storm を避けるため、30 秒以上安定していた session の次の障害時にだけ失敗回数を reset する。確立前・30 秒未満の失敗は従来の 2 / 5 / 10 / 30 秒バックオフを継続する。
-- 設定JSONのチャンネルは「次回接続する希望値」であり、現在の接続先ではない。接続開始ごとに単調増加する generation を割り当て、購読成功後の broadcaster user ID/login を実接続 identity として status に載せる。chat にも同じ generation を付与し、frontend は generation と identity が一致する通知だけを表示する。
+- 設定JSONのチャンネルは「次回接続する希望値」であり、現在の接続先ではない。接続開始ごとに単調増加する generation を割り当て、購読成功後の broadcaster user ID/login を実接続 identity として status に載せる。EventSub 正規化時に同じ generation を `ChatMessage` へ付与し、同一 domain message を UI と speech へ渡す。現在の接続 handle と一致しない旧世代の遅延通知は、両方へ配送する直前の共通境界で拒否する。frontend も generation と identity が一致する通知だけを表示する。
 - 再接続、停止、設定保存が並行した場合も、backend の状態 replay と frontend store は現在値より古い generation の status を破棄する。接続中に設定値だけを変更しても実接続 identity は変更せず、再接続が成功した時点で更新する。
 
 ## 正規化

@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inflateRawSync } from "node:zlib";
 import { isDeepStrictEqual } from "node:util";
+import { validateCycloneDx15 } from "./sbom-validation.mjs";
 
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
 const fail = message => { throw new Error(message); };
@@ -117,7 +118,7 @@ function directoryNames(directory) {
     return entry.name;
   }).sort();
 }
-function inspect(source, directory, options, writing) {
+async function inspect(source, directory, options, writing) {
   const plan = expectations(source, options), names = coreNames(plan);
   const all = directoryNames(directory);
   const complete = [...names, "ARTIFACT-MANIFEST.json", "SHA256SUMS.txt"].sort();
@@ -134,8 +135,8 @@ function inspect(source, directory, options, writing) {
   same(materials.lockfiles, { npm: hash(read(join(source, "pnpm-lock.yaml"))), cargo: hash(read(join(source, "src-tauri/Cargo.lock"))) }, "Lockfile material mismatch");
   const original = [plan.installer, plan.portable, "LICENSE"].sort().map(name => ({ name, sha256: hash(read(join(directory, name))) }));
   same([...materials.artifacts].sort((a, b) => a.name.localeCompare(b.name, "en")), [...original].sort((a, b) => a.name.localeCompare(b.name, "en")), "Build artifact digest mismatch");
-  const sbom = json(join(directory, "Rice.sbom.cdx.json"));
-  if (sbom.bomFormat !== "CycloneDX" || sbom.metadata?.component?.version !== plan.version) fail("Artifact SBOM version/type mismatch");
+  const sbom = await validateCycloneDx15(read(join(directory, "Rice.sbom.cdx.json")).toString("utf8"));
+  if (sbom.bomFormat !== "CycloneDX" || sbom.specVersion !== "1.5" || sbom.metadata?.component?.version !== plan.version) fail("Artifact SBOM version/type mismatch");
   const manifest = {
     schemaVersion: plan.schemaVersion, version: plan.version, tag: plan.tag, commit: plan.commit, target: plan.target,
     installer: plan.installer, portable: plan.portable, installerPe,
@@ -145,15 +146,15 @@ function inspect(source, directory, options, writing) {
   };
   return { manifest, entries, complete };
 }
-export function writeBundle(source, directory, options) {
-  const result = inspect(source, directory, options, true);
+export async function writeBundle(source, directory, options) {
+  const result = await inspect(source, directory, options, true);
   writeFileSync(join(directory, "ARTIFACT-MANIFEST.json"), JSON.stringify(result.manifest, null, 2) + "\n");
   const names = result.complete.filter(name => name !== "SHA256SUMS.txt");
   writeFileSync(join(directory, "SHA256SUMS.txt"), names.map(name => `${hash(read(join(directory, name)))}  ${name}\n`).join(""));
   return result.manifest;
 }
-export function verifyBundle(source, directory, options) {
-  const { manifest, entries, complete } = inspect(source, directory, options, false);
+export async function verifyBundle(source, directory, options) {
+  const { manifest, entries, complete } = await inspect(source, directory, options, false);
   same(json(join(directory, "ARTIFACT-MANIFEST.json")), manifest, "Artifact manifest/source/content mismatch");
   const checksums = complete.filter(name => name !== "SHA256SUMS.txt").map(name => `${hash(read(join(directory, name)))}  ${name}\n`).join("");
   same(read(join(directory, "SHA256SUMS.txt")).toString(), checksums, "Exact checksum list/digest mismatch");
@@ -165,10 +166,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const value = flag => { const at = args.indexOf(flag); return at < 0 ? undefined : args[at + 1]; };
   const source = resolve(process.env.RICE_RELEASE_ROOT ?? root);
   const options = { tag: value("--tag") || null, commit: value("--commit") };
-  const manifest = args.includes("--write") ? writeBundle(source, directory, options) : verifyBundle(source, directory, options).manifest;
+  const manifest = args.includes("--write") ? await writeBundle(source, directory, options) : (await verifyBundle(source, directory, options)).manifest;
   const extraction = value("--extract");
   if (extraction) {
-    const { entries } = verifyBundle(source, directory, options);
+    const { entries } = await verifyBundle(source, directory, options);
     mkdirSync(extraction); // Must be a new, caller-owned destination.
     for (const entry of entries) writeFileSync(join(extraction, entry.name), entry.content, { flag: "wx" });
   }

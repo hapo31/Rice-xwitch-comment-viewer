@@ -1,5 +1,5 @@
+import type { AppState } from "../stores/appState";
 import type { SpeechAdapterHealth, SpeechQueuePhase } from "../types";
-import type { AppState } from "../stores/appStore";
 
 export const speechHealthLabels: Record<SpeechAdapterHealth, string> = {
   unknown: "未確認",

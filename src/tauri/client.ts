@@ -1,9 +1,11 @@
+import { z } from "zod";
+import * as schemas from "./schemas";
 import { invoke } from "@tauri-apps/api/core";
 import { formatBouyomiAddress } from "../validation";
 import { normalizeUtcTimestamp, utcNow, type UtcTimestamp } from "../time";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
-  rejectUnexpectedNulls,
+  parseAppLogEvent,
   parseAppEventsSnapshot,
   parseSpeechQueueUpdatedEvent,
   parseSpeechStateSnapshot,
@@ -20,6 +22,7 @@ import type {
   AppSettings,
   AppSettingsPatch,
   BouyomiConnectionDiagnostics,
+  LauncherAddResult,
   LauncherItem,
   LauncherCapabilities,
   LauncherLaunchResult,
@@ -35,59 +38,23 @@ import type {
   TwitchDeviceAuthStart,
   TwitchUserProfile,
 } from "../types";
+import { createDefaultAppSettings } from "../settings/model";
 
-const fallbackSettings: AppSettings = {
-  twitch: {
-    channelLogin: "",
-    autoConnect: false,
-    confirmBeforeStopChat: true,
-    liveChatAnnouncements: true,
-  },
-  speech: {
-    adapter: "bouyomi",
-    bouyomiHost: "127.0.0.1",
-    bouyomiPort: 50001,
-    bouyomiRemoteMode: false,
-    bouyomiSpeed: -1,
-    bouyomiTone: -1,
-    bouyomiVolume: -1,
-    bouyomiVoice: 0,
-    readUserName: true,
-    autoSpeak: true,
-    maxCommentLength: 120,
-    repeatSuppressionSeconds: 2,
-    blockedUsers: [],
-    blockedWords: [],
-    urlHandling: "replace",
-    readEmotes: false,
-    connectionSuccessSpeechEnabled: true,
-    connectionSuccessSpeechText: "",
-  },
-  launcher: {
-    items: [],
-  },
-  window: {},
-};
+let previewSettings = createDefaultAppSettings();
 
 const isTauriRuntime = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 export async function authorizeSpeechEndpoint(): Promise<void> {
   if (!isTauriRuntime)
     throw new Error("外部接続の許可にはデスクトップ版のネイティブ確認が必要です。");
-  await invoke<void>("speech_authorize_endpoint");
+  schemas.parsePayload(
+    schemas.unitResultSchema,
+    await invoke<unknown>("speech_authorize_endpoint"),
+    "speech_authorize_endpoint",
+  );
 }
 
-function nullFreePayload<T>(payload: unknown, contract: string): T {
-  rejectUnexpectedNulls(payload, contract);
-  return payload as T;
-}
-
-export interface AppBuildInfo {
-  version: string;
-  isDev: boolean;
-  launcher: LauncherCapabilities;
-  commitHash?: string;
-}
+export type AppBuildInfo = z.infer<typeof schemas.appBuildInfoSchema>;
 
 export async function getLauncherCapabilities(): Promise<LauncherCapabilities> {
   if (!isTauriRuntime) {
@@ -114,7 +81,11 @@ export async function getAppBuildInfo(): Promise<AppBuildInfo | undefined> {
     return undefined;
   }
 
-  return nullFreePayload<AppBuildInfo>(await invoke<unknown>("app_build_info"), "app_build_info");
+  return schemas.parsePayload(
+    schemas.appBuildInfoSchema,
+    await invoke<unknown>("app_build_info"),
+    "app_build_info",
+  );
 }
 
 function normalizeSettings(
@@ -125,32 +96,37 @@ function normalizeSettings(
       })
     | undefined,
 ): AppSettings {
+  const defaults = createDefaultAppSettings();
   return {
-    ...fallbackSettings,
+    ...defaults,
     ...settings,
     twitch: {
-      ...fallbackSettings.twitch,
+      ...defaults.twitch,
       ...settings?.twitch,
     },
     speech: {
-      ...fallbackSettings.speech,
+      ...defaults.speech,
       ...settings?.speech,
     },
     launcher: {
-      ...fallbackSettings.launcher,
+      ...defaults.launcher,
       ...settings?.launcher,
-      items: settings?.launcher?.items ?? fallbackSettings.launcher.items,
+      items: settings?.launcher?.items ?? defaults.launcher.items,
     },
   };
 }
 
 export async function getSettings(): Promise<AppSettings> {
   if (!isTauriRuntime) {
-    return fallbackSettings;
+    return structuredClone(previewSettings);
   }
 
   return normalizeSettings(
-    nullFreePayload<Partial<AppSettings>>(await invoke<unknown>("settings_get"), "settings_get"),
+    schemas.parsePayload(
+      schemas.appSettingsSchema,
+      await invoke<unknown>("settings_get"),
+      "settings_get",
+    ),
   );
 }
 
@@ -170,36 +146,48 @@ export async function takeSettingsRecoveryNotice(): Promise<SettingsRecoveryNoti
   const notice = await invoke<unknown>("settings_take_recovery_notice");
   return notice === null
     ? undefined
-    : nullFreePayload<SettingsRecoveryNotice>(notice, "settings_take_recovery_notice");
+    : schemas.parsePayload(
+        schemas.settingsRecoveryNoticeSchema,
+        notice,
+        "settings_take_recovery_notice",
+      );
 }
 
 export async function updateSettings(patch: AppSettingsPatch): Promise<AppSettings> {
   if (!isTauriRuntime) {
     const items = patch.launcher?.items?.map((edit) => {
-      const item = fallbackSettings.launcher.items.find((item) => item.id === edit.id);
+      const item = previewSettings.launcher.items.find((item) => item.id === edit.id);
       if (!item) throw new Error("登録済みのアプリだけを編集できます。");
       return { ...item, ...edit };
     });
-    return normalizeSettings({
-      ...patch,
-      launcher: { items: items ?? fallbackSettings.launcher.items },
-    });
+    previewSettings = structuredClone(
+      normalizeSettings({
+        ...previewSettings,
+        ...patch,
+        twitch: { ...previewSettings.twitch, ...patch.twitch },
+        speech: { ...previewSettings.speech, ...patch.speech },
+        launcher: { items: items ?? previewSettings.launcher.items },
+      }),
+    );
+    return structuredClone(previewSettings);
   }
 
   return normalizeSettings(
-    nullFreePayload<Partial<AppSettings>>(
+    schemas.parsePayload(
+      schemas.appSettingsSchema,
       await invoke<unknown>("settings_update", { patch }),
       "settings_update",
     ),
   );
 }
 
-export async function launcherAdd(paths: string[]): Promise<LauncherItem[]> {
+export async function launcherAdd(paths: string[]): Promise<LauncherAddResult> {
   if (!isTauriRuntime) {
-    return [];
+    return { items: [], addedCount: 0 };
   }
 
-  return nullFreePayload<LauncherItem[]>(
+  return schemas.parsePayload(
+    schemas.launcherAddResultSchema,
     await invoke<unknown>("launcher_add", { paths }),
     "launcher_add",
   );
@@ -210,7 +198,8 @@ export async function launcherRemove(itemId: string): Promise<LauncherItem[]> {
     return [];
   }
 
-  return nullFreePayload<LauncherItem[]>(
+  return schemas.parsePayload(
+    z.array(schemas.launcherItemSchema),
     await invoke<unknown>("launcher_remove", { itemId }),
     "launcher_remove",
   );
@@ -221,7 +210,8 @@ export async function launcherLaunch(itemId: string): Promise<LauncherLaunchResu
     return { launchedCount: 1, failures: [] };
   }
 
-  return nullFreePayload<LauncherLaunchResult>(
+  return schemas.parsePayload(
+    schemas.launcherLaunchResultSchema,
     await invoke<unknown>("launcher_launch", { itemId }),
     "launcher_launch",
   );
@@ -232,7 +222,8 @@ export async function launcherLaunchAll(): Promise<LauncherLaunchResult> {
     return { launchedCount: 0, failures: [] };
   }
 
-  return nullFreePayload<LauncherLaunchResult>(
+  return schemas.parsePayload(
+    schemas.launcherLaunchResultSchema,
     await invoke<unknown>("launcher_launch_all"),
     "launcher_launch_all",
   );
@@ -247,7 +238,11 @@ export async function speechHealthCheck(): Promise<string> {
     return "ブラウザプレビューでは棒読みちゃん接続確認をスキップします。";
   }
 
-  return invoke<string>("speech_health_check");
+  return schemas.parsePayload(
+    z.string(),
+    await invoke<unknown>("speech_health_check"),
+    "speech_health_check",
+  );
 }
 
 export async function speechHealthProbe(): Promise<string> {
@@ -255,21 +250,25 @@ export async function speechHealthProbe(): Promise<string> {
     return "ブラウザプレビューでは棒読みちゃん接続確認をスキップします。";
   }
 
-  return invoke<string>("speech_health_probe");
+  return schemas.parsePayload(
+    z.string(),
+    await invoke<unknown>("speech_health_probe"),
+    "speech_health_probe",
+  );
 }
 
 export async function speechConnectionDiagnostics(): Promise<BouyomiConnectionDiagnostics> {
   if (!isTauriRuntime) {
     return {
       configuredAddr: formatBouyomiAddress(
-        fallbackSettings.speech.bouyomiHost,
-        fallbackSettings.speech.bouyomiPort,
+        previewSettings.speech.bouyomiHost,
+        previewSettings.speech.bouyomiPort,
       ),
       attempted: [
         {
           addr: formatBouyomiAddress(
-            fallbackSettings.speech.bouyomiHost,
-            fallbackSettings.speech.bouyomiPort,
+            previewSettings.speech.bouyomiHost,
+            previewSettings.speech.bouyomiPort,
           ),
           status: "failed",
           message: "ブラウザプレビューでは接続診断をスキップします。",
@@ -280,7 +279,8 @@ export async function speechConnectionDiagnostics(): Promise<BouyomiConnectionDi
     };
   }
 
-  return nullFreePayload<BouyomiConnectionDiagnostics>(
+  return schemas.parsePayload(
+    schemas.bouyomiConnectionDiagnosticsSchema,
     await invoke<unknown>("speech_connection_diagnostics"),
     "speech_connection_diagnostics",
   );
@@ -291,7 +291,11 @@ export async function speechTest(text: string): Promise<void> {
     return;
   }
 
-  return invoke<void>("speech_test", { text });
+  schemas.parsePayload(
+    schemas.unitResultSchema,
+    await invoke<unknown>("speech_test", { text }),
+    "speech_test",
+  );
 }
 
 export async function speechControl(command: "pause" | "resume" | "skip" | "clear"): Promise<void> {
@@ -306,7 +310,7 @@ export async function speechControl(command: "pause" | "resume" | "skip" | "clea
     clear: "speech_clear",
   }[command];
 
-  return invoke<void>(commandName);
+  schemas.parsePayload(schemas.unitResultSchema, await invoke<unknown>(commandName), commandName);
 }
 
 export async function speechQueueReload(): Promise<SpeechStateSnapshot | undefined> {
@@ -322,7 +326,11 @@ export async function speechQueueRemove(itemId: string): Promise<void> {
     return;
   }
 
-  return invoke<void>("speech_queue_remove", { itemId });
+  schemas.parsePayload(
+    schemas.unitResultSchema,
+    await invoke<unknown>("speech_queue_remove", { itemId }),
+    "speech_queue_remove",
+  );
 }
 
 export async function speechQueueDismiss(itemId: string): Promise<void> {
@@ -330,7 +338,11 @@ export async function speechQueueDismiss(itemId: string): Promise<void> {
     return;
   }
 
-  return invoke<void>("speech_queue_dismiss", { itemId });
+  schemas.parsePayload(
+    schemas.unitResultSchema,
+    await invoke<unknown>("speech_queue_dismiss", { itemId }),
+    "speech_queue_dismiss",
+  );
 }
 
 export async function speechQueueDismissHistory(): Promise<void> {
@@ -338,7 +350,11 @@ export async function speechQueueDismissHistory(): Promise<void> {
     return;
   }
 
-  return invoke<void>("speech_queue_dismiss_history");
+  schemas.parsePayload(
+    schemas.unitResultSchema,
+    await invoke<unknown>("speech_queue_dismiss_history"),
+    "speech_queue_dismiss_history",
+  );
 }
 
 export async function speechQueueRetry(itemId: string): Promise<void> {
@@ -346,7 +362,11 @@ export async function speechQueueRetry(itemId: string): Promise<void> {
     return;
   }
 
-  return invoke<void>("speech_queue_retry", { itemId });
+  schemas.parsePayload(
+    schemas.unitResultSchema,
+    await invoke<unknown>("speech_queue_retry", { itemId }),
+    "speech_queue_retry",
+  );
 }
 
 export async function twitchStartAuth(): Promise<TwitchDeviceAuthStart> {
@@ -360,7 +380,8 @@ export async function twitchStartAuth(): Promise<TwitchDeviceAuthStart> {
     };
   }
 
-  return nullFreePayload<TwitchDeviceAuthStart>(
+  return schemas.parsePayload(
+    schemas.twitchDeviceAuthStartSchema,
     await invoke<unknown>("twitch_start_auth"),
     "twitch_start_auth",
   );
@@ -407,7 +428,11 @@ export async function twitchConnect(channelLogin?: string): Promise<void> {
     return;
   }
 
-  return invoke<void>("twitch_connect", { channelLogin });
+  schemas.parsePayload(
+    schemas.unitResultSchema,
+    await invoke<unknown>("twitch_connect", { channelLogin }),
+    "twitch_connect",
+  );
 }
 
 export async function twitchStopChat(): Promise<void> {
@@ -415,7 +440,11 @@ export async function twitchStopChat(): Promise<void> {
     return;
   }
 
-  return invoke<void>("twitch_stop_chat");
+  schemas.parsePayload(
+    schemas.unitResultSchema,
+    await invoke<unknown>("twitch_stop_chat"),
+    "twitch_stop_chat",
+  );
 }
 
 export async function twitchDisconnect(): Promise<void> {
@@ -423,7 +452,11 @@ export async function twitchDisconnect(): Promise<void> {
     return;
   }
 
-  return invoke<void>("twitch_disconnect");
+  schemas.parsePayload(
+    schemas.unitResultSchema,
+    await invoke<unknown>("twitch_disconnect"),
+    "twitch_disconnect",
+  );
 }
 
 export async function appExit(): Promise<void> {
@@ -432,7 +465,7 @@ export async function appExit(): Promise<void> {
     return;
   }
 
-  return invoke<void>("app_exit");
+  schemas.parsePayload(schemas.unitResultSchema, await invoke<unknown>("app_exit"), "app_exit");
 }
 
 export async function appOpenExternalUrl(url: string): Promise<void> {
@@ -441,7 +474,11 @@ export async function appOpenExternalUrl(url: string): Promise<void> {
     return;
   }
 
-  return invoke<void>("app_open_external_url", { url });
+  schemas.parsePayload(
+    schemas.unitResultSchema,
+    await invoke<unknown>("app_open_external_url", { url }),
+    "app_open_external_url",
+  );
 }
 
 export async function subscribeAppLogEvents(
@@ -451,9 +488,7 @@ export async function subscribeAppLogEvents(
     return () => {};
   }
 
-  return listen<unknown>("app://log", (event) =>
-    handler(nullFreePayload<AppLogEvent>(event.payload, "app://log")),
-  );
+  return listen<unknown>("app://log", (event) => handler(parseAppLogEvent(event.payload)));
 }
 
 export async function subscribeTwitchStatusEvents(

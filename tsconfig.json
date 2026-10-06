@@ -4,7 +4,7 @@
     "useDefineForClassFields": true,
     "lib": ["DOM", "DOM.Iterable", "ES2020"],
     "types": ["vite/client"],
-    "rootDir": "./src",
+    "rootDir": ".",
     "allowJs": false,
     "skipLibCheck": true,
     "esModuleInterop": true,

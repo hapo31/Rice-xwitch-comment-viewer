@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { initialAppState } from "../../stores/appStore";
+import { initialAppState } from "../../stores/appState";
 import { LogsView } from "./LogsView";
 
 const virtualizerState = vi.hoisted(() => ({ indexes: [0], totalSize: 40 }));

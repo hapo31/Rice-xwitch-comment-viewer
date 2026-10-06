@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Default, Clone)]
 pub struct TwitchAuthState {
     pub(super) generation: u64,
+    /// Changes whenever installed credentials are replaced or removed.
+    /// Unlike `generation`, token refresh does not invalidate a connection.
+    pub(super) credential_revision: u64,
     pub(super) pending: Option<PendingDeviceAuth>,
     pub(super) token: Option<TwitchToken>,
     pub(super) profile: Option<TwitchUserProfile>,
@@ -42,6 +45,8 @@ pub(super) struct StoredTwitchAuth {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct TwitchDeviceAuthStart {
     pub user_code: String,
     pub verification_uri: String,
@@ -52,10 +57,13 @@ pub struct TwitchDeviceAuthStart {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct TwitchUserProfile {
     pub user_id: String,
     pub login: String,
     #[serde(default, skip_serializing)]
+    #[cfg_attr(test, ts(skip))]
     pub client_id: String,
     pub scopes: Vec<String>,
     pub expires_in: u64,
@@ -67,6 +75,7 @@ pub struct TwitchUserProfile {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum TwitchAuthPollResult {
     Pending {
         message: String,
@@ -79,6 +88,7 @@ pub enum TwitchAuthPollResult {
     Authorized {
         profile: TwitchUserProfile,
         #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(test, ts(optional))]
         storage_warning: Option<String>,
     },
     Denied {
@@ -91,6 +101,8 @@ pub enum TwitchAuthPollResult {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct TwitchAuthValidationResult {
     pub profile: TwitchUserProfile,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -146,15 +158,20 @@ pub(super) struct OAuthErrorResponse {
 #[derive(Debug, Clone)]
 pub(super) struct EventSubConnectionParams {
     pub(super) generation: u64,
+    pub(super) auth_generation: u64,
     pub(super) broadcaster_user_id: String,
     pub(super) broadcaster_login: String,
+    pub(super) client_id: String,
     pub(super) user_id: String,
 }
 
 #[cfg(feature = "app")]
 #[derive(Debug, Clone)]
 pub(super) struct EventSubAuthCredentials {
+    pub(super) generation: u64,
+    pub(super) credential_revision: u64,
     pub(super) client_id: String,
+    pub(super) user_id: String,
     pub(super) access_token: String,
     pub(super) refresh_token: String,
 }
@@ -185,7 +202,7 @@ impl TwitchAuthState {
         self.profile.clone()
     }
 
-    pub(super) fn restore(stored: StoredTwitchAuth) -> anyhow::Result<Self> {
+    pub(super) fn restore(stored: StoredTwitchAuth) -> Result<Self, MissingRequiredTwitchScopes> {
         let mut profile = stored.profile;
         if profile.client_id.trim().is_empty() {
             profile.client_id = stored.client_id.clone();
@@ -194,6 +211,7 @@ impl TwitchAuthState {
         ensure_required_twitch_scopes(&scopes)?;
         Ok(Self {
             generation: 0,
+            credential_revision: 0,
             pending: None,
             token: Some(TwitchToken {
                 access_token: stored.access_token,
@@ -242,7 +260,10 @@ impl TwitchAuthState {
         ensure_required_twitch_scopes(&profile.scopes)?;
 
         Ok(EventSubAuthCredentials {
+            generation: self.generation,
+            credential_revision: self.credential_revision,
             client_id,
+            user_id: profile.user_id.clone(),
             access_token: token.access_token.clone(),
             refresh_token: token.refresh_token.clone(),
         })
@@ -266,7 +287,20 @@ impl TwitchAuthState {
             expires_in: token.expires_in,
         });
         self.profile = Some(profile);
+        self.credential_revision = self.credential_revision.wrapping_add(1);
         Ok(token.access_token)
+    }
+
+    pub(super) fn credentials_match(
+        &self,
+        revision: u64,
+        access_token: &str,
+        refresh_token: &str,
+    ) -> bool {
+        self.credential_revision == revision
+            && self.token.as_ref().is_some_and(|token| {
+                token.access_token == access_token && token.refresh_token == refresh_token
+            })
     }
 }
 
@@ -278,7 +312,15 @@ pub(super) fn token_scopes(scopes: Vec<String>, profile: &TwitchUserProfile) -> 
     }
 }
 
-pub(super) fn ensure_required_twitch_scopes(scopes: &[String]) -> anyhow::Result<()> {
+#[derive(Debug, thiserror::Error)]
+#[error("Twitch 認証に必要な権限がありません: {names}。Login から再ログインし、{names} を許可してください。")]
+pub(super) struct MissingRequiredTwitchScopes {
+    names: String,
+}
+
+pub(super) fn ensure_required_twitch_scopes(
+    scopes: &[String],
+) -> Result<(), MissingRequiredTwitchScopes> {
     let missing_scopes = REQUIRED_TWITCH_SCOPES
         .iter()
         .filter(|required_scope| !scopes.iter().any(|scope| scope == **required_scope))
@@ -289,9 +331,7 @@ pub(super) fn ensure_required_twitch_scopes(scopes: &[String]) -> anyhow::Result
         return Ok(());
     }
 
-    Err(anyhow::anyhow!(
-        "Twitch 認証に必要な権限がありません: {}。Login から再ログインし、{} を許可してください。",
-        missing_scopes.join(", "),
-        missing_scopes.join(", "),
-    ))
+    Err(MissingRequiredTwitchScopes {
+        names: missing_scopes.join(", "),
+    })
 }

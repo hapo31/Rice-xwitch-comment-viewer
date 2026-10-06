@@ -1,12 +1,11 @@
 import { useMemo } from "react";
-import { AuthView } from "./auth/AuthView";
-import { ChatView } from "./chat/ChatView";
-import { FilterView } from "./filter/FilterView";
-import { LauncherView } from "./launcher/LauncherView";
-import { LogsView } from "./logs/LogsView";
-import { QueueView } from "./queue/QueueView";
-import { SettingsView } from "./settings/SettingsView";
-import { initialAppState, type AppState } from "../stores/appStore";
+import {
+  useAuthController,
+  useLauncherController,
+  useQueueController,
+  useSettingsController,
+  useSpeechController,
+} from "../orchestration/domainControllerContext";
 import {
   useChatSelector,
   useConnectionSelector,
@@ -14,39 +13,38 @@ import {
   useQueueSelector,
   useSettingsSelector,
 } from "../stores/domainStores";
-import type {
-  AppSettingsPatch,
-  BouyomiConnectionDiagnostics,
-  LauncherItem,
-  LauncherLaunchResult,
-} from "../types";
+import { AuthView } from "./auth/AuthView";
+import { ChatView } from "./chat/ChatView";
+import { FilterView } from "./filter/FilterView";
+import { LauncherView } from "./launcher/LauncherView";
+import { LogsView } from "./logs/LogsView";
+import { QueueView } from "./queue/QueueView";
+import { SettingsInitializationView } from "./settings/SettingsInitializationView";
+import { SettingsView } from "./settings/SettingsView";
 
 export function DomainChatView({ showStartupGuide }: { showStartupGuide: boolean }) {
   const messages = useChatSelector((state) => state.messages);
   const settings = useSettingsSelector((state) => state.settings);
   const connection = useConnectionSelector((state) => state);
-  const speechQueuePhase = useQueueSelector((state) => state.phase);
+  const queuePhase = useQueueSelector((state) => state.phase);
   const state = useMemo(
     () => ({
-      ...initialAppState,
       chatMessages: messages,
       settings,
       twitchAuthStatus: connection.twitchAuthStatus,
-      speechAdapterHealth: connection.speechAdapterHealth,
-      speechQueuePhase,
+      twitchProfile: connection.twitchProfile,
       twitchConnectionStatus: connection.twitchConnectionStatus,
       twitchActiveConnection: connection.twitchActiveConnection,
-      twitchConnectionGeneration: connection.twitchConnectionGeneration,
-      twitchProfile: connection.twitchProfile,
+      speechAdapterHealth: connection.speechAdapterHealth,
+      speechQueuePhase: queuePhase,
     }),
     [
-      connection.twitchAuthStatus,
-      connection.speechAdapterHealth,
-      speechQueuePhase,
       connection.twitchActiveConnection,
-      connection.twitchConnectionGeneration,
       connection.twitchConnectionStatus,
       connection.twitchProfile,
+      connection.speechAdapterHealth,
+      connection.twitchAuthStatus,
+      queuePhase,
       messages,
       settings,
     ],
@@ -54,84 +52,115 @@ export function DomainChatView({ showStartupGuide }: { showStartupGuide: boolean
   return <ChatView state={state} showStartupGuide={showStartupGuide} />;
 }
 
-export function DomainQueueView(props: Omit<React.ComponentProps<typeof QueueView>, "state">) {
+export function DomainQueueView() {
+  const speech = useSpeechController();
+  const queueActions = useQueueController();
   const queue = useQueueSelector((state) => state);
   const state = useMemo(
-    () => ({ ...initialAppState, queueItems: queue.items, speechQueuePhase: queue.phase }),
+    () => ({ queueItems: queue.items, speechQueuePhase: queue.phase }),
     [queue],
   );
-  return <QueueView {...props} state={state} />;
-}
-
-export function DomainLauncherView(
-  props: Omit<React.ComponentProps<typeof LauncherView>, "items" | "isReady">,
-) {
-  const settings = useSettingsSelector((state) => state.settings);
   return (
-    <LauncherView {...props} items={settings?.launcher.items ?? []} isReady={Boolean(settings)} />
-  );
-}
-
-export function DomainFilterView({
-  onSettingsUpdate,
-}: {
-  onSettingsUpdate: (patch: AppSettingsPatch) => Promise<boolean>;
-}) {
-  const settings = useSettingsSelector((state) => state.settings);
-  return <FilterView settings={settings} onSettingsUpdate={onSettingsUpdate} />;
-}
-
-export function DomainSettingsView({
-  onSettingsUpdate,
-  onSpeechHealthCheck,
-  onSpeechDiagnostics,
-  onSpeechTest,
-}: {
-  onSettingsUpdate: (patch: AppSettingsPatch) => Promise<boolean>;
-  onSpeechHealthCheck: () => void;
-  onSpeechDiagnostics: () => Promise<BouyomiConnectionDiagnostics>;
-  onSpeechTest: (text?: string) => void;
-}) {
-  const settings = useSettingsSelector((state) => state.settings);
-  return (
-    <SettingsView
-      settings={settings}
-      onSettingsUpdate={onSettingsUpdate}
-      onSpeechHealthCheck={onSpeechHealthCheck}
-      onSpeechDiagnostics={onSpeechDiagnostics}
-      onSpeechTest={onSpeechTest}
+    <QueueView
+      state={state}
+      onSpeechControl={speech.speechControl}
+      onQueueReload={queueActions.queueReload}
+      onQueueRemove={queueActions.queueRemove}
+      onQueueDismiss={queueActions.queueDismiss}
+      onQueueDismissHistory={queueActions.queueDismissHistory}
+      onQueueRetry={queueActions.queueRetry}
     />
   );
 }
 
-export function DomainAuthView(props: Omit<React.ComponentProps<typeof AuthView>, "state">) {
+export function DomainLauncherView() {
+  const actions = useLauncherController();
+  const settings = useSettingsSelector((state) => state.settings);
+  return (
+    <LauncherView
+      items={settings?.launcher.items ?? []}
+      isReady={Boolean(settings)}
+      onAdd={actions.launcherAdd}
+      onRemove={actions.launcherRemove}
+      onLaunch={actions.launcherLaunch}
+      onLaunchAll={actions.launcherLaunchAll}
+    />
+  );
+}
+
+export function DomainFilterView() {
+  const { updateSettings, reloadSettings } = useSettingsController();
+  const { settings, initialization } = useSettingsSelector((state) => state);
+  if (initialization.status !== "ready")
+    return (
+      <SettingsInitializationView
+        title="Filter"
+        initialization={initialization}
+        onRetry={reloadSettings}
+      />
+    );
+  return <FilterView settings={settings} onSettingsUpdate={updateSettings} />;
+}
+
+export function DomainSettingsView() {
+  const actions = useSettingsController();
+  const { settings, initialization } = useSettingsSelector((state) => state);
+  if (initialization.status !== "ready")
+    return (
+      <SettingsInitializationView
+        title="Settings"
+        initialization={initialization}
+        onRetry={actions.reloadSettings}
+      />
+    );
+  return (
+    <SettingsView
+      settings={settings}
+      onSettingsUpdate={actions.updateSettings}
+      onSpeechHealthCheck={actions.speechHealthCheck}
+      onSpeechDiagnostics={actions.speechDiagnostics}
+      onSpeechTest={actions.speechTest}
+    />
+  );
+}
+
+export function DomainAuthView() {
+  const settingsActions = useSettingsController();
+  const authActions = useAuthController();
   const settings = useSettingsSelector((state) => state.settings);
   const connection = useConnectionSelector((state) => state);
   const state = useMemo(
     () => ({
-      ...initialAppState,
       settings,
       twitchAuthStatus: connection.twitchAuthStatus,
-      twitchConnectionStatus: connection.twitchConnectionStatus,
+      twitchDisconnectRequest: connection.twitchDisconnectRequest,
       twitchActiveConnection: connection.twitchActiveConnection,
-      twitchConnectionGeneration: connection.twitchConnectionGeneration,
       twitchAuthPrompt: connection.twitchAuthPrompt,
       twitchProfile: connection.twitchProfile,
-      speechStatus: connection.speechStatus,
     }),
-    [settings, connection],
+    [
+      settings,
+      connection.twitchAuthStatus,
+      connection.twitchDisconnectRequest,
+      connection.twitchActiveConnection,
+      connection.twitchAuthPrompt,
+      connection.twitchProfile,
+    ],
   );
-  return <AuthView {...props} state={state} />;
+  return (
+    <AuthView
+      state={state}
+      onSettingsUpdate={settingsActions.updateSettings}
+      onTwitchStartAuth={authActions.twitchStartAuth}
+      onTwitchPollAuth={authActions.twitchPollAuth}
+      onTwitchValidateAuth={authActions.twitchValidateAuth}
+      onTwitchDisconnect={authActions.twitchDisconnect}
+      onOpenExternalUrl={authActions.openExternalUrl}
+    />
+  );
 }
 
 export function DomainLogsView() {
   const logs = useLogsSelector((state) => state.logs);
-  return <LogsView state={{ ...initialAppState, logs }} />;
+  return <LogsView state={{ logs }} />;
 }
-
-export type DomainLauncherActions = {
-  onAdd: (paths: string[]) => Promise<LauncherItem[]>;
-  onRemove: (itemId: string) => Promise<LauncherItem[]>;
-  onLaunch: (itemId: string) => Promise<LauncherLaunchResult>;
-  onLaunchAll: () => Promise<LauncherLaunchResult>;
-};

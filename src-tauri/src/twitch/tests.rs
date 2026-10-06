@@ -162,7 +162,7 @@ impl AuthCredentialStore for DelayedCredentialStore {
     fn load(&self) -> AuthLoadResult {
         AuthLoadResult {
             auth: None,
-            storage_warning: None,
+            notice: None,
         }
     }
 
@@ -217,6 +217,7 @@ fn stored_auth_secret() -> String {
 fn twitch_auth_state() -> TwitchAuthState {
     TwitchAuthState {
         generation: 0,
+        credential_revision: 0,
         pending: None,
         token: Some(TwitchToken {
             access_token: "access-token".to_string(),
@@ -291,17 +292,22 @@ async fn logout_clears_a_delayed_save_that_started_before_logout() {
     backend.wait_until_save_started();
 
     // Logout invalidates the generation before waiting for credential I/O.
-    let logout_generation = {
+    let (logout_generation, logout_revision) = {
         let mut auth = auth_state.lock().unwrap();
         let generation = auth.invalidate_operations();
+        auth.credential_revision = auth.credential_revision.wrapping_add(1);
         auth.token = None;
         auth.profile = None;
-        generation
+        (generation, auth.credential_revision)
     };
     let clear = tokio::spawn({
         let store = store.clone();
         let auth_state = auth_state.clone();
-        async move { store.clear_if_current(auth_state, logout_generation).await }
+        async move {
+            store
+                .clear_if_current(auth_state, logout_generation, logout_revision)
+                .await
+        }
     });
 
     backend.release_save();
@@ -350,6 +356,112 @@ async fn stale_save_after_logout_is_never_committed() {
 }
 
 #[cfg(feature = "app")]
+#[tokio::test]
+async fn stale_save_after_same_generation_credential_rotation_is_rejected() {
+    let backend = Arc::new(DelayedCredentialStore::default());
+    let store = TwitchAuthStore::with_backend(backend.clone());
+    let auth_state = Arc::new(Mutex::new(twitch_auth_state()));
+    let (generation, stale_snapshot) = {
+        let mut auth = auth_state.lock().unwrap();
+        let snapshot = auth.clone();
+        let generation = auth.generation;
+        let profile = auth.profile.clone().unwrap();
+        auth.replace_token(
+            TokenResponse {
+                access_token: "rotated-access".into(),
+                refresh_token: "rotated-refresh".into(),
+                scope: vec!["user:read:chat".into()],
+                expires_in: 7200,
+            },
+            profile,
+        )
+        .unwrap();
+        assert_eq!(auth.generation, generation);
+        (generation, snapshot)
+    };
+
+    assert!(matches!(
+        store
+            .save_if_current(auth_state.clone(), generation, stale_snapshot)
+            .await
+            .unwrap(),
+        AuthSaveOutcome::Stale
+    ));
+    assert_eq!(backend.snapshot().save_calls, 0);
+    assert_eq!(
+        auth_state
+            .lock()
+            .unwrap()
+            .token
+            .as_ref()
+            .unwrap()
+            .access_token,
+        "rotated-access"
+    );
+}
+
+#[cfg(feature = "app")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn delayed_save_reports_stale_revision_then_persists_the_newer_credentials() {
+    let backend = Arc::new(DelayedCredentialStore::default());
+    let store = TwitchAuthStore::with_backend(backend.clone());
+    let auth_state = Arc::new(Mutex::new(twitch_auth_state()));
+    let generation = auth_state.lock().unwrap().generation;
+    let old_snapshot = auth_state.lock().unwrap().clone();
+    let old_save = tokio::spawn({
+        let store = store.clone();
+        let auth_state = auth_state.clone();
+        async move {
+            store
+                .save_if_current(auth_state, generation, old_snapshot)
+                .await
+        }
+    });
+    backend.wait_until_save_started();
+
+    let new_snapshot = {
+        let mut auth = auth_state.lock().unwrap();
+        let profile = auth.profile.clone().unwrap();
+        auth.replace_token(
+            TokenResponse {
+                access_token: "newer-access-token".into(),
+                refresh_token: "newer-refresh-token".into(),
+                scope: vec!["user:read:chat".into()],
+                expires_in: 7200,
+            },
+            profile,
+        )
+        .unwrap();
+        assert_eq!(auth.generation, generation);
+        auth.clone()
+    };
+    let new_save = tokio::spawn({
+        let store = store.clone();
+        let auth_state = auth_state.clone();
+        async move {
+            store
+                .save_if_current(auth_state, generation, new_snapshot)
+                .await
+        }
+    });
+
+    backend.release_save();
+    assert!(matches!(
+        old_save.await.unwrap().unwrap(),
+        AuthSaveOutcome::Stale
+    ));
+    assert!(matches!(
+        new_save.await.unwrap().unwrap(),
+        AuthSaveOutcome::Saved(None)
+    ));
+    let persisted =
+        serde_json::from_str::<StoredTwitchAuth>(backend.snapshot().secret.as_deref().unwrap())
+            .unwrap();
+    assert_eq!(persisted.access_token, "newer-access-token");
+    assert_eq!(persisted.refresh_token, "newer-refresh-token");
+}
+
+#[cfg(feature = "app")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn stale_clear_after_newer_auth_never_deletes_its_durable_credential() {
     let backend = Arc::new(DelayedCredentialStore::default());
@@ -371,17 +483,22 @@ async fn stale_clear_after_newer_auth_never_deletes_its_durable_credential() {
     });
     backend.wait_until_save_started();
 
-    let logout_generation = {
+    let (logout_generation, logout_revision) = {
         let mut auth = auth_state.lock().unwrap();
         let generation = auth.invalidate_operations();
+        auth.credential_revision = auth.credential_revision.wrapping_add(1);
         auth.token = None;
         auth.profile = None;
-        generation
+        (generation, auth.credential_revision)
     };
     let clear = tokio::spawn({
         let store = store.clone();
         let auth_state = auth_state.clone();
-        async move { store.clear_if_current(auth_state, logout_generation).await }
+        async move {
+            store
+                .clear_if_current(auth_state, logout_generation, logout_revision)
+                .await
+        }
     });
 
     let (newer_generation, newer_auth) = {
@@ -418,7 +535,7 @@ async fn stale_clear_after_newer_auth_never_deletes_its_durable_credential() {
     backend.release_save();
     assert!(matches!(
         old_save.await.unwrap().unwrap(),
-        AuthSaveOutcome::Saved(None)
+        AuthSaveOutcome::Stale
     ));
     assert!(matches!(
         clear.await.unwrap().unwrap(),
@@ -567,10 +684,17 @@ fn failed_logout_recovery_keeps_the_new_generation() {
     let stale_generation = auth.generation;
     let previous_auth = auth.clone();
     let logout_generation = auth.invalidate_operations();
+    let logout_revision = auth.credential_revision.wrapping_add(1);
+    auth.credential_revision = logout_revision;
     auth.token = None;
     auth.profile = None;
 
-    restore_auth_after_failed_clear_if_current(&mut auth, logout_generation, previous_auth);
+    restore_auth_after_failed_clear_if_current(
+        &mut auth,
+        logout_generation,
+        logout_revision,
+        previous_auth,
+    );
 
     assert_eq!(auth.generation, logout_generation);
     assert_ne!(auth.generation, stale_generation);
@@ -714,7 +838,7 @@ fn chat_fixture_with_timestamp(timestamp: Option<serde_json::Value>) -> EventSub
 fn parses_channel_chat_message_fixture() {
     let fixture = include_str!("fixtures/channel_chat_message.json");
     let envelope = serde_json::from_str::<EventSubEnvelope>(fixture).unwrap();
-    let normalized = normalize_chat_message(envelope, utc_timestamp("2026-08-15T12:34:56.789Z"))
+    let normalized = normalize_chat_message(envelope, utc_timestamp("2026-08-15T12:34:56.789Z"), 0)
         .unwrap()
         .unwrap();
     assert!(normalized.timestamp_warning.is_none());
@@ -734,6 +858,26 @@ fn parses_channel_chat_message_fixture() {
     assert_eq!(
         message.received_at,
         utc_timestamp("2023-11-06T18:11:47.492253549Z")
+    );
+}
+
+#[test]
+fn normalized_chat_message_owns_the_connection_generation_before_serialization() {
+    let envelope = serde_json::from_str::<EventSubEnvelope>(include_str!(
+        "fixtures/channel_chat_message.json"
+    ))
+    .unwrap();
+    let normalized =
+        normalize_chat_message(envelope, utc_timestamp("2026-08-15T12:34:56.789Z"), 42)
+            .unwrap()
+            .unwrap();
+
+    assert_eq!(normalized.message.connection_generation, Some(42));
+    assert!(normalized.message.belongs_to_connection_generation(42));
+    assert!(!normalized.message.belongs_to_connection_generation(43));
+    assert_eq!(
+        serde_json::to_value(&normalized.message).unwrap()["connectionGeneration"],
+        serde_json::json!(42)
     );
 }
 
@@ -789,6 +933,7 @@ fn normalizes_offset_timestamp_to_utc_and_serializes_the_tauri_field_contract() 
             "2026-08-15T21:34:56.789123456+09:00"
         ))),
         utc_timestamp("2026-08-15T00:00:00Z"),
+        0,
     )
     .unwrap()
     .unwrap();
@@ -822,9 +967,10 @@ fn falls_back_to_websocket_receive_time_for_unsupported_timestamps() {
     ];
 
     for (case_name, timestamp) in cases {
-        let normalized = normalize_chat_message(chat_fixture_with_timestamp(timestamp), fallback)
-            .unwrap()
-            .unwrap();
+        let normalized =
+            normalize_chat_message(chat_fixture_with_timestamp(timestamp), fallback, 0)
+                .unwrap()
+                .unwrap();
 
         assert_eq!(normalized.message.received_at, fallback, "{case_name}");
         assert!(
@@ -1263,7 +1409,7 @@ fn eventsub_refresh_rejects_a_new_token_without_chat_read_scope() {
 #[test]
 fn stale_eventsub_scope_failure_keeps_rotated_authentication() {
     let mut auth = twitch_auth_state();
-    let stale_refresh_token = auth.eventsub_credentials().unwrap().refresh_token;
+    let stale_credentials = auth.eventsub_credentials().unwrap();
 
     // Simulate a second EventSub re-subscription completing its refresh while
     // the first one is awaiting validation of a scope-deficient token.
@@ -1285,7 +1431,7 @@ fn stale_eventsub_scope_failure_keeps_rotated_authentication() {
     .unwrap();
 
     let access_token =
-        clear_auth_for_eventsub_missing_scope_if_current(&mut auth, &stale_refresh_token).unwrap();
+        clear_auth_for_eventsub_missing_scope_if_current(&mut auth, &stale_credentials).unwrap();
 
     assert_eq!(access_token.as_deref(), Some("newer-access-token"));
     let current = auth.eventsub_credentials().unwrap();
@@ -1346,8 +1492,9 @@ fn migrates_existing_legacy_auth_after_secure_store_recovers() {
 
     assert_eq!(restored.auth.unwrap().profile().unwrap().login, "viewer");
     assert!(restored
-        .storage_warning
+        .notice
         .unwrap()
+        .message
         .contains("移行し、平文ファイルを削除"));
     assert_eq!(
         secure.secret.borrow().as_deref(),
@@ -1372,7 +1519,7 @@ fn warns_when_secure_store_cannot_be_read_and_no_legacy_auth_exists() {
     let restored = storage.load();
 
     assert!(restored.auth.is_none());
-    let warning = restored.storage_warning.unwrap();
+    let warning = restored.notice.unwrap().message;
     assert!(warning.contains("資格情報ストアから Twitch 認証情報を読み込めません"));
     assert!(warning.contains("fake secure-store read failure"));
     assert!(warning.contains("資格情報ストアを確認"));
@@ -1395,7 +1542,7 @@ fn leaves_legacy_auth_unread_when_migration_is_rejected() {
     let restored = storage.load();
 
     assert!(restored.auth.is_none());
-    let warning = restored.storage_warning.unwrap();
+    let warning = restored.notice.unwrap().message;
     assert!(warning.contains("安全のため読み込まず"));
     assert!(warning.contains("ファイルを削除"));
     assert!(warning.contains("アクセスを取り消し"));
@@ -1432,4 +1579,138 @@ fn logout_clears_secure_and_legacy_auth_state() {
 
     assert!(secure.secret.borrow().is_none());
     assert!(legacy.secret.borrow().is_none());
+}
+
+#[cfg(feature = "app")]
+#[test]
+fn auth_restore_classifies_scope_and_corruption_without_exposing_secret_input() {
+    use super::auth_store::AuthLoadReason;
+    let mut missing: serde_json::Value = serde_json::from_str(&stored_auth_secret()).unwrap();
+    missing["scopes"] = serde_json::json!([]);
+    missing["profile"]["scopes"] = serde_json::json!([]);
+    let mut invalid: serde_json::Value = serde_json::from_str(&stored_auth_secret()).unwrap();
+    // Serde's original type error includes this value. It must not reach notices.
+    invalid["expiresIn"] = "secret-token-must-stay-private".into();
+    for (secret, reason) in [
+        (missing.to_string(), AuthLoadReason::MissingRequiredScope),
+        (invalid.to_string(), AuthLoadReason::CorruptData),
+        (
+            "broken-json-secret-token-must-stay-private".into(),
+            AuthLoadReason::CorruptData,
+        ),
+    ] {
+        for legacy_source in [false, true] {
+            let secure = if legacy_source {
+                FakeAuthSecretStore::default()
+            } else {
+                FakeAuthSecretStore::with_secret(secret.clone())
+            };
+            let legacy = if legacy_source {
+                FakeAuthSecretStore::with_secret(secret.clone())
+            } else {
+                FakeAuthSecretStore::default()
+            };
+            let restored = AuthStorage {
+                secure: &secure,
+                legacy: &legacy,
+            }
+            .load();
+            assert!(restored.auth.is_none());
+            let notice = restored.notice.unwrap();
+            assert_eq!(notice.reason, reason);
+            assert!(!notice.message.contains("secret-token-must-stay-private"));
+            assert!(!notice.message.contains("access-token"));
+            assert!(!notice.message.contains("refresh-token"));
+            assert_eq!(*secure.save_calls.borrow(), 0);
+            let original = if legacy_source { &legacy } else { &secure };
+            assert_eq!(original.secret.borrow().as_deref(), Some(secret.as_str()));
+        }
+    }
+}
+
+#[cfg(feature = "app")]
+#[test]
+fn auth_restore_preserves_typed_storage_migration_and_cleanup_results() {
+    use super::auth_store::AuthLoadReason;
+    for has_secure_secret in [false, true] {
+        let secure = if has_secure_secret {
+            FakeAuthSecretStore::with_secret(stored_auth_secret())
+        } else {
+            FakeAuthSecretStore::default()
+        };
+        let legacy = FakeAuthSecretStore {
+            fail_clear: true,
+            ..FakeAuthSecretStore::with_secret(stored_auth_secret())
+        };
+        let restored = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        }
+        .load();
+        assert!(restored.auth.is_some());
+        assert_eq!(
+            restored.notice.unwrap().reason,
+            AuthLoadReason::LegacyCleanupFailed
+        );
+        assert!(secure.secret.borrow().is_some());
+        assert!(legacy.secret.borrow().is_some());
+    }
+    for fail_load in [false, true] {
+        let secure = FakeAuthSecretStore {
+            fail_load,
+            fail_save: true,
+            ..FakeAuthSecretStore::default()
+        };
+        let legacy = FakeAuthSecretStore::with_secret(stored_auth_secret());
+        let restored = AuthStorage {
+            secure: &secure,
+            legacy: &legacy,
+        }
+        .load();
+        assert!(restored.auth.is_none());
+        assert_eq!(
+            restored.notice.unwrap().reason,
+            AuthLoadReason::StoreUnavailable
+        );
+        assert!(legacy.secret.borrow().is_some());
+        assert_eq!(*legacy.save_calls.borrow(), 0);
+    }
+    let secure = FakeAuthSecretStore::default();
+    let legacy = FakeAuthSecretStore::with_secret(stored_auth_secret());
+    let restored = AuthStorage {
+        secure: &secure,
+        legacy: &legacy,
+    }
+    .load();
+    assert!(restored.auth.is_some());
+    assert_eq!(
+        restored.notice.unwrap().reason,
+        AuthLoadReason::LegacyMigrated
+    );
+}
+
+#[cfg(feature = "app")]
+#[test]
+fn auth_restore_keeps_scope_reason_when_secure_store_is_also_unavailable() {
+    use super::auth_store::AuthLoadReason;
+    let mut secret: serde_json::Value = serde_json::from_str(&stored_auth_secret()).unwrap();
+    secret["scopes"] = serde_json::json!([]);
+    secret["profile"]["scopes"] = serde_json::json!([]);
+    let secure = FakeAuthSecretStore {
+        fail_load: true,
+        ..FakeAuthSecretStore::default()
+    };
+    let legacy = FakeAuthSecretStore::with_secret(secret.to_string());
+    let restored = AuthStorage {
+        secure: &secure,
+        legacy: &legacy,
+    }
+    .load();
+    assert!(restored.auth.is_none());
+    assert_eq!(
+        restored.notice.unwrap().reason,
+        AuthLoadReason::MissingRequiredScope
+    );
+    assert!(legacy.secret.borrow().is_some());
+    assert_eq!(*secure.save_calls.borrow(), 0);
 }

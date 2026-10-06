@@ -15,6 +15,16 @@ pub(crate) struct SizeLimitExceeded {
     maximum: usize,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum BoundedReadError {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error(transparent)]
+    TooLarge(#[from] SizeLimitExceeded),
+    #[error("設定ファイルが正しいUTF-8ではありません。")]
+    Encoding(#[from] std::string::FromUtf8Error),
+}
+
 struct LimitedWriter<W> {
     inner: W,
     written: usize,
@@ -106,7 +116,7 @@ pub(crate) fn validate_json_request(
     result.map_err(|_| "要求のJSONを確認できません。入力内容を見直してください。".into())
 }
 
-pub(crate) fn read_bounded(path: &Path, maximum: usize) -> anyhow::Result<String> {
+pub(crate) fn read_bounded(path: &Path, maximum: usize) -> Result<String, BoundedReadError> {
     let file = std::fs::File::open(path)?;
     let length = file.metadata()?.len();
     if length > maximum as u64 {
@@ -138,9 +148,9 @@ pub(crate) fn check_bytes(
     length: usize,
     maximum: usize,
     label: &'static str,
-) -> anyhow::Result<()> {
+) -> Result<(), SizeLimitExceeded> {
     if length > maximum {
-        return Err(SizeLimitExceeded { label, maximum }.into());
+        return Err(SizeLimitExceeded { label, maximum });
     }
     Ok(())
 }

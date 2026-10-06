@@ -4,6 +4,12 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::io::Cursor;
 use std::path::Path;
+use std::sync::Arc;
+
+#[cfg(test)]
+thread_local! {
+    static ICON_PNG_DECODE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 pub(super) const MAX_LAUNCHER_ITEMS: usize = 200;
 pub(super) const MAX_PATH_BYTES: usize = 4096;
@@ -17,6 +23,8 @@ pub(super) const UNSUPPORTED_LAUNCHER_MESSAGE: &str = "アプリの登録・起�
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct LauncherCapabilities {
     pub can_register_applications: bool,
     pub can_launch_applications: bool,
@@ -52,8 +60,47 @@ pub(super) const MAX_ICON_FILE_BYTES: usize = 48 * 1024;
 pub(super) const MAX_ICON_DIMENSION: u32 = 128;
 pub(super) const MAX_ICON_DECODED_BYTES: usize = 128 * 1024;
 pub(super) const MAX_PNG_DECODER_BYTES: usize = 1024 * 1024;
+
+/// PNG data that passed the complete, bounded decoder at an untrusted input boundary.
+/// Cloning an icon shares immutable bytes and never repeats image decoding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidatedLauncherIconDataUrl(Arc<str>);
+
+impl ValidatedLauncherIconDataUrl {
+    pub(crate) fn parse(value: &str) -> Result<Self, String> {
+        let trimmed = value.trim();
+        if !valid_icon_data_url(trimmed) {
+            return Err("アイコンは正しいPNG画像48KiB・128×128以内にしてください。".into());
+        }
+        Ok(Self(Arc::from(trimmed)))
+    }
+}
+
+impl std::ops::Deref for ValidatedLauncherIconDataUrl {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Serialize for ValidatedLauncherIconDataUrl {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for ValidatedLauncherIconDataUrl {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(&value).map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct LauncherSettings {
     #[serde(default, deserialize_with = "deserialize_launcher_items")]
     pub items: Vec<LauncherItem>,
@@ -91,6 +138,8 @@ fn deserialize_launcher_items<'de, D: Deserializer<'de>>(
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct LauncherItem {
     pub id: String,
     pub kind: LauncherItemKind,
@@ -101,7 +150,8 @@ pub struct LauncherItem {
         deserialize_with = "deserialize_launcher_icon_data_url",
         skip_serializing_if = "Option::is_none"
     )]
-    pub icon_data_url: Option<String>,
+    #[cfg_attr(test, ts(as = "Option<String>"))]
+    pub icon_data_url: Option<ValidatedLauncherIconDataUrl>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -112,6 +162,7 @@ pub struct LauncherItem {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum LauncherItemKind {
     Application,
     Website,
@@ -318,18 +369,9 @@ pub(super) fn parse_add_request(value: &serde_json::Value) -> Result<Vec<String>
 }
 
 pub(crate) fn validate_launcher_resources(items: &[LauncherItem]) -> Result<(), String> {
-    validate_launcher_structure(items)?;
-    // Check the aggregate before decoding any PNG. Only bounded buffers are used.
-    for item in items {
-        if item
-            .icon_data_url
-            .as_ref()
-            .is_some_and(|icon| !valid_icon_data_url(icon))
-        {
-            return Err("アイコンは正しいPNG画像48KiB・128×128以内にしてください。".into());
-        }
-    }
-    Ok(())
+    // LauncherItem's icon field can only contain values that passed full bounded
+    // PNG validation during deserialization or explicit construction.
+    validate_launcher_structure(items)
 }
 
 /// Deserialized items already passed the full PNG decoder individually. Avoid
@@ -405,6 +447,17 @@ pub(crate) fn validate_launcher_structure(items: &[LauncherItem]) -> Result<(), 
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
+pub struct LauncherAddResult {
+    pub items: Vec<LauncherItem>,
+    pub added_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct LauncherLaunchFailure {
     pub item_id: String,
     pub display_name: String,
@@ -413,6 +466,8 @@ pub struct LauncherLaunchFailure {
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct LauncherLaunchResult {
     /// Verified target process creation only; not shell acceptance/app readiness.
     pub launched_count: usize,
@@ -446,24 +501,20 @@ fn normalize_optional_text(value: Option<String>) -> Option<String> {
     })
 }
 
-fn deserialize_launcher_icon_data_url<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+fn deserialize_launcher_icon_data_url<'de, D>(
+    deserializer: D,
+) -> Result<Option<ValidatedLauncherIconDataUrl>, D::Error>
 where
     D: Deserializer<'de>,
 {
     Option::<String>::deserialize(deserializer).map(normalize_launcher_icon_data_url)
 }
 
-pub(crate) fn normalize_launcher_icon_data_url(value: Option<String>) -> Option<String> {
+pub(crate) fn normalize_launcher_icon_data_url(
+    value: Option<String>,
+) -> Option<ValidatedLauncherIconDataUrl> {
     let value = value?;
-    let trimmed = value.trim();
-    if !valid_icon_data_url(trimmed) {
-        return None;
-    }
-    if trimmed.len() == value.len() {
-        Some(value)
-    } else {
-        Some(trimmed.to_string())
-    }
+    ValidatedLauncherIconDataUrl::parse(&value).ok()
 }
 
 pub(super) fn valid_icon_data_url(value: &str) -> bool {
@@ -476,7 +527,22 @@ pub(super) fn valid_icon_data_url(value: &str) -> bool {
     let Ok(decoded) = BASE64_STANDARD.decode(encoded) else {
         return false;
     };
-    !decoded.is_empty() && decoded.len() <= MAX_ICON_FILE_BYTES && is_valid_launcher_png(&decoded)
+    if decoded.is_empty() || decoded.len() > MAX_ICON_FILE_BYTES {
+        return false;
+    }
+    #[cfg(test)]
+    ICON_PNG_DECODE_COUNT.with(|count| count.set(count.get() + 1));
+    is_valid_launcher_png(&decoded)
+}
+
+#[cfg(test)]
+pub(super) fn icon_png_decode_count() -> usize {
+    ICON_PNG_DECODE_COUNT.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+pub(super) fn reset_icon_png_decode_count() {
+    ICON_PNG_DECODE_COUNT.with(|count| count.set(0));
 }
 
 fn is_valid_launcher_png(bytes: &[u8]) -> bool {

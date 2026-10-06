@@ -91,6 +91,8 @@
 
 ## テスト方針
 
+開発・release policy script が読む workflow YAML は `yaml`、Cargo/audit metadata は `smol-toml` で構造化してから検査する。共通境界で YAML の重複keyを拒否し、alias展開を50件に制限する。parser が構文を理解することをシェルコマンドの安全性保証として扱わず、権限・required job・公開順序などRice固有の条件は別のpolicy検査とfixtureで維持する。
+
 Rust:
 
 - 棒読みちゃんパケット生成のユニットテスト

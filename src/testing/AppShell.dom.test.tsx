@@ -7,7 +7,7 @@ import { AppShell } from "../AppShell";
 import { appRoutes } from "../routes";
 import { createDomainStores, DomainProvider } from "../stores/domainStores";
 import outcomeFixture from "../tauri/fixtures/queue-outcomes.json";
-import type { AppSettingsPatch } from "../types";
+import type { AppEventsSnapshot, AppSettingsPatch } from "../types";
 import { defaultSettings, tauriMock } from "./tauriMock";
 
 function mountApp(path = "/chat", strict = false) {
@@ -106,7 +106,7 @@ it("late startup and explicit reload preserve all item reasons and expose keyboa
   expect(
     within(skippedRow as HTMLElement).getByRole("button", { name: /履歴から削除/ }),
   ).toBeEnabled();
-  tauriMock.setCommand("speech_queue_dismiss", () => undefined);
+  tauriMock.setCommand("speech_queue_dismiss", () => null);
   await user.click(within(skippedRow as HTMLElement).getByRole("button", { name: /履歴から削除/ }));
   await waitFor(() =>
     expect(tauriMock.invoke).toHaveBeenCalledWith("speech_queue_dismiss", { itemId: "speech-7" }),
@@ -398,7 +398,7 @@ it("Windows Launcher selects applications and displays partial launch failures",
     },
   ];
   tauriMock.open.mockResolvedValue(["C:\\valid.exe", "C:\\missing.lnk"]);
-  tauriMock.setCommand("launcher_add", items);
+  tauriMock.setCommand("launcher_add", { items, addedCount: 2 });
   tauriMock.setCommand("launcher_launch_all", {
     launchedCount: 1,
     failures: [
@@ -415,6 +415,13 @@ it("Windows Launcher selects applications and displays partial launch failures",
     expect(screen.getByRole("button", { name: "アプリをランチャーに追加" })).toBeEnabled(),
   );
   await user.click(screen.getByRole("button", { name: "アプリをランチャーに追加" }));
+  expect(await screen.findByText("2 件を登録しました。")).toBeVisible();
+  tauriMock.setCommand("launcher_add", { items, addedCount: 1 });
+  await user.click(screen.getByRole("button", { name: "アプリをランチャーに追加" }));
+  expect(await screen.findByText("1 件を登録しました。 1 件は登録済みです。")).toBeVisible();
+  tauriMock.setCommand("launcher_add", { items, addedCount: 0 });
+  await user.click(screen.getByRole("button", { name: "アプリをランチャーに追加" }));
+  expect(await screen.findByText("選択したアプリはすでに登録されています。")).toBeVisible();
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "有効なアプリ を起動" })).toBeEnabled(),
   );
@@ -626,6 +633,71 @@ it("StrictMode keeps one subscription and one update per event after delayed reg
   unsubscribe();
   unmount();
   await waitFor(() => expect(tauriMock.listenerCount()).toBe(0));
+});
+
+it("keeps a current Twitch comment delivered before the startup snapshot", async () => {
+  let resolveSnapshot!: (value: AppEventsSnapshot) => void;
+  tauriMock.setCommand(
+    "app_events_snapshot",
+    () =>
+      new Promise((resolve) => {
+        resolveSnapshot = resolve;
+      }),
+  );
+  const { stores } = mountApp("/chat");
+  await ready(stores);
+  await waitFor(() => expect(tauriMock.invoke).toHaveBeenCalledWith("app_events_snapshot"));
+  const message = {
+    id: "startup-chat-1",
+    platform: "twitch",
+    channelId: "channel-7",
+    channelLogin: "channel_7",
+    userId: "viewer-1",
+    userLogin: "viewer",
+    userDisplayName: "Viewer",
+    text: "snapshot 前に届いたコメント",
+    fragments: [],
+    badges: [],
+    receivedAt: "2026-10-06T00:00:00Z",
+    connectionGeneration: 7,
+  };
+  await act(async () => {
+    tauriMock.emit("twitch://chat-message", message);
+    tauriMock.emit("twitch://chat-message", message);
+  });
+  expect(stores.chat.getState().messages.filter((entry) => entry.kind === "user")).toEqual([]);
+
+  await act(async () => {
+    resolveSnapshot({
+      revision: 10,
+      logs: [],
+      emitErrors: [],
+      twitchStatuses: [
+        {
+          revision: 10,
+          domain: "chat",
+          status: "connected",
+          occurredAtMs: 1,
+          connectionGeneration: 7,
+          activeConnection: {
+            generation: 7,
+            broadcasterUserId: "channel-7",
+            broadcasterLogin: "channel_7",
+          },
+        },
+      ],
+    });
+  });
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole("table", { name: "チャット一覧" })).getByText(
+        "snapshot 前に届いたコメント",
+      ),
+    ).toBeInTheDocument(),
+  );
+  expect(
+    stores.chat.getState().messages.filter((entry) => entry.id === "startup-chat-1"),
+  ).toHaveLength(1);
 });
 
 it("subscription rejection reports recovery and unmount removes successful registrations", async () => {

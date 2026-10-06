@@ -1,4 +1,6 @@
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
+
+export type SelectionEquality<Selected> = (previous: Selected, next: Selected) => boolean;
 
 export interface ExternalStore<State, Action> {
   getState: () => State;
@@ -28,13 +30,17 @@ export function createExternalStore<State, Action>(
   };
 }
 
+/** Select from immutable snapshots; isEqual must mean equal observable output. */
 export function useStoreSelector<State, Selected>(
   store: Pick<ExternalStore<State, never>, "getState" | "subscribe">,
   selector: (state: State) => Selected,
+  isEqual: SelectionEquality<Selected> = Object.is,
 ): Selected {
-  return useSyncExternalStore(
+  return useSyncExternalStoreWithSelector(
     store.subscribe,
-    () => selector(store.getState()),
-    () => selector(store.getState()),
+    store.getState,
+    store.getState,
+    selector,
+    isEqual,
   );
 }

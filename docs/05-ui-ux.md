@@ -155,6 +155,10 @@ Tailwind 4.3.3 と公式 `@tailwindcss/vite` を使い、`src/styles.css` の明
 
 ## チャットログ行
 
+履歴を閲覧中は、先頭可視message IDと行内部のoffset（scroll offset − VirtualItem.start）を保存する。測定はscroll eventまたはcommit後に行い、更新時のlayout cleanupでは座標を読み取らない。新着追加時は導入済みTanStack Virtualの測定値を更新してから、同じanchor helperと `getOffsetForIndex` / `scrollToOffset` で復元する。DOMの矩形差分やscrollTopへの追加加算は使わない。ref/ResizeObserverによる可変行高の補正はVirtualizerが担当し、ブラウザの独立したoverflow anchoringを無効にする。最上部だけ自動追従し、履歴閲覧中は新着件数から先頭へ戻れる。
+
+[Virtualizer API](https://tanstack.com/virtual/latest/docs/api/virtualizer) と [VirtualItem](https://tanstack.com/virtual/latest/docs/api/virtual-item) を参照し、実装は導入済み3.15.0のAPIで検証した。最新版資料の `anchorTo` / `followOnAppend` は使用しない。JSDOMでは実ChatView/virtualizerと固定されたviewport・行高を組み合わせて座標契約を検査する。Windows WebViewの実pixel確認は別途必要。
+
 Issue #85の結果詳細は、outcomeを持つuser行の状態ラベルをキーボード操作可能なbuttonにする。開くとChat下部の非modal詳細paneへfocusを移し、行の高さと本文2行上限を変えずに理由・code・発生時刻・item ID・安全な再送判断・復旧導線を表示する。閉じる/Escapeは起点buttonへfocusを戻す。対象の理由が手動再試行/完了等で消えた場合はpaneを閉じheadingへ戻す。Queueにも本文の下に同じ理由/復旧表示を置く。Filter/Settings/Queueへのrouteはfrontend定義から導出し、backend理由へ画面名/routeを埋め込まない。色/hoverだけを情報の唯一の表現にしない。
 
 表示項目:
@@ -167,17 +171,28 @@ Issue #85の結果詳細は、outcomeを持つuser行の状態ラベルをキー
 
 状態:
 
-- `queued`: 読み上げ待ち
+- `received`: 受信済み。backend の読み上げ受付結果がまだ届いていない
+- `queued`: backend がキューへ受け付けた読み上げ待ち
 - `spoken`: 読み上げ済み
-- `skipped`: スキップ
+- `skipped`: スキップ（自動読み上げ OFF の対象外も、backend が返した理由付きで表示）
 - `blocked`: ルールで除外
 - `error`: 読み上げ失敗
+
+### Launcher の項目メニュー
+
+`LauncherItemMenu` が [Radix Dropdown Menu](https://www.radix-ui.com/primitives/docs/components/dropdown-menu) の開閉・外側操作・roving focus・循環移動・Escapeを使い、LauncherViewは起動/登録/削除に限定する。親のopen ID、trigger Map、document listenerと汎用key parserは持たない。非modal menuはTab/Shift+Tabでtriggerから自然なdocument順へ離脱する。Radix既定はTabを消費するため、この2キーだけcaptureで閉じてnative移動を許可し、閉じる際のfocus復帰を抑える。削除成功で発火元が消えた場合は画面見出しへ移す。
+
+#225 の確認dialogと同じRadix系列を選び、focus scope・dismissable layerなどを共有する。native dialogはmodal向け、popover単体はmenu keyboard操作を提供しないため、menuでは専用primitiveを使用する。Portalは画面端/タイルのoverflowを避け、衝突補正をライブラリへ委ねる。実DOMで通常キー操作・busy・削除後focusを検証し、Windows WebView上のpixel配置は別の手動確認とする。
 
 ## キーボード操作
 
 ### 未保存変更
 
 Filter と Settings に未保存の変更があるときは、Activity Bar の画面遷移、履歴戻る、ウィンドウ終了を共通の確認ダイアログで止める。ダイアログでは「保存して続ける」「破棄して続ける」「キャンセル」をキーボードで選択できる。保存に失敗した場合は画面に留まり、下書きを失わない。
+
+共通の確認部品は [Radix Dialog](https://www.radix-ui.com/primitives/docs/components/dialog) の modal、Portal、Title/Description を利用する。Tab循環・背景抑止・Escape・重なりの管理をprimitiveへ委ね、保存/終了の承認・世代管理はExitProtectionProviderに残す。背景クリックでは確認を閉じない。キャンセル時は起点へ戻し、起点消失時はAppShellを復帰先にする。遷移先の見出しが既にfocusを得た場合は復帰で上書きしない。保存中はdisabledになった保存ボタンからキャンセルへ、終了処理中は確認本文へfocusを移す。
+
+native `<dialog>.showModal()` も比較したが、Linux Chromium 153の実AppShellでは端のTab/Shift+Tabでdocument.bodyへfocusが外れたためRadixを選んだ。native dialogを模したjsdom stubは使わず、本番primitiveのDOM回帰と実ブラウザを併用する。`scripts/check-modal-browser.mjs` は起動中Viteと外部にインストールしたPlaywright（`PLAYWRIGHT_MODULE`）で実AppShellを操作し、Tauri IPCだけを公式mockで置き換える。Chromiumでの成功はWindows WebView2の実機確認とは区別する。
 
 - `Space`: 読み上げ一時停止/再開
 - `S`: 現在の読み上げをスキップ
@@ -189,3 +204,16 @@ Filter と Settings に未保存の変更があるときは、Activity Bar の�
 ## エラー表示
 
 command 失敗は共通の presentation 層で、操作対象に応じた短い日本語の原因・復旧手順へ変換する。backend が返す日本語の説明（送信結果が不確かな場合など）は保持する。不明な object、空文字、英語の例外も空欄や `[object Object]` として表示しない。元の message・code・stack 等は最大4000文字で Logs に分離し、起動時認証や自動接続の失敗は system Chat にも残す。
+
+## Twitch 状態表示の共通契約
+
+Twitch 接続状態のラベルは `presentation/twitch.ts` で状態の全候補を網羅し、Chat、Side Panel、Status Bar、ライブ通知で共用する。認証状態は同じ場所に短い視覚表示と読み上げ用の明示的な差分を持ち、「認証確認中」の読み上げを認証確認と有効性確認で区別する。未知の状態を英語の内部値で表示する fallback は設けず、状態追加時には型検査でラベル追加を要求する。
+
+
+## ライブ通知の配送
+
+スクリーンリーダー向け通知は、現在状態の表示とは別の未通知 queue で管理する。command 単独の error も `alert`、warning と通常の状態遷移は `status` へ送り、同時障害は alert 優先・同優先度は発生順で一件ずつ配送する。ID は発生を、correlation と状態 context は同一原因を識別し、同文でも別発生を落とさない。遅れて届いた log/event の同一原因は既読の原因と照合する。
+
+安定した空の live region を先に用意し、通知の間に100msの空更新を挟む。同文の別発生も DOM が変化する。表示保持は最低2.5秒・本文1文字80msを目安とし、error は通常通知の保持待ちより優先する。これは支援技術の発話完了を検知する機能ではないため、実 Windows のスクリーンリーダーでの聞き取りは別途確認する。明示クリアは待機中と表示中の通知を解除し、unmount は配送 timer を破棄する。
+
+参照: [WAI-ARIA 1.2](https://www.w3.org/TR/wai-aria/) と [ARIA19: 動的なエラー通知](https://www.w3.org/WAI/WCAG21/Techniques/aria/ARIA19)。

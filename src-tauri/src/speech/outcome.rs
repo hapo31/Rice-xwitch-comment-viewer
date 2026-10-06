@@ -5,6 +5,7 @@ use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum BlockedReason {
     RepeatSuppressed,
     BlockedUser,
@@ -27,15 +28,18 @@ impl BlockedReason {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum SkippedReason {
     Overflow,
     UserSkip,
     Removed,
     Cleared,
+    AutoSpeakDisabled,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum RecoveryAction {
     ReviewFilters,
     ReviewQueue,
@@ -46,6 +50,8 @@ pub enum RecoveryAction {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(optional_fields))]
 pub struct OutcomeDetails {
     pub message: String,
     /// Failure category permits a new safe attempt, not an unused retry budget.
@@ -61,6 +67,7 @@ pub struct OutcomeDetails {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum SpeechQueueOutcome {
     Blocked {
         reason_code: BlockedReason,
@@ -105,6 +112,10 @@ impl SpeechQueueOutcome {
             SkippedReason::UserSkip => ("利用者がスキップしました。", RecoveryAction::None),
             SkippedReason::Removed => ("利用者が個別に削除しました。", RecoveryAction::None),
             SkippedReason::Cleared => ("利用者がキューをクリアしました。", RecoveryAction::None),
+            SkippedReason::AutoSpeakDisabled => (
+                "自動読み上げが OFF のため読み上げ対象外です。",
+                RecoveryAction::None,
+            ),
         };
         Self::Skipped {
             reason_code,

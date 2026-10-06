@@ -11,20 +11,34 @@ src/                      TypeScript UI
   tauri client            Rust commands/eventsの呼び出し
 
 src-tauri/
+  application             AppStateとdomain runtimeの組立
   twitch                  OAuth、EventSub WebSocket、Helix API
-  speech                  読み上げキュー、アダプタ共通trait
+  speech                  読み上げdomain/queue/adapter共通trait
+  speech/endpoint         接続先の純粋な値検証
   speech/bouyomi          棒読みちゃんTCPクライアント
   speech/voiceroid        実験的VOICEROID2直接連携
   launcher                アプリ登録、検証、起動
-  settings                永続設定、トークン保存
-  app_events              フロントエンドへのイベント配信
+  settings/model          設定のpure DTOとpatch
+  settings/validation     設定入力の検証
+  settings/persistence    JSON保存・migration・atomic writer
+  app_events              Tauri event DTO、snapshot、emission
 ```
 
 ### Frontend domain store 境界
 
-`DomainProvider` は chat、queue、connection、settings、logs を独立した `useSyncExternalStore` source として保持する。各画面は `use*Selector` で必要な slice だけを購読し、Chat event は Chat store の subscriber だけを通知する。Launcher は settings の launcher selector、警告は logs store の notifications slice を使う。`App` は provider と shell の wiring のみを行い、Tauri の event 購読、認証復元、設定 mutation は `domainOrchestration` の dependency-injected boundary に集約する。
+`DomainProvider` は chat、queue、connection、settings、logs を独立した `useSyncExternalStore` source として保持する。各画面は `use*Selector` で必要な slice だけを購読し、Chat event は Chat store の subscriber だけを通知する。Launcher は settings の launcher selector、警告は logs store の notifications slice を使う。`AppShell` は配置と controller provider の組み立てを担当し、`ApplicationControllerProvider` が起動時の設定・認証復元と Tauri event 購読を起動する。起動時 snapshot の復元が完了するまでは、generation 付き chat を最大200件保留する。live status event で接続 identity が先に判明しても即時表示せず、snapshot 適用完了後に generation・broadcaster ID・login を照合して受信順に反映する。snapshot 失敗または購読 cleanup 時は保留を破棄する。認証遷移と副作用は `twitchController`、speech/queue/Launcher のcommand処理は用途別 controller、終了確認は `ExitProtectionProvider` に置く。設定更新は既存の直列化 orchestrator に集約する。
 
-旧 `AppState/appReducer` は presentation/test compatibility facade として残し、runtime の更新経路には使用しない。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
+domain store が状態の唯一のsourceであり、React Context はdomain単位の安定した操作APIと unsaved/exit の操作だけを渡す。画面は表示に必要なstore selectorとaction contextを直接参照し、`MainView` はroute title・focus通知だけを担当する。controller providerは画面状態を集約した旧 `AppState` を再構成しない。selector の購読には React 公式 `use-sync-external-store/with-selector` を使い、状態の正本は既存 store に保つ。
+
+`useStoreSelector` と5種類の domain selector は、immutable な `getState()` snapshot と pure な selector を分けて公式 helper へ渡す。同じ snapshot/selector の派生 object・array をキャッシュし、既定の `Object.is` または任意の `isEqual(previous, next)` で選択結果を比較する。比較関数は表示・副作用から観測される結果が等しい場合だけ true を返す。selector や store の差し替えも helper が扱い、購読解除と `DomainProvider` ごとの隔離を維持する。[React の snapshot 契約](https://react.dev/reference/react/useSyncExternalStore#im-getting-an-error-the-result-of-getsnapshot-should-be-cached)に従い、`getSnapshot` 内で毎回新しい派生値を生成しない。
+
+Issue #223 では [Jotai の Provider/store](https://jotai.org/docs/core/provider) による移行とも比較した。Jotai は subtree ごとに atom 値を隔離できる一方、ここでは既存5 domain の reducer、imperative な event/command dispatch、generation/revision と replay の接続を移す必要がある。公式 helper は production 2ファイルの selector 境界だけを変更し、並存する別 store を作らないため採用した。同一 base の Vite production build で JS は 608.84 → 609.69 kB、gzip は 185.14 → 185.42 kB（+0.28 kB）。Jotai 自体の bundle 測定や移行実装は行っていない。
+
+Device Code認証の結果、status、prompt、profile、通知/error副作用は`authFlowTransition`の小さな純粋モデルで一緒に決める。`AuthOperationController`は世代付きの操作開始/完了、手動操作による古い応答の無効化、単一pollの排他、provider破棄時のinvalidateを担う。AppShell effectはprompt/status lifecycleに沿ってpoll timerを開始・cleanupし、timerはschedule時の世代とprompt情報を照合してからpollまたは期限切れを要求する。世代が変わった後、異なるpromptになった後、手動認証操作中は期限切れtimerも状態や通知を更新しない。期限切れはauth flowへ通知する。XStateの[`invoke`](https://stately.ai/docs/invoke)と[遅延遷移](https://stately.ai/docs/delayed-transitions)はpromise完了による遷移とstate退出時のtimer解除を提供するが、この認証には追加actor/runtime依存と移行費用がある。promise actor退出後の結果破棄も実行中のTauri commandを止める保証ではなく、backend generation保護は別途必要である。そのため、現在の操作競合と短いDevice Code timerは明示reducer/controllerで管理し、XStateは導入しない。
+
+旧 `appReducer` と専用テストは除去し、`appState.ts` は画面用の合成 read model と action 契約だけを保持する。状態更新は本番 domain store が担当し、`dispatchDomainAction` は action を各 store へ振り分ける。ログ表示IDとbackend replay IDの区別・重複排除は `logsStore` に集約し、bridge の副作用も受理されたログに限定する。`SettingsController` は設定 read と直列 write の publication ownership を制御し、初期化状態と世代、store revision で古い応答を除外する。queue snapshot は queue store と chat status synchronization action を通じて Chat 行へ反映する。項目のoutcomeも同じsourceMessageIdで同期し、statusが同じでもcode/message/time等の変更を反映する。同期実装はchatStoreで共用し、同値snapshotではmessage参照を維持する。queue履歴の削除/退避後もChatの最後の結果は既存200行の範囲で保持する。
+
+`ExitProtectionProvider` は保存 I/O と保存後の終了・画面遷移の寿命を分ける。継続は要求ごとの token と blocker の location key に結び付け、キャンセル・破棄・新しい終了要求・unmount 後の古い成功を無視する。同じ要求の保存中は追加保存を受け付けない。別の確認中に旧保存が完了しても現在の操作を自動承認せず、保存済みの確認から続行またはキャンセルできる。
 
 ## データフロー
 
@@ -47,7 +61,7 @@ Rust backend
 
 | コンポーネント | 責務 |
 | --- | --- |
-| `TwitchAuthService` | Device Code Flow、トークン更新、`/validate`、認証世代による古い応答の拒否 |
+| `TwitchAuthService` | Device Code Flow、トークン更新、`/validate`、credential revision による古い応答の拒否 |
 | `EventSubClient` | WebSocket接続、welcome/keepalive/reconnect/revocation、購読・重複排除・正規化へのdispatch |
 | `TwitchChatService` | チャンネル入力検証とHelixユーザー取得、接続taskの所有・交換、受信停止と連携解除 |
 | `SpeechQueue` | 優先度、停止/再開/スキップ、連投抑制、バックプレッシャ |
@@ -59,11 +73,21 @@ Rust backend
 | `TwitchAuthStore` | Twitch OAuth状態をOS keyringへ保存/復元/削除する |
 | `LauncherService` | 登録アプリのパス検証、重複排除、単体/一斉起動を扱う |
 
+### Rust composition root と domain 境界（Issue #210）
+
+`lib.rs`はTauri builder・command登録・起動/終了処理のcomposition rootとする。共有managed stateの`AppState`は`application.rs`に置き、Settings、Launcher、Twitch、Speechのruntime/handleをここで組み立てる。`settings`はAppStateを定義せず、設定command adapterと設定model/storageを提供する。domain runtimeはTauri stateを読まず、必要な設定snapshotやfactoryなどのportだけを受け取る。Speech adapter選択時にAppStateから設定snapshotを取得するのはapp-facing command/wiring側であり、`SpeechRuntime::select`は`SpeechSettings`と`SpeechAdapterFactory`だけを扱う。
+
+`settings/model.rs`はAppSettingsとpatch等のwire/model値を保持し、Tauri、filesystem、設定store、具体Speech adapterをimportしない。`settings/validation.rs`は設定wireとdomain値を検証し、`settings/persistence.rs`はversioned schema、bounded read、権限、backup、atomic writeを担当する。schema/writerはpersistenceの内側で使い、command facadeは保存の成功後にだけcandidateを公開する。設定modelと永続化操作の間はこの境界を保つ。
+
+`SpeechStatus`、`SpeechAdapterHealth`、queue phase/item statusとadapter失敗分類は`speech` domainに置く。`SpeechFailure`はevent moduleをimportせず、adapterのnative failureをdomain status/codeへ分類する。`app_events`がTauri event DTO・revision/snapshot・healthから互換statusへの投影とemissionを担当し、Serde/ts-rsのwire型は同じJSON形を維持する。`speech/endpoint.rs`はhost/addressの純粋な値検証を持ち、Bouyomi TCP実装とDNS/consent policyはこの値を使う。設定validationはこのpure endpoint境界へ依存し、TCP adapter moduleには依存しない。
+
+`architecture_tests.rs`はAppState、model/storage、endpoint、Speech runtime/failure/event型の依存方向をsource boundaryとして固定する。Rust DTOのTypeScript生成契約（`wire_contracts.rs`）も通常のno-default testで検査する。新adapter機能は追加しない。
+
 ### Twitch責務分割（Issue #44）
 
 `twitch/model.rs`は公開chat DTOだけを保持し、既存の`crate::twitch::*`で再exportする。camelCase/optional field omissionとcommand/event payloadは変更しない。`error.rs`はHTTP status/OAuth codeの型付き分類と日本語表示を分け、表示文言が認証解除・retry可否を決めない。`normalization.rs`はEventSub wireとchat正規化を担当し、欠損/不正timestampには呼出元が渡した受信時刻を使う。`dedupe.rs`は接続全体で共有するbounded cacheと明示`Instant`によるTTLを保持する。この2つのpure境界はTauri、keyring、network clientに依存しない。
 
-`auth_state.rs`は認証DTO・世代・scopeの規則、`auth_service.rs`は認証操作、`auth_store.rs`はcredential I/Oの直列化とkeyring/旧Linuxファイルの移行、`oauth.rs`はHTTP wireとOAuth transportを担当する。`chat_service.rs`は接続taskのライフサイクル、`eventsub.rs`はsession/handover/backoff、`subscription.rs`は最新credential取得・401時1回refresh・保存後の再購読を担当する。ファイル移動で保存/削除の世代照合やHTTP deadlineを緩めない。
+`auth_state.rs`は認証DTO・generation・credential revision・scopeの規則、`auth_service.rs`はDevice Codeと共通refresh/validate/rotation/persistence/conditional clear、`auth_store.rs`はcredential I/Oの直列化・認証更新の共有lockとkeyring/旧Linuxファイルの移行、`oauth.rs`はHTTP wireとOAuth transportを担当する。`chat_service.rs`は接続taskのライフサイクル、`eventsub.rs`はsession/handover/backoff、`subscription.rs`は最新credential取得と401後の再購読を担当し、refresh自体はauth serviceへ委譲する。generationは認証操作を、credential revisionは同じgeneration内のtoken rotationを識別する。EventSub connection paramsは接続generationに加えて認証generation・client/user identityを保持し、古い接続が別Login sessionのtokenで再購読しない。別Loginでsubscriptionが終了する時は、まだ現行のChat generationに限ってDisconnected snapshotを記録し、より新しいChat generationはAppEventStateのgeneration判定で維持する。成功・失敗・scope不足・保存・解除の各結果を両方で照合し、共有lockでLogin検証とEventSub refreshを直列化する。
 
 `commands.rs`は既存7 commandの引数/戻り値を維持する薄いadapterで、`runtime.rs`だけがTauriのmanaged state、event送信、speech enqueueと本番transportを接続する。認証serviceには`AuthRuntime`/`DeviceOAuthTransport`、チャットserviceには`ChatRuntime`、EventSubには`EventSubRuntime`、購読には`SubscriptionRuntime`を注入する。`TwitchAuthStore::with_backend`で保存先を差し替えられる。Device Codeのwall clockと通知のreceive/monotonic clockもruntimeから渡し、非同期deadlineはTokio test clockで制御する。serviceはTauri/reqwest/keyringをimportしない。
 
@@ -73,7 +97,7 @@ Launcherのアプリ登録・起動はWindows専用。`app_build_info.launcher`�
 
 ## 設定入力と読み上げ接続先の境界
 
-設定入力は`settings/validation.rs`でwireとdomainを分ける。`settings_update`はframework所有JSONを256KiB/nodes/depth・既知field・文字列/rule量でpreflightしてからDTOをcloneし、leaf patchを最新candidateへ適用、全domainとLauncher資源を検証・保存できた場合だけ公開する。`ValidationError { field, code, message, recovery }`で安全な日本語と修正対象を返す。`TwitchLogin`は設定保存と`twitch_connect`で共用し、空欄は自分のチャンネル、非空は英数字・_の3〜25文字、raw128 UTF-8 bytes以内/controlなしとする。hostはraw253 UTF-8 bytes/DNS label63、NGユーザーはlogin形式、NGワードは500 Unicode文字/2048 UTF-8 bytes、各200件/両list合計64KiB、接続成功文は120文字/480bytesまで。文字数/range違反をclamp/truncateで成功扱いにしない。永続wireのmigration/field fallbackも同じpatch適用・domain validatorとLauncher構造validatorを使う（#64）。
+設定modelは`settings/model.rs`、保存は`settings/persistence.rs`へ分け、入力のwire/domain検証を`settings/validation.rs`が担当する。`settings_update`はframework所有JSONを256KiB/nodes/depth・既知field・文字列/rule量でpreflightしてからDTOをcloneし、leaf patchを最新candidateへ適用、全domainとLauncher資源を検証・保存できた場合だけ公開する。`ValidationError { field, code, message, recovery }`で安全な日本語と修正対象を返す。`TwitchLogin`は設定保存と`twitch_connect`で共用し、空欄は自分のチャンネル、非空は英数字・_の3〜25文字、raw128 UTF-8 bytes以内/controlなしとする。hostはraw253 UTF-8 bytes/DNS label63、NGユーザーはlogin形式、NGワードは500 Unicode文字/2048 UTF-8 bytes、各200件/両list合計64KiB、接続成功文は120文字/480bytesまで。文字数/range違反をclamp/truncateで成功扱いにしない。永続wireのmigration/field fallbackも同じpatch適用・domain validatorとLauncher構造validatorを使う（#64）。
 
 `SpeechRuntime`がprocess-localの`DestinationPolicy`をfactory/diagnosticsと共有する。各TCP接続はhostを2秒以内・最大16addressへ解決し、全addressを検証して検証済み`SocketAddr`集合へ直接接続する（connect時の再DNS解決なし）。通常は127/8・::1・IPv4-mapped loopbackだけを許可する。remote modeはopt-in要求であり許可ではない。private IPv4/IPv6 ULAだけが外部許可の対象で、public/link-local/multicast/未指定宛先は拒否する。明示`speech_authorize_endpoint`がhostname/IP/port・全解決address・ユーザー名/chat/test/controlの平文送信/TLSと相手認証の欠如/VPN注意をnative dialogへ表示する。callbackをawaitし設定lockは保持しない。許可後にDNSを再確認し、設定変更がないことを短いlock下で比較してからopaque approvalをメモリへinstallする。1つのpending prompt/30秒rate limit、拒否時は旧許可も取り消し、endpoint変更/再起動/解決address変更は再同意なしに送信しない。設定fileやrendererへconsent flagは持たせない。既に開始した送信の取消やbyte回収、相手identityの認証は保証しない。
 
@@ -85,7 +109,11 @@ domain/endpointの境界値は同じJSON fixtureをRustとフォームで検証�
 
 `AppState.launcher_runtime`がアプリ全体で1つのworker poolとadapterを保持する。`commands.rs`はborrowed IPCのpreflight/DTO変換、repository/event sinkのwiring、service呼出しだけを行う。`repository.rs`は共有設定の最新candidateへmutationを1回適用し、既存のsettings transactionで検証・永続化した後だけメモリへ公開する。Launcher以外のsectionも保持する。保存失敗時は追加/削除の成功ログやicon fallback通知を発行しない。filesystem/COM処理中にsettings lockを保持しない。
 
-`workers.rs`は最大4つのblocking taskを共通poolで制限する。取得待ち6秒・job待ち7秒を維持し、timeout後も実workerが終了するまでpermitを返さない。`platform/target.rs`だけが実ファイルの存在/種類/canonical pathを確認し、WindowsではDOS/UNCへ変換する。`platform/windows/icon.rs`はPowerShell/COMの5秒timeout、kill/reap、bounded pipe回収を担当する。`platform/windows/launch.rs`はapplication pathだけを受け取り、Launcherのkindを解釈しない。Websiteの予約/拒否と将来のdispatch追加はservice/modelに閉じる。
+`launcher_add`は更新後の`items`と、そのtransactionで実際に追加した`addedCount`を返す。UIはPromise解決時の共有state件数から追加数を推測しない。並行追加が同じtargetを含む場合もrepositoryの最新candidateへのcommit内で件数を確定する。
+
+`workers.rs`は最大4つのblocking taskを共通poolで制限する。取得待ち6秒・job待ち7秒を維持し、timeout後も実workerが終了するまでpermitを返さない。`platform/target.rs`だけが実ファイルの存在/種類/canonical pathを確認し、WindowsではDOS/UNCへ変換する。`platform/process.rs`はTokio [`process`](https://docs.rs/tokio/1.53.1/tokio/process/) featureの共通runnerとして、stdout/stderrをそれぞれ上限付きで保存し、容量超過後もpipe EOFまでdrainする。5秒のicon期限はprocess終了とpipe回収全体へ適用し、timeout・終了状態取得失敗・runner cancelでは同じ境界が子processをkillし、waitでreapする。終了後250msで継承pipeが閉じない場合はreaderをabortしてpipe端を閉じ、無期限joinを避ける。Tokio [`Child::kill`](https://docs.rs/tokio/1.53.1/tokio/process/struct.Child.html#method.kill) はdropだけでは同期reapが保証されないため、通常完了・timeout・失敗・cancelの各経路で明示wait/killを行う。cancelされた呼出し元から終了処理を切り離して継続するため、共通runnerがprocess owner taskを持ち、Drop guardがcancel信号を送る。Windowsのicon commandは従来どおり`CREATE_NO_WINDOW`を指定する。
+
+`IconExtractor`はfilesystem/COMのblocking責務を含むため同期traitを維持し、Launcherの`spawn_blocking` worker内で[`Handle::block_on`](https://docs.rs/tokio/1.53.1/tokio/runtime/struct.Handle.html#method.block_on)を使ってTokio runnerを呼ぶ。呼出しはasync worker外に限り、app runtimeの稼働中に実行する。Tokioの`process` featureはこの共有process境界のため有効化する。同期境界をasync化するとresolver/COMを含むworker隔離まで変わるため、今回の変更対象にはしない。`platform/windows/icon.rs`はPowerShell/COMの5秒timeout、kill/reap、bounded pipe回収を共通runnerへ委ねる。Windows integration test用の`capture_bounded`も同runnerをawaitし、個別のprocess pollingやpipe threadを持たない。`platform/windows/launch.rs`はapplication pathだけを受け取り、Launcherのkindを解釈しない。Websiteの予約/拒否と将来のdispatch追加はservice/modelに閉じる。
 
 Windowsのsupported caseは存在する`.exe`と、通常の`.exe`を指す`.lnk`（拡張子の大文字小文字を区別しない）。`.exe`はshellを経由せずpathをCreateProcessへ渡し、parentをworking directoryにする。`.lnk`は起動の都度COMでtarget/arguments/working directory/icon sourceを構造化し、解決結果を設定に保存しない。参照先の存在・regular file/canonical path、絶対パスのworking directoryを検証した後、そのexeを直接CreateProcessする。引数はWindowsのraw argument tailとして渡すため、shellのメタ文字へ再解釈しない（起動先自身の引数解釈は別）。cwd空欄はexeのparentを使う。link修復/移動先探索のResolve、Explorerへの受付、ShellExecuteは使わない。移動したtargetは失敗として修復・再登録を案内する。
 
@@ -115,7 +143,7 @@ pub trait SpeechAdapter: Send + Sync {
 
 boxed futureにより`Arc<dyn SpeechAdapter>`として差し替えられる（[Rust Reference: dyn compatibility](https://doc.rust-lang.org/reference/items/traits.html#dyn-compatibility)）。MVPの実装は`BouyomiAdapter`のみで、VOICEROID2は未実装のままとする。
 
-app stateの`SpeechRuntime`がfactory・共通dispatch gate・clockを保持する。factoryだけが設定snapshotから具体adapterを構築し、棒読みちゃんのhost/port/声質を解釈する。health、無音probe、test、queue、pause/resume/skip/clearは同じ選択を通る。`SelectedSpeechAdapter::lock`から得るsessionを介して呼び出し、raw traitの送信は既にgateを所有している前提で再lockしない。
+app stateの`SpeechRuntime`がfactory・共通dispatch gate・clockを保持する。factoryだけが設定snapshotから具体adapterを構築し、棒読みちゃんのhost/port/声質を解釈する。health、無音probe、test、queueは設定から選択する。queueの受付から完了処理まで保持する再生sessionがあれば、pause/resume/skip/clearはdispatcher取得後にそのadapterを使い、なければ現在設定を選ぶ。設定変更は後続itemに適用する。`SelectedSpeechAdapter::lock`から得るsessionを介して呼び出し、raw traitの送信は既にgateを所有している前提で再lockしない。
 
 workerは共通gateを取得してから項目を予約し、session内で送信する。controlはremote送信からlocal queue反映・成功通知まで同じsessionを保持する。受付後の完了待ちはsessionを解放して共通の`Completed / Unconfirmed(SpeechFailure)`を待つため、完了待ち中にもcontrolを送れる。adapter側の完了確認queryは同じgateで短時間ずつ直列化する。受付済みと再生完了を混同せず、未確認の要求は自動再送しない。
 
@@ -136,6 +164,7 @@ pub struct ChatMessage {
     pub fragments: Vec<MessageFragment>,
     pub badges: Vec<Badge>,
     pub received_at: chrono::DateTime<chrono::Utc>,
+    pub connection_generation: Option<u64>,
 }
 
 pub struct SpeechRequest {
@@ -148,6 +177,8 @@ pub struct SpeechRequest {
 MVPの`SpeechRequest`は本文と追跡IDだけを持つ。項目単位の`voice/speed/tone/volume` overrideは未対応のためモデルに公開せず、JSONで指定された未知の項目もdeserialize時に拒否する。声質はアダプタ設定からのみ取得する（Issue #81）。将来overrideを追加する際は型、許容範囲、優先順位とpacket契約を同時に実装する。
 
 `ChatMessage.received_at` はアプリ内部で常に `DateTime<Utc>` とする。Tauri event では serde の camelCase 規約により `receivedAt` として、UTC の RFC 3339（末尾 `Z`、小数秒は nanosecond 精度まで保持）を送る。frontend は bridge 受信時にこの契約を検証し、`UtcTimestamp` として store へ渡す。欠落・空文字・タイムゾーンなし・非文字列を含む不正値、および JavaScript の `Date` / `Intl` が表現できない leap second は backend で WebSocket frame を取り出した時刻へフォールバックして warning log を残し、frontend の境界でも受信時刻を使って防御する。Chat view は保存値を変えず利用者のローカルタイムゾーンで表示し、表示不能な値では `--:--:--` を表示する。
+
+EventSub 正規化時に、受信元 connection の generation を `ChatMessage` へ一度だけ付与する。同じ domain message を UI event と読み上げ enqueue の両方へ渡し、serializer 側で clone に後付けしない。production runtime は現在の connection handle を保持する mutex の下で generation を照合し、UI 配信と speech enqueue を行う。停止または接続交換は同じ mutex を通るため、無効化済み旧世代の遅延 callback はどちらの経路にも配送されない。
 
 ## Tauri command/event案
 
@@ -189,7 +220,15 @@ Events:
 
 Rust の struct field にある `Option<T>` は、Tauri command と event のすべてで `None` を field omission として送る。TypeScript は対応する field を `?: T` とし、`null` を許可しない。これには status の `message`、queue の `warning` / `sourceMessageId`、chat fragment の `emote` / `cheermote` / `ownerId`、認証結果の `storageWarning`、snapshot の `speechStatus`、Launcher の任意表示属性、window position、build info の `commitHash` を含む。
 
-struct 全体を `Option<T>` として返す command だけは JSON `null` を使う。現在は `settings_take_recovery_notice` と `twitch_get_stored_auth` が該当し、client 層で `undefined` に変換してから UI へ渡す。frontend は generic の `invoke<T>` / `listen<T>` を信頼せず、認証、chat、status、speech queue、snapshot の主要 payload では required field、enum、camelCase field 名まで検証する。その他の command result は再帰的な null 排除だけを行うため、shape の検証が必要な利用箇所を追加するときは個別 parser も同じ変更で追加する。
+struct 全体を `Option<T>` として返す command だけは JSON `null` を使う。現在は `settings_take_recovery_notice` と `twitch_get_stored_auth` が該当し、client 層で `undefined` に変換してから UI へ渡す。Rust `()` の command result も JSON `null` を検証してから void として返す。欠落応答 `undefined` はいずれも不正とする。
+
+全 command と event は `invoke<unknown>` / `listen<unknown>` から Zod schema (`tauri/schemas.ts`) を通す。必須 field、primitive、literal、範囲、入れ子の optional-null を検証し、不正値を含めず field path の日本語エラーを既存の caller へ返す。独自の generic field parser と null 検査だけの型 assertion は使わない。型は schema から導出し、UI 固有の AuthStatus / system Chat と入力 patch は domain 型として分離する。
+
+Rust Serde DTO が wire 型の正本。test 時だけ `ts-rs` で `bindings/wire.ts` を生成し、通常の Rust quality gate が再生成結果との完全一致を検査する。`tauri/wireParity.ts` は全生成型と canonical schema の双方向代入可能性を frontend typecheck で検査する。u64 / u128 は IPC に合わせ number を生成し、runtime では JS safe integer と日時上限を要求する。Option は optional field、camelCase / tagged union / chrono 日時は Serde の送信形に合わせ、TypeScript enum / namespace は生成しない。`TwitchUserProfile.client_id` の送信除外も生成側に反映する。
+
+canonical wire と legacy input を区別し、旧 revision / phase の omission、設定の window / remoteMode 追加前の omission だけを対応する schema から派生して許可する。chat の receivedAt は shape 検証後に既存の UTC timestamp 正規化・受信時刻 fallback を通す。Request のサイズ preflight・ACL・command 登録は変更しない。
+
+選定根拠: [Zod](https://zod.dev/basics) は検証と型導出を同じ定義にまとめる。[ts-rs](https://docs.rs/ts-rs/latest/ts_rs/trait.TS.html) は test dependency として既存 Serde DTO から型だけを生成できる。[tauri-specta](https://github.com/specta-rs/tauri-specta/releases) は RC 系列かつ command 登録の変更を伴うため今回採用しない。型生成は runtime validation の代わりにしない。
 
 ## Renderer のセキュリティ境界
 
@@ -214,7 +253,9 @@ Issue #75の最小集合は次の9 core/plugin permissionと既存の明示custo
 
 Launcher の `iconDataUrl` は backend で `data:image/png;base64,`、base64部分64KiB / PNG file48KiB、PNGのchecksum・終端・単一frame・最大128×128pxを検証する。PNG decoder作業領域は1MiB、pixel出力bufferは128KiB以内。保存済みの不正/旧上限超過iconは読み込み時に汎用iconへfallbackし、新規追加の上限超過は全体を拒否する。合計data URLは4MiB以内。inline PNGをquotaで制限するため、cache用の追加filesystem権限や`assetProtocol`は有効化しない。
 
-Launcherの資源境界（#71）: 最大200件、pathは各4096UTF-8 bytes・合計128KiB、IDは64 ASCII bytes以内の英数字/ハイフン/下線、表示名1〜120 Unicode文字、group1〜64文字（いずれも制御文字なし）、背景色`#RRGGBB`。追加要求のJSONは256KiB、設定patch/保存JSONは8MiB、要求treeは4096nodes/深さ16まで。Tauriのparse済みbodyを`Request`で借用し、アプリDTOをcloneする前に検査する。framework自体の初回transport parseのallocationを制限できたとは扱わない。
+Launcher PNG（#222）: rendererからのpersisted settings decodeとicon extractor出力は未検証文字列として受け取り、base64/PNGの完全decode・CRC・単一frame・寸法・展開量を境界で検証してから`ValidatedLauncherIconDataUrl`へ変換する。このdomain値は不変の`Arc<str>`を共有し、clone・metadata編集・quota/schema検査・保存候補の検証では画像を再decodeしない。保存済みJSONを再読込する時と新しい外部ファイルからiconを抽出した時は、それぞれのbytesを改めて検証する。
+
+Settings write transactionは別のtransaction mutexで直列化する。候補を計算し、schema/quota検査とatomic保存を行う間は公開settings mutexを保持せず、保存成功後の候補置換だけに使う。失敗時は既存の公開stateを保つ。`settings_update`、Launcher repository、window位置保存は同じtransaction gateを通すため、並行更新を上書きせず、読み取り側のspeech enqueueは長いPNG検査やdisk I/Oを待たない。既存disk bytesは保存ごとにschema/read-onlyを確認するためbounded decodeを維持する。
 
 設定patchのLauncher itemsは`LauncherItemEdit`（登録済みIDを参照し、displayName/backgroundColor/groupId/orderだけを更新する置換一覧）へ分離する。新規ID、target/kind/iconDataUrl、未知の編集fieldは保存前に拒否する。canonical登録は`launcher_add`だけが行い、並行追加は最新stateへmergeし、件数/合計quota超過で一部だけ保存しない。永続pathの検査はpureな文字列検査で、metadata編集/設定load時にfilesystem/COMへ触れない。実ファイル検査は登録・起動時に行う。
 
@@ -222,15 +263,21 @@ Launcherの資源境界（#71）: 最大200件、pathは各4096UTF-8 bytes・合
 
 ### backend event replay と speech state snapshot
 
+frontend の `SpeechQueueOutcome` は blocked/各 skipped reason/error の retryable と recoveryAction の組合せまで型で表す。再送不能な writeTimeout/writeFailed/connectionLost/unknown は送達確認を要求する。adapter が受付済みなら理由を問わず送達不明になり得るため、全 error reason に retryable=false/confirmDelivery を許す。`TwitchStatusEvent` は Auth/Chat の判別可能 union とし、各状態の共通定数を型と parser の両方へ使う。validating は Auth、reconnecting と接続世代/identity は Chat、missingRequiredScope は Auth の authRequired だけに属する。従来の正常な省略 payload は受理し、不正組合せは型検査と受信時の parser の両方で拒否する。
+
 Issue #85の各queue itemは任意の`outcome`を持つ。Rust/TS共通の`kind`（blocked/skipped/error）でreasonCodeを区別し、固定の日本語message、retryable、recoveryAction、occurredAtMsを送る。Noneはfield omission（旧payload互換）であり、terminal production itemには必ず理由を付ける。auto retry待ち/送信中は直前のerror理由を保持し、手動retryと正常完了で消す。最新snapshot/reload/late subscriberはwarningの有無に依存せず同じoutcomeを復元する。時刻は遷移時のUTC wall clock（表示用）で、並び順/新旧判定は既存ID/revisionを使う。共通fixture`src/tauri/fixtures/queue-outcomes.json`で全21codeを検証する。
 
 backend は bounded な operational log ring と Twitch（auth/chat）/speech の最新 status を managed state に保持する。`app_events_snapshot` command は listener 登録後にこの状態を取得するため、起動時に先行 emit されたログ・status も late subscriber へ復元できる。各 status と speech queue event には単調増加 `revision` を付与し、`speech_queue_reload` は status と queue を同一ロック下で採取した `SpeechStateSnapshot` として返す（各componentは最後の更新revisionを保持する）。frontend は全 listener を登録してから snapshot を取得し、snapshot より新しい並行 event を古い値で上書きしない。
+
+Twitch の Chat 状態・接続世代・実接続 identity は backend の Chat event/snapshot を正本とする。認証確認・Device Code・解除の command 応答は Auth 状態だけを更新し、認証成功や一時的な通信失敗から Chat の切断を推測しない。チャット開始・停止・終了処理も command の完了から revision のない状態を書き込まず、backend の通知を受け取る。command 自体の失敗は既存の通知と Logs に表示する。将来 UI に要求中の表示を追加する場合も、要求状態として分けて実接続の revision/generation 判定を迂回しない。
 
 保存済み Twitch credential の deserialize は認証済みを意味しない。起動時は `Validating` を通知し、`/validate` 成功後だけ `Connected` へ遷移する。event emit の失敗は stderr だけでなく bounded diagnostic として snapshot へ記録する。
 
 ### フロントエンド通知
 
-対処が必要な通知は `{ id, severity, source, message, occurredAtMs, correlationId? }` として保持する。`severity` は `info` / `success` / `warning` / `error`、`source` は command / event / log / system を区別する。Side Panel と Status Bar の Warnings は warning / error のみを最新 5 件まで表示するため、成功通知で実警告を押し出さない。`correlationId` がある通知はその値で重複排除し、ID がない既存イベントは本文と 5 秒の受信時間で重複排除する。重複経路で severity が異なるときは、より重大な値を残す。info / success は Logs と system Chat に残す。
+system Chat の状態通知は中立モデル `models/systemTimeline.ts` の `SystemTimelineEvent` を生成・購読・routing の共通契約とする。source が認証なら認証状態、接続なら接続状態または自動接続の開始/失敗、speech なら読み上げ状態を transition とする。認証で reconnecting、接続で validating は型で排除する。購読の callback は message のみに狭めず、型 assertion で復元しない。`SystemTimelineRouter` が source ごとに直前の重複抑制キーを保持する。認証は transition と案内文、他は transition をキーとし、初回・状態変化・認証案内の変化を記録して連続重複を抑える。
+
+対処が必要な通知は `{ id, severity, source, message, occurredAtMs, correlationId? }` として保持する。`severity` は `info` / `success` / `warning` / `error`、`source` は command / event / log / system を区別する。logs store は対処待ちの warning / error を notifications、info / success を notificationHistory に各100件まで独立して保持する。Side Panel と Status Bar の Warnings は対処待ち通知を最新5件まで表示し、成功通知が対処待ち通知の保持枠を消費しない。warnings.cleared は対処待ち通知だけを消す。`correlationId` がある通知はその値で重複排除し、ID がない既存イベントは本文と 5 秒の受信時間で重複排除する。重複経路で severity が異なるときは、より重大な値を残す。情報履歴から warning / error に昇格した通知は同じIDを保って対処待ち領域へ移す。info / success は Logs と system Chat に残す。
 
 ## 永続化
 
@@ -241,7 +288,7 @@ backend は bounded な operational log ring と Twitch（auth/chat）/speech �
 - JSON読込/serializerは8MiBまで。上限超過の新設定はtemporary/backupを変更する前に拒否し、候補stateも公開しない。巨大な既存primary/backupはmetadataとbounded readで検出して元fileを退避し、既存の復旧方針を適用する。IO/permission失敗を破損と決めつけて上書きしない。
 - 多重起動: 正式方針は同一アプリの複数起動禁止。最初にsingle-instance pluginを登録し、2回目は既存main windowをshow/unminimize/focusして終了する。起動setup完了前の通知は保留して完了時に処理し、引数/cwdをcommandとして解釈しない。設定の読込・初期作成・破損復旧より前に、同じapp dataの固定`settings.writer.lock`を非blockingで排他lockし、process lifetimeのmanaged stateが保持する。全Settings/Launcher/window保存で同じ所有権と保存先を確認する。pluginの通知が失敗しても2つ目のwriterは設定に触れる前に失敗する。lock fileは削除/atomic replaceしない（inodeの分裂を防ぐ）；OSが正常終了/異常終了で所有権を解放する。手動lock削除による起動回避は非サポートであり、他ユーザー/同一ユーザーの悪意あるprocessの隔離機構ではない。
 - ウィンドウ位置: `settings.json` の `window.position` に物理ピクセル座標を保存する。終了要求時とアプリ内の終了操作で保存し、次回起動時は現在のいずれかのモニター作業領域にタイトルバー相当（64 x 32px）以上が残る位置だけを復元する。モニター構成の変更で画面外になる位置は復元せず、初期の中央配置を使う。
-- 設定復旧: 起動時に本体のJSON構文または検証対象の設定値が不正なら backup を同じ契約で検証して復旧する。backup も不正または不在なら、無効なファイルを `settings.json.corrupt-<timestamp>-<suffix>` として退避して既定値で起動する。復旧理由・内容・退避先は Logs、system Chat、警告通知に日本語で表示する。
+- 設定復旧: 起動時に本体のJSON構文または検証対象の設定値が不正なら backup を同じ契約で検証して復旧する。backup も不正または不在なら、無効なファイルを `settings.json.corrupt-<timestamp>-<suffix>` として退避して既定値で起動する。復旧理由・内容・退避先は Logs、system Chat、警告通知に日本語で表示する。 bounded read は IO、encoding、サイズ超過を型で区別する。不正UTF-8はJSON/schema破損と同じ内容破損として元bytesを退避して復旧し、IO/権限エラーは復旧対象にせず停止する。
 - ランチャー項目: 一般設定の `launcher.items` に保存する。`kind`, `target`, `displayName`, `order` と、将来用の `backgroundColor`, `groupId`, `iconDataUrl` を境界として持つ。
 - Twitch OAuth状態: access token、refresh token、スコープ、有効期限、検証済みプロフィールをOS keyringへ保存する。設定JSONへは保存しない。
 - refresh token: 更新成功時に保存済みの値を新しい値へ差し替える。keyring保存に失敗した場合もログイン状態はメモリ上で継続するが、token はディスクへ保存しない。UIには session-only であることと、再起動後に再ログインが必要なことを表示する。
@@ -259,3 +306,26 @@ backend は bounded な operational log ring と Twitch（auth/chat）/speech �
 - config path: `directories` またはTauri API
 - keyring: `keyring`
 - Windows拡張: `windows` crate
+
+### 認証解除の要求状態と失敗調停
+
+frontend は認証解除の処理中を connection store の `twitchDisconnectRequest`（UI操作世代）で持ち、認証正本を `disconnecting` へ書き換えない。解除中は Login の解除/検証/確認操作を無効化し、成功・失敗で要求だけを終了する。削除失敗は既存の日本語エラーを通知し、backend の現在のメモリ認証profileを取得して調停する。後発の手動認証操作または Auth event revision があれば、古い解除/取得結果は状態へ適用しない。取得自体が失敗しても現在の認証表示を維持して待機を解き、system Chatに確認・再試行の案内を残す。revision検証済みのbackend Auth disconnectedはprofile/promptも同時に解除し、成功eventがcommand応答より先でも古いログイン表示を残さない。これはbackendのcredential generation/失敗時復元とは独立したUI要求の管理である。
+
+### 起動時の認証操作世代
+
+frontend は effect 開始時に認証復元の世代を予約し、event snapshot 復元の完了後もその世代を使う。後発の手動 start/validate/disconnect は予約を失効させ、古い snapshot の Auth 状態、保存済み認証の取得・検証結果、通知を反映しない。保存済み情報の読込後に失効していれば検証 command も開始しない。live backend event と Chat snapshot の revision/generation 判定は継続する。これは backend credential 保護とは別の UI 操作優先順位であり、StrictMode の cleanup は予約を失効させ、再 setup が新たな予約を作る。
+
+
+## frontend 設定初期化
+
+設定の正本は settings store とし、publication revision、初期化の loading/ready/error、load generation を保持する。SettingsController は read と直列 write の publication を同じ境界で制御し、read 開始後に保存や Launcher 更新で revision が進んだ場合、古い read の成功・失敗を UI へ適用しない。後から開始した read と effect cleanup/再開も世代と lifetime で区別する。接続 command は別 ref の snapshot を保持せず store の最新設定を読む。
+
+Settings/Filter は ready 前の既定値を編集可能な設定として提示せず、loading 表示または error と再試行を出す。起動/再試行の進捗と結果は system Chat にも残す。StrictMode の effect 再実行では一度だけ取り出せる復旧通知を同じ controller の read 間で共有し、受理された read だけが一度通知する。unmount 後の read/write 応答は通知・store 更新を行わず、旧 lifetime の未実行 write は開始しない。
+
+参照: [React StrictMode の effect 再実行](https://react.dev/reference/react/StrictMode#fixing-bugs-found-by-re-running-effects-in-development)。
+
+### 保存用一時ファイルの所有権
+
+設定保存とbackupの一時fileは `tempfile::Builder::make_in` の `NamedTempFile<File>` で生成・write/syncし、handleを閉じた後は `TempPath` がreplaceまで所有する。通常の早期returnとunwindはDropでcleanupし、成功したrename直後にguardのcleanupを解除する。親directory/owner/linkの検査、0600/0700とWindows ACL、writer lock、将来schema保護とbackup順序は既存の保存境界に残す。
+
+`NamedTempFile::persist` もatomic replacementを提供するがfile/directory同期は行わない。ここではUnix renameとWindowsのwrite-through MoveFileExによる既存 `atomic_replace` を保持し、`sync_all` と `sync_parent_directory` も残す。`make_in` の生成closureは既存OpenOptionsを使うため、Windows保存先にFILE_ATTRIBUTE_TEMPORARYを残さず、ファイル名の乱数・再試行・RAIIはcrateへ委ねる。参照: [NamedTempFile](https://docs.rs/tempfile/3.27.0/tempfile/struct.NamedTempFile.html)、[Builder::make_in](https://docs.rs/tempfile/3.27.0/tempfile/struct.Builder.html#method.make_in)、[TempPath](https://docs.rs/tempfile/3.27.0/tempfile/struct.TempPath.html)。
