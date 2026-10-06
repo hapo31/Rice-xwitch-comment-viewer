@@ -10,17 +10,18 @@ use super::error::SubscriptionRequestError;
 use super::eventsub::{EventSubRuntime, EventSubSocket};
 use super::model::ChatMessage;
 use super::oauth::{
-    fetch_twitch_user, DeviceOAuthTransport, OAuthTransport, PollAuthError, TwitchOAuthHttp,
+    DeviceOAuthTransport, OAuthTransport, PollAuthError, TwitchOAuthHttp, fetch_twitch_user,
 };
 use super::subscription::{
-    create_chat_message_subscription, send_chat_message_subscription, SubscriptionRuntime,
+    SubscriptionRuntime, create_chat_message_subscription, send_chat_message_subscription,
 };
 use crate::app_events::{
-    emit_app_log, emit_twitch_auth_required, emit_twitch_chat_message, emit_twitch_chat_status,
-    emit_twitch_status, AppLogLevel, TwitchActiveConnection, TwitchAuthRequiredReason,
-    TwitchStatus, TwitchStatusDomain,
+    AppLogLevel, TwitchActiveConnection, TwitchAuthRequiredReason, TwitchStatus,
+    TwitchStatusDomain, emit_app_log, emit_twitch_auth_required, emit_twitch_chat_message,
+    emit_twitch_chat_status, emit_twitch_status,
 };
-use crate::settings::{default_twitch_client_id, AppState};
+use crate::application::AppState;
+use crate::settings::default_twitch_client_id;
 use crate::speech::enqueue_chat_message_for_speech;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::Manager;

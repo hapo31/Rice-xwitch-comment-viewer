@@ -1,4 +1,8 @@
 mod app_events;
+#[cfg(feature = "app")]
+mod application;
+#[cfg(test)]
+mod architecture_tests;
 mod launcher;
 mod resource_limits;
 mod settings;
@@ -11,17 +15,19 @@ mod twitch_test_ports;
 
 #[cfg(feature = "app")]
 use app_events::{
+    AppEventState, AppLogLevel, TwitchAuthRequiredReason, TwitchStatus, TwitchStatusDomain,
     app_events_snapshot, emit_app_log, emit_speech_adapter_health, emit_twitch_auth_required,
-    emit_twitch_status, AppEventState, AppLogLevel, TwitchAuthRequiredReason, TwitchStatus,
-    TwitchStatusDomain,
+    emit_twitch_status,
 };
+#[cfg(feature = "app")]
+use application::AppState;
 #[cfg(feature = "app")]
 use launcher::commands::{launcher_add, launcher_launch, launcher_launch_all, launcher_remove};
 use serde::Serialize;
 #[cfg(feature = "app")]
 use settings::{
-    settings_get, settings_take_recovery_notice, settings_update, AppSettings, AppState,
-    SettingsStore, WindowPosition,
+    AppSettings, SettingsStore, WindowPosition, settings_get, settings_take_recovery_notice,
+    settings_update,
 };
 #[cfg(feature = "app")]
 use speech::bouyomi::speech_connection_diagnostics;

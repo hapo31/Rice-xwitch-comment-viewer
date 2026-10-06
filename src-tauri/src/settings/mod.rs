@@ -1,285 +1,29 @@
 #[cfg(feature = "app")]
-use crate::app_events::{emit_app_log, AppLogLevel};
-use crate::launcher::{
-    apply_launcher_edits, validate_launcher_resources, LauncherSettings, LauncherSettingsPatch,
-};
-use crate::resource_limits::{
-    check_bytes, read_bounded, serialize_bounded, SizeLimitExceeded, MAX_SETTINGS_JSON_BYTES,
-};
-use crate::speech::SpeechQueueState;
-use crate::twitch::TwitchAuthState;
+use crate::app_events::{AppLogLevel, emit_app_log};
 #[cfg(feature = "app")]
-use crate::twitch::{TwitchAuthStore, TwitchConnectionHandle};
-use crate::SharedSettings;
-use serde::{Deserialize, Serialize};
+use crate::application::AppState;
+use crate::launcher::{apply_launcher_edits, validate_launcher_resources};
+pub(super) use crate::resource_limits::MAX_SETTINGS_JSON_BYTES;
 use std::collections::HashSet;
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(feature = "app")]
 use tauri::Manager;
 
+mod model;
+mod persistence;
 mod schema;
 pub(crate) mod validation;
 mod writer;
 
-static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AppSettings {
-    pub twitch: TwitchSettings,
-    pub speech: SpeechSettings,
-    #[serde(default)]
-    pub launcher: LauncherSettings,
-    #[serde(default)]
-    pub window: WindowSettings,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WindowSettings {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub position: Option<WindowPosition>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct WindowPosition {
-    pub x: i32,
-    pub y: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TwitchSettings {
-    pub channel_login: String,
-    pub auto_connect: bool,
-    #[serde(default = "default_confirm_before_stop_chat")]
-    pub confirm_before_stop_chat: bool,
-    #[serde(default = "default_live_chat_announcements")]
-    pub live_chat_announcements: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SpeechSettings {
-    pub adapter: SpeechAdapterKind,
-    #[serde(default = "default_bouyomi_host")]
-    pub bouyomi_host: String,
-    pub bouyomi_port: u16,
-    /// Opt-in request only. Native consent is never persisted in settings.
-    #[serde(default)]
-    pub bouyomi_remote_mode: bool,
-    #[serde(default = "default_bouyomi_speed")]
-    pub bouyomi_speed: i16,
-    #[serde(default = "default_bouyomi_tone")]
-    pub bouyomi_tone: i16,
-    #[serde(default = "default_bouyomi_volume")]
-    pub bouyomi_volume: i16,
-    #[serde(default = "default_bouyomi_voice")]
-    pub bouyomi_voice: i16,
-    pub read_user_name: bool,
-    #[serde(default = "default_auto_speak")]
-    pub auto_speak: bool,
-    pub max_comment_length: u16,
-    pub repeat_suppression_seconds: u16,
-    #[serde(default)]
-    pub blocked_users: Vec<String>,
-    #[serde(default)]
-    pub blocked_words: Vec<String>,
-    #[serde(default = "default_url_handling")]
-    pub url_handling: UrlHandling,
-    #[serde(default = "default_read_emotes")]
-    pub read_emotes: bool,
-    #[serde(default = "default_connection_success_speech_enabled")]
-    pub connection_success_speech_enabled: bool,
-    #[serde(default)]
-    pub connection_success_speech_text: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SpeechAdapterKind {
-    Bouyomi,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum UrlHandling {
-    Replace,
-    Read,
-    Block,
-}
-
-impl Default for UrlHandling {
-    fn default() -> Self {
-        default_url_handling()
-    }
-}
-
-fn default_auto_speak() -> bool {
-    true
-}
-
-fn default_confirm_before_stop_chat() -> bool {
-    true
-}
-
-fn default_live_chat_announcements() -> bool {
-    true
-}
-
-fn default_url_handling() -> UrlHandling {
-    UrlHandling::Replace
-}
-
-fn default_read_emotes() -> bool {
-    false
-}
-
-fn default_connection_success_speech_enabled() -> bool {
-    true
-}
-
-fn default_bouyomi_speed() -> i16 {
-    -1
-}
-
-fn default_bouyomi_tone() -> i16 {
-    -1
-}
-
-fn default_bouyomi_volume() -> i16 {
-    -1
-}
-
-fn default_bouyomi_voice() -> i16 {
-    0
-}
-
-fn default_bouyomi_host() -> String {
-    std::env::var("RICE_BOUYOMI_HOST")
-        .ok()
-        .and_then(|host| crate::speech::bouyomi::validate_bouyomi_host(&host).ok())
-        .unwrap_or_else(|| "127.0.0.1".to_string())
-}
-
-pub(crate) fn default_twitch_client_id() -> String {
-    option_env!("RICE_TWITCH_CLIENT_ID")
-        .unwrap_or("")
-        .trim()
-        .to_string()
-}
-
-#[derive(Default)]
-pub struct AppState {
-    pub settings: SharedSettings<AppSettings>,
-    /// Shared launcher adapters and bounded worker pool, used by every command.
-    pub launcher_runtime: crate::launcher::LauncherRuntime,
-    pub settings_recovery_notice: SharedSettings<Option<SettingsRecoveryNotice>>,
-    #[cfg(feature = "app")]
-    pub twitch_auth: std::sync::Arc<std::sync::Mutex<TwitchAuthState>>,
-    #[cfg(not(feature = "app"))]
-    pub twitch_auth: SharedSettings<TwitchAuthState>,
-    pub speech_queue: std::sync::Arc<std::sync::Mutex<SpeechQueueState>>,
-    /// Shared selection, ordering and clock for every speech operation.
-    pub speech_runtime: crate::speech::runtime::SpeechRuntime,
-    #[cfg(feature = "app")]
-    pub twitch_connection: SharedSettings<Option<TwitchConnectionHandle>>,
-    #[cfg(feature = "app")]
-    pub twitch_auth_store: TwitchAuthStore,
-}
-
-impl Default for AppSettings {
-    fn default() -> Self {
-        Self {
-            twitch: TwitchSettings {
-                channel_login: String::new(),
-                auto_connect: false,
-                confirm_before_stop_chat: true,
-                live_chat_announcements: true,
-            },
-            speech: SpeechSettings {
-                adapter: SpeechAdapterKind::Bouyomi,
-                bouyomi_host: default_bouyomi_host(),
-                bouyomi_port: 50001,
-                bouyomi_remote_mode: false,
-                bouyomi_speed: -1,
-                bouyomi_tone: -1,
-                bouyomi_volume: -1,
-                bouyomi_voice: 0,
-                read_user_name: true,
-                auto_speak: true,
-                max_comment_length: 120,
-                repeat_suppression_seconds: 2,
-                blocked_users: Vec::new(),
-                blocked_words: Vec::new(),
-                url_handling: UrlHandling::Replace,
-                read_emotes: false,
-                connection_success_speech_enabled: true,
-                connection_success_speech_text: String::new(),
-            },
-            launcher: LauncherSettings::default(),
-            window: WindowSettings::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SettingsPatch {
-    pub twitch: Option<TwitchSettingsPatch>,
-    pub speech: Option<SpeechSettingsPatch>,
-    pub launcher: Option<LauncherSettingsPatch>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TwitchSettingsPatch {
-    pub channel_login: Option<String>,
-    pub auto_connect: Option<bool>,
-    pub confirm_before_stop_chat: Option<bool>,
-    pub live_chat_announcements: Option<bool>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SpeechSettingsPatch {
-    pub adapter: Option<SpeechAdapterKind>,
-    pub bouyomi_host: Option<String>,
-    pub bouyomi_port: Option<u16>,
-    pub bouyomi_remote_mode: Option<bool>,
-    pub bouyomi_speed: Option<i16>,
-    pub bouyomi_tone: Option<i16>,
-    pub bouyomi_volume: Option<i16>,
-    pub bouyomi_voice: Option<i16>,
-    pub read_user_name: Option<bool>,
-    pub auto_speak: Option<bool>,
-    pub max_comment_length: Option<u16>,
-    pub repeat_suppression_seconds: Option<u16>,
-    pub blocked_users: Option<Vec<String>>,
-    pub blocked_words: Option<Vec<String>>,
-    pub url_handling: Option<UrlHandling>,
-    pub read_emotes: Option<bool>,
-    pub connection_success_speech_enabled: Option<bool>,
-    pub connection_success_speech_text: Option<String>,
-}
-
-pub struct SettingsStore;
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SettingsRecoveryNotice {
-    pub message: String,
-}
-
-#[derive(Debug)]
-pub struct LoadedSettings {
-    pub settings: AppSettings,
-    pub recovery_notice: Option<SettingsRecoveryNotice>,
-}
+pub(crate) use model::default_twitch_client_id;
+pub use model::{
+    AppSettings, SettingsPatch, SpeechAdapterKind, SpeechSettings, SpeechSettingsPatch,
+    TwitchSettings, TwitchSettingsPatch, UrlHandling, WindowPosition, WindowSettings,
+};
+#[cfg(all(test, unix))]
+use persistence::validate_owner;
+pub use persistence::{LoadedSettings, SettingsRecoveryNotice, SettingsStore};
+#[cfg(test)]
+use persistence::{SaveFault, backup_path, protect_existing_file, write_temp_file};
 
 fn validate_repeat_suppression_seconds(seconds: u16) -> Result<(), String> {
     if seconds <= 30 {
@@ -319,417 +63,6 @@ fn parse_settings_request(
             "設定の項目または型が無効です。入力内容を見直してください。",
         )
     })
-}
-
-fn read_settings_text(path: &Path) -> anyhow::Result<Result<String, String>> {
-    match read_bounded(path, MAX_SETTINGS_JSON_BYTES) {
-        Ok(text) => Ok(Ok(text)),
-        Err(error) if error.downcast_ref::<SizeLimitExceeded>().is_some() => {
-            Ok(Err(error.to_string()))
-        }
-        // IO/permission failures are not evidence of corrupt content. Fail closed.
-        Err(error) => Err(error),
-    }
-}
-
-impl SettingsStore {
-    #[cfg(feature = "app")]
-    pub fn load<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> anyhow::Result<LoadedSettings> {
-        let path = settings_path(app)?;
-        writer::initialize(app, &path)?;
-        Self::load_from_path(&path)
-    }
-
-    fn load_from_path(path: &Path) -> anyhow::Result<LoadedSettings> {
-        protect_storage(path)?;
-        protect_existing_file(&backup_path(path))?;
-        if !path.exists() {
-            let settings = AppSettings::default();
-            Self::save_to_path(path, &settings)?;
-            return Ok(LoadedSettings {
-                settings,
-                recovery_notice: None,
-            });
-        }
-
-        let loaded = read_settings_text(path)?.and_then(|text| schema::decode(&text));
-        match loaded {
-            Ok(decoded) => {
-                if decoded.needs_resave {
-                    Self::save_to_path(path, &decoded.settings)?;
-                }
-                Ok(LoadedSettings {
-                    settings: decoded.settings,
-                    // Ordinary optional/invalid-field fallback is silent by owner policy.
-                    // Only an unsupported version needs the safe recovery instruction.
-                    recovery_notice: decoded.unsupported_version.then(|| SettingsRecoveryNotice {
-                        message: schema::READ_ONLY_MESSAGE.into(),
-                    }),
-                })
-            }
-            Err(reason) => Self::recover_from_invalid_primary(path, &reason),
-        }
-    }
-
-    #[cfg(feature = "app")]
-    pub fn save<R: tauri::Runtime>(
-        app: &tauri::AppHandle<R>,
-        settings: &AppSettings,
-    ) -> anyhow::Result<()> {
-        let path = settings_path(app)?;
-        writer::require_owned(app, &path)?;
-        Self::save_to_path(&path, settings)
-    }
-
-    fn save_to_path(path: &Path, settings: &AppSettings) -> anyhow::Result<()> {
-        Self::save_to_path_with_fault(path, settings, SaveFault::None)
-    }
-
-    fn save_to_path_with_fault(
-        path: &Path,
-        settings: &AppSettings,
-        fault: SaveFault,
-    ) -> anyhow::Result<()> {
-        validation::validate_settings(settings)?;
-        validate_launcher_resources(&settings.launcher.items).map_err(anyhow::Error::msg)?;
-        let bytes = serialize_bounded(
-            &schema::PersistedSettings::new(settings),
-            MAX_SETTINGS_JSON_BYTES,
-            "設定JSON",
-        )?;
-        let text = std::str::from_utf8(&bytes)?;
-        Self::save_text_to_path(path, text, fault)
-    }
-
-    fn save_text_to_path(path: &Path, text: &str, fault: SaveFault) -> anyhow::Result<()> {
-        check_bytes(text.len(), MAX_SETTINGS_JSON_BYTES, "設定JSON")?;
-        protect_storage(path)?;
-        protect_existing_file(&backup_path(path))?;
-
-        // Check before creating temporary files or rotating backup. This same
-        // guard covers Settings, Launcher and best-effort window/exit saves,
-        // including a future document installed after this process loaded.
-        let previous = if path.exists() {
-            let previous = read_bounded(path, MAX_SETTINGS_JSON_BYTES)?;
-            let decoded = schema::decode(&previous).map_err(|error| {
-                anyhow::anyhow!("既存の設定をバックアップできませんでした: {error}")
-            })?;
-            if decoded.read_only {
-                return Err(schema::ReadOnlySettings.into());
-            }
-            Some(previous)
-        } else {
-            None
-        };
-        let temporary_path = write_temp_file(path, text.as_bytes(), fault)?;
-        let result = (|| {
-            if let Some(previous) = previous {
-                atomic_write(&backup_path(path), previous.as_bytes(), SaveFault::None)?;
-            }
-            replace_file(&temporary_path, path, fault)?;
-            sync_parent_directory(path)?;
-            Ok(())
-        })();
-
-        if result.is_err() {
-            let _ = fs::remove_file(&temporary_path);
-        }
-        result
-    }
-
-    fn recover_from_invalid_primary(
-        path: &Path,
-        primary_reason: &str,
-    ) -> anyhow::Result<LoadedSettings> {
-        let corrupted_primary = quarantine_file(path)?;
-        let backup = backup_path(path);
-
-        if backup.exists() {
-            let backup_reason = match read_settings_text(&backup)? {
-                Ok(backup_text) => match schema::decode(&backup_text) {
-                    Ok(decoded) => {
-                        atomic_write(path, backup_text.as_bytes(), SaveFault::None)?;
-                        if decoded.needs_resave {
-                            Self::save_to_path(path, &decoded.settings)?;
-                        }
-                        let message = format!(
-                            "設定ファイルの内容が無効（{primary_reason}）だったため、バックアップから復旧しました。退避先: {}",
-                            corrupted_primary.display()
-                        );
-                        return Ok(LoadedSettings {
-                            settings: decoded.settings,
-                            recovery_notice: Some(SettingsRecoveryNotice {
-                                message: if decoded.read_only {
-                                    format!("{message} {}", schema::READ_ONLY_MESSAGE)
-                                } else {
-                                    message
-                                },
-                            }),
-                        });
-                    }
-                    Err(reason) => reason,
-                },
-                Err(reason) => reason,
-            };
-            let corrupted_backup = quarantine_file(&backup)?;
-            let settings = AppSettings::default();
-            Self::save_to_path(path, &settings)?;
-            return Ok(LoadedSettings {
-                settings,
-                recovery_notice: Some(SettingsRecoveryNotice {
-                    message: format!(
-                        "設定ファイルとバックアップの内容が無効だったため、既定値で起動しました。原因: {primary_reason} / {backup_reason} 退避先: {}, {}",
-                        corrupted_primary.display(),
-                        corrupted_backup.display()
-                    ),
-                }),
-            });
-        }
-
-        let settings = AppSettings::default();
-        Self::save_to_path(path, &settings)?;
-        Ok(LoadedSettings {
-            settings,
-            recovery_notice: Some(SettingsRecoveryNotice {
-                message: format!(
-                    "設定ファイルの内容が無効（{primary_reason}）だったため、既定値で起動しました。退避先: {}",
-                    corrupted_primary.display()
-                ),
-            }),
-        })
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SaveFault {
-    None,
-    TempWrite,
-    Replace,
-}
-
-fn backup_path(path: &Path) -> PathBuf {
-    path.with_file_name(format!(
-        "{}.bak",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("settings.json")
-    ))
-}
-
-fn quarantine_file(path: &Path) -> anyhow::Result<PathBuf> {
-    protect_existing_file(path)?;
-    let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S%3f");
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("settings.json");
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("設定ファイルの親フォルダを取得できません。"))?;
-
-    for suffix in 0..1000_u16 {
-        let candidate = parent.join(format!("{file_name}.corrupt-{timestamp}-{suffix}"));
-        if !candidate.exists() {
-            fs::rename(path, &candidate)?;
-            sync_parent_directory(path)?;
-            return Ok(candidate);
-        }
-    }
-
-    Err(anyhow::anyhow!(
-        "破損した設定ファイルの退避先を作成できません。"
-    ))
-}
-
-fn atomic_write(path: &Path, contents: &[u8], fault: SaveFault) -> anyhow::Result<()> {
-    check_bytes(contents.len(), MAX_SETTINGS_JSON_BYTES, "設定JSON")?;
-    protect_storage(path)?;
-    let temporary_path = write_temp_file(path, contents, fault)?;
-    let result =
-        replace_file(&temporary_path, path, fault).and_then(|_| sync_parent_directory(path));
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary_path);
-    }
-    result
-}
-
-fn write_temp_file(path: &Path, contents: &[u8], fault: SaveFault) -> anyhow::Result<PathBuf> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("設定ファイルの親フォルダを取得できません。"))?;
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("settings.json");
-
-    for _ in 0..1000 {
-        let counter = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let temporary_path = parent.join(format!(".{file_name}.{counter}.tmp"));
-        let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = match options.open(&temporary_path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error.into()),
-        };
-
-        let result = if fault == SaveFault::TempWrite {
-            Err(io::Error::new(
-                io::ErrorKind::StorageFull,
-                "fault injected: disk full",
-            ))
-        } else {
-            file.write_all(contents).and_then(|_| file.sync_all())
-        };
-        if let Err(error) = result {
-            let _ = fs::remove_file(&temporary_path);
-            return Err(error.into());
-        }
-        return Ok(temporary_path);
-    }
-
-    Err(anyhow::anyhow!(
-        "設定保存用の一時ファイルを作成できません。"
-    ))
-}
-
-fn replace_file(source: &Path, destination: &Path, fault: SaveFault) -> anyhow::Result<()> {
-    protect_existing_file(source)?;
-    protect_existing_file(destination)?;
-    if fault == SaveFault::Replace {
-        return Err(anyhow::anyhow!("fault injected: atomic replace failed"));
-    }
-
-    atomic_replace(source, destination)?;
-    protect_existing_file(destination)?;
-    Ok(())
-}
-
-/// Only the application-specific directory is hardened. Never chmod shared
-/// ancestors such as HOME, /tmp, or the platform's app-data root.
-fn protect_storage(path: &Path) -> anyhow::Result<()> {
-    let parent = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("設定専用フォルダーを取得できません。"))?;
-    match fs::symlink_metadata(parent) {
-        Ok(metadata) => {
-            if !metadata.is_dir() || metadata.file_type().is_symlink() {
-                return Err(anyhow::anyhow!(
-                    "設定フォルダーにリンクや通常以外の種類は使用できません。"
-                ));
-            }
-            protect_metadata(parent, &metadata, 0o700)?;
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            let mut builder = fs::DirBuilder::new();
-            builder.recursive(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::DirBuilderExt;
-                builder.mode(0o700);
-            }
-            builder.create(parent)?;
-            protect_metadata(parent, &fs::symlink_metadata(parent)?, 0o700)?;
-        }
-        Err(error) => return Err(error.into()),
-    }
-    protect_existing_file(path)
-}
-
-fn protect_existing_file(path: &Path) -> anyhow::Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) => {
-            if !metadata.is_file() || metadata.file_type().is_symlink() {
-                return Err(anyhow::anyhow!("設定ファイルにリンクや通常以外の種類は使用できません。設定の保存場所を確認してください。"));
-            }
-            protect_metadata(path, &metadata, 0o600)
-        }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.into()),
-    }
-}
-
-#[cfg(unix)]
-fn validate_owner(metadata: &fs::Metadata, expected: u32) -> anyhow::Result<()> {
-    use std::os::unix::fs::MetadataExt;
-    if metadata.uid() != expected || (metadata.is_file() && metadata.nlink() != 1) {
-        return Err(anyhow::anyhow!("設定の所有者が現在のユーザーと異なるか、複数のリンクがあります。所有者と保存場所を確認してください。"));
-    }
-    Ok(())
-}
-
-fn protect_metadata(path: &Path, metadata: &fs::Metadata, mode: u32) -> anyhow::Result<()> {
-    if metadata.file_type().is_symlink() {
-        return Err(anyhow::anyhow!("設定の保存先にリンクは使用できません。"));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        // geteuid has no pointer arguments or failure mode.
-        validate_owner(metadata, unsafe { libc::geteuid() })?;
-        fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(|error| {
-            anyhow::anyhow!("設定のアクセス権を安全に変更できません。所有者と保存場所を確認してください: {error}")
-        })?;
-    }
-    #[cfg(not(unix))]
-    let _ = (path, metadata, mode);
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn atomic_replace(source: &Path, destination: &Path) -> io::Result<()> {
-    fs::rename(source, destination)
-}
-
-#[cfg(target_os = "windows")]
-fn atomic_replace(source: &Path, destination: &Path) -> io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{
-        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-    };
-
-    let source = source
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
-    let destination = destination
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
-    let result = unsafe {
-        MoveFileExW(
-            source.as_ptr(),
-            destination.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if result == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg(unix)]
-fn sync_parent_directory(path: &Path) -> anyhow::Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("設定ファイルの親フォルダを取得できません。"))?;
-    File::open(parent)?.sync_all()?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn sync_parent_directory(_path: &Path) -> anyhow::Result<()> {
-    Ok(())
 }
 
 #[cfg(feature = "app")]
@@ -860,7 +193,7 @@ fn apply_patch(settings: &mut AppSettings, patch: SettingsPatch) -> Result<(), S
             settings.speech.adapter = adapter;
         }
         if let Some(host) = speech.bouyomi_host {
-            settings.speech.bouyomi_host = crate::speech::bouyomi::validate_bouyomi_host(&host)?;
+            settings.speech.bouyomi_host = crate::speech::endpoint::validate_bouyomi_host(&host)?;
         }
         if let Some(port) = speech.bouyomi_port {
             if port == 0 {
@@ -982,10 +315,10 @@ fn settings_path<R: tauri::Runtime>(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_patch, backup_path, update_settings_transaction, AppSettings, SaveFault,
-        SettingsPatch, SettingsStore, WindowPosition,
+        AppSettings, SaveFault, SettingsPatch, SettingsStore, WindowPosition, apply_patch,
+        backup_path, update_settings_transaction,
     };
-    use crate::launcher::{normalize_launcher_items, LauncherItem, LauncherItemKind};
+    use crate::launcher::{LauncherItem, LauncherItemKind, normalize_launcher_items};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1043,16 +376,20 @@ mod tests {
             assert_eq!(loaded.settings.launcher.items.len(), 200);
             let elapsed = start.elapsed();
             let peak = crate::resource_limits::allocation::peak_delta(baseline);
-            println!("Launcher budget: items=200 icons=4194304 JSON={} elapsed_ms={} incremental_rust_heap={peak}", fs::metadata(&path).unwrap().len(), elapsed.as_millis());
+            println!(
+                "Launcher budget: items=200 icons=4194304 JSON={} elapsed_ms={} incremental_rust_heap={peak}",
+                fs::metadata(&path).unwrap().len(),
+                elapsed.as_millis()
+            );
             assert!(
                 elapsed < std::time::Duration::from_secs(5),
                 "maximum transaction/backup/load budget: {elapsed:?}"
             );
             let budget_mib = if json_bytes.is_some() { 40 } else { 32 };
             assert!(
-            peak <= budget_mib * 1024 * 1024,
-            "Rust-owned incremental live heap, including conservative realloc coexistence: {peak}"
-        );
+                peak <= budget_mib * 1024 * 1024,
+                "Rust-owned incremental live heap, including conservative realloc coexistence: {peak}"
+            );
             cleanup(&path);
         }
     }
@@ -1075,22 +412,26 @@ mod tests {
         let patch = parse_settings_request(&serde_json::json!({"patch": {"twitch": {"channelLogin": "candidate"}, "launcher": {"items": [{"id": "new", "displayName": "name", "order": 0}]}}})).unwrap();
         let mut settings = AppSettings::default();
         let saved = std::cell::Cell::new(false);
-        assert!(update_settings_transaction(
-            &mut settings,
-            |candidate| apply_patch(candidate, patch),
-            |_| {
-                saved.set(true);
-                Ok(())
-            }
-        )
-        .is_err());
+        assert!(
+            update_settings_transaction(
+                &mut settings,
+                |candidate| apply_patch(candidate, patch),
+                |_| {
+                    saved.set(true);
+                    Ok(())
+                }
+            )
+            .is_err()
+        );
         assert_eq!(settings.twitch.channel_login, "");
         assert!(!saved.get());
         let huge = serde_json::json!({"patch": {"speech": {"blockedWords": ["x".repeat(super::MAX_SETTINGS_JSON_BYTES)]}}});
-        assert!(parse_settings_request(&huge)
-            .unwrap_err()
-            .message
-            .contains("最大"));
+        assert!(
+            parse_settings_request(&huge)
+                .unwrap_err()
+                .message
+                .contains("最大")
+        );
     }
 
     #[test]
@@ -1247,10 +588,12 @@ mod tests {
                 .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"))
                 .collect();
             assert_eq!(quarantined.len(), if bad_backup { 2 } else { 1 });
-            assert!(quarantined
-                .iter()
-                .all(|entry| entry.metadata().unwrap().len()
-                    == super::MAX_SETTINGS_JSON_BYTES as u64 + 1));
+            assert!(
+                quarantined
+                    .iter()
+                    .all(|entry| entry.metadata().unwrap().len()
+                        == super::MAX_SETTINGS_JSON_BYTES as u64 + 1)
+            );
             cleanup(&path);
         }
     }
@@ -1321,7 +664,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn settings_reject_symlinks_non_regular_files_and_foreign_owners() {
-        use std::os::unix::fs::{symlink, MetadataExt};
+        use std::os::unix::fs::{MetadataExt, symlink};
         let path = settings_path_for_test("unsafe-path");
         let outside = path.parent().unwrap().join("outside.json");
         fs::write(&outside, "private").unwrap();
@@ -1561,21 +904,24 @@ mod tests {
         let loaded = SettingsStore::load_from_path(&path).expect("recover settings");
 
         assert_eq!(loaded.settings.twitch.channel_login, "backup_channel");
-        assert!(loaded
-            .recovery_notice
-            .expect("recovery notice")
-            .message
-            .contains("バックアップから復旧"));
-        assert!(path
-            .parent()
-            .expect("test directory")
-            .read_dir()
-            .expect("read directory")
-            .any(|entry| entry
-                .expect("directory entry")
-                .file_name()
-                .to_string_lossy()
-                .contains("settings.json.corrupt-")));
+        assert!(
+            loaded
+                .recovery_notice
+                .expect("recovery notice")
+                .message
+                .contains("バックアップから復旧")
+        );
+        assert!(
+            path.parent()
+                .expect("test directory")
+                .read_dir()
+                .expect("read directory")
+                .any(|entry| entry
+                    .expect("directory entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("settings.json.corrupt-"))
+        );
         cleanup(&path);
     }
 
@@ -1588,11 +934,13 @@ mod tests {
         let loaded = SettingsStore::load_from_path(&path).expect("recover settings");
 
         assert_eq!(loaded.settings.twitch.channel_login, "");
-        assert!(loaded
-            .recovery_notice
-            .expect("recovery notice")
-            .message
-            .contains("既定値"));
+        assert!(
+            loaded
+                .recovery_notice
+                .expect("recovery notice")
+                .message
+                .contains("既定値")
+        );
         let quarantined_count = path
             .parent()
             .expect("test directory")

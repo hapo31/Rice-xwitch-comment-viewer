@@ -68,7 +68,7 @@ pub fn preflight_wire(patch: &serde_json::Value) -> Result<(), ValidationError> 
         "speech",
     )?;
     if let Some(host) = speech["bouyomiHost"].as_str() {
-        crate::speech::bouyomi::validate_bouyomi_host(host).map_err(|message| {
+        crate::speech::endpoint::validate_bouyomi_host(host).map_err(|message| {
             ValidationError::new("speech.bouyomiHost", "invalidEndpoint", message)
         })?;
     }
@@ -171,7 +171,11 @@ impl TwitchLogin {
                         .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')))
             || (login.is_empty() && !allow_empty)
         {
-            return Err(ValidationError::new("twitch.channelLogin", "invalidLogin", "Twitchチャンネルは英数字・_の3〜25文字で入力してください。設定の空欄は自分のチャンネルを使います。"));
+            return Err(ValidationError::new(
+                "twitch.channelLogin",
+                "invalidLogin",
+                "Twitchチャンネルは英数字・_の3〜25文字で入力してください。設定の空欄は自分のチャンネルを使います。",
+            ));
         }
         Ok(Self(login.to_ascii_lowercase()))
     }
@@ -237,7 +241,7 @@ pub fn validate_speech(settings: &SpeechSettings) -> Result<(), ValidationError>
             "棒読みちゃんのポートは1〜65535で入力してください。",
         ));
     }
-    crate::speech::bouyomi::BouyomiAddress::new(&settings.bouyomi_host, settings.bouyomi_port)
+    crate::speech::endpoint::BouyomiAddress::new(&settings.bouyomi_host, settings.bouyomi_port)
         .map_err(|message| {
             ValidationError::new("speech.bouyomiHost", "invalidEndpoint", message)
         })?;
@@ -295,7 +299,7 @@ pub fn validate_patch(patch: &SettingsPatch) -> Result<(), ValidationError> {
     }
     if let Some(speech) = &patch.speech {
         if let Some(host) = &speech.bouyomi_host {
-            crate::speech::bouyomi::validate_bouyomi_host(host).map_err(|message| {
+            crate::speech::endpoint::validate_bouyomi_host(host).map_err(|message| {
                 ValidationError::new("speech.bouyomiHost", "invalidEndpoint", message)
             })?;
         }
@@ -421,7 +425,7 @@ mod tests {
                 });
             let valid = match fixture["kind"].as_str().unwrap() {
                 "login" => TwitchLogin::parse(&value, true).is_ok(),
-                "host" => crate::speech::bouyomi::validate_bouyomi_host(&value).is_ok(),
+                "host" => crate::speech::endpoint::validate_bouyomi_host(&value).is_ok(),
                 "word" => validate_word(&value).is_ok(),
                 "confirmation" => {
                     let mut speech = AppSettings::default().speech;

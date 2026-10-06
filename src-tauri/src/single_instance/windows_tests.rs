@@ -1,6 +1,7 @@
 //! Explicit Windows CI fixture; runs the production builder and plugin, not a
 //! second implementation. No debug command, account or release is created.
-use crate::settings::{AppState, SettingsStore};
+use crate::application::AppState;
+use crate::settings::SettingsStore;
 use crate::twitch::{AuthCredentialStore, AuthLoadResult, TwitchAuthState, TwitchAuthStore};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
@@ -8,7 +9,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, IsIconic, PostMessageW, ShowWindow, SW_MINIMIZE, WM_CLOSE,
+    GetForegroundWindow, IsIconic, PostMessageW, SW_MINIMIZE, ShowWindow, WM_CLOSE,
 };
 
 const FIXTURE: &str = "single_instance::windows_tests::native_instance_fixture";

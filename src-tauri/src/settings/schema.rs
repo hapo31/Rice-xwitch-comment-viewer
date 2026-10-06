@@ -2,11 +2,11 @@
 //! Borrow raw fields and cap arrays before allocating values, not an 8MiB Value tree.
 use super::{AppSettings, SettingsPatch, WindowPosition};
 use crate::launcher::{
-    normalize_launcher_icon_data_url, validate_launcher_structure, LauncherItem, LauncherItemKind,
+    LauncherItem, LauncherItemKind, normalize_launcher_icon_data_url, validate_launcher_structure,
 };
 use serde::de::{DeserializeOwned, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserializer, Serialize};
-use serde_json::{value::RawValue, Value};
+use serde_json::{Value, value::RawValue};
 use std::fmt;
 
 pub(super) const CURRENT_VERSION: u64 = 1;
@@ -327,8 +327,12 @@ fn launcher_item(raw: &RawValue, changed: &mut bool, unknown: &mut bool) -> Opti
 }
 
 pub(super) fn decode(text: &str) -> Result<DecodedSettings, String> {
-    super::check_bytes(text.len(), super::MAX_SETTINGS_JSON_BYTES, "設定JSON")
-        .map_err(|error| error.to_string())?;
+    crate::resource_limits::check_bytes(
+        text.len(),
+        crate::resource_limits::MAX_SETTINGS_JSON_BYTES,
+        "設定JSON",
+    )
+    .map_err(|error| error.to_string())?;
     let raw: &RawValue =
         serde_json::from_str(text).map_err(|_| "設定JSONを読み取れません。".to_string())?;
     let mut changed = false;

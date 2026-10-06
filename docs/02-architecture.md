@@ -11,13 +11,17 @@ src/                      TypeScript UI
   tauri client            Rust commands/eventsの呼び出し
 
 src-tauri/
+  application             AppStateとdomain runtimeの組立
   twitch                  OAuth、EventSub WebSocket、Helix API
-  speech                  読み上げキュー、アダプタ共通trait
+  speech                  読み上げdomain/queue/adapter共通trait
+  speech/endpoint         接続先の純粋な値検証
   speech/bouyomi          棒読みちゃんTCPクライアント
   speech/voiceroid        実験的VOICEROID2直接連携
   launcher                アプリ登録、検証、起動
-  settings                永続設定、トークン保存
-  app_events              フロントエンドへのイベント配信
+  settings/model          設定のpure DTOとpatch
+  settings/validation     設定入力の検証
+  settings/persistence    JSON保存・migration・atomic writer
+  app_events              Tauri event DTO、snapshot、emission
 ```
 
 ### Frontend domain store 境界
@@ -63,6 +67,16 @@ Rust backend
 | `TwitchAuthStore` | Twitch OAuth状態をOS keyringへ保存/復元/削除する |
 | `LauncherService` | 登録アプリのパス検証、重複排除、単体/一斉起動を扱う |
 
+### Rust composition root と domain 境界（Issue #210）
+
+`lib.rs`はTauri builder・command登録・起動/終了処理のcomposition rootとする。共有managed stateの`AppState`は`application.rs`に置き、Settings、Launcher、Twitch、Speechのruntime/handleをここで組み立てる。`settings`はAppStateを定義せず、設定command adapterと設定model/storageを提供する。domain runtimeはTauri stateを読まず、必要な設定snapshotやfactoryなどのportだけを受け取る。Speech adapter選択時にAppStateから設定snapshotを取得するのはapp-facing command/wiring側であり、`SpeechRuntime::select`は`SpeechSettings`と`SpeechAdapterFactory`だけを扱う。
+
+`settings/model.rs`はAppSettingsとpatch等のwire/model値を保持し、Tauri、filesystem、設定store、具体Speech adapterをimportしない。`settings/validation.rs`は設定wireとdomain値を検証し、`settings/persistence.rs`はversioned schema、bounded read、権限、backup、atomic writeを担当する。schema/writerはpersistenceの内側で使い、command facadeは保存の成功後にだけcandidateを公開する。設定modelと永続化操作の間はこの境界を保つ。
+
+`SpeechStatus`、`SpeechAdapterHealth`、queue phase/item statusとadapter失敗分類は`speech` domainに置く。`SpeechFailure`はevent moduleをimportせず、adapterのnative failureをdomain status/codeへ分類する。`app_events`がTauri event DTO・revision/snapshot・healthから互換statusへの投影とemissionを担当し、Serde/ts-rsのwire型は同じJSON形を維持する。`speech/endpoint.rs`はhost/addressの純粋な値検証を持ち、Bouyomi TCP実装とDNS/consent policyはこの値を使う。設定validationはこのpure endpoint境界へ依存し、TCP adapter moduleには依存しない。
+
+`architecture_tests.rs`はAppState、model/storage、endpoint、Speech runtime/failure/event型の依存方向をsource boundaryとして固定する。Rust DTOのTypeScript生成契約（`wire_contracts.rs`）も通常のno-default testで検査する。新adapter機能は追加しない。
+
 ### Twitch責務分割（Issue #44）
 
 `twitch/model.rs`は公開chat DTOだけを保持し、既存の`crate::twitch::*`で再exportする。camelCase/optional field omissionとcommand/event payloadは変更しない。`error.rs`はHTTP status/OAuth codeの型付き分類と日本語表示を分け、表示文言が認証解除・retry可否を決めない。`normalization.rs`はEventSub wireとchat正規化を担当し、欠損/不正timestampには呼出元が渡した受信時刻を使う。`dedupe.rs`は接続全体で共有するbounded cacheと明示`Instant`によるTTLを保持する。この2つのpure境界はTauri、keyring、network clientに依存しない。
@@ -77,7 +91,7 @@ Launcherのアプリ登録・起動はWindows専用。`app_build_info.launcher`�
 
 ## 設定入力と読み上げ接続先の境界
 
-設定入力は`settings/validation.rs`でwireとdomainを分ける。`settings_update`はframework所有JSONを256KiB/nodes/depth・既知field・文字列/rule量でpreflightしてからDTOをcloneし、leaf patchを最新candidateへ適用、全domainとLauncher資源を検証・保存できた場合だけ公開する。`ValidationError { field, code, message, recovery }`で安全な日本語と修正対象を返す。`TwitchLogin`は設定保存と`twitch_connect`で共用し、空欄は自分のチャンネル、非空は英数字・_の3〜25文字、raw128 UTF-8 bytes以内/controlなしとする。hostはraw253 UTF-8 bytes/DNS label63、NGユーザーはlogin形式、NGワードは500 Unicode文字/2048 UTF-8 bytes、各200件/両list合計64KiB、接続成功文は120文字/480bytesまで。文字数/range違反をclamp/truncateで成功扱いにしない。永続wireのmigration/field fallbackも同じpatch適用・domain validatorとLauncher構造validatorを使う（#64）。
+設定modelは`settings/model.rs`、保存は`settings/persistence.rs`へ分け、入力のwire/domain検証を`settings/validation.rs`が担当する。`settings_update`はframework所有JSONを256KiB/nodes/depth・既知field・文字列/rule量でpreflightしてからDTOをcloneし、leaf patchを最新candidateへ適用、全domainとLauncher資源を検証・保存できた場合だけ公開する。`ValidationError { field, code, message, recovery }`で安全な日本語と修正対象を返す。`TwitchLogin`は設定保存と`twitch_connect`で共用し、空欄は自分のチャンネル、非空は英数字・_の3〜25文字、raw128 UTF-8 bytes以内/controlなしとする。hostはraw253 UTF-8 bytes/DNS label63、NGユーザーはlogin形式、NGワードは500 Unicode文字/2048 UTF-8 bytes、各200件/両list合計64KiB、接続成功文は120文字/480bytesまで。文字数/range違反をclamp/truncateで成功扱いにしない。永続wireのmigration/field fallbackも同じpatch適用・domain validatorとLauncher構造validatorを使う（#64）。
 
 `SpeechRuntime`がprocess-localの`DestinationPolicy`をfactory/diagnosticsと共有する。各TCP接続はhostを2秒以内・最大16addressへ解決し、全addressを検証して検証済み`SocketAddr`集合へ直接接続する（connect時の再DNS解決なし）。通常は127/8・::1・IPv4-mapped loopbackだけを許可する。remote modeはopt-in要求であり許可ではない。private IPv4/IPv6 ULAだけが外部許可の対象で、public/link-local/multicast/未指定宛先は拒否する。明示`speech_authorize_endpoint`がhostname/IP/port・全解決address・ユーザー名/chat/test/controlの平文送信/TLSと相手認証の欠如/VPN注意をnative dialogへ表示する。callbackをawaitし設定lockは保持しない。許可後にDNSを再確認し、設定変更がないことを短いlock下で比較してからopaque approvalをメモリへinstallする。1つのpending prompt/30秒rate limit、拒否時は旧許可も取り消し、endpoint変更/再起動/解決address変更は再同意なしに送信しない。設定fileやrendererへconsent flagは持たせない。既に開始した送信の取消やbyte回収、相手identityの認証は保証しない。
 

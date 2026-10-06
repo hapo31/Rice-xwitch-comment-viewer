@@ -1,4 +1,4 @@
-use crate::app_events::{emit_app_log, AppLogLevel};
+use crate::app_events::{AppLogLevel, emit_app_log};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 
@@ -31,8 +31,11 @@ fn activate_if_ready(app: &tauri::AppHandle, state: &PendingActivation) {
         return;
     }
     if restore_and_focus(&window) != 0 {
-        emit_app_log(app, AppLogLevel::Warning,
-            "Rice は既に起動しています。ウィンドウを表示できない場合はタスクバーから開いてください。");
+        emit_app_log(
+            app,
+            AppLogLevel::Warning,
+            "Rice は既に起動しています。ウィンドウを表示できない場合はタスクバーから開いてください。",
+        );
     }
 }
 

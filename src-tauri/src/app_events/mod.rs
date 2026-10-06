@@ -1,3 +1,6 @@
+pub use crate::speech::{
+    SpeechAdapterHealth, SpeechQueueItemStatus, SpeechQueuePhase, SpeechStatus,
+};
 #[cfg(feature = "app")]
 use crate::twitch::ChatMessage;
 use serde::Serialize;
@@ -99,25 +102,6 @@ pub struct SpeechStatusEvent {
     pub occurred_at_ms: u64,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum SpeechStatus {
-    Idle,
-    Speaking,
-    Paused,
-    Disconnected,
-    Error,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum SpeechAdapterHealth {
-    Unknown,
-    Connected,
-    Disconnected,
-    Error,
-}
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpeechQueueUpdatedEvent {
@@ -141,26 +125,6 @@ pub struct SpeechQueueItemEvent {
     pub status: SpeechQueueItemStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<crate::speech::outcome::SpeechQueueOutcome>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum SpeechQueueItemStatus {
-    Queued,
-    Speaking,
-    Spoken,
-    Skipped,
-    Blocked,
-    Error,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum SpeechQueuePhase {
-    Idle,
-    Speaking,
-    Paused,
-    Error,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -701,8 +665,7 @@ mod tests {
             assert_eq!(snapshot.queue.items[0].outcome.as_ref(), Some(&outcome));
             assert!(snapshot.queue.warning.is_none());
             assert_eq!(
-                serde_json::to_value(&snapshot).unwrap()["queue"]["items"][0]["outcome"]
-                    ["reasonCode"],
+                serde_json::to_value(&snapshot).unwrap()["queue"]["items"][0]["outcome"]["reasonCode"],
                 "blockedWord"
             );
         }

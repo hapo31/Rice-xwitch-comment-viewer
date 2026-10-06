@@ -1,9 +1,10 @@
 use super::runtime::{SelectedSpeechAdapter, SpeechClock, SpeechDispatcher};
 use super::{
-    SpeechPlaybackCompletion, SpeechQueueFailureTransition, SpeechQueueState, SpeechStatus,
-    RETRY_DELAY,
+    RETRY_DELAY, SpeechPlaybackCompletion, SpeechQueueFailureTransition, SpeechQueueState,
+    SpeechStatus,
 };
-use crate::app_events::{AppLogLevel, SpeechAdapterHealth};
+use crate::app_events::AppLogLevel;
+use crate::speech::SpeechAdapterHealth;
 use crate::speech::SpeechFailure;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -176,7 +177,9 @@ impl SpeechQueueWorker {
                                 } else {
                                     "安全な自動再試行はできないため、再送していません。"
                                 };
-                                format!("{error_message} {note} エラー履歴へ移しました。状態を確認してからQueueの「再試行」を使ってください。")
+                                format!(
+                                    "{error_message} {note} エラー履歴へ移しました。状態を確認してからQueueの「再試行」を使ってください。"
+                                )
                             }
                             SpeechQueueFailureTransition::Ignored => error_message.clone(),
                         };
