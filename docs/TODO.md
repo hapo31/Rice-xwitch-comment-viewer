@@ -203,6 +203,10 @@ Issue #198 はテストの明示的 any を実 DTO／関数型へ置換し、既
 
 - [x] Issue #96: pnpm/Cargoの監査・期限付き例外validator・定期scan・dependency更新PR・release SBOMを導入する。
 
+- [ ] Issue #229: dependency inventoryとRice固有provenanceを分離し、CycloneDX公式model/serializer・schema validatorと標準Package URL parser/builderを使ってSBOMを生成する。依存graph・exact commit/lockfile/artifact照合・再現可能なsort・Rice propertiesを保持し、npm scoped/Cargo/Debian PURL round-tripとCycloneDX 1.5 schemaをテストする。追加のpeer/dev dependencyとNode互換性を記録する。
+
+2026-10-06 Issue #229 着手計画: SBOM generator、release artifact verifier、dependency-security設計と既存テスト/Node 22 release入力を確認する。inventory・provenanceとCycloneDX変換を切り分け、公式libraryとPackageURLの対応版/peer dependenciesを確認して固定する。手組みPURL/CycloneDX objectを標準modelへ置換し、installed graph fixtureでexact source/artifact情報・dependency edge・sortを保つ。標準PURLのnpm scoped/Cargo/Debian round-trip、公式CycloneDX 1.5 schemaの正例/不正例、release verifierの不正SBOM拒否を追加し、Node 22で関連policyテストを実行する。
+
 2026-10-05: Issue #96でPR/main/weekly/releaseの共通advisory gate、期限/owner/根拠を必須とする例外validator、Dependabot、artifact digestとexact commitへ結び付けたCycloneDX 1.5 SBOMを追加した。policy/SBOMのunit10件と実installed graphのintegration1件を確認。RustSec DB ef6173cbc5c50ec8166f9a5b28f07834144373ee（1290 advisory）でRust警告7件、npm High1件をblockingとして検出した。gateが正常に失敗することを確認しており、clean auditではない。新規releaseの実配布は未実施。
 
 - [x] Issue #93: release build の base image / Debian snapshot / toolchain を固定し、時刻と build material を記録・検証する。SDK/CRT feed と NSIS/PE metadata の非決定性は material inventory と文書で明示する。
